@@ -1,0 +1,7 @@
+[workspace]
+members = [
+  "cli",
+  "parser",
+  "program_analysis",
+  "program_structure"
+]

@@ -1,0 +1,10 @@
+[package]
+name = "program_analysis"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0"
+log = "0.4"
+num-bigint-dig = "0.6"
+program_structure = { path = "../program_structure" }

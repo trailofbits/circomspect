@@ -1,0 +1,13 @@
+[package]
+name = "circom-spectacles"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0"
+log = "0.4"
+parser = { path = "../parser" }
+pretty_env_logger = "0.4"
+program_analysis = { path = "../program_analysis" }
+program_structure = { path = "../program_structure" }
+structopt = "0.3"
