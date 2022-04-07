@@ -1,5 +1,17 @@
 pragma circom 2.0.0;
 
+function nbits(value) {
+    var power = 1;
+    var result = 0;
+    while (power - 1 < value) {
+        // This declaration shadows the input parameter value
+        var value = 0;
+        result++;
+        power *= 2;
+    }
+    return result;
+}
+
 template ToBits(n) {
     signal input in;
     signal output out[n];

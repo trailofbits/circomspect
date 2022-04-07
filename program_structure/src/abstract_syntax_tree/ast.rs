@@ -1,6 +1,7 @@
 use crate::file_definition::FileLocation;
 use num_bigint::BigInt;
 use serde_derive::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 pub trait FillMeta {
     fn fill(&mut self, file_id: usize, elem_id: &mut usize);
@@ -11,9 +12,7 @@ pub fn build_main_component(public: Vec<String>, call: Expression) -> MainCompon
     (public, call)
 }
 
-
 pub type Version = (usize, usize, usize);
-
 
 #[derive(Clone)]
 pub struct Meta {
@@ -25,6 +24,7 @@ pub struct Meta {
     pub component_inference: Option<String>,
     type_knowledge: TypeKnowledge,
     memory_knowledge: MemoryKnowledge,
+    variable_knowledge: VariableKnowledge,
 }
 impl Meta {
     pub fn new(start: usize, end: usize) -> Meta {
@@ -37,6 +37,7 @@ impl Meta {
             component_inference: None,
             type_knowledge: TypeKnowledge::default(),
             memory_knowledge: MemoryKnowledge::default(),
+            variable_knowledge: VariableKnowledge::default(),
         }
     }
     pub fn change_location(&mut self, location: FileLocation, file_id: Option<usize>) {
@@ -62,11 +63,17 @@ impl Meta {
     pub fn get_type_knowledge(&self) -> &TypeKnowledge {
         &self.type_knowledge
     }
+    pub fn get_variable_knowledge(&self) -> &VariableKnowledge {
+        &self.variable_knowledge
+    }
     pub fn get_mut_memory_knowledge(&mut self) -> &mut MemoryKnowledge {
         &mut self.memory_knowledge
     }
     pub fn get_mut_type_knowledge(&mut self) -> &mut TypeKnowledge {
         &mut self.type_knowledge
+    }
+    pub fn get_mut_variable_knowledge(&mut self) -> &mut VariableKnowledge {
+        &mut self.variable_knowledge
     }
     pub fn file_location(&self) -> FileLocation {
         self.location.clone()
@@ -92,7 +99,13 @@ impl AST {
         definitions: Vec<Definition>,
         main_component: Option<MainComponent>,
     ) -> AST {
-        AST { meta, compiler_version, includes, definitions, main_component }
+        AST {
+            meta,
+            compiler_version,
+            includes,
+            definitions,
+            main_component,
+        }
     }
 }
 
@@ -139,7 +152,13 @@ pub fn build_function(
     arg_location: FileLocation,
     body: Statement,
 ) -> Definition {
-    Definition::Function { meta, name, args, arg_location, body }
+    Definition::Function {
+        meta,
+        name,
+        args,
+        arg_location,
+        body,
+    }
 }
 
 #[derive(Clone)]
@@ -242,6 +261,13 @@ pub enum Expression {
         name: String,
         access: Vec<Access>,
     },
+    // Only used by the SSA representation.
+    SSAVariable {
+        meta: Meta,
+        name: String,
+        access: Vec<Access>,
+        version: usize,
+    },
     Number(Meta, BigInt),
     Call {
         meta: Meta,
@@ -251,6 +277,11 @@ pub enum Expression {
     ArrayInLine {
         meta: Meta,
         values: Vec<Expression>,
+    },
+    // Only used by the SSA representation.
+    Phi {
+        meta: Meta,
+        args: Vec<Expression>,
     },
 }
 
@@ -379,5 +410,53 @@ impl MemoryKnowledge {
         } else {
             panic!("abstract memory address was look at without being initialized");
         }
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct VariableKnowledge {
+    variables_read: Option<HashSet<String>>,
+    variables_written: Option<HashSet<String>>,
+}
+
+impl VariableKnowledge {
+    pub fn new() -> VariableKnowledge {
+        VariableKnowledge::default()
+    }
+
+    pub fn add_variable_read(&mut self, name: &str) {
+        if let Some(variables_read) = self.variables_read.as_mut() {
+            variables_read.insert(name.to_string());
+        } else {
+            self.variables_read = Some(HashSet::from([name.to_string()]))
+        }
+    }
+
+    pub fn set_variables_read(&mut self, names: &HashSet<String>) {
+        self.variables_read = Some(names.clone())
+    }
+
+    pub fn add_variable_written(&mut self, name: &str) {
+        if let Some(variables_written) = self.variables_read.as_mut() {
+            variables_written.insert(name.to_string());
+        } else {
+            self.variables_written = Some(HashSet::from([name.to_string()]))
+        }
+    }
+
+    pub fn set_variables_written(&mut self, names: &HashSet<String>) {
+        self.variables_written = Some(names.clone())
+    }
+
+    pub fn get_variables_read(&self) -> &HashSet<String> {
+        self.variables_read
+            .as_ref()
+            .expect("variable knowledge must be initialized before it is read")
+    }
+
+    pub fn get_variables_written(&self) -> &HashSet<String> {
+        self.variables_written
+            .as_ref()
+            .expect("variable knowledge must be initialized before it is read")
     }
 }

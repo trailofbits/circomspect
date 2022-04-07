@@ -26,7 +26,14 @@ impl FunctionData {
         elem_id: &mut usize,
     ) -> FunctionData {
         body.fill(file_id, elem_id);
-        FunctionData { name, file_id, body, name_of_params, param_location, num_of_params }
+        FunctionData {
+            name,
+            file_id,
+            body,
+            name_of_params,
+            param_location,
+            num_of_params,
+        }
     }
     pub fn get_file_id(&self) -> FileID {
         self.file_id

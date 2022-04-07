@@ -14,7 +14,9 @@ pub struct FileLibrary {
 
 impl Default for FileLibrary {
     fn default() -> Self {
-        FileLibrary { files: FileStorage::new() }
+        FileLibrary {
+            files: FileStorage::new(),
+        }
     }
 }
 

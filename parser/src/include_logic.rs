@@ -13,7 +13,11 @@ impl FileStack {
     pub fn new(src: PathBuf) -> FileStack {
         let mut location = src.clone();
         location.pop();
-        FileStack { current_location: location, black_paths: HashSet::new(), stack: vec![src] }
+        FileStack {
+            current_location: location,
+            black_paths: HashSet::new(),
+            stack: vec![src],
+        }
     }
 
     pub fn add_include(f_stack: &mut FileStack, path: String) -> Result<(), Report> {

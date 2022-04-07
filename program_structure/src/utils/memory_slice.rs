@@ -21,7 +21,10 @@ pub struct MemorySlice<C> {
 
 impl<C: Clone> Clone for MemorySlice<C> {
     fn clone(&self) -> Self {
-        MemorySlice { route: self.route.clone(), values: self.values.clone() }
+        MemorySlice {
+            route: self.route.clone(),
+            values: self.values.clone(),
+        }
     }
 }
 
@@ -103,7 +106,10 @@ impl<C: Clone> MemorySlice<C> {
             offset += 1;
         }
 
-        Result::Ok(MemorySlice { route: size, values })
+        Result::Ok(MemorySlice {
+            route: size,
+            values,
+        })
     }
 
     // User operations
@@ -124,7 +130,10 @@ impl<C: Clone> MemorySlice<C> {
             values.push(initial_value.clone());
         }
 
-        MemorySlice { route: route.to_vec(), values }
+        MemorySlice {
+            route: route.to_vec(),
+            values,
+        }
     }
     pub fn insert_values(
         memory_slice: &mut MemorySlice<C>,

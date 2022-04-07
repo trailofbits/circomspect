@@ -613,6 +613,7 @@ version = "2.0.1"
 dependencies = [
  "codespan",
  "codespan-reporting",
+ "log",
  "num-bigint-dig",
  "num-traits",
  "regex",

@@ -1,3 +1,5 @@
+use std::fmt::{Debug, Display, Error, Formatter};
+
 use super::ast::*;
 
 impl Statement {
@@ -120,20 +122,26 @@ impl FillMeta for Statement {
         self.get_mut_meta().elem_id = *element_id;
         *element_id += 1;
         match self {
-            IfThenElse { meta, cond, if_case, else_case, .. } => {
-                fill_conditional(meta, cond, if_case, else_case, file_id, element_id)
-            }
+            IfThenElse {
+                meta,
+                cond,
+                if_case,
+                else_case,
+                ..
+            } => fill_conditional(meta, cond, if_case, else_case, file_id, element_id),
             While { meta, cond, stmt } => fill_while(meta, cond, stmt, file_id, element_id),
             Return { meta, value } => fill_return(meta, value, file_id, element_id),
-            InitializationBlock { meta, initializations, .. } => {
-                fill_initialization(meta, initializations, file_id, element_id)
-            }
-            Declaration { meta, dimensions, .. } => {
-                fill_declaration(meta, dimensions, file_id, element_id)
-            }
-            Substitution { meta, access, rhe, .. } => {
-                fill_substitution(meta, access, rhe, file_id, element_id)
-            }
+            InitializationBlock {
+                meta,
+                initializations,
+                ..
+            } => fill_initialization(meta, initializations, file_id, element_id),
+            Declaration {
+                meta, dimensions, ..
+            } => fill_declaration(meta, dimensions, file_id, element_id),
+            Substitution {
+                meta, access, rhe, ..
+            } => fill_substitution(meta, access, rhe, file_id, element_id),
             ConstraintEquality { meta, lhe, rhe } => {
                 fill_constraint_equality(meta, lhe, rhe, file_id, element_id)
             }
@@ -244,4 +252,80 @@ fn fill_block(meta: &mut Meta, stmts: &mut [Statement], file_id: usize, element_
 fn fill_assert(meta: &mut Meta, arg: &mut Expression, file_id: usize, element_id: &mut usize) {
     meta.set_file_id(file_id);
     arg.fill(file_id, element_id);
+}
+
+impl Debug for Statement {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        use Statement::*;
+        match self {
+            IfThenElse { .. } => f.write_str("Statement::IfThenElse"),
+            While { .. } => f.write_str("Statement::While"),
+            Return { .. } => f.write_str("Statement::Return"),
+            Declaration { .. } => f.write_str("Statement::Declaration"),
+            Substitution { .. } => f.write_str("Statement::Substitution"),
+            LogCall { .. } => f.write_str("Statement::LogCall"),
+            Block { .. } => f.write_str("Statement::Block"),
+            Assert { .. } => f.write_str("Statement::Assert"),
+            ConstraintEquality { .. } => f.write_str("Statement::ConstraintEquality"),
+            InitializationBlock { .. } => f.write_str("Statement::InitializationBlock"),
+        }
+    }
+}
+
+impl<'a> Display for Statement {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        use Statement::*;
+        match self {
+            IfThenElse {
+                cond, else_case, ..
+            } => match else_case {
+                Some(_) => write!(f, "if-else {cond}"),
+                None => write!(f, "if {cond}"),
+            },
+            While { cond, .. } => write!(f, "while {cond}"),
+            Return { value, .. } => write!(f, "return {value}"),
+            Declaration { name, xtype, .. } => write!(f, "{xtype} {name}"),
+            Substitution { var, op, rhe, .. } => write!(f, "{var} {op} {rhe}"),
+            LogCall { arg, .. } => write!(f, "log({arg})"),
+            // TODO: Remove this when switching to IR.
+            Block { .. } => Ok(()),
+            Assert { arg, .. } => write!(f, "assert({arg})"),
+            ConstraintEquality { lhe, rhe, .. } => write!(f, "{lhe} === {rhe}"),
+            // TODO: Remove this when switching to IR.
+            InitializationBlock { .. } => Ok(()),
+        }
+    }
+}
+
+impl Display for AssignOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        use AssignOp::*;
+        match self {
+            AssignVar => write!(f, "="),
+            AssignSignal => write!(f, "<--"),
+            AssignConstraintSignal => write!(f, "<=="),
+        }
+    }
+}
+
+impl Display for VariableType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        use VariableType::*;
+        match self {
+            Var => write!(f, "var"),
+            Signal(signal_type, _) => write!(f, "signal {signal_type}"),
+            Component => write!(f, "component"),
+        }
+    }
+}
+
+impl Display for SignalType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        use SignalType::*;
+        match self {
+            Input => write!(f, "input"),
+            Output => write!(f, "output"),
+            Intermediate => write!(f, ""),
+        }
+    }
 }

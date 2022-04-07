@@ -1,7 +1,7 @@
+use program_structure::abstract_syntax_tree::ast::Version;
 use program_structure::error_code::ReportCode;
 use program_structure::error_definition::Report;
 use program_structure::file_definition::{FileID, FileLocation};
-use program_structure::abstract_syntax_tree::ast::Version;
 
 pub struct UnclosedCommentError {
     pub location: FileLocation,
@@ -11,7 +11,11 @@ pub struct UnclosedCommentError {
 impl UnclosedCommentError {
     pub fn produce_report(error: Self) -> Report {
         let mut report = Report::error(format!("unterminated /* */"), ReportCode::ParseFail);
-        report.add_primary(error.location, error.file_id, format!("Comment starts here"));
+        report.add_primary(
+            error.location,
+            error.file_id,
+            format!("Comment starts here"),
+        );
         report
     }
 }
@@ -35,7 +39,10 @@ pub struct FileOsError {
 }
 impl FileOsError {
     pub fn produce_report(error: Self) -> Report {
-        Report::error(format!("Could not open file {}", error.path), ReportCode::ParseFail)
+        Report::error(
+            format!("Could not open file {}", error.path),
+            ReportCode::ParseFail,
+        )
     }
 }
 
@@ -59,7 +66,7 @@ impl MultipleMainError {
     }
 }
 
-pub struct CompilerVersionError{
+pub struct CompilerVersionError {
     pub path: String,
     pub required_version: Version,
     pub version: Version,
@@ -73,14 +80,17 @@ impl CompilerVersionError {
     }
 }
 
-pub struct NoCompilerVersionWarning{
+pub struct NoCompilerVersionWarning {
     pub path: String,
     pub version: Version,
 }
 impl NoCompilerVersionWarning {
     pub fn produce_report(error: Self) -> Report {
         Report::warning(
-            format!("File {} does not include pragma version. Assuming pragma version {:?}", error.path, error.version),
+            format!(
+                "File {} does not include pragma version. Assuming pragma version {:?}",
+                error.path, error.version
+            ),
             ReportCode::NoCompilerVersionWarning,
         )
     }

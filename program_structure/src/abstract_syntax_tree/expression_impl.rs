@@ -1,4 +1,5 @@
 use super::ast::*;
+use std::fmt::{Debug, Display, Error, Formatter};
 
 impl Expression {
     pub fn get_meta(&self) -> &Meta {
@@ -8,9 +9,11 @@ impl Expression {
             | PrefixOp { meta, .. }
             | InlineSwitchOp { meta, .. }
             | Variable { meta, .. }
+            | SSAVariable { meta, .. }
             | Number(meta, ..)
             | Call { meta, .. }
-            | ArrayInLine { meta, .. } => meta,
+            | ArrayInLine { meta, .. }
+            | Phi { meta, .. } => meta,
         }
     }
     pub fn get_mut_meta(&mut self) -> &mut Meta {
@@ -20,9 +23,11 @@ impl Expression {
             | PrefixOp { meta, .. }
             | InlineSwitchOp { meta, .. }
             | Variable { meta, .. }
+            | SSAVariable { meta, .. }
             | Number(meta, ..)
             | Call { meta, .. }
-            | ArrayInLine { meta, .. } => meta,
+            | ArrayInLine { meta, .. }
+            | Phi { meta, .. } => meta,
         }
     }
 
@@ -97,13 +102,21 @@ impl FillMeta for Expression {
         *element_id += 1;
         match self {
             Number(meta, _) => fill_number(meta, file_id, element_id),
-            Variable { meta, access, .. } => fill_variable(meta, access, file_id, element_id),
+            Variable { meta, access, .. } | SSAVariable { meta, access, .. } => {
+                fill_variable(meta, access, file_id, element_id)
+            }
             InfixOp { meta, lhe, rhe, .. } => fill_infix(meta, lhe, rhe, file_id, element_id),
             PrefixOp { meta, rhe, .. } => fill_prefix(meta, rhe, file_id, element_id),
-            InlineSwitchOp { meta, cond, if_false, if_true, .. } => {
-                fill_inline_switch_op(meta, cond, if_true, if_false, file_id, element_id)
+            InlineSwitchOp {
+                meta,
+                cond,
+                if_false,
+                if_true,
+                ..
+            } => fill_inline_switch_op(meta, cond, if_true, if_false, file_id, element_id),
+            Call { meta, args, .. } | Phi { meta, args, .. } => {
+                fill_call(meta, args, file_id, element_id)
             }
-            Call { meta, args, .. } => fill_call(meta, args, file_id, element_id),
             ArrayInLine { meta, values, .. } => {
                 fill_array_inline(meta, values, file_id, element_id)
             }
@@ -172,4 +185,92 @@ fn fill_array_inline(
     for v in values {
         v.fill(file_id, element_id);
     }
+}
+
+impl Debug for Expression {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        use Expression::*;
+        match self {
+            Number(_, _) => f.write_str("Number"),
+            Variable { .. } => f.write_str("Variable"),
+            SSAVariable { .. } => f.write_str("SSAVariable"),
+            InfixOp { .. } => f.write_str("InfixOp"),
+            PrefixOp { .. } => f.write_str("PrefixOp"),
+            InlineSwitchOp { .. } => f.write_str("InlineSwitchOp"),
+            Call { .. } => f.write_str("Call"),
+            ArrayInLine { .. } => f.write_str("ArrayInline"),
+            Phi { .. } => f.write_str("Phi"),
+        }
+    }
+}
+
+impl Display for Expression {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        use Expression::*;
+        match self {
+            Number(_, value) => write!(f, "{}", value),
+            Variable { name, .. } => write!(f, "{}", name),
+            SSAVariable { name, version, .. } => write!(f, "{}.{}", name, version),
+            InfixOp {
+                lhe, infix_op, rhe, ..
+            } => write!(f, "({} {} {})", lhe, infix_op, rhe),
+            PrefixOp { prefix_op, rhe, .. } => write!(f, "{}({})", prefix_op, rhe),
+            InlineSwitchOp {
+                cond,
+                if_true,
+                if_false,
+                ..
+            } => write!(f, "({}?{}:{})", cond, if_true, if_false),
+            Call { id, args, .. } => write!(f, "{}({})", id, vec_to_string(args)),
+            ArrayInLine { values, .. } => write!(f, "[{}]", vec_to_string(values)),
+            Phi { args, .. } => write!(f, "φ({})", vec_to_string(&args)),
+        }
+    }
+}
+
+impl Display for ExpressionInfixOpcode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        use ExpressionInfixOpcode::*;
+        match self {
+            Mul => f.write_str("*"),
+            Div => f.write_str("/"),
+            Add => f.write_str("+"),
+            Sub => f.write_str("-"),
+            Pow => f.write_str("**"),
+            IntDiv => f.write_str("\\"),
+            Mod => f.write_str("%"),
+            ShiftL => f.write_str("<<"),
+            ShiftR => f.write_str(">>"),
+            LesserEq => f.write_str("<="),
+            GreaterEq => f.write_str(">="),
+            Lesser => f.write_str("<"),
+            Greater => f.write_str(">"),
+            Eq => f.write_str("=="),
+            NotEq => f.write_str("!="),
+            BoolOr => f.write_str("||"),
+            BoolAnd => f.write_str("&&"),
+            BitOr => f.write_str("|"),
+            BitAnd => f.write_str("&"),
+            BitXor => f.write_str("^"),
+        }
+    }
+}
+
+impl Display for ExpressionPrefixOpcode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        use ExpressionPrefixOpcode::*;
+        match self {
+            Sub => f.write_str("-"),
+            BoolNot => f.write_str("!"),
+            Complement => f.write_str("~"),
+        }
+    }
+}
+
+fn vec_to_string(elems: &Vec<Expression>) -> String {
+    elems
+        .iter()
+        .map(|arg| arg.to_string())
+        .collect::<Vec<String>>()
+        .join(", ")
 }

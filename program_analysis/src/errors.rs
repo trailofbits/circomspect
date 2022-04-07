@@ -13,22 +13,26 @@ pub struct ShadowedVariableWarning {
 impl ShadowedVariableWarning {
     pub fn produce_report(error: Self) -> Report {
         let mut report = Report::warning(
-            format!("Declaration of variable '{}' shadows previous declaration", error.name),
+            format!(
+                "Declaration of variable '{}' shadows previous declaration",
+                error.name
+            ),
             ReportCode::ShadowedVariable,
         );
         report.add_primary(
             error.primary_location,
             error.primary_file_id,
-            "shadowing declaration here".to_string()
+            "shadowing declaration here".to_string(),
         );
         report.add_secondary(
             error.secondary_location,
             error.secondary_file_id,
-            Some("shadowed variable is declared here".to_string())
+            Some("shadowed variable is declared here".to_string()),
         );
-        report.add_note(
-            format!("Consider renaming the second occurence of '{}'", error.name)
-        );
+        report.add_note(format!(
+            "Consider renaming the second occurence of '{}'",
+            error.name
+        ));
         report
     }
 }

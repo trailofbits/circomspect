@@ -4,7 +4,8 @@ use pretty_env_logger;
 use structopt::StructOpt;
 
 use parser;
-use program_analysis::shadowing_analysis::ShadowingAnalysis;
+use program_analysis::shadowing_analysis::shadowing_analysis;
+use program_structure::cfg::CFG;
 use program_structure::error_definition::Report;
 use program_structure::program_archive::ProgramArchive;
 
@@ -26,10 +27,7 @@ struct CLI {
     compiler_version: Option<String>,
 }
 
-fn parse_project(
-    initial_file: &str,
-    compiler_version: Option<String>,
-) -> Result<ProgramArchive> {
+fn parse_project(initial_file: &str, compiler_version: Option<String>) -> Result<ProgramArchive> {
     let compiler_version = &compiler_version.unwrap_or(CIRCOM_VERSION.to_string());
     match parser::run_parser(initial_file.to_string(), compiler_version) {
         Result::Err((files, reports)) => {
@@ -47,9 +45,11 @@ fn main() -> Result<()> {
     pretty_env_logger::init();
     let options = CLI::from_args();
     let program = parse_project(&options.input_file, options.compiler_version)?;
+    for template in program.get_templates().values() {
+        CFG::from_template(&template).into_ssa();
+    }
 
-    let mut analysis = ShadowingAnalysis::new();
-    let reports = analysis.run(&program);
+    let reports = shadowing_analysis(&program)?;
     Report::print_reports(&reports, &program.file_library);
     Ok(())
 }
