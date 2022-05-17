@@ -1,24 +1,12 @@
-use std::process::exit;
-
 use anyhow::{anyhow, Result};
 use log::info;
-use pretty_env_logger;
 use structopt::StructOpt;
 
-use parser;
-use program_structure::cfg::cfg::CFG;
-use program_structure::error_definition::{Report, ReportCollection};
+use program_structure::error_definition::Report;
 use program_structure::program_archive::ProgramArchive;
 use program_structure::ssa::traits::DirectedGraphNode;
 
 const CIRCOM_VERSION: &str = "2.0.3";
-
-pub enum CLIError {
-    CFGGenerationError,
-}
-
-type CLIResult<T> = Result<T, CLIError>;
-
 
 #[derive(StructOpt)]
 /// Analyze Circom programs
@@ -71,7 +59,7 @@ fn main() -> Result<()> {
             }
         };
         match cfg.into_ssa() {
-            Ok(()) => { }
+            Ok(()) => {}
             Err(error) => {
                 let reports = [error.into()];
                 Report::print_reports(&reports, &program.file_library);
