@@ -71,6 +71,7 @@ pub enum ReportCode {
     // Circomspect specific codes
     ShadowingVariable,
     ParameterNameCollision,
+    FieldElementComparison,
 }
 impl fmt::Display for ReportCode {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -144,6 +145,7 @@ impl fmt::Display for ReportCode {
             // Circomspect specific codes
             ShadowingVariable => "CS0001",
             ParameterNameCollision => "CS0002",
+            FieldElementComparison => "CS0003",
         };
         f.write_str(string_format)
     }

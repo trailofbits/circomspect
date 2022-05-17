@@ -1,10 +1,13 @@
-use anyhow::{anyhow, Result};
 use log::info;
+use anyhow::{anyhow, Result};
+use program_structure::file_definition::FileLibrary;
 use structopt::StructOpt;
+use std::convert::TryInto;
 
-use program_structure::error_definition::Report;
+use program_structure::cfg::cfg::CFG;
+use program_structure::error_definition::{Report, ReportCollection};
 use program_structure::program_archive::ProgramArchive;
-use program_structure::ssa::traits::DirectedGraphNode;
+use program_analysis::get_analysis_passes;
 
 const CIRCOM_VERSION: &str = "2.0.3";
 
@@ -41,37 +44,56 @@ fn parse_project(initial_file: &str, compiler_version: Option<String>) -> Result
     }
 }
 
+fn generate_cfg<T: TryInto<(CFG, ReportCollection)>>(ast: T, name: &str, files: &FileLibrary) -> Result<CFG>
+where
+    T: TryInto<(CFG, ReportCollection)>,
+    T::Error: Into<Report>
+{
+    let mut cfg = match ast.try_into() {
+        Ok((cfg, warnings)) => {
+            Report::print_reports(&warnings, &files);
+            cfg
+        }
+        Err(error) => {
+            let reports = [error.into()];
+            Report::print_reports(&reports, &files);
+            return Err(anyhow!("failed to generate CFG for '{name}'"));
+        }
+    };
+    match cfg.into_ssa() {
+        Ok(()) => Ok(cfg),
+        Err(error) => {
+            let reports = [error.into()];
+            Report::print_reports(&reports, &files);
+            Err(anyhow!("failed to convert '{name}' to SSA"))
+        }
+    }
+}
+
+fn analyze_cfg(cfg: &CFG) -> ReportCollection {
+    let mut reports = ReportCollection::new();
+    for analysis_pass in get_analysis_passes() {
+        reports.extend(analysis_pass(&cfg));
+    }
+    reports
+}
+
 fn main() -> Result<()> {
     pretty_env_logger::init();
     let options = CLI::from_args();
     let program = parse_project(&options.input_file, options.compiler_version)?;
 
+    for function in program.get_functions().values() {
+        info!("analyzing function '{}'", function.get_name());
+        let cfg = generate_cfg(function, function.get_name(), &program.file_library)?;
+        let reports = analyze_cfg(&cfg);
+        Report::print_reports(&reports, &program.file_library);
+    }
     for template in program.get_templates().values() {
-        let mut cfg = match template.try_into() {
-            Ok((cfg, warnings)) => {
-                Report::print_reports(&warnings, &program.file_library);
-                cfg
-            }
-            Err(error) => {
-                let reports = [error.into()];
-                Report::print_reports(&reports, &program.file_library);
-                continue;
-            }
-        };
-        match cfg.into_ssa() {
-            Ok(()) => {}
-            Err(error) => {
-                let reports = [error.into()];
-                Report::print_reports(&reports, &program.file_library);
-                continue;
-            }
-        }
-        for basic_block in cfg.iter() {
-            info!("basic block {}:", basic_block.get_index());
-            for stmt in basic_block.iter() {
-                info!("    {stmt}");
-            }
-        }
+        info!("analyzing template '{}'", template.get_name());
+        let cfg = generate_cfg(template, template.get_name(), &program.file_library)?;
+        let reports = analyze_cfg(&cfg);
+        Report::print_reports(&reports, &program.file_library);
     }
     Ok(())
 }
