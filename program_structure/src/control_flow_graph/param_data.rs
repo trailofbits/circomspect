@@ -2,7 +2,7 @@ use crate::file_definition::{FileID, FileLocation};
 use crate::function_data::FunctionData;
 use crate::template_data::TemplateData;
 
-use super::ir::{IREnvironment, VariableName};
+use crate::ir::ir::{IREnvironment, VariableName};
 
 pub struct ParameterData {
     param_names: Vec<VariableName>,

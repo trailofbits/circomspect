@@ -1,13 +1,13 @@
 use log::trace;
 use std::collections::{HashMap, HashSet};
 
+use crate::ir::ir::*;
+use crate::ir::variable_meta::VariableMeta;
 use crate::ssa::errors::{SSAError, SSAResult};
 use crate::ssa::traits::{SSABasicBlock, SSAEnvironment, SSAStatement, VariableSet};
 
-use super::ir::*;
 use super::basic_block::BasicBlock;
 use super::param_data::ParameterData;
-use super::variable_meta::VariableMeta;
 
 type Version = usize;
 

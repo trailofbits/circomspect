@@ -1,9 +1,10 @@
 use log::trace;
 use std::collections::HashSet;
 
-use super::ir::{Meta, Statement};
-use super::variable_meta::{VariableMeta, VariableSet};
 use crate::static_single_assignment::traits::DirectedGraphNode;
+
+use crate::ir::ir::{Meta, Statement};
+use crate::ir::variable_meta::{VariableMeta, VariableSet};
 
 type Index = usize;
 type IndexSet = HashSet<Index>;

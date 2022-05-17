@@ -1,4 +1,5 @@
 use crate::file_definition::FileID;
+use crate::ir::variable_meta::VariableMeta;
 use crate::ssa::dominator_tree::DominatorTree;
 use crate::ssa::errors::SSAResult;
 use crate::ssa::traits::{DirectedGraphNode, Version};
@@ -7,7 +8,6 @@ use crate::ssa::{insert_phi_statements, insert_ssa_variables};
 use super::basic_block::BasicBlock;
 use super::param_data::ParameterData;
 use super::ssa_impl::VersionEnvironment;
-use super::variable_meta::VariableMeta;
 
 /// Basic block index type.
 type Index = usize;

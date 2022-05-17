@@ -18,7 +18,7 @@ struct DeclarationData {
 }
 
 impl DeclarationData {
-    fn new(file_id: FileID, file_location: FileLocation)  -> DeclarationData {
+    fn new(file_id: FileID, file_location: FileLocation) -> DeclarationData {
         DeclarationData {
             file_id,
             file_location,
@@ -53,7 +53,7 @@ impl DeclarationEnvironment {
         DeclarationEnvironment {
             declarations: VarEnvironment::new(),
             scoped_versions: VarEnvironment::new(),
-            global_versions: VarEnvironment::new()
+            global_versions: VarEnvironment::new(),
         }
     }
 
@@ -63,8 +63,14 @@ impl DeclarationEnvironment {
     }
 
     // Add a declaration for the given variable. Returns the version to apply for the declared variable.
-    pub fn add_declaration(&mut self, name: &str, file_id: FileID, file_location: FileLocation) -> Option<Version> {
-        self.declarations.add_variable(name, DeclarationData::new(file_id, file_location));
+    pub fn add_declaration(
+        &mut self,
+        name: &str,
+        file_id: FileID,
+        file_location: FileLocation,
+    ) -> Option<Version> {
+        self.declarations
+            .add_variable(name, DeclarationData::new(file_id, file_location));
         self.get_next_version(name)
     }
 
@@ -118,12 +124,15 @@ impl TryFrom<&ParameterData> for DeclarationEnvironment {
         for name in param_data.iter() {
             let file_id = param_data.get_file_id();
             let file_location = param_data.get_location();
-            if env.add_declaration(&name.to_string(), file_id, file_location.clone()).is_some() {
+            if env
+                .add_declaration(&name.to_string(), file_id, file_location.clone())
+                .is_some()
+            {
                 return Err(CFGError::ParameterNameCollisionError {
                     name: name.to_string(),
                     file_id,
-                    file_location
-                })
+                    file_location,
+                });
             }
         }
         Ok(env)
@@ -188,7 +197,6 @@ fn visit_statement(
     env: &mut DeclarationEnvironment,
     reports: &mut ReportCollection,
 ) {
-    trace!("visiting statement '{stmt}'");
     use Statement::*;
     match stmt {
         Declaration { name, meta, .. } => {
@@ -200,7 +208,7 @@ fn visit_statement(
             }
             match env.add_declaration(name, meta.get_file_id(), meta.file_location()) {
                 // This is a declaration of a previously unseen variable. It should not be versioned.
-                None => { },
+                None => {}
                 // This is a declaration of a previously seen variable. It needs to be versioned.
                 Some(version) => {
                     trace!("renaming declared shadowing variable '{name}' to '{name}.{version}'");
@@ -274,7 +282,9 @@ fn visit_expression(expr: &mut Expression, env: &DeclarationEnvironment) {
             trace!("visiting variable '{name}'");
             *name = match env.get_current_version(name) {
                 Some(version) => {
-                    trace!("renaming occurrence of shadowing variable '{name}' to '{name}.{version}'");
+                    trace!(
+                        "renaming occurrence of shadowing variable '{name}' to '{name}.{version}'"
+                    );
                     format!("{name}.{version}")
                 }
                 None => name.clone(),

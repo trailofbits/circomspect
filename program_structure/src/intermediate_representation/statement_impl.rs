@@ -3,8 +3,8 @@ use std::fmt::{Debug, Display, Formatter};
 
 use crate::ast;
 
+use super::errors::{IRError, IRResult};
 use super::ir::*;
-use super::errors::{CFGError, CFGResult};
 use super::variable_meta::{VariableMeta, VariableSet};
 
 impl Statement {
@@ -177,9 +177,9 @@ impl VariableMeta for Statement {
 // variable.
 impl TryIntoIR for ast::Statement {
     type IR = Statement;
-    type Error = CFGError;
+    type Error = IRError;
 
-    fn try_into_ir(&self, env: &mut IREnvironment) -> CFGResult<Self::IR> {
+    fn try_into_ir(&self, env: &mut IREnvironment) -> IRResult<Self::IR> {
         use ast::Statement::*;
         match self {
             Return { meta, value } => Ok(Statement::Return {
@@ -210,7 +210,7 @@ impl TryIntoIR for ast::Statement {
                     dimensions: dimensions
                         .iter()
                         .map(|xt| xt.try_into_ir(env))
-                        .collect::<CFGResult<Vec<Expression>>>()?,
+                        .collect::<IRResult<Vec<Expression>>>()?,
                 })
             }
             Substitution {
@@ -227,7 +227,7 @@ impl TryIntoIR for ast::Statement {
                 access: access
                     .iter()
                     .map(|acc| acc.try_into_ir(env))
-                    .collect::<CFGResult<Vec<Access>>>()?,
+                    .collect::<IRResult<Vec<Access>>>()?,
             }),
             ConstraintEquality { meta, lhe, rhe } => Ok(Statement::ConstraintEquality {
                 meta: meta.into(),

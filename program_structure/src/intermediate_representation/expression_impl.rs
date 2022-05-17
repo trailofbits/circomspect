@@ -3,7 +3,7 @@ use std::fmt::{Debug, Display, Formatter};
 
 use crate::ast;
 
-use super::errors::{CFGError, CFGResult};
+use super::errors::{IRError, IRResult};
 use super::ir::*;
 use super::variable_meta::{VariableMeta, VariableSet};
 
@@ -133,9 +133,9 @@ impl VariableMeta for Expression {
 // fail with an `anyhow::Error` for undeclared variables.
 impl TryIntoIR for ast::Expression {
     type IR = Expression;
-    type Error = CFGError;
+    type Error = IRError;
 
-    fn try_into_ir(&self, env: &mut IREnvironment) -> CFGResult<Self::IR> {
+    fn try_into_ir(&self, env: &mut IREnvironment) -> IRResult<Self::IR> {
         use ast::Expression::*;
         match self {
             InfixOp {
@@ -178,7 +178,7 @@ impl TryIntoIR for ast::Expression {
                         access: access
                             .iter()
                             .map(|acc| acc.try_into_ir(env))
-                            .collect::<CFGResult<Vec<Access>>>()?,
+                            .collect::<IRResult<Vec<Access>>>()?,
                     })
                 } else if env.has_component(name) {
                     Ok(Expression::Component {
@@ -192,13 +192,13 @@ impl TryIntoIR for ast::Expression {
                         access: access
                             .iter()
                             .map(|acc| acc.try_into_ir(env))
-                            .collect::<CFGResult<Vec<Access>>>()?,
+                            .collect::<IRResult<Vec<Access>>>()?,
                     })
                 } else {
-                    Err(CFGError::UndefinedVariableError {
+                    Err(IRError::UndefinedVariableError {
                         name: name.to_string(),
                         file_id: meta.get_file_id(),
-                        file_location: meta.file_location()
+                        file_location: meta.file_location(),
                     })
                 }
             }
@@ -209,14 +209,14 @@ impl TryIntoIR for ast::Expression {
                 args: args
                     .iter()
                     .map(|arg| arg.try_into_ir(env))
-                    .collect::<CFGResult<Vec<Expression>>>()?,
+                    .collect::<IRResult<Vec<Expression>>>()?,
             }),
             ArrayInLine { meta, values } => Ok(Expression::ArrayInLine {
                 meta: meta.into(),
                 values: values
                     .iter()
                     .map(|arg| arg.try_into_ir(env))
-                    .collect::<CFGResult<Vec<Expression>>>()?,
+                    .collect::<IRResult<Vec<Expression>>>()?,
             }),
         }
     }
@@ -226,9 +226,9 @@ impl TryIntoIR for ast::Expression {
 // fail with an `anyhow::Error` for undeclared variables.
 impl TryIntoIR for ast::Access {
     type IR = Access;
-    type Error = CFGError;
+    type Error = IRError;
 
-    fn try_into_ir(&self, env: &mut IREnvironment) -> CFGResult<Self::IR> {
+    fn try_into_ir(&self, env: &mut IREnvironment) -> IRResult<Self::IR> {
         use ast::Access::*;
         match self {
             ArrayAccess(e) => Ok(Access::ArrayAccess(e.try_into_ir(env)?)),

@@ -1,6 +1,7 @@
 use crate::error_code::ReportCode;
 use crate::error_definition::Report;
 use crate::file_definition::{FileID, FileLocation};
+use crate::ir::errors::IRError;
 
 /// Error enum for CFG generation errors.
 pub enum CFGError {
@@ -41,13 +42,23 @@ impl CFGError {
                     format!("variable '{name}' is used before it is defined"),
                     ReportCode::UninitializedSymbolInExpression,
                 );
-                report.add_primary(file_location, file_id, "variable is first seen here".to_string());
+                report.add_primary(
+                    file_location,
+                    file_id,
+                    "variable is first seen here".to_string(),
+                );
                 report
             }
-            ShadowingVariableWarning { name, primary_file_id, primary_location, secondary_file_id, secondary_location } => {
+            ShadowingVariableWarning {
+                name,
+                primary_file_id,
+                primary_location,
+                secondary_file_id,
+                secondary_location,
+            } => {
                 let mut report = Report::warning(
-                format!("declaration of variable '{name}' shadows previous declaration"),
-                ReportCode::ShadowingVariable,
+                    format!("declaration of variable '{name}' shadows previous declaration"),
+                    ReportCode::ShadowingVariable,
                 );
                 report.add_primary(
                     primary_location,
@@ -59,10 +70,16 @@ impl CFGError {
                     secondary_file_id,
                     Some("shadowed variable is declared here".to_string()),
                 );
-                report.add_note(format!("consider renaming the second occurrence of '{name}'"));
+                report.add_note(format!(
+                    "consider renaming the second occurrence of '{name}'"
+                ));
                 report
             }
-            ParameterNameCollisionError { name, file_id, file_location } => {
+            ParameterNameCollisionError {
+                name,
+                file_id,
+                file_location,
+            } => {
                 let mut report = Report::warning(
                     format!("parameter '{name}' declared multiple times"),
                     ReportCode::ParameterNameCollision,
@@ -79,8 +96,25 @@ impl CFGError {
     }
 }
 
-impl Into<Report> for CFGError {
-    fn into(self) -> Report {
-        CFGError::produce_report(self)
+impl From<IRError> for CFGError {
+    fn from(error: IRError) -> CFGError {
+        use IRError::*;
+        match error {
+            UndefinedVariableError {
+                name,
+                file_id,
+                file_location,
+            } => CFGError::UndefinedVariableError {
+                name,
+                file_id,
+                file_location,
+            },
+        }
+    }
+}
+
+impl From<CFGError> for Report {
+    fn from(error: CFGError) -> Report {
+        CFGError::produce_report(error)
     }
 }

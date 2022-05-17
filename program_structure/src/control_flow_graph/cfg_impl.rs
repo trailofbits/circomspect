@@ -2,20 +2,20 @@ use log::trace;
 use std::collections::HashSet;
 use std::convert::TryFrom;
 
+use crate::ast;
+use crate::error_definition::ReportCollection;
+use crate::function_data::FunctionData;
+use crate::ir::ir;
+use crate::ir::ir::{IREnvironment, TryIntoIR};
+use crate::nonempty_vec::NonEmptyVec;
+use crate::static_single_assignment::dominator_tree::DominatorTree;
+use crate::static_single_assignment::traits::DirectedGraphNode;
+use crate::template_data::TemplateData;
+
 use super::basic_block::BasicBlock;
 use super::cfg::CFG;
 use super::errors::{CFGError, CFGResult};
-use super::ir;
-use super::ir::{IREnvironment, TryIntoIR};
 use super::unique_vars::ensure_unique_variables;
-
-use crate::error_definition::ReportCollection;
-use crate::function_data::FunctionData;
-use crate::nonempty_vec::NonEmptyVec;
-use crate::template_data::TemplateData;
-use crate::ast;
-use crate::static_single_assignment::dominator_tree::DominatorTree;
-use crate::static_single_assignment::traits::DirectedGraphNode;
 
 // Environment used to track variable types.
 type BasicBlockVec = NonEmptyVec<BasicBlock>;
