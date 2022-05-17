@@ -68,8 +68,9 @@ pub enum ReportCode {
     OneConstraintIntermediate,
     NoOutputInInstance,
     ErrorWat2Wasm,
-    // Circom Spectacle specific codes
-    ShadowedVariable,
+    // Circomspect specific codes
+    ShadowingVariable,
+    ParameterNameCollision,
 }
 impl fmt::Display for ReportCode {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -140,8 +141,9 @@ impl fmt::Display for ReportCode {
             OneConstraintIntermediate => "CA02",
             NoOutputInInstance => "CA03",
             ErrorWat2Wasm => "W01",
-            // Circom Spectacle specific codes
-            ShadowedVariable => "CS0001",
+            // Circomspect specific codes
+            ShadowingVariable => "CS0001",
+            ParameterNameCollision => "CS0002",
         };
         f.write_str(string_format)
     }

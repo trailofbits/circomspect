@@ -43,6 +43,8 @@ impl Report {
         for report in reports.iter() {
             diagnostics.push(report.to_diagnostic());
         }
+        config.styles.header_help.set_intense(false);
+        config.styles.header_error.set_intense(false);
         config.styles.header_warning.set_intense(false);
         for diagnostic in diagnostics.iter() {
             let print_result = term::emit(&mut writer.lock(), &config, files, &diagnostic);

@@ -2,7 +2,7 @@ use log::trace;
 use std::collections::HashSet;
 use std::marker::PhantomData;
 
-use crate::utils::directed_graph::DirectedGraphNode;
+use super::traits::DirectedGraphNode;
 
 type Index = usize;
 type DominatorInfo = Vec<HashSet<Index>>;

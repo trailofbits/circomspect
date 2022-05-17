@@ -8,10 +8,10 @@ template ToBits(n) {
     for (var i = 0; i < n; i++) {
         out[i] <-- (in >> i) & 1;
         out[i] * (out[i] - 1) === 0;
-        result += out[i] * power;
+        value += out[i] * power;
         power = power + power;
     }
-    result === in;
+    value === in;
 }
 
 component main {public [in]} = ToBits(256);

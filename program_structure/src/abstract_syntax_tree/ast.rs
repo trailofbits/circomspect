@@ -261,13 +261,6 @@ pub enum Expression {
         name: String,
         access: Vec<Access>,
     },
-    // Only used by the SSA representation.
-    SSAVariable {
-        meta: Meta,
-        name: String,
-        access: Vec<Access>,
-        version: usize,
-    },
     Number(Meta, BigInt),
     Call {
         meta: Meta,
@@ -277,11 +270,6 @@ pub enum Expression {
     ArrayInLine {
         meta: Meta,
         values: Vec<Expression>,
-    },
-    // Only used by the SSA representation.
-    Phi {
-        meta: Meta,
-        args: Vec<Expression>,
     },
 }
 
