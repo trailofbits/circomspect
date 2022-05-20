@@ -1,5 +1,6 @@
 use super::error_code::ReportCode;
 use super::file_definition::{FileID, FileLibrary, FileLocation};
+use atty;
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 use codespan_reporting::term;
 
@@ -9,7 +10,7 @@ type ReportLabel = Label<FileID>;
 type ReportNote = String;
 
 #[derive(Copy, Clone)]
-enum MessageCategory {
+pub enum MessageCategory {
     Error,
     Warning,
     Info,
@@ -36,7 +37,11 @@ impl Report {
 
     pub fn print_reports(reports: &[Report], file_library: &FileLibrary) {
         use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
-        let writer = StandardStream::stderr(ColorChoice::Always);
+        let writer = if atty::is(atty::Stream::Stdout) {
+            StandardStream::stdout(ColorChoice::Always)
+        } else {
+            StandardStream::stdout(ColorChoice::Never)
+        };
         let mut config = term::Config::default();
         let mut diagnostics = Vec::new();
         let files = file_library.to_storage();
@@ -49,7 +54,7 @@ impl Report {
         for diagnostic in diagnostics.iter() {
             let print_result = term::emit(&mut writer.lock(), &config, files, &diagnostic);
             if print_result.is_err() {
-                panic!("Error printing reports")
+                panic!("error printing reports")
             }
         }
     }
@@ -111,7 +116,7 @@ impl Report {
         .with_notes(self.get_notes().clone())
     }
 
-    fn get_category(&self) -> &MessageCategory {
+    pub fn get_category(&self) -> &MessageCategory {
         &self.category
     }
 
