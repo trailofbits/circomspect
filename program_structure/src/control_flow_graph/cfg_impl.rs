@@ -5,15 +5,15 @@ use std::convert::TryFrom;
 use crate::ast;
 use crate::error_definition::ReportCollection;
 use crate::function_data::FunctionData;
-use crate::ir::ir;
-use crate::ir::ir::{IREnvironment, TryIntoIR};
+use crate::ir;
+use crate::ir::{IREnvironment, TryIntoIR};
 use crate::nonempty_vec::NonEmptyVec;
 use crate::static_single_assignment::dominator_tree::DominatorTree;
 use crate::static_single_assignment::traits::DirectedGraphNode;
 use crate::template_data::TemplateData;
 
 use super::basic_block::BasicBlock;
-use super::cfg::CFG;
+use super::cfg::Cfg;
 use super::errors::{CFGError, CFGResult};
 use super::unique_vars::ensure_unique_variables;
 
@@ -23,10 +23,10 @@ type BasicBlockVec = NonEmptyVec<BasicBlock>;
 type Index = usize;
 type IndexSet = HashSet<Index>;
 
-impl TryFrom<&TemplateData> for (CFG, ReportCollection) {
+impl TryFrom<&TemplateData> for (Cfg, ReportCollection) {
     type Error = CFGError;
 
-    fn try_from(template: &TemplateData) -> CFGResult<(CFG, ReportCollection)> {
+    fn try_from(template: &TemplateData) -> CFGResult<(Cfg, ReportCollection)> {
         let name = template.get_name().to_string();
         let param_data = template.into();
 
@@ -39,16 +39,16 @@ impl TryFrom<&TemplateData> for (CFG, ReportCollection) {
             build_basic_blocks(&template_body, &mut IREnvironment::from(&param_data))?;
         let dominator_tree = DominatorTree::new(&basic_blocks);
         Ok((
-            CFG::new(name, param_data, basic_blocks, dominator_tree),
+            Cfg::new(name, param_data, basic_blocks, dominator_tree),
             reports,
         ))
     }
 }
 
-impl TryFrom<&FunctionData> for (CFG, ReportCollection) {
+impl TryFrom<&FunctionData> for (Cfg, ReportCollection) {
     type Error = CFGError;
 
-    fn try_from(function: &FunctionData) -> CFGResult<(CFG, ReportCollection)> {
+    fn try_from(function: &FunctionData) -> CFGResult<(Cfg, ReportCollection)> {
         let name = function.get_name().to_string();
         let param_data = function.into();
 
@@ -61,7 +61,7 @@ impl TryFrom<&FunctionData> for (CFG, ReportCollection) {
             build_basic_blocks(&function_body, &mut IREnvironment::from(&param_data))?;
         let dominator_tree = DominatorTree::new(&basic_blocks);
         Ok((
-            CFG::new(name, param_data, basic_blocks, dominator_tree),
+            Cfg::new(name, param_data, basic_blocks, dominator_tree),
             reports,
         ))
     }

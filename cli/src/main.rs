@@ -4,7 +4,7 @@ use program_structure::file_definition::FileLibrary;
 use structopt::StructOpt;
 use std::convert::TryInto;
 
-use program_structure::cfg::cfg::CFG;
+use program_structure::cfg::Cfg;
 use program_structure::error_definition::{Report, ReportCollection};
 use program_structure::program_archive::ProgramArchive;
 use program_analysis::get_analysis_passes;
@@ -13,7 +13,7 @@ const CIRCOM_VERSION: &str = "2.0.3";
 
 #[derive(StructOpt)]
 /// Analyze Circom programs
-struct CLI {
+struct Cli {
     /// Initial input file
     #[structopt(name = "input")]
     input_file: String,
@@ -44,9 +44,10 @@ fn parse_project(initial_file: &str, compiler_version: Option<String>) -> Result
     }
 }
 
-fn generate_cfg<T: TryInto<(CFG, ReportCollection)>>(ast: T, name: &str, files: &FileLibrary) -> Result<CFG>
+fn generate_cfg<T: TryInto<(Cfg, ReportCollection)>>(
+) -> Result<Cfg>
 where
-    T: TryInto<(CFG, ReportCollection)>,
+    T: TryInto<(Cfg, ReportCollection)>,
     T::Error: Into<Report>
 {
     let mut cfg = match ast.try_into() {
@@ -70,7 +71,7 @@ where
     }
 }
 
-fn analyze_cfg(cfg: &CFG) -> ReportCollection {
+fn analyze_cfg(cfg: &Cfg, output_level: &Level) -> ReportCollection {
     let mut reports = ReportCollection::new();
     for analysis_pass in get_analysis_passes() {
         reports.extend(analysis_pass(&cfg));
@@ -80,7 +81,7 @@ fn analyze_cfg(cfg: &CFG) -> ReportCollection {
 
 fn main() -> Result<()> {
     pretty_env_logger::init();
-    let options = CLI::from_args();
+    let options = Cli::from_args();
     let program = parse_project(&options.input_file, options.compiler_version)?;
 
     for function in program.get_functions().values() {

@@ -1,3 +1,5 @@
+use log::trace;
+
 use crate::file_definition::FileID;
 use crate::ir::variable_meta::VariableMeta;
 use crate::ssa::dominator_tree::DominatorTree;
@@ -12,21 +14,21 @@ use super::ssa_impl::VersionEnvironment;
 /// Basic block index type.
 type Index = usize;
 
-pub struct CFG {
+pub struct Cfg {
     name: String,
     param_data: ParameterData,
     basic_blocks: Vec<BasicBlock>,
     dominator_tree: DominatorTree<BasicBlock>,
 }
 
-impl CFG {
+impl Cfg {
     pub(crate) fn new(
         name: String,
         param_data: ParameterData,
         basic_blocks: Vec<BasicBlock>,
         dominator_tree: DominatorTree<BasicBlock>,
-    ) -> CFG {
-        CFG {
+    ) -> Cfg {
+        Cfg {
             name,
             param_data,
             basic_blocks,
@@ -54,6 +56,17 @@ impl CFG {
         }
         for basic_block in self.iter_mut() {
             basic_block.cache_variable_use();
+        }
+        for basic_block in self.basic_blocks.iter() {
+            trace!(
+                "basic block {}: (predecessors: {:?}, successors: {:?})",
+                basic_block.get_index(),
+                basic_block.get_predecessors(),
+                basic_block.get_successors(),
+            );
+            for stmt in basic_block.iter() {
+                trace!("    {stmt}")
+            }
         }
         Ok(())
     }
