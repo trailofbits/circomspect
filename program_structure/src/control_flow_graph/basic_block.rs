@@ -3,8 +3,8 @@ use std::collections::HashSet;
 
 use crate::static_single_assignment::traits::DirectedGraphNode;
 
-use crate::ir::ir::{Meta, Statement};
 use crate::ir::variable_meta::{VariableMeta, VariableSet};
+use crate::ir::{Meta, Statement};
 
 type Index = usize;
 type IndexSet = HashSet<Index>;
@@ -111,21 +111,24 @@ impl VariableMeta for BasicBlock {
             "(re)computing variable use for basic block {}",
             self.get_index()
         );
-        // Cache variable use for each individual statement.
-        self.iter_mut().for_each(|stmt| stmt.cache_variable_use());
         // Variable use for the block is simply the union of the variable use
         // over all statements in the block.
-        let mut variables_read = VariableSet::new();
-        self.iter()
-            .map(|stmt| stmt.get_variables_written())
-            .for_each(|update| variables_read.extend(update.iter().cloned()));
+        self.iter_mut().for_each(|stmt| stmt.cache_variable_use());
+
+        // Cache variables read.
+        let variables_read = self
+            .iter()
+            .flat_map(|stmt| stmt.get_variables_read().iter().cloned())
+            .collect();
         self.get_meta_mut()
             .get_mut_variable_knowledge()
             .set_variables_read(&variables_read);
-        let mut variables_written = VariableSet::new();
-        self.iter()
-            .map(|stmt| stmt.get_variables_written())
-            .for_each(|update| variables_written.extend(update.iter().cloned()));
+
+        // Cache variables written.
+        let variables_written = self
+            .iter()
+            .flat_map(|stmt| stmt.get_variables_written().iter().cloned())
+            .collect();
         self.get_meta_mut()
             .get_mut_variable_knowledge()
             .set_variables_written(&variables_written);

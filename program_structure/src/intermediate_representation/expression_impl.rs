@@ -1,3 +1,4 @@
+use log::trace;
 use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
 
@@ -8,6 +9,7 @@ use super::ir::*;
 use super::variable_meta::{VariableMeta, VariableSet};
 
 impl Expression {
+    #[must_use]
     pub fn get_meta(&self) -> &Meta {
         use Expression::*;
         match self {
@@ -23,6 +25,8 @@ impl Expression {
             | Phi { meta, .. } => meta,
         }
     }
+
+    #[must_use]
     pub fn get_mut_meta(&mut self) -> &mut Meta {
         use Expression::*;
         match self {
@@ -39,6 +43,7 @@ impl Expression {
         }
     }
 
+    #[must_use]
     pub fn get_type(&self) -> ExpressionType {
         use Expression::*;
         match self {
@@ -85,8 +90,9 @@ impl VariableMeta for Expression {
                 variables_read.extend(if_true.get_variables_read().iter().cloned());
                 variables_read.extend(if_false.get_variables_read().iter().cloned());
             }
-            Variable { .. } => {
-                variables_read.insert(self.to_string());
+            Variable { name, .. } => {
+                trace!("adding {name} to variables read");
+                variables_read.insert(name.clone());
             }
             Component { .. } | Signal { .. } | Number(_, _) => {}
             Call { args, .. } => {
@@ -116,12 +122,14 @@ impl VariableMeta for Expression {
             .set_variables_written(&VariableSet::new());
     }
 
+    #[must_use]
     fn get_variables_read(&self) -> &VariableSet {
         self.get_meta()
             .get_variable_knowledge()
             .get_variables_read()
     }
 
+    #[must_use]
     fn get_variables_written(&self) -> &VariableSet {
         self.get_meta()
             .get_variable_knowledge()
@@ -174,7 +182,6 @@ impl TryIntoIR for ast::Expression {
                     Ok(Expression::Variable {
                         meta: meta.into(),
                         name: name.into(),
-                        version: None,
                         access: access
                             .iter()
                             .map(|acc| acc.try_into_ir(env))
@@ -244,10 +251,7 @@ impl Debug for Expression {
             Number(_, _) => write!(f, "Expression::Number"),
             Signal { .. } => write!(f, "Expression::Signal"),
             Component { .. } => write!(f, "Expression::Component"),
-            Variable { version: None, .. } => write!(f, "Expression::Variable"),
-            Variable {
-                version: Some(_), ..
-            } => write!(f, "Expression::SSAVariable"),
+            Variable { .. } => write!(f, "Expression::Variable"),
             InfixOp { .. } => write!(f, "Expression::InfixOp"),
             PrefixOp { .. } => write!(f, "Expression::PrefixOp"),
             InlineSwitchOp { .. } => write!(f, "Expression::InlineSwitchOp"),
@@ -265,18 +269,7 @@ impl Display for Expression {
             Number(_, value) => write!(f, "{}", value),
             Signal { name, .. } => write!(f, "{name}"),
             Component { name, .. } => write!(f, "{name}"),
-            Variable {
-                name,
-                version: None,
-                ..
-            } => write!(f, "{name}"),
-            Variable {
-                name,
-                version: Some(version),
-                ..
-            } => {
-                write!(f, "{name}.{version}")
-            }
+            Variable { name, .. } => write!(f, "{name}"),
             InfixOp {
                 lhe, infix_op, rhe, ..
             } => write!(f, "({} {} {})", lhe, infix_op, rhe),
@@ -289,7 +282,7 @@ impl Display for Expression {
             } => write!(f, "({}?{}:{})", cond, if_true, if_false),
             Call { id, args, .. } => write!(f, "{}({})", id, vec_to_string(args)),
             ArrayInLine { values, .. } => write!(f, "[{}]", vec_to_string(values)),
-            Phi { args, .. } => write!(f, "φ({})", vec_to_string(&args)),
+            Phi { args, .. } => write!(f, "phi({})", vec_to_string(&args)),
         }
     }
 }
@@ -333,6 +326,7 @@ impl Display for ExpressionPrefixOpcode {
     }
 }
 
+#[must_use]
 fn vec_to_string(elems: &Vec<Expression>) -> String {
     elems
         .iter()
