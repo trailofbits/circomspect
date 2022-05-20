@@ -4,40 +4,31 @@ use program_structure::error_definition::{Report, ReportCollection};
 use program_structure::file_definition::{FileID, FileLocation};
 use program_structure::ir::*;
 
-pub struct FieldElementComparisonWarning {
+pub struct FieldElementArithmeticWarning {
     file_id: FileID,
     file_location: FileLocation,
 }
 
-impl FieldElementComparisonWarning {
+impl FieldElementArithmeticWarning {
     pub fn into_report(self) -> Report {
         let mut report = Report::info(
-            "comparisons with field elements greater than `p/2` may produce unexpected results"
+            "field element arithmetic could overflow, which may produce unexpected results"
                 .to_string(),
-            ReportCode::FieldElementComparison,
+            ReportCode::FieldElementArithmetic,
         );
         report.add_primary(
             self.file_location,
             self.file_id,
-            "field element comparison here".to_string(),
+            "field element arithmetic here".to_string(),
         );
-        report.add_note(format!(
-            "field elements `x` are always reduced modulo `p` and then normalized as `x > p/2? x - p: x` before they are compared"
-        ));
         report
     }
 }
 
-/// Field element comparisons in Circom may produce surprising results since
-/// elements are normalized to the the half-open interval `[-p/2, p/2)` before
-/// they are compared. In particular, this means that
-///
-///   - `p/2 < 0`,
-///   - `p/2 + 1 < p/2 - 1`, and
-///   - `2 * x < x` for any `p/4 < x < p/2`
-///
-/// are all true.
-pub fn find_field_element_comparisons(cfg: &Cfg) -> ReportCollection {
+/// Field element arithmetic in Circom may overflow, which could produce
+/// unexpected results. Worst case, it may allow a malicious prover to forge
+/// proofs.
+pub fn find_field_element_arithmetic(cfg: &Cfg) -> ReportCollection {
     let mut reports = ReportCollection::new();
     for basic_block in cfg.iter() {
         for stmt in basic_block.iter() {
@@ -51,52 +42,50 @@ fn visit_statement(stmt: &Statement, reports: &mut ReportCollection) {
     use Statement::*;
     match stmt {
         IfThenElse { cond, .. } => visit_expression(cond, reports),
+        Substitution { rhe, .. } => visit_expression(rhe, reports),
+        Return { value, .. } => visit_expression(value, reports),
         LogCall { arg, .. } => visit_expression(arg, reports),
         Assert { arg, .. } => visit_expression(arg, reports),
         ConstraintEquality { lhe, rhe, .. } => {
             visit_expression(lhe, reports);
             visit_expression(rhe, reports);
         }
-        Return { .. } | Substitution { .. } | Declaration { .. } => (),
+        Declaration { .. } => (),
     }
 }
 
 fn visit_expression(expr: &Expression, reports: &mut ReportCollection) {
     use Expression::*;
     match expr {
-        InfixOp { meta, infix_op, .. } if is_comparison_op(infix_op) => {
+        InfixOp { meta, infix_op, .. } if may_overflow(infix_op) => {
             reports.push(build_report(meta));
         }
-        InfixOp {
-            infix_op, rhe, lhe, ..
-        } if is_boolean_infix_op(infix_op) => {
+        InfixOp { rhe, lhe, .. } => {
             visit_expression(lhe, reports);
             visit_expression(rhe, reports);
         }
-        PrefixOp { prefix_op, rhe, .. } if is_boolean_prefix_op(prefix_op) => {
+        PrefixOp { rhe, .. } => {
             visit_expression(rhe, reports);
         }
         _ => (),
     }
 }
 
-fn is_comparison_op(op: &ExpressionInfixOpcode) -> bool {
+fn is_arithmetic_infix_op(op: &ExpressionInfixOpcode) -> bool {
     use ExpressionInfixOpcode::*;
-    matches!(op, LesserEq | GreaterEq | Lesser | Greater)
+    matches!(
+        op,
+        Mul | Div | Add | Sub | Pow | IntDiv | Mod | ShiftL | ShiftR | BitOr | BitAnd | BitXor
+    )
 }
 
-fn is_boolean_infix_op(op: &ExpressionInfixOpcode) -> bool {
+fn may_overflow(op: &ExpressionInfixOpcode) -> bool {
     use ExpressionInfixOpcode::*;
-    matches!(op, BoolAnd | BoolOr)
-}
-
-fn is_boolean_prefix_op(op: &ExpressionPrefixOpcode) -> bool {
-    use ExpressionPrefixOpcode::*;
-    matches!(op, BoolNot)
+    is_arithmetic_infix_op(op) && !matches!(op, IntDiv | Mod | ShiftR | BitAnd)
 }
 
 fn build_report(meta: &Meta) -> Report {
-    FieldElementComparisonWarning {
+    FieldElementArithmeticWarning {
         file_id: meta.get_file_id(),
         file_location: meta.file_location(),
     }

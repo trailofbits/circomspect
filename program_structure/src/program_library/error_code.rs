@@ -72,6 +72,9 @@ pub enum ReportCode {
     ShadowingVariable,
     ParameterNameCollision,
     FieldElementComparison,
+    FieldElementArithmetic,
+    AssignSignalStatement,
+    DeadAssignment,
 }
 impl fmt::Display for ReportCode {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -146,6 +149,9 @@ impl fmt::Display for ReportCode {
             ShadowingVariable => "CS0001",
             ParameterNameCollision => "CS0002",
             FieldElementComparison => "CS0003",
+            FieldElementArithmetic => "CS0004",
+            AssignSignalStatement => "CS0005",
+            DeadAssignment => "CS0006",
         };
         f.write_str(string_format)
     }
