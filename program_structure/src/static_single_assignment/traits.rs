@@ -55,7 +55,9 @@ pub trait SSABasicBlock: DirectedGraphNode {
         &'a mut self,
     ) -> Box<dyn Iterator<Item = &'a mut Self::Statement> + 'a>;
 
-    /// Returns the set of variables written by the basic block.
+    /// Returns the set of variables written by the basic block. Since we don't
+    /// want to pollute the general SSA traits with Circom internal types we use
+    /// strings to represent variable names here.
     fn get_variables_written(&self) -> VariableSet {
         self.get_statements()
             .fold(HashSet::new(), |mut vars, stmt| {
@@ -64,31 +66,31 @@ pub trait SSABasicBlock: DirectedGraphNode {
             })
     }
 
-    /// Returns true if the basic block has a φ statement for the given
+    /// Returns true if the basic block has a phi statement for the given
     /// variable.
     fn has_phi_statement(&self, name: &str) -> bool {
         self.get_statements()
             .any(|stmt| stmt.is_phi_statement_for(name))
     }
 
-    /// Inserts a new φ statement for the given variable at the top of the basic
+    /// Inserts a new phi statement for the given variable at the top of the basic
     /// block.
     fn insert_phi_statement(&mut self, name: &str) {
         self.insert_statement(SSAStatement::new_phi_statement(name));
     }
 
-    /// Updates the RHS of each φ statement in the basic block with the SSA
+    /// Updates the RHS of each phi statement in the basic block with the SSA
     /// variable versions from the given environment.
-    fn update_phi_statements(&mut self, env: &mut impl SSAEnvironment) {
+    fn update_phi_statements(&mut self, env: &impl SSAEnvironment) {
         trace!(
-            "updating φ expression arguments in block {}",
+            "updating phi expression arguments in block {}",
             self.get_index()
         );
         for stmt in self.get_statements_mut() {
             if stmt.is_phi_statement() {
                 stmt.ensure_phi_argument(env);
             } else {
-                // Since φ statements proceed all other statements we are done
+                // Since phi statements proceed all other statements we are done
                 // here.
                 break;
             }
@@ -107,22 +109,24 @@ pub trait SSABasicBlock: DirectedGraphNode {
 }
 
 pub trait SSAStatement: Clone {
-    /// Returns the set of variables written by statement.
+    /// Returns the set of variables written by statement. Since we don't want
+    /// to pollute the general SSA traits with Circom internal types we use
+    /// strings to represent variable names here.
     fn get_variables_written(&self) -> VariableSet;
 
-    /// Returns a new φ statement (with empty RHS) for the given variable.
+    /// Returns a new phi statement (with empty RHS) for the given variable.
     fn new_phi_statement(name: &str) -> Self;
 
-    /// Returns true iff the statement is a φ statement.
+    /// Returns true iff the statement is a phi statement.
     fn is_phi_statement(&self) -> bool;
 
-    /// Returns true iff the statement is a φ statement for the given variable.
+    /// Returns true iff the statement is a phi statement for the given variable.
     fn is_phi_statement_for(&self, name: &str) -> bool;
 
-    /// Ensure that the φ expression argument list of a φ statement contains the
+    /// Ensure that the phi expression argument list of a phi statement contains the
     /// current version of the variable, according to the given environment.
     ///
-    /// Panics if the statement is not a φ statement.
+    /// Panics if the statement is not a phi statement.
     fn ensure_phi_argument(&mut self, env: &impl SSAEnvironment);
 
     /// Replace each variable occurring in the statement by the corresponding
