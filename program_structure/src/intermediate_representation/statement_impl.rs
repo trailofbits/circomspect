@@ -1,3 +1,4 @@
+use log::trace;
 use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
 
@@ -8,6 +9,7 @@ use super::ir::*;
 use super::variable_meta::{VariableMeta, VariableSet};
 
 impl Statement {
+    #[must_use]
     pub fn get_meta(&self) -> &Meta {
         use Statement::*;
         match self {
@@ -20,6 +22,8 @@ impl Statement {
             | ConstraintEquality { meta, .. } => meta,
         }
     }
+
+    #[must_use]
     pub fn get_mut_meta(&mut self) -> &mut Meta {
         use Statement::*;
         match self {
@@ -33,6 +37,7 @@ impl Statement {
         }
     }
 
+    #[must_use]
     pub fn get_type(&self) -> StatementType {
         use Statement::*;
         match self {
@@ -132,7 +137,8 @@ impl VariableMeta for Statement {
                 rhe.cache_variable_use();
                 variables_read.extend(rhe.get_variables_read().iter().cloned());
                 if matches!(op, AssignOp::AssignVar) {
-                    variables_written.insert(var.to_string());
+                    trace!("adding {var} to variables written");
+                    variables_written.insert(var.clone());
                 }
             }
             LogCall { arg, .. } => {

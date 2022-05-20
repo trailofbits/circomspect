@@ -21,7 +21,7 @@ pub trait TryIntoIR {
     fn try_into_ir(&self, env: &mut IREnvironment) -> Result<Self::IR, Self::Error>;
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Meta {
     pub elem_id: usize,
     pub start: usize,
@@ -33,23 +33,15 @@ pub struct Meta {
 }
 
 impl Meta {
-    pub fn new(start: usize, end: usize) -> Meta {
-        Meta {
-            end,
-            start,
-            elem_id: 0,
-            location: start..end,
-            file_id: Option::None,
-            value_knowledge: ValueKnowledge::default(),
-            variable_knowledge: VariableKnowledge::default(),
-        }
-    }
+    #[must_use]
     pub fn get_start(&self) -> usize {
         self.location.start
     }
+    #[must_use]
     pub fn get_end(&self) -> usize {
         self.location.end
     }
+    #[must_use]
     pub fn get_file_id(&self) -> usize {
         if let Option::Some(id) = self.file_id {
             id
@@ -57,18 +49,23 @@ impl Meta {
             panic!("Empty file id accessed")
         }
     }
+    #[must_use]
     pub fn file_location(&self) -> FileLocation {
         self.location.clone()
     }
+    #[must_use]
     pub fn get_value_knowledge(&self) -> &ValueKnowledge {
         &self.value_knowledge
     }
+    #[must_use]
     pub fn get_variable_knowledge(&self) -> &VariableKnowledge {
         &self.variable_knowledge
     }
+    #[must_use]
     pub fn get_mut_value_knowledge(&mut self) -> &mut ValueKnowledge {
         &mut self.value_knowledge
     }
+    #[must_use]
     pub fn get_mut_variable_knowledge(&mut self) -> &mut VariableKnowledge {
         &mut self.variable_knowledge
     }
@@ -177,7 +174,7 @@ impl From<&ast::SignalType> for SignalType {
 }
 /// There are only two hard things in Computer Science: cache invalidation and
 /// naming things.
-#[derive(Clone)]
+#[derive(Clone, Hash, PartialEq, Eq)]
 pub struct VariableName {
     /// This is the original name of the variable from the function or template
     /// AST.
@@ -193,6 +190,7 @@ pub struct VariableName {
 
 impl VariableName {
     /// Returns a new variable name with the given name (without suffix or version).
+    #[must_use]
     pub fn name<N: ToString>(name: N) -> VariableName {
         VariableName {
             name: name.to_string(),
@@ -202,6 +200,7 @@ impl VariableName {
     }
 
     /// Returns a new variable name with the given name and suffix.
+    #[must_use]
     pub fn name_with_suffix<N: ToString, S: ToString>(name: N, suffix: S) -> VariableName {
         VariableName {
             name: name.to_string(),
@@ -211,6 +210,7 @@ impl VariableName {
     }
 
     /// Returns a new variable name with the given name and version.
+    #[must_use]
     pub fn name_with_version<N: ToString>(name: N, version: Version) -> VariableName {
         VariableName {
             name: name.to_string(),
@@ -219,19 +219,23 @@ impl VariableName {
         }
     }
 
+    #[must_use]
     pub fn get_name(&self) -> &String {
         &self.name
     }
 
+    #[must_use]
     pub fn get_suffix(&self) -> &Option<String> {
         &self.suffix
     }
 
+    #[must_use]
     pub fn get_version(&self) -> &Option<Version> {
         &self.version
     }
 
     /// Returns a string representing the variable (with suffix and version).
+    #[must_use]
     pub fn to_string_with_version(&self) -> String {
         let mut result = self.name.clone();
         result = match self.get_suffix() {
@@ -246,6 +250,7 @@ impl VariableName {
     }
 
     /// Returns a string representing the unversioned variable (without suffix).
+    #[must_use]
     pub fn to_string_without_version(&self) -> String {
         match self.get_suffix() {
             Some(suffix) => format!("{}_{}", self.name, suffix),
@@ -254,28 +259,32 @@ impl VariableName {
     }
 
     /// Returns a new copy of the variable name, adding the given suffix.
-    pub fn with_suffix<S: ToString>(&mut self, suffix: S) -> VariableName {
+    #[must_use]
+    pub fn with_suffix<S: ToString>(&self, suffix: S) -> VariableName {
         let mut result = self.clone();
         result.suffix = Some(suffix.to_string());
         result
     }
 
     /// Returns a new copy of the variable name, adding the given version.
-    pub fn with_version(&mut self, version: Version) -> VariableName {
+    #[must_use]
+    pub fn with_version(&self, version: Version) -> VariableName {
         let mut result = self.clone();
         result.version = Some(version);
         result
     }
 
     /// Returns a new copy of the variable name with the suffix dropped.
-    pub fn without_suffix(&mut self) -> VariableName {
+    #[must_use]
+    pub fn without_suffix(&self) -> VariableName {
         let mut result = self.clone();
         result.suffix = None;
         result
     }
 
     /// Returns a new copy of the variable name with the version dropped.
-    pub fn without_version(&mut self) -> VariableName {
+    #[must_use]
+    pub fn without_version(&self) -> VariableName {
         let mut result = self.clone();
         result.version = None;
         result
@@ -297,6 +306,12 @@ impl From<&String> for VariableName {
             2 => VariableName::name_with_suffix(tokens[0], tokens[1]),
             _ => panic!("invalid variable name"),
         }
+    }
+}
+
+impl fmt::Debug for VariableName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "{}", self.to_string_with_version())
     }
 }
 
@@ -347,7 +362,6 @@ pub enum Expression {
         meta: Meta,
         name: VariableName,
         access: Vec<Access>,
-        version: Option<Version>,
     },
     Signal {
         meta: Meta,
@@ -478,6 +492,21 @@ impl From<&ast::ExpressionPrefixOpcode> for ExpressionPrefixOpcode {
             Sub => ExpressionPrefixOpcode::Sub,
             BoolNot => ExpressionPrefixOpcode::BoolNot,
             Complement => ExpressionPrefixOpcode::Complement,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn variable_name_from_string(name in "[$_]*[a-zA-Z][a-zA-Z$_0-9]*") {
+            use super::VariableName;
+            let var = VariableName::from(name);
+            assert!(var.get_suffix().is_none());
+            assert!(var.get_version().is_none());
         }
     }
 }

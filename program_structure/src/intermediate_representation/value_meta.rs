@@ -7,15 +7,19 @@ pub trait ValueMeta {
     fn propagate_values(&mut self, env: &VarEnvironment<ValueReduction>);
 
     /// Returns true if the node reduces to a constant value.
+    #[must_use]
     fn is_constant(&self) -> bool;
 
     /// Returns true if the node reduces to a boolean value.
+    #[must_use]
     fn is_boolean(&self) -> bool;
 
     /// Returns true if the node reduces to a field element.
+    #[must_use]
     fn is_field_element(&self) -> bool;
 
     /// Returns the value if the node reduces to a constant, and None otherwise.
+    #[must_use]
     fn get_reduces_to(&self) -> Option<&ValueReduction>;
 }
 
@@ -31,22 +35,32 @@ pub struct ValueKnowledge {
     reduces_to: Option<ValueReduction>,
 }
 impl ValueKnowledge {
+    #[must_use]
     pub fn new() -> ValueKnowledge {
         ValueKnowledge::default()
     }
+
     pub fn set_reduces_to(&mut self, reduces_to: ValueReduction) {
         self.reduces_to = Option::Some(reduces_to);
     }
+
+    #[must_use]
     pub fn get_reduces_to(&self) -> Option<&ValueReduction> {
         self.reduces_to.as_ref()
     }
+
+    #[must_use]
     pub fn is_constant(&self) -> bool {
         self.reduces_to.is_some()
     }
+
+    #[must_use]
     pub fn is_boolean(&self) -> bool {
         use ValueReduction::*;
         matches!(self.reduces_to, Some(Boolean { .. }))
     }
+
+    #[must_use]
     pub fn is_field_element(&self) -> bool {
         use ValueReduction::*;
         matches!(self.reduces_to, Some(FieldElement { .. }))

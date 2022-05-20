@@ -8,6 +8,7 @@ edition = "2018"
 
 [dependencies]
 anyhow = "1.0"
+atty = "0.2.14"
 codespan = "0.9.0"
 codespan-reporting = "0.9.0"
 log = "0.4"
@@ -17,3 +18,6 @@ num-bigint-dig = "0.6.0"
 num-traits = "0.2.6"
 serde = "1.0.82"
 serde_derive = "1.0.91"
+
+[dev-dependencies]
+proptest = "1.0.0"
