@@ -2,6 +2,32 @@ use anyhow::{anyhow, Error};
 use std::convert::TryFrom;
 use std::ops::{Index, IndexMut};
 
+/// A vector type which is guaranteed to be non-empty.
+///
+/// New instances must be created with an initial element to ensure that the
+/// vector is non-empty. This means that the methods `first` and `last` always
+/// produce an element of type `T`.
+///
+/// ```
+/// # use program_structure::nonempty_vec::NonEmptyVec;
+///
+/// let v = NonEmptyVec::new(1);
+/// assert_eq!(*v.first(), 1);
+/// assert_eq!(*v.last(), 1);
+/// ```
+///
+/// It is possible to `push` new elements into the vector, but `pop` will return
+/// `None` if there is only one element left to ensure that the vector is always
+/// nonempty.
+///
+/// ```
+/// # use program_structure::nonempty_vec::NonEmptyVec;
+///
+/// let mut v = NonEmptyVec::new(1);
+/// v.push(2);
+/// assert_eq!(v.pop(), Some(2));
+/// assert_eq!(v.pop(), None);
+/// ```
 pub struct NonEmptyVec<T> {
     head: T,
     tail: Vec<T>,
@@ -23,6 +49,7 @@ impl<T> NonEmptyVec<T> {
         &mut self.head
     }
 
+    /// Returns a reference to the last element.
     pub fn last(&self) -> &T {
         match self.tail.last() {
             Some(x) => x,
@@ -30,6 +57,7 @@ impl<T> NonEmptyVec<T> {
         }
     }
 
+    /// Returns a mutable reference to the last element.
     pub fn last_mut(&mut self) -> &mut T {
         match self.tail.last_mut() {
             Some(x) => x,
@@ -37,27 +65,61 @@ impl<T> NonEmptyVec<T> {
         }
     }
 
+    /// Append an element to the vector.
     pub fn push(&mut self, x: T) {
         self.tail.push(x);
     }
 
-    /// Pops the last element of the non-empty vector.
+    /// Pops the last element of the vector.
     ///
-    /// Note: This method will return `None` when there is one element left in
-    /// the vector to preserve the invariant of always being non-empty.
+    /// This method will return `None` when there is one element left in the
+    /// vector to ensure that the vector remains non-empty.
+    ///
+    /// ```
+    /// # use program_structure::nonempty_vec::NonEmptyVec;
+    ///
+    /// let mut v = NonEmptyVec::new(1);
+    /// v.push(2);
+    /// assert_eq!(v.pop(), Some(2));
+    /// assert_eq!(v.pop(), None);
+    /// ```
     pub fn pop(&mut self) -> Option<T> {
         self.tail.pop()
     }
 
+    /// Returns the length of the vector.
+    ///
+    /// ```
+    /// # use program_structure::nonempty_vec::NonEmptyVec;
+    ///
+    /// let mut v = NonEmptyVec::new(1);
+    /// v.push(2);
+    /// v.push(3);
+    /// assert_eq!(v.len(), 3);
+    /// ```
     pub fn len(&self) -> usize {
         return self.tail.len() + 1;
     }
 
+    /// Returns an iterator over the vector.
     pub fn iter(&self) -> NonEmptyIter<'_, T> {
         NonEmptyIter::new(self)
     }
 }
 
+/// An iterator over a non-empty vector.
+///
+/// ```
+/// # use program_structure::nonempty_vec::NonEmptyVec;
+/// # use std::convert::TryFrom;
+/// let v = NonEmptyVec::try_from(&[1, 2, 3]).unwrap();
+///
+/// let mut iter = v.iter();
+/// assert_eq!(iter.next(), Some(&1));
+/// assert_eq!(iter.next(), Some(&2));
+/// assert_eq!(iter.next(), Some(&3));
+/// assert_eq!(iter.next(), None);
+/// ```
 pub struct NonEmptyIter<'a, T> {
     index: usize,
     vec: &'a NonEmptyVec<T>,
@@ -76,6 +138,7 @@ impl<'a, T> Iterator for NonEmptyIter<'a, T> {
         let x = if self.index == 0 {
             Some(&self.vec.head)
         } else {
+            // self.index > 0 here so the subtraction cannot underflow.
             self.vec.tail.get(self.index - 1)
         };
         self.index += 1;
@@ -156,6 +219,40 @@ impl<T: Clone> TryFrom<&Vec<T>> for NonEmptyVec<T> {
     type Error = Error;
 
     fn try_from(xs: &Vec<T>) -> Result<NonEmptyVec<T>, Error> {
+        if let Some(x) = xs.first() {
+            Ok(NonEmptyVec {
+                head: x.clone(),
+                tail: xs[1..].iter().cloned().collect(),
+            })
+        } else {
+            Err(anyhow!(
+                "cannot create a non-empty vector from an empty vector"
+            ))
+        }
+    }
+}
+
+impl<T: Clone> TryFrom<&[T]> for NonEmptyVec<T> {
+    type Error = Error;
+
+    fn try_from(xs: &[T]) -> Result<NonEmptyVec<T>, Error> {
+        if let Some(x) = xs.first() {
+            Ok(NonEmptyVec {
+                head: x.clone(),
+                tail: xs[1..].iter().cloned().collect(),
+            })
+        } else {
+            Err(anyhow!(
+                "cannot create a non-empty vector from an empty vector"
+            ))
+        }
+    }
+}
+
+impl<T: Clone, const N: usize> TryFrom<&[T; N]> for NonEmptyVec<T> {
+    type Error = Error;
+
+    fn try_from(xs: &[T; N]) -> Result<NonEmptyVec<T>, Error> {
         if let Some(x) = xs.first() {
             Ok(NonEmptyVec {
                 head: x.clone(),
