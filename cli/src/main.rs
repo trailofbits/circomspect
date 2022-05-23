@@ -1,16 +1,20 @@
 use anyhow::{anyhow, Result};
 use log::info;
+use serde_json;
 use std::convert::TryInto;
+use std::fs::File;
+use std::io::Write;
+use std::path::PathBuf;
 use std::str::FromStr;
 use structopt::StructOpt;
 
+use program_analysis::get_analysis_passes;
 use program_structure::cfg::Cfg;
 use program_structure::error_definition::MessageCategory;
 use program_structure::error_definition::{Report, ReportCollection};
 use program_structure::file_definition::FileLibrary;
 use program_structure::program_archive::ProgramArchive;
-
-use program_analysis::get_analysis_passes;
+use program_structure::sarif_conversion::ToSarif;
 
 pub enum Level {
     Info,
@@ -31,25 +35,7 @@ impl FromStr for Level {
     }
 }
 
-pub enum Format {
-    Log,
-    Sarif,
-}
-
-impl FromStr for Format {
-    type Err = anyhow::Error;
-
-    fn from_str(format: &str) -> Result<Format, Self::Err> {
-        match format.to_lowercase().as_str() {
-            "log" | "warning" => Ok(Format::Log),
-            "sarif" => Ok(Format::Sarif),
-            _ => Err(anyhow!("failed to parse format '{format}'")),
-        }
-    }
-}
-
 const DEFAULT_VERSION: &str = "2.0.3";
-const DEFAULT_FORMAT: &str = "log";
 const DEFAULT_LEVEL: &str = "warning";
 
 #[derive(StructOpt)]
@@ -63,9 +49,9 @@ struct Cli {
     #[structopt(long, name = "level", default_value = DEFAULT_LEVEL)]
     output_level: Level,
 
-    /// Output format (either 'log' or 'sarif')
-    #[structopt(long, name = "format", default_value = DEFAULT_FORMAT)]
-    output_format: Format,
+    /// Sarif output file
+    #[structopt(long, name = "output")]
+    sarif_file: Option<PathBuf>,
 
     /// Expected compiler version
     #[structopt(long, name = "version", default_value = DEFAULT_VERSION)]
@@ -89,24 +75,18 @@ fn generate_cfg<T: TryInto<(Cfg, ReportCollection)>>(
     ast: T,
     name: &str,
     files: &FileLibrary,
-) -> Result<Cfg>
+) -> Result<(Cfg, ReportCollection)>
 where
     T: TryInto<(Cfg, ReportCollection)>,
     T::Error: Into<Report>,
 {
-    let mut cfg = match ast.try_into() {
-        Ok((cfg, warnings)) => {
-            Report::print_reports(&warnings, files);
-            cfg
-        }
-        Err(error) => {
-            let reports = [error.into()];
-            Report::print_reports(&reports, files);
-            return Err(anyhow!("failed to generate CFG for '{name}'"));
-        }
-    };
+    let (mut cfg, reports) = ast.try_into().map_err(|error| {
+        let reports = [error.into()];
+        Report::print_reports(&reports, files);
+        anyhow!("failed to generate CFG for '{name}'")
+    })?;
     match cfg.into_ssa() {
-        Ok(()) => Ok(cfg),
+        Ok(()) => Ok((cfg, reports)),
         Err(error) => {
             let reports = [error.into()];
             Report::print_reports(&reports, files);
@@ -141,17 +121,28 @@ fn main() -> Result<()> {
     let options = Cli::from_args();
     let program = parse_project(&options.input_file, &options.compiler_version)?;
 
+    let mut reports = ReportCollection::new();
     for function in program.get_functions().values() {
         info!("analyzing function '{}'", function.get_name());
-        let cfg = generate_cfg(function, function.get_name(), &program.file_library)?;
-        let reports = analyze_cfg(&cfg, &options.output_level);
-        Report::print_reports(&reports, &program.file_library);
+        let (cfg, mut new_reports) =
+            generate_cfg(function, function.get_name(), &program.file_library)?;
+        new_reports.extend(analyze_cfg(&cfg, &options.output_level));
+        Report::print_reports(&new_reports, &program.file_library);
+        reports.extend(new_reports);
     }
     for template in program.get_templates().values() {
         info!("analyzing template '{}'", template.get_name());
-        let cfg = generate_cfg(template, template.get_name(), &program.file_library)?;
-        let reports = analyze_cfg(&cfg, &options.output_level);
-        Report::print_reports(&reports, &program.file_library);
+        let (cfg, mut new_reports) =
+            generate_cfg(template, template.get_name(), &program.file_library)?;
+        new_reports.extend(analyze_cfg(&cfg, &options.output_level));
+        Report::print_reports(&new_reports, &program.file_library);
+        reports.extend(new_reports);
+    }
+    if let Some(sarif_path) = options.sarif_file {
+        let sarif = reports.to_sarif(&program.file_library)?;
+        let json = serde_json::to_string_pretty(&sarif)?;
+        let mut sarif_file = File::create(sarif_path)?;
+        writeln!(sarif_file, "{}", &json)?;
     }
     Ok(())
 }

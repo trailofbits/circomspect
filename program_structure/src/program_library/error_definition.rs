@@ -6,7 +6,7 @@ use codespan_reporting::term;
 
 pub type ReportCollection = Vec<Report>;
 pub type DiagnosticCode = String;
-type ReportLabel = Label<FileID>;
+pub type ReportLabel = Label<FileID>;
 type ReportNote = String;
 
 #[derive(Copy, Clone)]
@@ -16,6 +16,18 @@ pub enum MessageCategory {
     Info,
 }
 
+impl ToString for MessageCategory {
+    fn to_string(&self) -> String {
+        use MessageCategory::*;
+        match self {
+            Error => "error",
+            Warning => "warning",
+            Info => "info",
+        }
+        .to_string()
+    }
+}
+
 #[derive(Clone)]
 pub struct Report {
     category: MessageCategory,
@@ -23,15 +35,18 @@ pub struct Report {
     primary: Vec<ReportLabel>,
     secondary: Vec<ReportLabel>,
     notes: Vec<ReportNote>,
+    code: ReportCode,
 }
+
 impl Report {
-    fn new(category: MessageCategory, message: String, _code: ReportCode) -> Report {
+    fn new(category: MessageCategory, message: String, code: ReportCode) -> Report {
         Report {
             category,
             message,
             primary: Vec::new(),
             secondary: Vec::new(),
             notes: Vec::new(),
+            code,
         }
     }
 
@@ -120,11 +135,11 @@ impl Report {
         &self.category
     }
 
-    fn get_message(&self) -> &String {
+    pub fn get_message(&self) -> &String {
         &self.message
     }
 
-    fn get_primary(&self) -> &Vec<ReportLabel> {
+    pub fn get_primary(&self) -> &Vec<ReportLabel> {
         &self.primary
     }
 
@@ -132,7 +147,7 @@ impl Report {
         &mut self.primary
     }
 
-    fn get_secondary(&self) -> &Vec<ReportLabel> {
+    pub fn get_secondary(&self) -> &Vec<ReportLabel> {
         &self.secondary
     }
 
@@ -140,11 +155,15 @@ impl Report {
         &mut self.secondary
     }
 
-    fn get_notes(&self) -> &Vec<ReportNote> {
+    pub fn get_notes(&self) -> &Vec<ReportNote> {
         &self.notes
     }
 
     fn get_mut_notes(&mut self) -> &mut Vec<ReportNote> {
         &mut self.notes
+    }
+
+    pub fn get_code(&self) -> &ReportCode {
+        &self.code
     }
 }
