@@ -321,12 +321,12 @@ fn visit_expression(expr: &mut Expression, env: &DeclarationEnvironment) {
     }
 }
 
-fn build_report(name: &str, primary_decl: &DeclarationData, secondary_meta: &Meta) -> Report {
+fn build_report(name: &str, primary_meta: &Meta, secondary_decl: &DeclarationData) -> Report {
     CFGError::produce_report(CFGError::ShadowingVariableWarning {
         name: name.to_string(),
-        primary_file_id: primary_decl.get_file_id(),
-        primary_location: primary_decl.file_location(),
-        secondary_file_id: secondary_meta.get_file_id(),
-        secondary_location: secondary_meta.file_location(),
+        primary_file_id: primary_meta.get_file_id(),
+        primary_location: primary_meta.file_location(),
+        secondary_file_id: secondary_decl.get_file_id(),
+        secondary_location: secondary_decl.file_location(),
     })
 }
