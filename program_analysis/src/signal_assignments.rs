@@ -12,14 +12,14 @@ pub struct SignalAssignmentWarning {
 impl SignalAssignmentWarning {
     pub fn into_report(self) -> Report {
         let mut report = Report::warning(
-            "using the signal assignment operator `<--` does not constrain the assigned signal"
+            "Using the signal assignment operator `<--` does not constrain the assigned signal."
                 .to_string(),
             ReportCode::FieldElementComparison,
         );
         report.add_primary(
             self.file_location,
             self.file_id,
-            "did you mean to use the constraint assignment operator `<==`?".to_string(),
+            "Did you mean to use the constraint assignment operator `<==`?".to_string(),
         );
         report
     }

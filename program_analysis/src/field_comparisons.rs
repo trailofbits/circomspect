@@ -12,17 +12,17 @@ pub struct FieldElementComparisonWarning {
 impl FieldElementComparisonWarning {
     pub fn into_report(self) -> Report {
         let mut report = Report::info(
-            "comparisons with field elements greater than `p/2` may produce unexpected results"
+            "Comparisons with field elements greater than `p/2` may produce unexpected results."
                 .to_string(),
             ReportCode::FieldElementComparison,
         );
         report.add_primary(
             self.file_location,
             self.file_id,
-            "field element comparison here".to_string(),
+            "Field element comparison here.".to_string(),
         );
         report.add_note(format!(
-            "field elements `x` are always reduced modulo `p` and then normalized as `x > p/2? x - p: x` before they are compared"
+            "Field elements `x` are always reduced modulo `p` and then normalized as `x > p/2? x - p: x` before they are compared."
         ));
         report
     }

@@ -200,18 +200,18 @@ fn visit_statement(
     use Statement::*;
     match stmt {
         Declaration { name, meta, .. } => {
-            trace!("visiting declared variable {name}");
+            trace!("visiting declared variable `{name}`");
             // If the current declaration shadows a previous declaration of the same
             // variable we generate a new report.
             if let Some(declaration) = env.get_declaration(name) {
-                reports.push(build_report(name, &declaration, meta));
+                reports.push(build_report(name, &meta, declaration));
             }
             match env.add_declaration(name, meta.get_file_id(), meta.file_location()) {
                 // This is a declaration of a previously unseen variable. It should not be versioned.
                 None => {}
                 // This is a declaration of a previously seen variable. It needs to be versioned.
                 Some(version) => {
-                    trace!("renaming declared shadowing variable '{name}' to '{name}.{version}'");
+                    trace!("renaming declared shadowing variable `{name}` to `{name}.{version}`");
                     // It is a bit hacky to track the variable version as part of the variable name,
                     // but we do this in order to remain compatible with the original Circom AST.
                     *name = format!("{name}.{version}");
@@ -222,7 +222,7 @@ fn visit_statement(
             trace!("visiting assigned variable '{var}'");
             *var = match env.get_current_version(var) {
                 Some(version) => {
-                    trace!("renaming assigned shadowing variable '{var}' to '{var}.{version}'");
+                    trace!("renaming assigned shadowing variable `{var}` to `{var}.{version}`");
                     format!("{var}.{version}")
                 }
                 None => var.to_string(),
@@ -283,7 +283,7 @@ fn visit_expression(expr: &mut Expression, env: &DeclarationEnvironment) {
             *name = match env.get_current_version(name) {
                 Some(version) => {
                     trace!(
-                        "renaming occurrence of shadowing variable '{name}' to '{name}.{version}'"
+                        "renaming occurrence of shadowing variable `{name}` to `{name}.{version}`"
                     );
                     format!("{name}.{version}")
                 }

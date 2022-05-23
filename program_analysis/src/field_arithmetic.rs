@@ -12,14 +12,14 @@ pub struct FieldElementArithmeticWarning {
 impl FieldElementArithmeticWarning {
     pub fn into_report(self) -> Report {
         let mut report = Report::info(
-            "field element arithmetic could overflow, which may produce unexpected results"
+            "Field element arithmetic could overflow, which may produce unexpected results."
                 .to_string(),
             ReportCode::FieldElementArithmetic,
         );
         report.add_primary(
             self.file_location,
             self.file_id,
-            "field element arithmetic here".to_string(),
+            "Field element arithmetic here.".to_string(),
         );
         report
     }

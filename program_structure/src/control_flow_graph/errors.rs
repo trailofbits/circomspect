@@ -39,13 +39,13 @@ impl CFGError {
                 file_location,
             } => {
                 let mut report = Report::error(
-                    format!("variable '{name}' is used before it is defined"),
+                    format!("Variable `{name}` is used before it is defined."),
                     ReportCode::UninitializedSymbolInExpression,
                 );
                 report.add_primary(
                     file_location,
                     file_id,
-                    "variable is first seen here".to_string(),
+                    "Variable is first seen here.".to_string(),
                 );
                 report
             }
@@ -57,21 +57,21 @@ impl CFGError {
                 secondary_location,
             } => {
                 let mut report = Report::warning(
-                    format!("declaration of variable '{name}' shadows previous declaration"),
+                    format!("Declaration of variable `{name}` shadows previous declaration."),
                     ReportCode::ShadowingVariable,
                 );
                 report.add_primary(
                     primary_location,
                     primary_file_id,
-                    "shadowing declaration here".to_string(),
+                    "Shadowing declaration here.".to_string(),
                 );
                 report.add_secondary(
                     secondary_location,
                     secondary_file_id,
-                    Some("shadowed variable is declared here".to_string()),
+                    Some("Shadowed variable is declared here.".to_string()),
                 );
                 report.add_note(format!(
-                    "consider renaming the second occurrence of '{name}'"
+                    "Consider renaming the second occurrence of `{name}`."
                 ));
                 report
             }
@@ -81,15 +81,15 @@ impl CFGError {
                 file_location,
             } => {
                 let mut report = Report::warning(
-                    format!("parameter '{name}' declared multiple times"),
+                    format!("Parameter `{name}` declared multiple times."),
                     ReportCode::ParameterNameCollision,
                 );
                 report.add_primary(
                     file_location,
                     file_id,
-                    "parameters declared here".to_string(),
+                    "Parameters declared here.".to_string(),
                 );
-                report.add_note(format!("rename the second occurrence of '{name}'"));
+                report.add_note(format!("Rename the second occurrence of `{name}`."));
                 report
             }
         }

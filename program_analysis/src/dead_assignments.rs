@@ -16,7 +16,7 @@ impl DeadAssignmentWarning {
     pub fn into_report(self) -> Report {
         let mut report = Report::warning(
             format!(
-                "the variable '{}' is assigned a value, but this value is never read",
+                "The variable `{}` is assigned a value, but this value is never read.",
                 self.name
             ),
             ReportCode::DeadAssignment,
@@ -24,7 +24,7 @@ impl DeadAssignmentWarning {
         report.add_primary(
             self.file_location,
             self.file_id,
-            "the value assigned here is never read".to_string(),
+            "The value assigned here is never read.".to_string(),
         );
         report
     }
