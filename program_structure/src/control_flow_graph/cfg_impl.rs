@@ -207,8 +207,12 @@ fn visit_statement(
 
             trace!("visiting while body");
             let mut pred_set = visit_statement(&while_body, env, basic_blocks)?;
-            pred_set.insert(basic_blocks.last().get_index());
-
+            // The returned predecessor set will be empty if the last statement
+            // of the body is not a conditional. In this case we need to add the
+            // last block of the body to complete the corresponding block.
+            if pred_set.is_empty() {
+                pred_set.insert(basic_blocks.last().get_index());
+            }
             // The loop header is the successor of all blocks in `pred_set`.
             trace!(
                 "adding predecessors {:?} to loop header {header_index}",
@@ -247,7 +251,12 @@ fn visit_statement(
 
             trace!("visiting true if-statement branch");
             let mut if_pred_set = visit_statement(&if_case, env, basic_blocks)?;
-            if_pred_set.insert(current_index);
+            // The returned predecessor set will be empty if the last statement
+            // of the body is not a conditional. In this case we need to add the
+            // last block of the body to complete the corresponding block.
+            if if_pred_set.is_empty() {
+                if_pred_set.insert(basic_blocks.last().get_index());
+            }
 
             // Visit the else-case body.
             if let Some(else_case) = else_case {
@@ -257,8 +266,15 @@ fn visit_statement(
                 complete_basic_block(basic_blocks, &pred_set, meta);
 
                 let mut else_pred_set = visit_statement(&else_case, env, basic_blocks)?;
+                // The returned predecessor set will be empty if the last statement
+                // of the body is not a conditional. In this case we need to add the
+                // last block of the body to complete the corresponding block.
+                if else_pred_set.is_empty() {
+                    else_pred_set.insert(basic_blocks.last().get_index());
+                }
                 Ok(if_pred_set.union(&else_pred_set).cloned().collect())
             } else {
+                if_pred_set.insert(current_index);
                 Ok(if_pred_set)
             }
         }
