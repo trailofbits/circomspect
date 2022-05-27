@@ -161,6 +161,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
+name = "circom_algebra"
+version = "2.0.0"
+dependencies = [
+ "num-bigint-dig",
+ "num-traits",
+]
+
+[[package]]
 name = "circomspect"
 version = "0.1.0"
 dependencies = [
@@ -170,7 +178,6 @@ dependencies = [
  "pretty_env_logger",
  "program_analysis",
  "program_structure",
- "serde",
  "serde_json",
  "structopt",
 ]
@@ -753,6 +760,7 @@ version = "2.0.1"
 dependencies = [
  "anyhow",
  "atty",
+ "circom_algebra",
  "codespan",
  "codespan-reporting",
  "log",
@@ -766,6 +774,14 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "thiserror",
+]
+
+[[package]]
+name = "program_structure_tests"
+version = "0.1.0"
+dependencies = [
+ "parser",
+ "program_structure",
 ]
 
 [[package]]
