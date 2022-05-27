@@ -4,4 +4,5 @@ members = [
   "parser",
   "program_analysis",
   "program_structure",
+  "program_structure_tests"
 ]
