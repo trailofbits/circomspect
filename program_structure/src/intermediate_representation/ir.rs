@@ -62,11 +62,11 @@ impl Meta {
         &self.variable_knowledge
     }
     #[must_use]
-    pub fn get_mut_value_knowledge(&mut self) -> &mut ValueKnowledge {
+    pub fn get_value_knowledge_mut(&mut self) -> &mut ValueKnowledge {
         &mut self.value_knowledge
     }
     #[must_use]
-    pub fn get_mut_variable_knowledge(&mut self) -> &mut VariableKnowledge {
+    pub fn get_variable_knowledge_mut(&mut self) -> &mut VariableKnowledge {
         &mut self.variable_knowledge
     }
 }

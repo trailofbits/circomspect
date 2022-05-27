@@ -36,14 +36,17 @@ impl Cfg {
         }
     }
     /// Returns the entry (first) block of the CFG.
+    #[must_use]
     pub fn get_entry_block(&self) -> &BasicBlock {
         &self.basic_blocks[Index::default()]
     }
     /// Returns the number of basic blocks in the CFG.
+    #[must_use]
     pub fn nof_basic_blocks(&self) -> usize {
         self.basic_blocks.len()
     }
     /// Convert the CFG into SSA form.
+    #[must_use]
     pub fn into_ssa(&mut self) -> SSAResult<()> {
         for basic_block in self.iter_mut() {
             basic_block.cache_variable_use();
@@ -70,27 +73,39 @@ impl Cfg {
         }
         Ok(())
     }
+
     /// Get the name of the corresponding function or template.
+    #[must_use]
     pub fn get_name(&self) -> &str {
         &self.name
     }
+
     /// Get the file ID for the corresponding function or template.
+    #[must_use]
     pub fn get_file_id(&self) -> FileID {
         self.param_data.get_file_id()
     }
+
     /// Returns the parameter data for the corresponding function or template.
+    #[must_use]
     pub fn get_parameters(&self) -> &ParameterData {
         &self.param_data
     }
+
     /// Returns an iterator over the basic blocks in the CFG.
+    #[must_use]
     pub fn iter(&self) -> impl Iterator<Item = &BasicBlock> {
         self.basic_blocks.iter()
     }
+
     /// Returns a mutable iterator over the basic blocks in the CFG.
+    #[must_use]
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut BasicBlock> {
         self.basic_blocks.iter_mut()
     }
+
     /// Returns the dominators of the given basic block
+    #[must_use]
     pub fn get_dominators(&self, basic_block: &BasicBlock) -> Vec<&BasicBlock> {
         self.dominator_tree
             .get_dominators(basic_block.get_index())
@@ -98,15 +113,19 @@ impl Cfg {
             .map(|&i| &self.basic_blocks[i])
             .collect()
     }
+
     /// Returns the immediate dominator of the basic block (that is, the
     /// predecessor of the node in the CFG dominator tree), if it exists.
+    #[must_use]
     pub fn get_immediate_dominator(&self, basic_block: &BasicBlock) -> Option<&BasicBlock> {
         self.dominator_tree
             .get_immediate_dominator(basic_block.get_index())
             .map(|i| &self.basic_blocks[i])
     }
+
     /// Get immediate successors of the basic block in the CFG dominator tree.
     /// (For a definition of the dominator relation, see `CFG::get_dominators`.)
+    #[must_use]
     pub fn get_dominator_successors(&self, basic_block: &BasicBlock) -> Vec<&BasicBlock> {
         self.dominator_tree
             .get_dominator_successors(basic_block.get_index())
@@ -114,10 +133,12 @@ impl Cfg {
             .map(|&i| &self.basic_blocks[i])
             .collect()
     }
+
     /// Returns the dominance frontier of the basic block. The _dominance
     /// frontier_ of `i` is defined as all basic blocks `j` such that `i`
     /// dominates an immediate predecessor of `j`, but i does not strictly
     /// dominate `j`. (`j` is where `i`s dominance ends.)
+    #[must_use]
     pub fn get_dominance_frontier(&self, basic_block: &BasicBlock) -> Vec<&BasicBlock> {
         self.dominator_tree
             .get_dominance_frontier(basic_block.get_index())

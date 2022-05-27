@@ -98,7 +98,12 @@ impl<T> NonEmptyVec<T> {
     /// assert_eq!(v.len(), 3);
     /// ```
     pub fn len(&self) -> usize {
-        return self.tail.len() + 1;
+        self.tail.len() + 1
+    }
+
+    /// Always returns false.
+    pub fn is_empty(&self) -> bool {
+        false
     }
 
     /// Returns an iterator over the vector.
@@ -222,7 +227,7 @@ impl<T: Clone> TryFrom<&Vec<T>> for NonEmptyVec<T> {
         if let Some(x) = xs.first() {
             Ok(NonEmptyVec {
                 head: x.clone(),
-                tail: xs[1..].iter().cloned().collect(),
+                tail: xs[1..].to_vec()
             })
         } else {
             Err(anyhow!(
@@ -239,7 +244,7 @@ impl<T: Clone> TryFrom<&[T]> for NonEmptyVec<T> {
         if let Some(x) = xs.first() {
             Ok(NonEmptyVec {
                 head: x.clone(),
-                tail: xs[1..].iter().cloned().collect(),
+                tail: xs[1..].to_vec()
             })
         } else {
             Err(anyhow!(
@@ -256,7 +261,7 @@ impl<T: Clone, const N: usize> TryFrom<&[T; N]> for NonEmptyVec<T> {
         if let Some(x) = xs.first() {
             Ok(NonEmptyVec {
                 head: x.clone(),
-                tail: xs[1..].iter().cloned().collect(),
+                tail: xs[1..].to_vec()
             })
         } else {
             Err(anyhow!(

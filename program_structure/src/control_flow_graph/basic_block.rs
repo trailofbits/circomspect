@@ -19,6 +19,7 @@ pub struct BasicBlock {
 }
 
 impl BasicBlock {
+    #[must_use]
     pub fn new(index: Index, meta: Meta) -> BasicBlock {
         trace!("creating basic block {index}");
         BasicBlock {
@@ -30,6 +31,7 @@ impl BasicBlock {
         }
     }
 
+    #[must_use]
     pub fn from_raw_parts(
         index: Index,
         meta: Meta,
@@ -45,36 +47,69 @@ impl BasicBlock {
             successors,
         }
     }
+
+    #[must_use]
     pub fn len(&self) -> usize {
         self.stmts.len()
     }
+
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() > 0
     }
+
+    #[must_use]
     pub fn iter(&self) -> impl Iterator<Item = &Statement> {
         self.stmts.iter()
     }
+
+    #[must_use]
     pub(crate) fn iter_mut(&mut self) -> impl Iterator<Item = &mut Statement> {
         self.stmts.iter_mut()
     }
+    #[must_use]
+    pub fn get_index(&self) -> Index {
+        self.index
+    }
+
+    #[must_use]
     pub fn get_meta(&self) -> &Meta {
         &self.meta
     }
-    pub fn get_meta_mut(&mut self) -> &mut Meta {
+
+    #[must_use]
+    pub(crate) fn get_meta_mut(&mut self) -> &mut Meta {
         &mut self.meta
     }
+
+    #[must_use]
     pub fn get_statements(&self) -> &Vec<Statement> {
         &self.stmts
     }
-    pub fn get_statements_mut(&mut self) -> &mut Vec<Statement> {
+
+    #[must_use]
+    pub(crate) fn get_statements_mut(&mut self) -> &mut Vec<Statement> {
         &mut self.stmts
     }
+
     pub(crate) fn prepend_statement(&mut self, stmt: Statement) {
         self.stmts.insert(0, stmt);
     }
+
     pub(crate) fn append_statement(&mut self, stmt: Statement) {
         self.stmts.push(stmt);
     }
+
+    #[must_use]
+    pub fn get_predecessors(&self) -> &IndexSet {
+        &self.predecessors
+    }
+
+    #[must_use]
+    pub fn get_successors(&self) -> &IndexSet {
+        &self.successors
+    }
+
     pub(crate) fn add_predecessor(&mut self, predecessor: Index) {
         trace!(
             "adding predecessor {} to basic block {}",
@@ -83,6 +118,7 @@ impl BasicBlock {
         );
         self.predecessors.insert(predecessor);
     }
+
     pub(crate) fn add_successor(&mut self, successor: Index) {
         trace!(
             "adding successor {} to basic block {}",
@@ -108,7 +144,7 @@ impl DirectedGraphNode for BasicBlock {
 impl VariableMeta for BasicBlock {
     fn cache_variable_use(&mut self) {
         trace!(
-            "(re)computing variable use for basic block {}",
+            "computing variable use for basic block {}",
             self.get_index()
         );
         // Variable use for the block is simply the union of the variable use
@@ -121,7 +157,7 @@ impl VariableMeta for BasicBlock {
             .flat_map(|stmt| stmt.get_variables_read().iter().cloned())
             .collect();
         self.get_meta_mut()
-            .get_mut_variable_knowledge()
+            .get_variable_knowledge_mut()
             .set_variables_read(&variables_read);
 
         // Cache variables written.
@@ -130,7 +166,7 @@ impl VariableMeta for BasicBlock {
             .flat_map(|stmt| stmt.get_variables_written().iter().cloned())
             .collect();
         self.get_meta_mut()
-            .get_mut_variable_knowledge()
+            .get_variable_knowledge_mut()
             .set_variables_written(&variables_written);
     }
 

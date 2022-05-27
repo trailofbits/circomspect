@@ -164,8 +164,8 @@ impl ToUri for FileID {
     fn to_uri(&self, files: &FileLibrary) -> Result<String, SarifError> {
         let path: PathBuf = files
             .to_storage()
-            .get(self.clone())
-            .ok_or(SarifError::UnknownFile(self.clone()))?
+            .get(*self)
+            .ok_or(SarifError::UnknownFile(*self))?
             .name()
             .replace('"', "")
             .into();

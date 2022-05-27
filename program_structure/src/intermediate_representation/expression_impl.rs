@@ -115,10 +115,10 @@ impl VariableMeta for Expression {
             }
         }
         self.get_mut_meta()
-            .get_mut_variable_knowledge()
+            .get_variable_knowledge_mut()
             .set_variables_read(&variables_read);
         self.get_mut_meta()
-            .get_mut_variable_knowledge()
+            .get_variable_knowledge_mut()
             .set_variables_written(&VariableSet::new());
     }
 

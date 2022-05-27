@@ -18,7 +18,7 @@ pub struct DominatorTree<T: DirectedGraphNode> {
 }
 
 impl<T: DirectedGraphNode> DominatorTree<T> {
-    pub fn new(basic_blocks: &Vec<T>) -> DominatorTree<T> {
+    pub fn new(basic_blocks: &[T]) -> DominatorTree<T> {
         let dominators = compute_dominators(basic_blocks);
         let (immediate_dominators, dominator_successors) =
             compute_immediate_dominators(basic_blocks, &dominators);
@@ -56,7 +56,7 @@ impl<T: DirectedGraphNode> DominatorTree<T> {
 }
 
 // This is a stupid simple (quadratic) algorithm based on an iterative data-flow analysis.
-fn compute_dominators<T: DirectedGraphNode>(basic_blocks: &Vec<T>) -> DominatorInfo {
+fn compute_dominators<T: DirectedGraphNode>(basic_blocks: &[T]) -> DominatorInfo {
     let mut dominators = Vec::new();
     let nof_blocks = basic_blocks.len();
     dominators.push(HashSet::from([0]));
@@ -88,7 +88,7 @@ fn compute_dominators<T: DirectedGraphNode>(basic_blocks: &Vec<T>) -> DominatorI
 // Compute immediate dominators (a `Vec<Option<usize>>`) and the dominator tree relation (a
 // `Vec<HashSet<usize>>`). (Note that the entry block of the CFG has no immediate dominator.)
 fn compute_immediate_dominators<T: DirectedGraphNode>(
-    basic_blocks: &Vec<T>,
+    basic_blocks: &[T],
     dominators: &DominatorInfo,
 ) -> (ImmediateDominatorInfo, DominatorInfo) {
     let nof_blocks = basic_blocks.len();
@@ -139,7 +139,7 @@ fn compute_immediate_dominators<T: DirectedGraphNode>(
 // `i` is in the _dominance frontier_ of the node `j` if `j` dominates an
 // immediate predecessor of `i`, but `j` does not strictly dominate `i`.
 fn compute_dominance_frontier<T: DirectedGraphNode>(
-    basic_blocks: &Vec<T>,
+    basic_blocks: &[T],
     immediate_dominators: &ImmediateDominatorInfo,
 ) -> DominatorInfo {
     let nof_blocks = basic_blocks.len();

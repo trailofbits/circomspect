@@ -5,6 +5,7 @@ use std::convert::TryFrom;
 use crate::ast;
 use crate::error_definition::ReportCollection;
 use crate::function_data::FunctionData;
+
 use crate::ir;
 use crate::ir::{IREnvironment, TryIntoIR};
 use crate::nonempty_vec::NonEmptyVec;
