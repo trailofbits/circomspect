@@ -18,7 +18,6 @@ use program_structure::program_archive::ProgramArchive;
 use std::path::PathBuf;
 use std::str::FromStr;
 
-
 pub type Version = (usize, usize, usize);
 
 pub fn run_parser(
@@ -128,7 +127,9 @@ pub fn parse_definition(src: &str) -> Option<Definition> {
     use program_structure::ast::AST;
 
     match parser_logic::parse_string(src) {
-        Some(AST { mut definitions, .. }) if definitions.len() == 1 => definitions.pop(),
+        Some(AST {
+            mut definitions, ..
+        }) if definitions.len() == 1 => definitions.pop(),
         _ => None,
     }
 }

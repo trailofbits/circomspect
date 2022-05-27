@@ -227,7 +227,7 @@ impl<T: Clone> TryFrom<&Vec<T>> for NonEmptyVec<T> {
         if let Some(x) = xs.first() {
             Ok(NonEmptyVec {
                 head: x.clone(),
-                tail: xs[1..].to_vec()
+                tail: xs[1..].to_vec(),
             })
         } else {
             Err(anyhow!(
@@ -244,7 +244,7 @@ impl<T: Clone> TryFrom<&[T]> for NonEmptyVec<T> {
         if let Some(x) = xs.first() {
             Ok(NonEmptyVec {
                 head: x.clone(),
-                tail: xs[1..].to_vec()
+                tail: xs[1..].to_vec(),
             })
         } else {
             Err(anyhow!(
@@ -261,7 +261,7 @@ impl<T: Clone, const N: usize> TryFrom<&[T; N]> for NonEmptyVec<T> {
         if let Some(x) = xs.first() {
             Ok(NonEmptyVec {
                 head: x.clone(),
-                tail: xs[1..].to_vec()
+                tail: xs[1..].to_vec(),
             })
         } else {
             Err(anyhow!(

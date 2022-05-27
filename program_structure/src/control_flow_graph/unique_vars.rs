@@ -206,7 +206,8 @@ fn visit_statement(
             if let Some(declaration) = env.get_declaration(name) {
                 reports.push(build_report(name, &meta, declaration));
             }
-            match env.add_declaration(name, meta.file_id.unwrap_or_default(), meta.file_location()) {
+            match env.add_declaration(name, meta.file_id.unwrap_or_default(), meta.file_location())
+            {
                 // This is a declaration of a previously unseen variable. It should not be versioned.
                 None => {}
                 // This is a declaration of a previously seen variable. It needs to be versioned.

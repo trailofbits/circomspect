@@ -15,11 +15,15 @@ fn test_cfg_from_if() {
             return y + x;
         }
     "#;
-    validate_cfg(src, &[3, 2, 1], &[
-        (vec![], vec![1, 2]),
-        (vec![0], vec![2]),
-        (vec![0, 1], vec![]),
-    ]);
+    validate_cfg(
+        src,
+        &[3, 2, 1],
+        &[
+            (vec![], vec![1, 2]),
+            (vec![0], vec![2]),
+            (vec![0, 1], vec![]),
+        ],
+    );
 }
 
 #[test]
@@ -37,12 +41,16 @@ fn test_cfg_from_if_then_else() {
             return y + x;
         }
     "#;
-    validate_cfg(src, &[3, 2, 2, 1], &[
-        (vec![], vec![1, 2]),
-        (vec![0], vec![3]),
-        (vec![0], vec![3]),
-        (vec![1, 2], vec![]),
-    ]);
+    validate_cfg(
+        src,
+        &[3, 2, 2, 1],
+        &[
+            (vec![], vec![1, 2]),
+            (vec![0], vec![3]),
+            (vec![0], vec![3]),
+            (vec![1, 2], vec![]),
+        ],
+    );
 }
 
 #[test]
@@ -56,21 +64,25 @@ fn test_cfg_from_while() {
             return y + x;
         }
     "#;
-    validate_cfg(src, &[2, 1, 1, 1], &[
-        (vec![], vec![1]),
-        // 0:
-        // var y;
-        // y = 0;
-        (vec![0, 2], vec![2, 3]),
-        // 1:
-        // if (y < 0)
-        (vec![1], vec![1]),
-        //   2:
-        //   y += y ** 2 + 1
-        (vec![1], vec![]),
-        // 3:
-        // return y + x;
-    ]);
+    validate_cfg(
+        src,
+        &[2, 1, 1, 1],
+        &[
+            (vec![], vec![1]),
+            // 0:
+            // var y;
+            // y = 0;
+            (vec![0, 2], vec![2, 3]),
+            // 1:
+            // if (y < 0)
+            (vec![1], vec![1]),
+            //   2:
+            //   y += y ** 2 + 1
+            (vec![1], vec![]),
+            // 3:
+            // return y + x;
+        ],
+    );
 }
 
 #[test]
@@ -87,23 +99,27 @@ fn test_cfg_from_nested_if() {
             return y + x;
         }
     "#;
-    validate_cfg(src, &[3, 2, 1, 1], &[
-        (vec![], vec![1, 3]),
-        // 0:
-        // var y;
-        // y = 0;
-        // if (y <= 0)
-        (vec![0], vec![2, 3]),
-        //   1:
-        //   y *= 2;
-        //   if (y == x)
-        (vec![1], vec![3]),
-        //     2:
-        //     y *= 2;
-        (vec![0, 1, 2], vec![]),
-        // 3:
-        // return y + x;
-    ]);
+    validate_cfg(
+        src,
+        &[3, 2, 1, 1],
+        &[
+            (vec![], vec![1, 3]),
+            // 0:
+            // var y;
+            // y = 0;
+            // if (y <= 0)
+            (vec![0], vec![2, 3]),
+            //   1:
+            //   y *= 2;
+            //   if (y == x)
+            (vec![1], vec![3]),
+            //     2:
+            //     y *= 2;
+            (vec![0, 1, 2], vec![]),
+            // 3:
+            // return y + x;
+        ],
+    );
 }
 
 #[test]
@@ -120,35 +136,36 @@ fn test_cfg_from_nested_while() {
             return y + x;
         }
     "#;
-    validate_cfg(src, &[2, 1, 1, 1, 1, 1], &[
-        (vec![], vec![1]),
-        // 0:
-        // var y;
-        // y = 0;
-        (vec![0, 3], vec![2, 5]),
-        // 1:
-        // if (y <= 0)
-        (vec![1], vec![3]),
-        //   2:
-        //   y *= 2;
-        (vec![2, 4], vec![4, 1]),
-        //   3:
-        //   if (y < x)
-        (vec![3], vec![3]),
-        //     4:
-        //     y *= 2;
-        (vec![1], vec![]),
-        // 5:
-        // return y + x;
-    ]);
+    validate_cfg(
+        src,
+        &[2, 1, 1, 1, 1, 1],
+        &[
+            (vec![], vec![1]),
+            // 0:
+            // var y;
+            // y = 0;
+            (vec![0, 3], vec![2, 5]),
+            // 1:
+            // if (y <= 0)
+            (vec![1], vec![3]),
+            //   2:
+            //   y *= 2;
+            (vec![2, 4], vec![4, 1]),
+            //   3:
+            //   if (y < x)
+            (vec![3], vec![3]),
+            //     4:
+            //     y *= 2;
+            (vec![1], vec![]),
+            // 5:
+            // return y + x;
+        ],
+    );
 }
 
 fn validate_cfg(src: &str, lengths: &[usize], edges: &[(Vec<Index>, Vec<Index>)]) {
     // 1. Generate CFG from source.
-    let (cfg, _) = parse_definition(src)
-        .unwrap()
-        .try_into()
-        .unwrap();
+    let (cfg, _) = parse_definition(src).unwrap().try_into().unwrap();
 
     // 2. Validate block lengths.
     for (basic_block, length) in cfg.iter().zip(lengths.iter()) {
@@ -180,8 +197,12 @@ fn validate_cfg(src: &str, lengths: &[usize], edges: &[(Vec<Index>, Vec<Index>)]
     for first_block in cfg.iter() {
         for second_block in cfg.iter() {
             assert_eq!(
-                first_block.get_successors().contains(&second_block.get_index()),
-                second_block.get_predecessors().contains(&first_block.get_index()),
+                first_block
+                    .get_successors()
+                    .contains(&second_block.get_index()),
+                second_block
+                    .get_predecessors()
+                    .contains(&first_block.get_index()),
                 "basic block {} is not a predecessor of a successor block {}",
                 first_block.get_index(),
                 second_block.get_index()

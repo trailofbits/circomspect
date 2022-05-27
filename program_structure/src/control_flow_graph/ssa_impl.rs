@@ -217,9 +217,7 @@ impl SSAStatement<VersionEnvironment> for Statement {
                         // Since the CFG may contain loops, a declaration may not always
                         // be the first occurrence of a variable. If it is, the variable
                         // is only added to the environment on first use.
-                        let version = env
-                            .get_current_version(name)
-                            .unwrap_or_default();
+                        let version = env.get_current_version(name).unwrap_or_default();
                         let versioned_name = name.with_version(version);
                         trace!(
                             "replacing (declared) variable `{name}` with SSA variable '{versioned_name}'"
@@ -286,7 +284,7 @@ fn visit_expression(expr: &mut Expression, env: &VersionEnvironment) -> SSAResul
             );
             // Ignore declared signals and components.
             if env.has_signal(name) || env.has_component(name) {
-                return Ok(())
+                return Ok(());
             }
             match env.get_current_version(name) {
                 Some(version) => {

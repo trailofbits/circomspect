@@ -76,8 +76,7 @@ impl TryFrom<&Definition> for (Cfg, ReportCollection) {
 
     fn try_from(definition: &Definition) -> CFGResult<(Cfg, ReportCollection)> {
         match definition {
-            Definition::Function { name, body, .. } |
-            Definition::Template { name, body, .. } => {
+            Definition::Function { name, body, .. } | Definition::Template { name, body, .. } => {
                 let param_data = definition.into();
 
                 // Ensure that variable names are globally unique before converting to basic blocks.
@@ -87,7 +86,7 @@ impl TryFrom<&Definition> for (Cfg, ReportCollection) {
                 // Convert function AST to CFG and compute dominator tree.
                 debug!("building CFG for `{name}`");
                 let basic_blocks =
-                build_basic_blocks(&body, &mut IREnvironment::from(&param_data))?;
+                    build_basic_blocks(&body, &mut IREnvironment::from(&param_data))?;
                 let dominator_tree = DominatorTree::new(&basic_blocks);
                 Ok((
                     Cfg::new(name.to_string(), param_data, basic_blocks, dominator_tree),

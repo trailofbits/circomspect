@@ -1,10 +1,10 @@
 use std::collections::HashSet;
 
 use parser::parse_definition;
-use program_structure::cfg::Cfg;
 use program_structure::cfg::basic_block::BasicBlock;
-use program_structure::ir::{AssignOp, Statement, VariableName};
+use program_structure::cfg::Cfg;
 use program_structure::ir::variable_meta::VariableMeta;
+use program_structure::ir::{AssignOp, Statement, VariableName};
 use program_structure::ssa::traits::SSAStatement;
 
 #[test]
@@ -90,23 +90,21 @@ fn test_ssa_from_nested_while() {
 
 fn validate_ssa(src: &str) {
     // 1. Generate CFG and convert to SSA.
-    let (mut cfg, _) = parse_definition(src)
-        .unwrap()
-        .try_into()
-        .unwrap();
-    cfg.into_ssa()
-        .unwrap();
+    let (mut cfg, _) = parse_definition(src).unwrap().try_into().unwrap();
+    cfg.into_ssa().unwrap();
 
     // 2. Check that each variable is assigned at most once.
-    use Statement::*;
     use AssignOp::*;
+    use Statement::*;
     let mut assignments = HashSet::new();
     let result = cfg
         .iter()
         .flat_map(|basic_block| basic_block.iter())
         .filter_map(|stmt| match stmt {
-            Substitution { var, op: AssignVar, .. } => Some(var),
-            _ => None
+            Substitution {
+                var, op: AssignVar, ..
+            } => Some(var),
+            _ => None,
         })
         .all(|name| assignments.insert(name));
     assert!(result);
@@ -122,12 +120,18 @@ fn validate_reads(current_block: &BasicBlock, cfg: &Cfg, env: &mut HashSet<Varia
         if !stmt.is_phi_statement() {
             // Check that all read variables are in the environment.
             for name in stmt.get_variables_read() {
-                assert!(env.contains(name), "variable `{name}` is read before it is written");
+                assert!(
+                    env.contains(name),
+                    "variable `{name}` is read before it is written"
+                );
             }
         }
         // Check that no written variables are in the environment.
         for name in VariableMeta::get_variables_written(stmt) {
-            assert!(env.insert(name.clone()), "variable `{name}` is written multiple times {stmt}");
+            assert!(
+                env.insert(name.clone()),
+                "variable `{name}` is written multiple times {stmt}"
+            );
         }
     }
     // Recurse into successors.
