@@ -1,7 +1,7 @@
 use log::{debug, trace};
 
 use crate::file_definition::FileID;
-use crate::ir::declaration_map::{Declaration, DeclarationMap};
+use crate::ir::declaration_map::{Declaration, DeclarationMap, VariableType};
 use crate::ir::value_meta::ValueEnvironment;
 use crate::ir::variable_meta::VariableMeta;
 use crate::ir::VariableName;
@@ -81,19 +81,25 @@ impl Cfg {
         // 5. Update declaration map to track SSA variables.
         let mut versioned_declarations = DeclarationMap::new();
         for (name, declaration) in self.declarations.iter() {
-            for version in env
-                .get_version_range(name)
-                .expect("variable in environment")
-            {
-                let versioned_name = declaration.get_name().with_version(version);
-                let versioned_declaration = Declaration::new(
-                    &versioned_name,
-                    declaration.get_type(),
-                    declaration.get_dimensions(),
-                    declaration.get_file_id(),
-                    &declaration.get_location(),
-                );
-                versioned_declarations.add_declaration(&versioned_name, versioned_declaration);
+            if matches!(declaration.get_type(), VariableType::Var) {
+                // Add a new declaration for each version of the variable.
+                for version in env
+                    .get_version_range(name)
+                    .expect("variable in environment")
+                {
+                    let versioned_name = declaration.get_name().with_version(version);
+                    let versioned_declaration = Declaration::new(
+                        &versioned_name,
+                        declaration.get_type(),
+                        declaration.get_dimensions(),
+                        declaration.get_file_id(),
+                        &declaration.get_location(),
+                    );
+                    versioned_declarations.add_declaration(&versioned_name, versioned_declaration);
+                }
+            } else {
+                // Declarations of signals and components are just copied over.
+                versioned_declarations.add_declaration(name, declaration.clone());
             }
         }
         self.declarations = versioned_declarations;
