@@ -2,6 +2,7 @@ use log::trace;
 use std::collections::HashSet;
 
 use crate::ir::value_meta::ValueEnvironment;
+use crate::ssa::traits::DirectedGraphNode;
 
 use crate::ir::variable_meta::{VariableMeta, VariableSet};
 use crate::ir::{Meta, Statement};
