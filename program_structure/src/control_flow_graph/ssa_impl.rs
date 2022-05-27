@@ -1,10 +1,11 @@
-use log::trace;
-use std::collections::{HashMap, HashSet};
+use log::{debug, error, trace};
+use std::collections::HashSet;
 
+use crate::environment::VarEnvironment;
 use crate::ir::variable_meta::VariableMeta;
 use crate::ir::*;
-use crate::ssa::errors::{SSAError, SSAResult};
-use crate::ssa::traits::{SSABasicBlock, SSAEnvironment, SSAStatement, VariableSet};
+use crate::ssa::errors::*;
+use crate::ssa::traits::*;
 
 use super::basic_block::BasicBlock;
 use super::param_data::ParameterData;
@@ -13,18 +14,66 @@ type Version = usize;
 
 #[derive(Clone)]
 pub struct VersionEnvironment {
-    variables: HashMap<String, Version>,
-    signals: HashSet<String>,
-    components: HashSet<String>,
+    // Tracks the current scoped version of each variable. This is scoped to
+    // ensure that versions are updated when a variable goes out of scope.
+    scoped_versions: VarEnvironment<Version>,
+    // Tracks the maximum version seen of each variable. This is not scoped to
+    // ensure that we do not apply the same version to different occurrences of
+    // the same variable names.
+    global_versions: VarEnvironment<Version>,
+    // Tracks defined signals to ensure that we know if a variable use represents
+    // a variable, signal, or component.
+    signals: HashSet<VariableName>,
+    // Tracks defined components to ensure that we know if a variable use represents
+    // a variable, signal, or component.
+    components: HashSet<VariableName>,
 }
 
 impl VersionEnvironment {
     pub fn new() -> VersionEnvironment {
         VersionEnvironment {
-            variables: HashMap::new(),
+            scoped_versions: VarEnvironment::new(),
+            global_versions: VarEnvironment::new(),
             signals: HashSet::new(),
             components: HashSet::new(),
         }
+    }
+
+    // Get the current (scoped) version of the variable.
+    pub fn get_current_version(&self, name: &VariableName) -> Option<Version> {
+        let name = name.to_string_without_version();
+        self.scoped_versions.get_variable(&name).cloned()
+    }
+
+    // Get the version to apply for a newly assigned variable.
+    fn get_next_version(&mut self, name: &VariableName) -> Version {
+        // Update the global version.
+        let name = name.to_string_without_version();
+        let version = match self.global_versions.get_variable(&name) {
+            // The variable has not been seen before. This is version 0 of the variable.
+            None => 0,
+            // The variable has been seen before. The version needs to be increased by 1.
+            Some(version) => version + 1,
+        };
+        self.global_versions.add_variable(&name, version);
+        self.scoped_versions.add_variable(&name, version);
+        version
+    }
+
+    fn add_signal(&mut self, name: &VariableName) {
+        self.signals.insert(name.clone());
+    }
+
+    fn add_component(&mut self, name: &VariableName) {
+        self.components.insert(name.clone());
+    }
+
+    fn has_signal(&self, name: &VariableName) -> bool {
+        self.signals.contains(name)
+    }
+
+    fn has_component(&self, name: &VariableName) -> bool {
+        self.signals.contains(name)
     }
 }
 
@@ -32,51 +81,28 @@ impl From<&ParameterData> for VersionEnvironment {
     fn from(params: &ParameterData) -> VersionEnvironment {
         let mut env = VersionEnvironment::new();
         for name in params.iter() {
-            env.add_variable(&name.to_string(), Version::default())
+            env.get_next_version(name);
         }
         env
     }
 }
 
 impl SSAEnvironment for VersionEnvironment {
-    fn add_variable(&mut self, name: &str, version: Version) {
-        trace!("adding {name} version from environment: {version:?}");
-        self.variables.insert(name.to_string(), version);
+    // Enter variable scope.
+    fn add_variable_block(&mut self) {
+        self.scoped_versions.add_variable_block();
     }
 
-    fn add_signal(&mut self, name: &str) {
-        self.signals.insert(name.to_string());
-    }
-
-    fn add_component(&mut self, name: &str) {
-        self.components.insert(name.to_string());
-    }
-
-    fn has_variable(&self, name: &str) -> bool {
-        self.variables.contains_key(name)
-    }
-
-    fn has_signal(&self, name: &str) -> bool {
-        self.signals.contains(name)
-    }
-
-    fn has_component(&self, name: &str) -> bool {
-        self.signals.contains(name)
-    }
-
-    fn get_variable(&self, name: &str) -> Option<Version> {
-        trace!(
-            "getting {name} version from environment: {:?}",
-            self.variables.get(name)
-        );
-        self.variables.get(name).cloned()
+    // Leave variable scope.
+    fn remove_variable_block(&mut self) {
+        self.scoped_versions.remove_variable_block();
     }
 }
 
-impl SSABasicBlock for BasicBlock {
+impl SSABasicBlock<VersionEnvironment> for BasicBlock {
     type Statement = Statement;
 
-    fn insert_statement(&mut self, stmt: Self::Statement) {
+    fn insert_statement(&mut self, stmt: Statement) {
         self.prepend_statement(stmt);
     }
 
@@ -89,7 +115,7 @@ impl SSABasicBlock for BasicBlock {
     }
 }
 
-impl SSAStatement for Statement {
+impl SSAStatement<VersionEnvironment> for Statement {
     fn get_variables_written(&self) -> VariableSet {
         VariableMeta::get_variables_written(self)
             .iter()
@@ -103,7 +129,7 @@ impl SSAStatement for Statement {
         use Statement::*;
         let phi = Phi {
             meta: Meta::default(),
-            // phi expression arguments are added later.
+            // Phi expression arguments are added later.
             args: Vec::new(),
         };
         let mut stmt = Substitution {
@@ -142,7 +168,7 @@ impl SSAStatement for Statement {
         }
     }
 
-    fn ensure_phi_argument(&mut self, env: &impl SSAEnvironment) {
+    fn ensure_phi_argument(&mut self, env: &VersionEnvironment) {
         use Expression::*;
         use Statement::*;
         match self {
@@ -153,21 +179,20 @@ impl SSAStatement for Statement {
                 rhe: Phi { args, .. },
                 ..
             } => {
-                let unversioned_name = name.without_version();
-                trace!("phi statement for variable '{name}' found");
-                if let Some(version) = env.get_variable(&unversioned_name.to_string()) {
+                trace!("phi statement for variable `{name}` found");
+                if let Some(version) = env.get_current_version(name) {
                     // If the argument list does not contain the current version of the variable we add it.
                     if args.iter().any(|arg| {
                         matches!(
                             arg,
-                            Variable { name, ..  } if *name.get_version() == Some(version)
+                            Variable { name, ..  } if name.get_version() == &Some(version)
                         )
                     }) {
                         return;
                     }
                     args.push(Variable {
                         meta: Meta::default(),
-                        name: unversioned_name.with_version(version),
+                        name: name.with_version(version),
                         access: Vec::new(),
                     });
                     self.cache_variable_use();
@@ -178,8 +203,8 @@ impl SSAStatement for Statement {
         }
     }
 
-    fn insert_ssa_variables(&mut self, env: &mut impl SSAEnvironment) -> SSAResult<()> {
-        trace!("converting '{self}' to SSA");
+    fn insert_ssa_variables(&mut self, env: &mut VersionEnvironment) -> SSAResult<()> {
+        debug!("converting `{self}` to SSA");
         use Statement::*;
         let result = match self {
             IfThenElse { cond, .. } => visit_expression(cond, env),
@@ -193,22 +218,22 @@ impl SSAStatement for Statement {
                         // be the first occurrence of a variable. If it is, the variable
                         // is only added to the environment on first use.
                         let version = env
-                            .get_variable(&name.to_string_without_version())
+                            .get_current_version(name)
                             .unwrap_or_default();
                         let versioned_name = name.with_version(version);
                         trace!(
-                            "replacing (declared) variable '{name}' with SSA variable '{versioned_name}'"
+                            "replacing (declared) variable `{name}` with SSA variable '{versioned_name}'"
                         );
                         versioned_name
                     }
                     Component => {
                         // Component names are not versioned.
-                        env.add_component(&name.to_string());
+                        env.add_component(name);
                         name.clone()
                     }
                     Signal(_, _) => {
                         // Signal names are not versioned.
-                        env.add_signal(&name.to_string());
+                        env.add_signal(name);
                         name.clone()
                     }
                 };
@@ -223,15 +248,10 @@ impl SSAStatement for Statement {
                     AssignOp::AssignVar => {
                         // If this is the first assignment to the variable we set the version to 0,
                         // otherwise we increase the version by one.
-                        let version = env
-                            .get_variable(&var.to_string_without_version())
-                            .map(|version| version + 1)
-                            .unwrap_or_default();
-                        env.add_variable(&var.to_string(), version);
+                        let version = env.get_next_version(var);
                         let versioned_var = var.with_version(version);
-
                         trace!(
-                            "replacing (written) variable '{var}' with SSA variable '{versioned_var}'"
+                            "replacing (written) variable `{var}` with SSA variable `{versioned_var}`"
                         );
                         versioned_var
                     }
@@ -255,7 +275,7 @@ impl SSAStatement for Statement {
 
 /// Replaces each occurrence of the variable `v` with a versioned SSA variable `v.n`.
 /// Currently, signals and components are not touched.
-fn visit_expression(expr: &mut Expression, env: &impl SSAEnvironment) -> SSAResult<()> {
+fn visit_expression(expr: &mut Expression, env: &VersionEnvironment) -> SSAResult<()> {
     use Expression::*;
     match expr {
         // Variables are decorated with the corresponding SSA version.
@@ -264,16 +284,21 @@ fn visit_expression(expr: &mut Expression, env: &impl SSAEnvironment) -> SSAResu
                 name.get_version().is_none(),
                 "variable already converted to SSA form"
             );
-            match env.get_variable(&name.to_string_without_version()) {
+            // Ignore declared signals and components.
+            if env.has_signal(name) || env.has_component(name) {
+                return Ok(())
+            }
+            match env.get_current_version(name) {
                 Some(version) => {
                     *name = name.with_version(version);
                     trace!(
-                        "replacing (read) variable '{name}' with SSA variable '{name}.{version}'"
+                        "replacing (read) variable `{name}` with SSA variable `{name}.{version}`"
                     );
                     Ok(())
                 }
                 None => {
-                    trace!("failed to convert undeclared variable '{name}' to SSA");
+                    // TODO: Handle undeclared variables more gracefully.
+                    error!("failed to convert undeclared variable `{name}` to SSA");
                     Err(SSAError::UndefinedVariableError {
                         name: name.to_string(),
                         file_id: meta.get_file_id(),

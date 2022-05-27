@@ -10,11 +10,12 @@ use traits::*;
 
 /// Insert a dummy phi statement in block `j`, for each variable written in block
 /// `i`, if `j` is in the dominance frontier of `i`.
-pub fn insert_phi_statements<'a, BasicBlock>(
-    basic_blocks: &'a mut Vec<BasicBlock>,
+pub fn insert_phi_statements<Environment, BasicBlock>(
+    basic_blocks: &mut Vec<BasicBlock>,
     dominator_tree: &DominatorTree<BasicBlock>,
 ) where
-    BasicBlock: SSABasicBlock + DirectedGraphNode,
+    Environment: SSAEnvironment,
+    BasicBlock: SSABasicBlock<Environment> + DirectedGraphNode,
 {
     // Insert phi statements at the dominance frontier of each block.
     let mut work_list: Vec<Index> = (0..basic_blocks.len()).collect();
@@ -34,7 +35,7 @@ pub fn insert_phi_statements<'a, BasicBlock>(
         for frontier_index in dominator_tree.get_dominance_frontier(current_index) {
             let frontier_block = &mut basic_blocks[frontier_index];
             for name in &variables_written {
-                if !frontier_block.has_phi_statement(&name) {
+                if !frontier_block.has_phi_statement(name) {
                     // If a phi statement was added to the block we need to
                     // re-add the block to the work list.
                     frontier_block.insert_phi_statement(name);
@@ -58,7 +59,7 @@ pub fn insert_ssa_variables<'a, Environment, BasicBlock>(
 ) -> SSAResult<()>
 where
     Environment: SSAEnvironment + Clone,
-    BasicBlock: SSABasicBlock + DirectedGraphNode,
+    BasicBlock: SSABasicBlock<Environment> + DirectedGraphNode,
 {
     insert_ssa_variables_impl(0, basic_blocks, dominator_tree, env)?;
     Ok(())
@@ -72,7 +73,7 @@ fn insert_ssa_variables_impl<'a, Environment, BasicBlock>(
 ) -> SSAResult<()>
 where
     Environment: SSAEnvironment + Clone,
-    BasicBlock: SSABasicBlock + DirectedGraphNode,
+    BasicBlock: SSABasicBlock<Environment> + DirectedGraphNode,
 {
     // 1. Update variables in current block.
     let successors = {
@@ -91,7 +92,9 @@ where
     }
     // 3. Update dominator tree successors recursively.
     for successor_index in dominator_tree.get_dominator_successors(current_index) {
+        env.add_variable_block();
         insert_ssa_variables_impl(successor_index, basic_blocks, dominator_tree, env)?;
+        env.remove_variable_block();
     }
     Ok(())
 }

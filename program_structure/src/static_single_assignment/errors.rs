@@ -3,6 +3,7 @@ use crate::error_definition::Report;
 use crate::file_definition::{FileID, FileLocation};
 
 /// Error enum for SSA generation errors.
+#[derive(Debug)]
 pub enum SSAError {
     /// The variable is read before it is declared/written.
     UndefinedVariableError {

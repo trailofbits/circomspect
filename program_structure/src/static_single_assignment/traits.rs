@@ -7,31 +7,16 @@ pub type Version = usize;
 pub type VariableSet = HashSet<String>;
 
 pub trait SSAEnvironment {
-    /// Track the variable with the given name. Additionally sets the current
-    /// version.
-    fn add_variable(&mut self, name: &str, version: Version);
+    // Enter variable scope.
+    fn add_variable_block(&mut self);
 
-    /// Track the signal with the given name.
-    fn add_signal(&mut self, name: &str);
-
-    /// Track the component with the given name.
-    fn add_component(&mut self, name: &str);
-
-    /// Returns true if the variable is known.
-    fn has_variable(&self, name: &str) -> bool;
-
-    /// Returns true if the signal is known.
-    fn has_signal(&self, name: &str) -> bool;
-
-    /// Returns true if the component is known.
-    fn has_component(&self, name: &str) -> bool;
-
-    /// Returns the current version of the variable with the given name.
-    fn get_variable(&self, name: &str) -> Option<Version>;
+    // Leave variable scope.
+    fn remove_variable_block(&mut self);
 }
 
-pub trait SSABasicBlock: DirectedGraphNode {
-    type Statement: SSAStatement;
+pub trait SSABasicBlock<Environment: SSAEnvironment>: DirectedGraphNode {
+    type Statement: SSAStatement<Environment>;
+
     // type Iter: Iterator<Item = &'a <Self as SSABasicBlock<'a>>::Statement>;
     // type IterMut: Iterator<Item = &'a mut Self::Statement>;
 
@@ -81,7 +66,7 @@ pub trait SSABasicBlock: DirectedGraphNode {
 
     /// Updates the RHS of each phi statement in the basic block with the SSA
     /// variable versions from the given environment.
-    fn update_phi_statements(&mut self, env: &impl SSAEnvironment) {
+    fn update_phi_statements(&mut self, env: &Environment) {
         trace!(
             "updating phi expression arguments in block {}",
             self.get_index()
@@ -99,7 +84,7 @@ pub trait SSABasicBlock: DirectedGraphNode {
 
     /// Updates each variable to the corresponding SSA variable, in each
     /// statement in the basic block.
-    fn insert_ssa_variables(&mut self, env: &mut impl SSAEnvironment) -> SSAResult<()> {
+    fn insert_ssa_variables(&mut self, env: &mut Environment) -> SSAResult<()> {
         trace!("inserting SSA variables in block {}", self.get_index());
         for stmt in self.get_statements_mut() {
             stmt.insert_ssa_variables(env)?;
@@ -108,7 +93,7 @@ pub trait SSABasicBlock: DirectedGraphNode {
     }
 }
 
-pub trait SSAStatement: Clone {
+pub trait SSAStatement<Environment: SSAEnvironment>: Clone {
     /// Returns the set of variables written by statement. Since we don't want
     /// to pollute the general SSA traits with Circom internal types we use
     /// strings to represent variable names here.
@@ -127,11 +112,11 @@ pub trait SSAStatement: Clone {
     /// current version of the variable, according to the given environment.
     ///
     /// Panics if the statement is not a phi statement.
-    fn ensure_phi_argument(&mut self, env: &impl SSAEnvironment);
+    fn ensure_phi_argument(&mut self, env: &Environment);
 
     /// Replace each variable occurring in the statement by the corresponding
     /// versioned SSA variable.
-    fn insert_ssa_variables(&mut self, env: &mut impl SSAEnvironment) -> SSAResult<()>;
+    fn insert_ssa_variables(&mut self, env: &mut Environment) -> SSAResult<()>;
 }
 
 pub type Index = usize;

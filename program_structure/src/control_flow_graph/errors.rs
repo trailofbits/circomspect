@@ -4,6 +4,7 @@ use crate::file_definition::{FileID, FileLocation};
 use crate::ir::errors::IRError;
 
 /// Error enum for CFG generation errors.
+#[derive(Debug)]
 pub enum CFGError {
     /// The variable is read before it is declared/written.
     UndefinedVariableError {
