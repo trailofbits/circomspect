@@ -1,4 +1,4 @@
-use log::trace;
+use log::{debug, trace};
 use std::collections::HashSet;
 use std::convert::TryFrom;
 
@@ -36,6 +36,7 @@ impl TryFrom<&TemplateData> for (Cfg, ReportCollection) {
         let reports = ensure_unique_variables(&mut template_body, &param_data)?;
 
         // Convert template AST to CFG and compute dominator tree.
+        debug!("building CFG for `{name}`");
         let basic_blocks =
             build_basic_blocks(&template_body, &mut IREnvironment::from(&param_data))?;
         let dominator_tree = DominatorTree::new(&basic_blocks);
@@ -58,6 +59,7 @@ impl TryFrom<&FunctionData> for (Cfg, ReportCollection) {
         let reports = ensure_unique_variables(&mut function_body, &param_data)?;
 
         // Convert function AST to CFG and compute dominator tree.
+        debug!("building CFG for `{name}`");
         let basic_blocks =
             build_basic_blocks(&function_body, &mut IREnvironment::from(&param_data))?;
         let dominator_tree = DominatorTree::new(&basic_blocks);
@@ -135,7 +137,7 @@ fn visit_statement(
 
             // If the last statement of the block is a control-flow statement,
             // `pred_set` will be non-empty. Otherwise it will be empty.
-            trace!("leaving block statement ({:?})", pred_set);
+            trace!("leaving block statement (predecessors: {:?})", pred_set);
             Ok(pred_set)
         }
         While {
@@ -151,7 +153,7 @@ fn visit_statement(
             // if-statement, and a loop body containing the while-statement
             // body. The index of the loop header will be `current_index + 1`,
             // and the index of the loop body will be `current_index + 2`.
-            trace!("appending statement 'if {cond}' to basic block {current_index}");
+            trace!("appending statement `if {cond}` to basic block {current_index}");
             basic_blocks
                 .last_mut()
                 .append_statement(ir::Statement::IfThenElse {
@@ -192,7 +194,7 @@ fn visit_statement(
             else_case,
             ..
         } => {
-            trace!("appending statement 'if {cond}' to basic block {current_index}");
+            trace!("appending statement `if {cond}` to basic block {current_index}");
             basic_blocks
                 .last_mut()
                 .append_statement(ir::Statement::IfThenElse {
@@ -207,13 +209,13 @@ fn visit_statement(
             let pred_set = HashSet::from([current_index]);
             complete_basic_block(basic_blocks, &pred_set, meta);
 
-            trace!("visiting true branch");
+            trace!("visiting true if-statement branch");
             let mut if_pred_set = visit_statement(&if_case, env, basic_blocks)?;
             if_pred_set.insert(current_index);
 
             // Visit the else-case body.
             if let Some(else_case) = else_case {
-                trace!("visiting false branch");
+                trace!("visiting false if-statement branch");
                 let meta = else_case.get_meta().into();
                 let pred_set = HashSet::from([current_index]);
                 complete_basic_block(basic_blocks, &pred_set, meta);
@@ -235,14 +237,14 @@ fn visit_statement(
                 Signal(Output, _) => env.add_output(name, ()),
                 Signal(Intermediate, _) => env.add_intermediate(name, ()),
             };
-            trace!("appending '{stmt}' to basic block {current_index}");
+            trace!("appending `{stmt}` to basic block {current_index}");
             basic_blocks
                 .last_mut()
                 .append_statement(stmt.try_into_ir(env)?);
             Ok(HashSet::new())
         }
         _ => {
-            trace!("appending '{stmt}' to basic block {current_index}");
+            trace!("appending `{stmt}` to basic block {current_index}");
             basic_blocks
                 .last_mut()
                 .append_statement(stmt.try_into_ir(env)?);
@@ -278,7 +280,7 @@ fn complete_basic_block(basic_blocks: &mut BasicBlockVec, pred_set: &IndexSet, m
                 ..
             }) => {
                 if j != *if_true && if_false.is_none() {
-                    trace!("updating false branch target of 'if {cond}'");
+                    trace!("updating false branch target of `if {cond}`");
                     *if_false = Some(j)
                 }
             }

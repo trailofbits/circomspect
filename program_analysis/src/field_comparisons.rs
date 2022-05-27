@@ -1,3 +1,5 @@
+use log::debug;
+
 use program_structure::cfg::Cfg;
 use program_structure::error_code::ReportCode;
 use program_structure::error_definition::{Report, ReportCollection};
@@ -22,14 +24,14 @@ impl FieldElementComparisonWarning {
             "Field element comparison here.".to_string(),
         );
         report.add_note(format!(
-            "Field elements `x` are always reduced modulo `p` and then normalized as `x > p/2? x - p: x` before they are compared."
+            "Field elements `x` are always normalized as `x > p/2? x - p: x` before they are compared."
         ));
         report
     }
 }
 
 /// Field element comparisons in Circom may produce surprising results since
-/// elements are normalized to the the half-open interval `[-p/2, p/2)` before
+/// elements are normalized to the the half-open interval `(-p/2, p/2]` before
 /// they are compared. In particular, this means that
 ///
 ///   - `p/2 < 0`,
@@ -38,12 +40,14 @@ impl FieldElementComparisonWarning {
 ///
 /// are all true.
 pub fn find_field_element_comparisons(cfg: &Cfg) -> ReportCollection {
+    debug!("running field element comparison analysis pass");
     let mut reports = ReportCollection::new();
     for basic_block in cfg.iter() {
         for stmt in basic_block.iter() {
             visit_statement(stmt, &mut reports);
         }
     }
+    debug!("{} new reports generated", reports.len());
     reports
 }
 

@@ -1,4 +1,4 @@
-use log::trace;
+use log::{debug, trace};
 
 use crate::file_definition::FileID;
 use crate::ir::variable_meta::VariableMeta;
@@ -68,7 +68,7 @@ impl Cfg {
                 basic_block.get_successors(),
             );
             for stmt in basic_block.iter() {
-                trace!("    {stmt}")
+                trace!("    `{stmt};`")
             }
         }
         Ok(())

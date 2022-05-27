@@ -1,3 +1,4 @@
+use log::debug;
 use std::collections::HashMap;
 
 use program_structure::cfg::Cfg;
@@ -107,6 +108,7 @@ impl VariableReads {
 /// TODO: The current analysis does not catch variables which are part of the RHS
 /// of a phi statement, where the LHS of the phi statement is never read.
 pub fn find_dead_assignments(cfg: &Cfg) -> ReportCollection {
+    debug!("running dead assignment analysis pass");
     // Collect all variable assignment locations.
     let mut variables_read = VariableReads::new();
     let mut variables_written = VariableWrites::new();
@@ -115,7 +117,6 @@ pub fn find_dead_assignments(cfg: &Cfg) -> ReportCollection {
             visit_statement(stmt, &mut variables_read, &mut variables_written);
         }
     }
-
     let mut reports = ReportCollection::new();
     for (name, meta) in variables_written.iter() {
         // We assume that the CFG is converted to SSA here.
@@ -123,6 +124,7 @@ pub fn find_dead_assignments(cfg: &Cfg) -> ReportCollection {
             reports.push(build_report(name.get_name(), meta));
         }
     }
+    debug!("{} new reports generated", reports.len());
     reports
 }
 

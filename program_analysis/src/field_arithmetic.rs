@@ -1,3 +1,5 @@
+use log::debug;
+
 use program_structure::cfg::Cfg;
 use program_structure::error_code::ReportCode;
 use program_structure::error_definition::{Report, ReportCollection};
@@ -29,12 +31,14 @@ impl FieldElementArithmeticWarning {
 /// unexpected results. Worst case, it may allow a malicious prover to forge
 /// proofs.
 pub fn find_field_element_arithmetic(cfg: &Cfg) -> ReportCollection {
+    debug!("running field element arithmetic analysis pass");
     let mut reports = ReportCollection::new();
     for basic_block in cfg.iter() {
         for stmt in basic_block.iter() {
             visit_statement(stmt, &mut reports);
         }
     }
+    debug!("{} new reports generated", reports.len());
     reports
 }
 

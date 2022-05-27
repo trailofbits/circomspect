@@ -1,3 +1,5 @@
+use log::debug;
+
 use program_structure::cfg::Cfg;
 use program_structure::error_code::ReportCode;
 use program_structure::error_definition::{Report, ReportCollection};
@@ -29,12 +31,14 @@ impl SignalAssignmentWarning {
 /// If the developer meant to use the constraint assignment operator `<==` this
 /// could lead to unexpected results.
 pub fn find_signal_assignments(cfg: &Cfg) -> ReportCollection {
+    debug!("running signal assignment analysis pass");
     let mut reports = ReportCollection::new();
     for basic_block in cfg.iter() {
         for stmt in basic_block.iter() {
             visit_statement(stmt, &mut reports);
         }
     }
+    debug!("{} new reports generated", reports.len());
     reports
 }
 
