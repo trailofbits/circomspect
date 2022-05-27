@@ -1,5 +1,4 @@
 pub mod basic_block;
-pub mod dominator_tree;
 pub mod errors;
 pub mod param_data;
 
