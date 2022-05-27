@@ -19,7 +19,7 @@ fn test_ssa_from_if() {
             return y + x;
         }
     "#;
-    validate_ssa(src);
+    validate_ssa(src, &["x.0", "y.0", "y.1", "y.2", "y.3"]);
 }
 
 #[test]
@@ -37,7 +37,10 @@ fn test_ssa_from_if_then_else() {
             return y + x;
         }
     "#;
-    validate_ssa(src);
+    validate_ssa(
+        src,
+        &["x.0", "x.1", "x.2", "x.3", "y.0", "y.1", "y.2", "y.3"],
+    );
 }
 
 #[test]
@@ -51,7 +54,7 @@ fn test_ssa_from_while() {
             return y + x;
         }
     "#;
-    validate_ssa(&src);
+    validate_ssa(&src, &["x.0", "y.0", "y.1", "y.2"]);
 }
 
 #[test]
@@ -68,7 +71,7 @@ fn test_ssa_from_nested_if() {
             return y + x;
         }
     "#;
-    validate_ssa(&src);
+    validate_ssa(&src, &["x.0", "y.0", "y.1", "y.2", "y.3"]);
 }
 
 #[test]
@@ -85,10 +88,10 @@ fn test_ssa_from_nested_while() {
             return y + x;
         }
     "#;
-    validate_ssa(&src);
+    validate_ssa(&src, &["x.0", "y.0", "y.1", "y.2", "y.3", "y.4"]);
 }
 
-fn validate_ssa(src: &str) {
+fn validate_ssa(src: &str, variables: &[&str]) {
     // 1. Generate CFG and convert to SSA.
     let (mut cfg, _) = parse_definition(src).unwrap().try_into().unwrap();
     cfg.into_ssa().unwrap();
@@ -112,6 +115,17 @@ fn validate_ssa(src: &str) {
     // 3. Check that all variables are written before they are read.
     let mut env = cfg.get_parameters().iter().cloned().collect();
     validate_reads(cfg.get_entry_block(), &cfg, &mut env);
+
+    // 4. Verify declared variables.
+    assert_eq!(
+        cfg.get_variables()
+            .map(|name| name.to_string())
+            .collect::<HashSet<_>>(),
+        variables
+            .iter()
+            .map(|name| name.to_string())
+            .collect::<HashSet<_>>()
+    );
 }
 
 fn validate_reads(current_block: &BasicBlock, cfg: &Cfg, env: &mut HashSet<VariableName>) {
@@ -130,7 +144,7 @@ fn validate_reads(current_block: &BasicBlock, cfg: &Cfg, env: &mut HashSet<Varia
         for name in VariableMeta::get_variables_written(stmt) {
             assert!(
                 env.insert(name.clone()),
-                "variable `{name}` is written multiple times {stmt}"
+                "variable `{name}` is written multiple times"
             );
         }
     }

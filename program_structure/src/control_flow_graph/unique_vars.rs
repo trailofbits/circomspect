@@ -13,19 +13,19 @@ type Version = usize;
 
 // Location of the last seen declaration of a variable.
 struct DeclarationData {
-    file_id: FileID,
+    file_id: Option<FileID>,
     file_location: FileLocation,
 }
 
 impl DeclarationData {
-    fn new(file_id: FileID, file_location: FileLocation) -> DeclarationData {
+    fn new(file_id: Option<FileID>, file_location: FileLocation) -> DeclarationData {
         DeclarationData {
             file_id,
             file_location,
         }
     }
 
-    fn get_file_id(&self) -> FileID {
+    fn get_file_id(&self) -> Option<FileID> {
         self.file_id
     }
 
@@ -66,7 +66,7 @@ impl DeclarationEnvironment {
     pub fn add_declaration(
         &mut self,
         name: &str,
-        file_id: FileID,
+        file_id: Option<FileID>,
         file_location: FileLocation,
     ) -> Option<Version> {
         self.declarations
@@ -122,7 +122,7 @@ impl TryFrom<&ParameterData> for DeclarationEnvironment {
     fn try_from(param_data: &ParameterData) -> CFGResult<Self> {
         let mut env = DeclarationEnvironment::new();
         for name in param_data.iter() {
-            let file_id = param_data.get_file_id();
+            let file_id = *param_data.get_file_id();
             let file_location = param_data.get_location();
             if env
                 .add_declaration(&name.to_string(), file_id, file_location.clone())
@@ -130,7 +130,7 @@ impl TryFrom<&ParameterData> for DeclarationEnvironment {
             {
                 return Err(CFGError::ParameterNameCollisionError {
                     name: name.to_string(),
-                    file_id,
+                    file_id: file_id,
                     file_location,
                 });
             }
@@ -206,8 +206,7 @@ fn visit_statement(
             if let Some(declaration) = env.get_declaration(name) {
                 reports.push(build_report(name, meta, declaration));
             }
-            match env.add_declaration(name, meta.file_id.unwrap_or_default(), meta.file_location())
-            {
+            match env.add_declaration(name, meta.file_id, meta.file_location()) {
                 // This is a declaration of a previously unseen variable. It should not be versioned.
                 None => {}
                 // This is a declaration of a previously seen variable. It needs to be versioned.
@@ -325,7 +324,7 @@ fn visit_expression(expr: &mut Expression, env: &DeclarationEnvironment) {
 fn build_report(name: &str, primary_meta: &Meta, secondary_decl: &DeclarationData) -> Report {
     CFGError::produce_report(CFGError::ShadowingVariableWarning {
         name: name.to_string(),
-        primary_file_id: primary_meta.file_id.unwrap_or_default(),
+        primary_file_id: primary_meta.file_id,
         primary_location: primary_meta.file_location(),
         secondary_file_id: secondary_decl.get_file_id(),
         secondary_location: secondary_decl.file_location(),

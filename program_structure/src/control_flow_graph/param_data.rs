@@ -1,13 +1,14 @@
 use crate::ast::Definition;
 use crate::file_definition::{FileID, FileLocation};
 use crate::function_data::FunctionData;
+use crate::ir::declaration_map::{Declaration, VariableType};
 use crate::template_data::TemplateData;
 
 use crate::ir::{IREnvironment, VariableName};
 
 pub struct ParameterData {
     param_names: Vec<VariableName>,
-    file_id: FileID,
+    file_id: Option<FileID>,
     file_location: FileLocation,
 }
 
@@ -15,7 +16,7 @@ impl ParameterData {
     #[must_use]
     pub fn new(
         param_names: &[String],
-        file_id: FileID,
+        file_id: Option<FileID>,
         file_location: FileLocation,
     ) -> ParameterData {
         ParameterData {
@@ -31,8 +32,8 @@ impl ParameterData {
     }
 
     #[must_use]
-    pub fn get_file_id(&self) -> FileID {
-        self.file_id
+    pub fn get_file_id(&self) -> &Option<FileID> {
+        &self.file_id
     }
 
     #[must_use]
@@ -62,7 +63,7 @@ impl From<&FunctionData> for ParameterData {
     fn from(function: &FunctionData) -> ParameterData {
         ParameterData::new(
             function.get_name_of_params(),
-            function.get_file_id(),
+            Some(function.get_file_id()),
             function.get_param_location(),
         )
     }
@@ -72,7 +73,7 @@ impl From<&TemplateData> for ParameterData {
     fn from(template: &TemplateData) -> ParameterData {
         ParameterData::new(
             template.get_name_of_params(),
-            template.get_file_id(),
+            Some(template.get_file_id()),
             template.get_param_location(),
         )
     }
@@ -92,7 +93,7 @@ impl From<&Definition> for ParameterData {
                 args,
                 arg_location,
                 ..
-            } => ParameterData::new(args, meta.file_id.unwrap_or_default(), arg_location.clone()),
+            } => ParameterData::new(args, meta.file_id, arg_location.clone()),
         }
     }
 }
@@ -101,7 +102,14 @@ impl From<&ParameterData> for IREnvironment {
     fn from(param_data: &ParameterData) -> IREnvironment {
         let mut env = IREnvironment::new();
         for name in param_data.iter() {
-            env.add_variable(&name.to_string(), ());
+            let declaration = Declaration::new(
+                name,
+                &VariableType::Var,
+                &Vec::new(),
+                param_data.file_id,
+                &param_data.file_location,
+            );
+            env.add_declaration(&name.to_string(), declaration);
         }
         env
     }

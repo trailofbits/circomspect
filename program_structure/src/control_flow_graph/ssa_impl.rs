@@ -1,7 +1,8 @@
 use log::{debug, error, trace};
-use std::collections::HashSet;
+use std::ops::Range;
 
 use crate::environment::VarEnvironment;
+use crate::ir::declaration_map::{DeclarationMap, VariableType};
 use crate::ir::variable_meta::VariableMeta;
 use crate::ir::*;
 use crate::ssa::errors::*;
@@ -23,26 +24,34 @@ pub struct VersionEnvironment {
     global_versions: VarEnvironment<Version>,
     // Tracks defined signals to ensure that we know if a variable use represents
     // a variable, signal, or component.
-    signals: HashSet<VariableName>,
-    // Tracks defined components to ensure that we know if a variable use represents
-    // a variable, signal, or component.
-    components: HashSet<VariableName>,
+    declarations: DeclarationMap,
 }
 
 impl VersionEnvironment {
-    pub fn new() -> VersionEnvironment {
-        VersionEnvironment {
+    pub fn new(parameters: &ParameterData, declarations: &DeclarationMap) -> VersionEnvironment {
+        let mut env = VersionEnvironment {
             scoped_versions: VarEnvironment::new(),
             global_versions: VarEnvironment::new(),
-            signals: HashSet::new(),
-            components: HashSet::new(),
+            declarations: declarations.clone(),
+        };
+        for name in parameters.iter() {
+            env.get_next_version(name);
         }
+        env
     }
 
     // Get the current (scoped) version of the variable.
     pub fn get_current_version(&self, name: &VariableName) -> Option<Version> {
         let name = name.to_string_without_version();
         self.scoped_versions.get_variable(&name).cloned()
+    }
+
+    // Get the range of versions seen for the variable.
+    pub fn get_version_range(&self, name: &VariableName) -> Option<Range<Version>> {
+        let name = name.to_string_without_version();
+        self.global_versions
+            .get_variable(&name)
+            .map(|max| 0..(max + 1))
     }
 
     // Get the version to apply for a newly assigned variable.
@@ -60,30 +69,18 @@ impl VersionEnvironment {
         version
     }
 
-    fn add_signal(&mut self, name: &VariableName) {
-        self.signals.insert(name.clone());
-    }
-
-    fn add_component(&mut self, name: &VariableName) {
-        self.components.insert(name.clone());
-    }
-
     fn has_signal(&self, name: &VariableName) -> bool {
-        self.signals.contains(name)
+        matches!(
+            self.declarations.get_type(name),
+            Some(VariableType::Signal(_, _))
+        )
     }
 
     fn has_component(&self, name: &VariableName) -> bool {
-        self.signals.contains(name)
-    }
-}
-
-impl From<&ParameterData> for VersionEnvironment {
-    fn from(params: &ParameterData) -> VersionEnvironment {
-        let mut env = VersionEnvironment::new();
-        for name in params.iter() {
-            env.get_next_version(name);
-        }
-        env
+        matches!(
+            self.declarations.get_type(name),
+            Some(VariableType::Component)
+        )
     }
 }
 
@@ -210,34 +207,6 @@ impl SSAStatement<VersionEnvironment> for Statement {
         let result = match self {
             IfThenElse { cond, .. } => visit_expression(cond, env),
             Return { value, .. } => visit_expression(value, env),
-            Declaration { xtype, name, .. } => {
-                assert!(name.get_version().is_none());
-                use VariableType::*;
-                *name = match xtype {
-                    Var => {
-                        // Since the CFG may contain loops, a declaration may not always
-                        // be the first occurrence of a variable. If it is, the variable
-                        // is only added to the environment on first use.
-                        let version = env.get_current_version(name).unwrap_or_default();
-                        let versioned_name = name.with_version(version);
-                        trace!(
-                            "replacing (declared) variable `{name}` with SSA variable '{versioned_name}'"
-                        );
-                        versioned_name
-                    }
-                    Component => {
-                        // Component names are not versioned.
-                        env.add_component(name);
-                        name.clone()
-                    }
-                    Signal(_, _) => {
-                        // Signal names are not versioned.
-                        env.add_signal(name);
-                        name.clone()
-                    }
-                };
-                Ok(())
-            }
             Substitution { var, op, rhe, .. } => {
                 assert!(var.get_version().is_none());
                 // We need to visit the right-hand expression before updating the environment.

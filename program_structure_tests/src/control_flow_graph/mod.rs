@@ -17,7 +17,8 @@ fn test_cfg_from_if() {
     "#;
     validate_cfg(
         src,
-        &[3, 2, 1],
+        &["x", "y"],
+        &[2, 2, 1],
         &[
             (vec![], vec![1, 2]),
             (vec![0], vec![2]),
@@ -43,7 +44,8 @@ fn test_cfg_from_if_then_else() {
     "#;
     validate_cfg(
         src,
-        &[3, 2, 2, 1],
+        &["x", "y"],
+        &[2, 2, 2, 1],
         &[
             (vec![], vec![1, 2]),
             (vec![0], vec![3]),
@@ -66,7 +68,8 @@ fn test_cfg_from_while() {
     "#;
     validate_cfg(
         src,
-        &[2, 1, 1, 1],
+        &["x", "y"],
+        &[1, 1, 1, 1],
         &[
             (vec![], vec![1]),
             // 0:
@@ -101,7 +104,8 @@ fn test_cfg_from_nested_if() {
     "#;
     validate_cfg(
         src,
-        &[3, 2, 1, 1],
+        &["x", "y"],
+        &[2, 2, 1, 1],
         &[
             (vec![], vec![1, 3]),
             // 0:
@@ -138,7 +142,8 @@ fn test_cfg_from_nested_while() {
     "#;
     validate_cfg(
         src,
-        &[2, 1, 1, 1, 1, 1],
+        &["x", "y"],
+        &[1, 1, 1, 1, 1, 1],
         &[
             (vec![], vec![1]),
             // 0:
@@ -163,16 +168,30 @@ fn test_cfg_from_nested_while() {
     );
 }
 
-fn validate_cfg(src: &str, lengths: &[usize], edges: &[(Vec<Index>, Vec<Index>)]) {
+fn validate_cfg(
+    src: &str,
+    variables: &[&str],
+    lengths: &[usize],
+    edges: &[(Vec<Index>, Vec<Index>)],
+) {
     // 1. Generate CFG from source.
     let (cfg, _) = parse_definition(src).unwrap().try_into().unwrap();
 
-    // 2. Validate block lengths.
+    // 2. Verify declared variables.
+    assert_eq!(
+        cfg.get_variables().cloned().collect::<HashSet<_>>(),
+        variables
+            .iter()
+            .map(|name| name[..].into())
+            .collect::<HashSet<_>>()
+    );
+
+    // 3. Validate block lengths.
     for (basic_block, length) in cfg.iter().zip(lengths.iter()) {
         assert_eq!(basic_block.len(), *length);
     }
 
-    // 3. Validate block edges against input.
+    // 4. Validate block edges against input.
     for (basic_block, edges) in cfg.iter().zip(edges.iter()) {
         let actual_predecessors = basic_block.get_predecessors();
         let expected_predecessors: HashSet<_> = edges.0.iter().cloned().collect();
@@ -193,7 +212,7 @@ fn validate_cfg(src: &str, lengths: &[usize], edges: &[(Vec<Index>, Vec<Index>)]
         );
     }
 
-    // 4. Check that block j is a successor of i iff i is a predecessor of j.
+    // 5. Check that block j is a successor of i iff i is a predecessor of j.
     for first_block in cfg.iter() {
         for second_block in cfg.iter() {
             assert_eq!(

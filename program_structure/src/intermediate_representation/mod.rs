@@ -1,3 +1,4 @@
+pub mod declaration_map;
 pub mod errors;
 pub mod value_meta;
 pub mod variable_meta;

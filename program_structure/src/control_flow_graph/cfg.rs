@@ -1,8 +1,10 @@
 use log::{debug, trace};
 
 use crate::file_definition::FileID;
+use crate::ir::declaration_map::{Declaration, DeclarationMap};
 use crate::ir::value_meta::ValueEnvironment;
 use crate::ir::variable_meta::VariableMeta;
+use crate::ir::VariableName;
 use crate::ssa::dominator_tree::DominatorTree;
 use crate::ssa::errors::SSAResult;
 use crate::ssa::traits::Version;
@@ -17,7 +19,8 @@ pub type Index = usize;
 
 pub struct Cfg {
     name: String,
-    param_data: ParameterData,
+    parameters: ParameterData,
+    declarations: DeclarationMap,
     basic_blocks: Vec<BasicBlock>,
     dominator_tree: DominatorTree<BasicBlock>,
 }
@@ -25,13 +28,15 @@ pub struct Cfg {
 impl Cfg {
     pub(crate) fn new(
         name: String,
-        param_data: ParameterData,
+        parameters: ParameterData,
+        declarations: DeclarationMap,
         basic_blocks: Vec<BasicBlock>,
         dominator_tree: DominatorTree<BasicBlock>,
     ) -> Cfg {
         Cfg {
             name,
-            param_data,
+            parameters,
+            declarations,
             basic_blocks,
             dominator_tree,
         }
@@ -60,18 +65,38 @@ impl Cfg {
         self.cache_variable_use();
 
         // 2. Insert phi statements and convert variables to SSA.
-        let mut env: VersionEnvironment = self.get_parameters().into();
+        let mut env = VersionEnvironment::new(self.get_parameters(), self.get_declarations());
         insert_phi_statements(&mut self.basic_blocks, &self.dominator_tree);
         insert_ssa_variables(&mut self.basic_blocks, &self.dominator_tree, &mut env)?;
 
         // 3. Update parameters to SSA form.
-        for name in self.param_data.iter_mut() {
+        for name in self.parameters.iter_mut() {
             *name = name.with_version(Version::default());
         }
 
         // 4. Re-cache variable use, and run value propagation.
         self.cache_variable_use();
         self.propagate_values();
+
+        // 5. Update declaration map to track SSA variables.
+        let mut versioned_declarations = DeclarationMap::new();
+        for (name, declaration) in self.declarations.iter() {
+            for version in env
+                .get_version_range(name)
+                .expect("variable in environment")
+            {
+                let versioned_name = declaration.get_name().with_version(version);
+                let versioned_declaration = Declaration::new(
+                    &versioned_name,
+                    declaration.get_type(),
+                    declaration.get_dimensions(),
+                    declaration.get_file_id(),
+                    &declaration.get_location(),
+                );
+                versioned_declarations.add_declaration(&versioned_name, versioned_declaration);
+            }
+        }
+        self.declarations = versioned_declarations;
 
         for basic_block in self.basic_blocks.iter() {
             trace!(
@@ -95,14 +120,28 @@ impl Cfg {
 
     /// Get the file ID for the corresponding function or template.
     #[must_use]
-    pub fn get_file_id(&self) -> FileID {
-        self.param_data.get_file_id()
+    pub fn get_file_id(&self) -> &Option<FileID> {
+        &self.parameters.get_file_id()
     }
 
     /// Returns the parameter data for the corresponding function or template.
     #[must_use]
     pub fn get_parameters(&self) -> &ParameterData {
-        &self.param_data
+        &self.parameters
+    }
+
+    #[must_use]
+    pub fn get_declarations(&self) -> &DeclarationMap {
+        &self.declarations
+    }
+
+    #[must_use]
+    pub fn get_variables(&self) -> impl Iterator<Item = &VariableName> {
+        self.declarations.iter().map(|(name, _)| name)
+    }
+
+    pub fn get_declaration(&self, name: &VariableName) -> Option<&Declaration> {
+        self.declarations.get_declaration(name)
     }
 
     /// Returns an iterator over the basic blocks in the CFG.

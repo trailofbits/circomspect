@@ -7,6 +7,7 @@ use std::fmt::{Debug, Display, Formatter};
 use crate::ast;
 use crate::constants::UsefulConstants;
 
+use super::declaration_map::VariableType;
 use super::errors::{IRError, IRResult};
 use super::ir::*;
 use super::value_meta::{ValueEnvironment, ValueMeta, ValueReduction};
@@ -484,35 +485,39 @@ impl TryIntoIR for ast::Expression {
                 if_false: Box::new(if_false.as_ref().try_into_ir(env)?),
             }),
             Variable { meta, name, access } => {
-                if env.has_variable(name) {
-                    Ok(Expression::Variable {
-                        meta: meta.into(),
-                        name: name.into(),
-                        access: access
-                            .iter()
-                            .map(|acc| acc.try_into_ir(env))
-                            .collect::<IRResult<Vec<Access>>>()?,
-                    })
-                } else if env.has_component(name) {
-                    Ok(Expression::Component {
-                        meta: meta.into(),
+                // Get the variable type from the corresponding declaration.
+                // TODO: Generate a report rather than an error here.
+                let xtype = env
+                    .get_declaration(&name)
+                    .map(|declaration| declaration.get_type())
+                    .ok_or(IRError::UndefinedVariableError {
                         name: name.clone(),
-                    })
-                } else if env.has_signal(name) {
-                    Ok(Expression::Signal {
-                        meta: meta.into(),
-                        name: name.clone(),
-                        access: access
-                            .iter()
-                            .map(|acc| acc.try_into_ir(env))
-                            .collect::<IRResult<Vec<Access>>>()?,
-                    })
-                } else {
-                    Err(IRError::UndefinedVariableError {
-                        name: name.to_string(),
-                        file_id: meta.file_id.unwrap_or_default(),
+                        file_id: meta.file_id,
                         file_location: meta.file_location(),
-                    })
+                    })?;
+
+                use VariableType::*;
+                match xtype {
+                    Var => Ok(Expression::Variable {
+                        meta: meta.into(),
+                        name: name[..].into(),
+                        access: access
+                            .iter()
+                            .map(|acc| acc.try_into_ir(env))
+                            .collect::<IRResult<Vec<Access>>>()?,
+                    }),
+                    Component => Ok(Expression::Component {
+                        meta: meta.into(),
+                        name: name.clone(),
+                    }),
+                    Signal(_, _) => Ok(Expression::Signal {
+                        meta: meta.into(),
+                        name: name.clone(),
+                        access: access
+                            .iter()
+                            .map(|acc| acc.try_into_ir(env))
+                            .collect::<IRResult<Vec<Access>>>()?,
+                    }),
                 }
             }
             Number(meta, value) => Ok(Expression::Number(meta.into(), value.clone())),

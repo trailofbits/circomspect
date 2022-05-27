@@ -176,7 +176,6 @@ fn visit_statement(
         Return { value, .. } => visit_expression(value, variables_read),
         LogCall { arg, .. } => visit_expression(arg, variables_read),
         Assert { arg, .. } => visit_expression(arg, variables_read),
-        Declaration { .. } => (),
     }
 }
 

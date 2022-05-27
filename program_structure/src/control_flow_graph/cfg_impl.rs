@@ -9,6 +9,7 @@ use crate::error_definition::ReportCollection;
 use crate::function_data::FunctionData;
 
 use crate::ir;
+use crate::ir::declaration_map::DeclarationMap;
 use crate::ir::{IREnvironment, TryIntoIR};
 use crate::nonempty_vec::NonEmptyVec;
 use crate::ssa::dominator_tree::DominatorTree;
@@ -38,11 +39,12 @@ impl TryFrom<&TemplateData> for (Cfg, ReportCollection) {
 
         // Convert template AST to CFG and compute dominator tree.
         debug!("building CFG for `{name}`");
-        let basic_blocks =
-            build_basic_blocks(&template_body, &mut IREnvironment::from(&param_data))?;
+        let mut env = IREnvironment::from(&param_data);
+        let basic_blocks = build_basic_blocks(&template_body, &mut env)?;
         let dominator_tree = DominatorTree::new(&basic_blocks);
+        let declarations = DeclarationMap::from(&env);
         Ok((
-            Cfg::new(name, param_data, basic_blocks, dominator_tree),
+            Cfg::new(name, param_data, declarations, basic_blocks, dominator_tree),
             reports,
         ))
     }
@@ -61,11 +63,12 @@ impl TryFrom<&FunctionData> for (Cfg, ReportCollection) {
 
         // Convert function AST to CFG and compute dominator tree.
         debug!("building CFG for `{name}`");
-        let basic_blocks =
-            build_basic_blocks(&function_body, &mut IREnvironment::from(&param_data))?;
+        let mut env = IREnvironment::from(&param_data);
+        let basic_blocks = build_basic_blocks(&function_body, &mut env)?;
         let dominator_tree = DominatorTree::new(&basic_blocks);
+        let declarations = DeclarationMap::from(&env);
         Ok((
-            Cfg::new(name, param_data, basic_blocks, dominator_tree),
+            Cfg::new(name, param_data, declarations, basic_blocks, dominator_tree),
             reports,
         ))
     }
@@ -83,13 +86,20 @@ impl TryFrom<&Definition> for (Cfg, ReportCollection) {
                 let mut body = body.clone();
                 let reports = ensure_unique_variables(&mut body, &param_data)?;
 
-                // Convert function AST to CFG and compute dominator tree.
+                // Convert AST to CFG and compute dominator tree.
                 debug!("building CFG for `{name}`");
-                let basic_blocks =
-                    build_basic_blocks(&body, &mut IREnvironment::from(&param_data))?;
+                let mut env = IREnvironment::from(&param_data);
+                let basic_blocks = build_basic_blocks(&body, &mut env)?;
                 let dominator_tree = DominatorTree::new(&basic_blocks);
+                let declarations = DeclarationMap::from(&env);
                 Ok((
-                    Cfg::new(name.to_string(), param_data, basic_blocks, dominator_tree),
+                    Cfg::new(
+                        name.to_string(),
+                        param_data,
+                        declarations,
+                        basic_blocks,
+                        dominator_tree,
+                    ),
                     reports,
                 ))
             }
@@ -161,6 +171,8 @@ fn visit_statement(
             // of predecessors for the next block, we create a new block before
             // continuing.
             trace!("entering block statement");
+            env.add_variable_block();
+
             let mut pred_set = IndexSet::new();
             for stmt in stmts {
                 if !pred_set.is_empty() {
@@ -169,10 +181,11 @@ fn visit_statement(
                 }
                 pred_set = visit_statement(stmt, env, basic_blocks)?;
             }
+            trace!("leaving block statement (predecessors: {:?})", pred_set);
+            env.remove_variable_block();
 
             // If the last statement of the block is a control-flow statement,
             // `pred_set` will be non-empty. Otherwise it will be empty.
-            trace!("leaving block statement (predecessors: {:?})", pred_set);
             Ok(pred_set)
         }
         While {
@@ -277,21 +290,22 @@ fn visit_statement(
                 Ok(if_pred_set)
             }
         }
-        Declaration { xtype, name, .. } => {
-            // Track variable types in the environment.
-            use crate::ast::SignalType::*;
-            use crate::ast::VariableType::*;
-            match xtype {
-                Var => env.add_variable(name, ()),
-                Component => env.add_component(name, ()),
-                Signal(Input, _) => env.add_input(name, ()),
-                Signal(Output, _) => env.add_output(name, ()),
-                Signal(Intermediate, _) => env.add_intermediate(name, ()),
-            };
-            trace!("appending `{stmt}` to basic block {current_index}");
-            basic_blocks
-                .last_mut()
-                .append_statement(stmt.try_into_ir(env)?);
+        Declaration {
+            meta,
+            name,
+            xtype,
+            dimensions,
+            ..
+        } => {
+            // Declarations are tracked by the CFG header, so we simply add new declarations to the environment.
+            let declaration = (
+                meta.clone(),
+                name.to_string(),
+                xtype.clone(),
+                dimensions.clone(),
+            )
+                .try_into_ir(env)?;
+            env.add_declaration(&name, declaration);
             Ok(HashSet::new())
         }
         _ => {

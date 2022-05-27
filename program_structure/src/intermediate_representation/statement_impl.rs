@@ -16,7 +16,6 @@ impl Statement {
         match self {
             IfThenElse { meta, .. }
             | Return { meta, .. }
-            | Declaration { meta, .. }
             | Substitution { meta, .. }
             | LogCall { meta, .. }
             | Assert { meta, .. }
@@ -30,7 +29,6 @@ impl Statement {
         match self {
             IfThenElse { meta, .. }
             | Return { meta, .. }
-            | Declaration { meta, .. }
             | Substitution { meta, .. }
             | LogCall { meta, .. }
             | Assert { meta, .. }
@@ -44,7 +42,6 @@ impl Statement {
         match self {
             IfThenElse { .. } => StatementType::IfThenElse,
             Return { .. } => StatementType::Return,
-            Declaration { .. } => StatementType::Declaration,
             Substitution { .. } => StatementType::Substitution,
             LogCall { .. } => StatementType::LogCall,
             Assert { .. } => StatementType::Assert,
@@ -59,7 +56,6 @@ impl Statement {
         match self {
             IfThenElse { cond, .. } => cond.propagate_values(env),
             Return { value, .. } => value.propagate_values(env),
-            Declaration { .. } => false,
             Substitution {
                 var, access, rhe, ..
             } => {
@@ -89,7 +85,6 @@ impl Debug for Statement {
         match self {
             IfThenElse { .. } => write!(f, "IR::IfThenElse"),
             Return { .. } => write!(f, "IR::Return"),
-            Declaration { .. } => write!(f, "IR::Declaration"),
             Substitution { .. } => write!(f, "IR::Substitution"),
             LogCall { .. } => write!(f, "IR::LogCall"),
             Assert { .. } => write!(f, "IR::Assert"),
@@ -104,7 +99,6 @@ impl<'a> Display for Statement {
         match self {
             IfThenElse { cond, .. } => write!(f, "if {cond}"),
             Return { value, .. } => write!(f, "return {value}"),
-            Declaration { xtype, name, .. } => write!(f, "{xtype} {name}"),
             Substitution { var, op, rhe, .. } => write!(f, "{var} {op} {rhe}"),
             LogCall { arg, .. } => write!(f, "log({arg})"),
             Assert { arg, .. } => write!(f, "assert({arg})"),
@@ -124,28 +118,6 @@ impl Display for AssignOp {
     }
 }
 
-impl Display for VariableType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        use VariableType::*;
-        match self {
-            Var => write!(f, "var"),
-            Signal(signal_type, _) => write!(f, "signal {signal_type}"),
-            Component => write!(f, "component"),
-        }
-    }
-}
-
-impl Display for SignalType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        use SignalType::*;
-        match self {
-            Input => write!(f, "input"),
-            Output => write!(f, "output"),
-            Intermediate => Ok(()), // Intermediate signals have no explicit signal type.
-        }
-    }
-}
-
 impl VariableMeta for Statement {
     fn cache_variable_use(&mut self) {
         let mut variables_read = VariableSet::new();
@@ -160,9 +132,6 @@ impl VariableMeta for Statement {
             Return { value, .. } => {
                 value.cache_variable_use();
                 variables_read.extend(value.get_variables_read().iter().cloned());
-            }
-            Declaration { .. } => {
-                // A variable declaration is not considered a use.
             }
             Substitution { var, op, rhe, .. } => {
                 rhe.cache_variable_use();
@@ -209,9 +178,9 @@ impl VariableMeta for Statement {
 
 // Attempt to convert an AST statement into an IR statement. This will fail on
 // statements that need to be handled manually (`While` and `IfThenElse`), as
-// well as statements that have no direct IR counterparts (like `Block` and
-// `InitializationBlock`). It will also fail if it encounters an undeclared
-// variable.
+// well as statements that have no direct IR counterparts (like `Declaration`,
+// `Block` and `InitializationBlock`). It will also fail if it encounters an
+// undeclared variable.
 impl TryIntoIR for ast::Statement {
     type IR = Statement;
     type Error = IRError;
@@ -223,33 +192,6 @@ impl TryIntoIR for ast::Statement {
                 meta: meta.into(),
                 value: value.try_into_ir(env)?,
             }),
-            Declaration {
-                meta,
-                xtype,
-                name,
-                is_constant,
-                dimensions,
-            } => {
-                use ast::SignalType::*;
-                use ast::VariableType::*;
-                match xtype {
-                    Var => env.add_variable(name, ()),
-                    Component => env.add_component(name, ()),
-                    Signal(Input, _) => env.add_input(name, ()),
-                    Signal(Output, _) => env.add_output(name, ()),
-                    Signal(Intermediate, _) => env.add_intermediate(name, ()),
-                };
-                Ok(Statement::Declaration {
-                    meta: meta.into(),
-                    xtype: xtype.into(),
-                    name: name.into(),
-                    is_constant: *is_constant,
-                    dimensions: dimensions
-                        .iter()
-                        .map(|xt| xt.try_into_ir(env))
-                        .collect::<IRResult<Vec<Expression>>>()?,
-                })
-            }
             Substitution {
                 meta,
                 var,
@@ -258,7 +200,7 @@ impl TryIntoIR for ast::Statement {
                 access,
             } => Ok(Statement::Substitution {
                 meta: meta.into(),
-                var: var.into(),
+                var: var[..].into(),
                 op: op.into(),
                 rhe: rhe.try_into_ir(env)?,
                 access: access
@@ -279,6 +221,9 @@ impl TryIntoIR for ast::Statement {
                 meta: meta.into(),
                 arg: arg.try_into_ir(env)?,
             }),
+            Declaration { .. } => {
+                unreachable!("failed to convert AST statement to IR")
+            }
             IfThenElse { .. } | While { .. } => {
                 unreachable!("failed to convert AST statement to IR")
             }

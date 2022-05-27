@@ -61,7 +61,7 @@ fn visit_statement(stmt: &Statement, reports: &mut ReportCollection) {
             visit_expression(lhe, reports);
             visit_expression(rhe, reports);
         }
-        Return { .. } | Substitution { .. } | Declaration { .. } => (),
+        Return { .. } | Substitution { .. } => (),
     }
 }
 

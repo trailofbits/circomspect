@@ -1,18 +1,71 @@
 use num_bigint::BigInt;
+use std::collections::HashSet;
 use std::fmt;
 
 use crate::ast;
-use crate::environment::CircomEnvironment;
+use crate::environment::VarEnvironment;
 use crate::file_definition::FileLocation;
 
+use super::declaration_map::Declaration;
 use super::value_meta::ValueKnowledge;
 use super::variable_meta::VariableKnowledge;
 
 type Index = usize;
 type Version = usize;
+type VariableSet = HashSet<String>;
 
-// Trait for converting AST expressions and statements into IR.
-pub type IREnvironment = CircomEnvironment<(), (), ()>;
+pub struct IREnvironment {
+    scoped_declarations: VarEnvironment<Declaration>,
+    global_declarations: VarEnvironment<Declaration>,
+    variables: VariableSet,
+}
+
+impl IREnvironment {
+    #[must_use]
+    pub fn new() -> IREnvironment {
+        IREnvironment {
+            scoped_declarations: VarEnvironment::new(),
+            global_declarations: VarEnvironment::new(),
+            variables: VariableSet::new(),
+        }
+    }
+
+    pub fn add_declaration(&mut self, name: &str, declaration: Declaration) {
+        self.variables.insert(name.to_string());
+        self.scoped_declarations
+            .add_variable(name, declaration.clone());
+        self.global_declarations.add_variable(name, declaration);
+    }
+
+    #[must_use]
+    pub fn get_declaration(&mut self, name: &str) -> Option<&Declaration> {
+        self.scoped_declarations.get_variable(name)
+    }
+
+    // Enter variable scope.
+    pub fn add_variable_block(&mut self) {
+        self.scoped_declarations.add_variable_block();
+    }
+
+    // Leave variable scope.
+    pub fn remove_variable_block(&mut self) {
+        self.scoped_declarations.remove_variable_block();
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &String> {
+        self.variables.iter()
+    }
+
+    #[must_use]
+    pub fn scoped_declarations(&self) -> &VarEnvironment<Declaration> {
+        &self.scoped_declarations
+    }
+
+    #[must_use]
+    pub fn global_declarations(&self) -> &VarEnvironment<Declaration> {
+        &self.global_declarations
+    }
+}
 
 pub trait TryIntoIR {
     type IR;
@@ -24,8 +77,6 @@ pub trait TryIntoIR {
 #[derive(Clone, Default)]
 pub struct Meta {
     pub elem_id: usize,
-    pub start: usize,
-    pub end: usize,
     pub location: FileLocation,
     pub file_id: Option<usize>,
     value_knowledge: ValueKnowledge,
@@ -74,8 +125,6 @@ impl Meta {
 impl From<&ast::Meta> for Meta {
     fn from(meta: &ast::Meta) -> Meta {
         Meta {
-            end: meta.get_end(),
-            start: meta.get_start(),
             elem_id: meta.elem_id,
             location: meta.file_location(),
             file_id: meta.file_id,
@@ -96,13 +145,6 @@ pub enum Statement {
     Return {
         meta: Meta,
         value: Expression,
-    },
-    Declaration {
-        meta: Meta,
-        xtype: VariableType,
-        name: VariableName,
-        dimensions: Vec<Expression>,
-        is_constant: bool,
     },
     Substitution {
         meta: Meta,
@@ -137,41 +179,6 @@ pub enum StatementType {
     Assert,
 }
 
-#[derive(Copy, Clone, PartialEq)]
-pub enum SignalElementType {
-    Empty,
-    Binary,
-    FieldElement,
-}
-
-impl From<&ast::SignalElementType> for SignalElementType {
-    fn from(set: &ast::SignalElementType) -> SignalElementType {
-        use ast::SignalElementType::*;
-        match set {
-            Empty => SignalElementType::Empty,
-            Binary => SignalElementType::Binary,
-            FieldElement => SignalElementType::FieldElement,
-        }
-    }
-}
-
-#[derive(Copy, Clone, PartialEq)]
-pub enum SignalType {
-    Input,
-    Output,
-    Intermediate,
-}
-
-impl From<&ast::SignalType> for SignalType {
-    fn from(set: &ast::SignalType) -> SignalType {
-        use ast::SignalType::*;
-        match set {
-            Input => SignalType::Input,
-            Output => SignalType::Output,
-            Intermediate => SignalType::Intermediate,
-        }
-    }
-}
 /// There are only two hard things in Computer Science: cache invalidation and
 /// naming things.
 #[derive(Clone, Hash, PartialEq, Eq)]
@@ -293,12 +300,12 @@ impl VariableName {
 
 impl From<String> for VariableName {
     fn from(name: String) -> VariableName {
-        Self::from(&name)
+        Self::from(&name[..])
     }
 }
 
-impl From<&String> for VariableName {
-    fn from(name: &String) -> VariableName {
+impl From<&str> for VariableName {
+    fn from(name: &str) -> VariableName {
         // We assume that the input string uses '.' to separate the name from the suffix.
         let tokens: Vec<_> = name.split('.').collect();
         match tokens.len() {
@@ -318,24 +325,6 @@ impl fmt::Debug for VariableName {
 impl fmt::Display for VariableName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "{}", self.to_string_with_version())
-    }
-}
-
-#[derive(Copy, Clone, PartialEq)]
-pub enum VariableType {
-    Var,
-    Component,
-    Signal(SignalType, SignalElementType),
-}
-
-impl From<&ast::VariableType> for VariableType {
-    fn from(set: &ast::VariableType) -> VariableType {
-        use ast::VariableType::*;
-        match set {
-            Var => VariableType::Var,
-            Component => VariableType::Component,
-            Signal(st, set) => VariableType::Signal(st.into(), set.into()),
-        }
     }
 }
 
