@@ -12,8 +12,9 @@ pub struct ParameterData {
 }
 
 impl ParameterData {
+    #[must_use]
     pub fn new(
-        param_names: &Vec<String>,
+        param_names: &[String],
         file_id: FileID,
         file_location: FileLocation,
     ) -> ParameterData {
@@ -23,18 +24,31 @@ impl ParameterData {
             file_location,
         }
     }
+
+    #[must_use]
     pub fn get_name(&self, i: usize) -> &VariableName {
         &self.param_names[i]
     }
+
+    #[must_use]
     pub fn get_file_id(&self) -> FileID {
         self.file_id
     }
+
+    #[must_use]
     pub fn get_location(&self) -> FileLocation {
         self.file_location.clone()
     }
+
+    #[must_use]
     pub fn len(&self) -> usize {
         self.param_names.len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = &VariableName> {
         self.param_names.iter()
     }
@@ -49,7 +63,7 @@ impl From<&FunctionData> for ParameterData {
         ParameterData::new(
             function.get_name_of_params(),
             function.get_file_id(),
-            function.get_param_location().clone(),
+            function.get_param_location(),
         )
     }
 }
@@ -59,7 +73,7 @@ impl From<&TemplateData> for ParameterData {
         ParameterData::new(
             template.get_name_of_params(),
             template.get_file_id(),
-            template.get_param_location().clone(),
+            template.get_param_location(),
         )
     }
 }

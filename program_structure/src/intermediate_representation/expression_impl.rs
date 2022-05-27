@@ -588,7 +588,7 @@ impl Display for Expression {
             } => write!(f, "({}?{}:{})", cond, if_true, if_false),
             Call { id, args, .. } => write!(f, "{}({})", id, vec_to_string(args)),
             ArrayInLine { values, .. } => write!(f, "[{}]", vec_to_string(values)),
-            Phi { args, .. } => write!(f, "φ({})", vec_to_string(&args)),
+            Phi { args, .. } => write!(f, "φ({})", vec_to_string(args)),
         }
     }
 }
@@ -633,7 +633,7 @@ impl Display for ExpressionPrefixOpcode {
 }
 
 #[must_use]
-fn vec_to_string(elems: &Vec<Expression>) -> String {
+fn vec_to_string(elems: &[Expression]) -> String {
     elems
         .iter()
         .map(|arg| arg.to_string())

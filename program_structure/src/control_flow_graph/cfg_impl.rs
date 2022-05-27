@@ -150,7 +150,7 @@ fn visit_statement(
             // substitutions, we do not need to track predecessors here.
             trace!("entering initialization block statement");
             for stmt in stmts {
-                assert!(visit_statement(&stmt, env, basic_blocks)?.is_empty());
+                assert!(visit_statement(stmt, env, basic_blocks)?.is_empty());
             }
             trace!("leaving initialization block statement");
             Ok(HashSet::new())
@@ -167,7 +167,7 @@ fn visit_statement(
                     let meta = stmt.get_meta().into();
                     complete_basic_block(basic_blocks, &pred_set, meta);
                 }
-                pred_set = visit_statement(&stmt, env, basic_blocks)?;
+                pred_set = visit_statement(stmt, env, basic_blocks)?;
             }
 
             // If the last statement of the block is a control-flow statement,
@@ -205,7 +205,7 @@ fn visit_statement(
             complete_basic_block(basic_blocks, &pred_set, meta);
 
             trace!("visiting while body");
-            let mut pred_set = visit_statement(&while_body, env, basic_blocks)?;
+            let mut pred_set = visit_statement(while_body, env, basic_blocks)?;
             // The returned predecessor set will be empty if the last statement
             // of the body is not a conditional. In this case we need to add the
             // last block of the body to complete the corresponding block.
@@ -249,7 +249,7 @@ fn visit_statement(
             complete_basic_block(basic_blocks, &pred_set, meta);
 
             trace!("visiting true if-statement branch");
-            let mut if_pred_set = visit_statement(&if_case, env, basic_blocks)?;
+            let mut if_pred_set = visit_statement(if_case, env, basic_blocks)?;
             // The returned predecessor set will be empty if the last statement
             // of the body is not a conditional. In this case we need to add the
             // last block of the body to complete the corresponding block.
@@ -264,7 +264,7 @@ fn visit_statement(
                 let pred_set = HashSet::from([current_index]);
                 complete_basic_block(basic_blocks, &pred_set, meta);
 
-                let mut else_pred_set = visit_statement(&else_case, env, basic_blocks)?;
+                let mut else_pred_set = visit_statement(else_case, env, basic_blocks)?;
                 // The returned predecessor set will be empty if the last statement
                 // of the body is not a conditional. In this case we need to add the
                 // last block of the body to complete the corresponding block.
@@ -323,19 +323,17 @@ fn complete_basic_block(basic_blocks: &mut BasicBlockVec, pred_set: &IndexSet, m
         // If the final statement `S` of block `i` is a control flow statement,
         // and `j` is not the true branch of `S`, update the false branch of `S`
         // to `j`.
-        match basic_blocks[i].get_statements_mut().last_mut() {
-            Some(IfThenElse {
-                cond,
-                if_true,
-                if_false,
-                ..
-            }) => {
-                if j != *if_true && if_false.is_none() {
-                    trace!("updating false branch target of `if {cond}`");
-                    *if_false = Some(j)
-                }
+        if let Some(IfThenElse {
+            cond,
+            if_true,
+            if_false,
+            ..
+        }) = basic_blocks[i].get_statements_mut().last_mut()
+        {
+            if j != *if_true && if_false.is_none() {
+                trace!("updating false branch target of `if {cond}`");
+                *if_false = Some(j)
             }
-            _ => (),
         }
     }
 }

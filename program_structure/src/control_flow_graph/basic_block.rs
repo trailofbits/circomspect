@@ -59,12 +59,10 @@ impl BasicBlock {
         self.len() == 0
     }
 
-    #[must_use]
     pub fn iter(&self) -> impl Iterator<Item = &Statement> {
         self.stmts.iter()
     }
 
-    #[must_use]
     pub(crate) fn iter_mut(&mut self) -> impl Iterator<Item = &mut Statement> {
         self.stmts.iter_mut()
     }

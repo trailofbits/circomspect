@@ -243,7 +243,7 @@ impl TryIntoIR for ast::Statement {
                     meta: meta.into(),
                     xtype: xtype.into(),
                     name: name.into(),
-                    is_constant: is_constant.clone(),
+                    is_constant: *is_constant,
                     dimensions: dimensions
                         .iter()
                         .map(|xt| xt.try_into_ir(env))

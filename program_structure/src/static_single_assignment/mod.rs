@@ -65,7 +65,7 @@ where
     Ok(())
 }
 
-fn insert_ssa_variables_impl<'a, Environment, BasicBlock>(
+fn insert_ssa_variables_impl<Environment, BasicBlock>(
     current_index: Index,
     basic_blocks: &mut Vec<BasicBlock>,
     dominator_tree: &DominatorTree<BasicBlock>,

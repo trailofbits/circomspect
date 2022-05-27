@@ -45,14 +45,11 @@ pub fn find_constant_conditional_statement(cfg: &Cfg) -> ReportCollection {
 fn visit_statement(stmt: &Statement, reports: &mut ReportCollection) {
     use Statement::*;
     use ValueReduction::*;
-    match stmt {
-        IfThenElse { cond, .. } => {
-            let value = cond.get_meta().get_value_knowledge().get_reduces_to();
-            if let Some(Boolean { value }) = value {
-                reports.push(build_report(cond.get_meta(), *value));
-            }
+    if let IfThenElse { cond, .. } = stmt {
+        let value = cond.get_meta().get_value_knowledge().get_reduces_to();
+        if let Some(Boolean { value }) = value {
+            reports.push(build_report(cond.get_meta(), *value));
         }
-        _ => {}
     }
 }
 

@@ -53,7 +53,6 @@ impl Cfg {
         self.basic_blocks.len()
     }
     /// Convert the CFG into SSA form.
-    #[must_use]
     pub fn into_ssa(&mut self) -> SSAResult<()> {
         debug!("converting `{}` CFG to SSA", self.get_name());
 
@@ -107,13 +106,11 @@ impl Cfg {
     }
 
     /// Returns an iterator over the basic blocks in the CFG.
-    #[must_use]
     pub fn iter(&self) -> impl Iterator<Item = &BasicBlock> {
         self.basic_blocks.iter()
     }
 
     /// Returns a mutable iterator over the basic blocks in the CFG.
-    #[must_use]
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut BasicBlock> {
         self.basic_blocks.iter_mut()
     }

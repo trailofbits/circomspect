@@ -204,7 +204,7 @@ fn visit_statement(
             // If the current declaration shadows a previous declaration of the same
             // variable we generate a new report.
             if let Some(declaration) = env.get_declaration(name) {
-                reports.push(build_report(name, &meta, declaration));
+                reports.push(build_report(name, meta, declaration));
             }
             match env.add_declaration(name, meta.file_id.unwrap_or_default(), meta.file_location())
             {

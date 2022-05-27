@@ -1,6 +1,5 @@
 use anyhow::{anyhow, Result};
 use log::info;
-use serde_json;
 use std::convert::TryInto;
 use std::fs::File;
 use std::io::Write;

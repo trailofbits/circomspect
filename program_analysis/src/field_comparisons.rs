@@ -23,9 +23,9 @@ impl FieldElementComparisonWarning {
             self.file_id,
             "Field element comparison here.".to_string(),
         );
-        report.add_note(format!(
-            "Field elements `x` are always normalized as `x > p/2? x - p: x` before they are compared."
-        ));
+        report.add_note(
+            "Field elements `x` are always normalized as `x > p/2? x - p: x` before they are compared.".to_string()
+        );
         report
     }
 }

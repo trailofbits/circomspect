@@ -147,12 +147,13 @@ impl SSAStatement<VersionEnvironment> for Statement {
     fn is_phi_statement(&self) -> bool {
         use Expression::*;
         use Statement::*;
-        match self {
+        matches!(
+            self,
             Substitution {
-                rhe: Phi { .. }, ..
-            } => true,
-            _ => false,
-        }
+                rhe: Phi { .. },
+                ..
+            }
+        )
     }
 
     fn is_phi_statement_for(&self, name: &str) -> bool {
