@@ -104,3 +104,44 @@ pub fn parse_file(src: &str, file_id: FileID) -> Result<AST, Report> {
         })
         .map_err(|parsing_error| ParsingError::produce_report(parsing_error))
 }
+
+pub fn parse_string(src: &str) -> Option<AST> {
+    lang::ParseAstParser::new().parse(&src).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_string;
+
+    #[test]
+    fn test_parse_string() {
+        let function = r#"
+            function f(m) {
+                var x = 1024;
+                var y = 16;
+                while (x < m) {
+                    x += y;
+                }
+                if (x == m) {
+                    x = 0;
+                }
+                return x;
+            }
+        "#;
+        let _ = parse_string(function);
+
+        let template = r#"
+            template T(m) {
+                signal input in[m];
+                signal output out;
+
+                var sum = 0;
+                for (var i = 0; i < m; i++) {
+                    sum += in[i];
+                }
+                out <== sum;
+            }
+        "#;
+        let _ = parse_string(template);
+    }
+}
