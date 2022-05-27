@@ -41,6 +41,12 @@ impl Cfg {
     pub fn get_entry_block(&self) -> &BasicBlock {
         &self.basic_blocks[Index::default()]
     }
+
+    #[must_use]
+    pub fn get_basic_block(&self, index: Index) -> Option<&BasicBlock> {
+        self.basic_blocks.get(index)
+    }
+
     /// Returns the number of basic blocks in the CFG.
     #[must_use]
     pub fn nof_basic_blocks(&self) -> usize {
