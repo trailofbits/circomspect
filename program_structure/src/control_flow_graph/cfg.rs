@@ -1,10 +1,11 @@
 use log::{debug, trace};
 
 use crate::file_definition::FileID;
+use crate::ir::value_meta::ValueEnvironment;
 use crate::ir::variable_meta::VariableMeta;
 use crate::ssa::dominator_tree::DominatorTree;
 use crate::ssa::errors::SSAResult;
-use crate::ssa::traits::{DirectedGraphNode, Version};
+use crate::ssa::traits::Version;
 use crate::ssa::{insert_phi_statements, insert_ssa_variables};
 
 use super::basic_block::BasicBlock;
@@ -12,7 +13,7 @@ use super::param_data::ParameterData;
 use super::ssa_impl::VersionEnvironment;
 
 /// Basic block index type.
-type Index = usize;
+pub type Index = usize;
 
 pub struct Cfg {
     name: String,
@@ -48,18 +49,25 @@ impl Cfg {
     /// Convert the CFG into SSA form.
     #[must_use]
     pub fn into_ssa(&mut self) -> SSAResult<()> {
-        for basic_block in self.iter_mut() {
-            basic_block.cache_variable_use();
-        }
+        debug!("converting `{}` CFG to SSA", self.get_name());
+
+        // 1. Cache variable use before running SSA.
+        self.cache_variable_use();
+
+        // 2. Insert phi statements and convert variables to SSA.
         let mut env: VersionEnvironment = self.get_parameters().into();
         insert_phi_statements(&mut self.basic_blocks, &self.dominator_tree);
         insert_ssa_variables(&mut self.basic_blocks, &self.dominator_tree, &mut env)?;
+
+        // 3. Update parameters to SSA form.
         for name in self.param_data.iter_mut() {
             *name = name.with_version(Version::default());
         }
-        for basic_block in self.iter_mut() {
-            basic_block.cache_variable_use();
-        }
+
+        // 4. Re-cache variable use, and run value propagation.
+        self.cache_variable_use();
+        self.propagate_values();
+
         for basic_block in self.basic_blocks.iter() {
             trace!(
                 "basic block {}: (predecessors: {:?}, successors: {:?})",
@@ -147,6 +155,13 @@ impl Cfg {
             .collect()
     }
 
+    /// Cache variable use for each node in the CFG.
+    fn cache_variable_use(&mut self) {
+        debug!("computing variable use for `{}`", self.get_name());
+        for basic_block in self.iter_mut() {
+            basic_block.cache_variable_use();
+        }
+    }
 
     /// Propagate constant values along the CFG.
     fn propagate_values(&mut self) {
