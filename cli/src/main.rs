@@ -39,7 +39,7 @@ const DEFAULT_VERSION: &str = "2.0.3";
 const DEFAULT_LEVEL: &str = "warning";
 
 #[derive(StructOpt)]
-/// Analyze Circom programs
+/// A static analyzer for Circom programs.
 struct Cli {
     /// Initial input file
     #[structopt(name = "input")]
@@ -120,8 +120,9 @@ fn main() -> Result<()> {
     pretty_env_logger::init();
     let options = Cli::from_args();
     let program = parse_project(&options.input_file, &options.compiler_version)?;
-
     let mut reports = ReportCollection::new();
+
+    // Analyze all functions.
     for function in program.get_functions().values() {
         info!("analyzing function '{}'", function.get_name());
         let (cfg, mut new_reports) =
@@ -130,6 +131,7 @@ fn main() -> Result<()> {
         Report::print_reports(&new_reports, &program.file_library);
         reports.extend(new_reports);
     }
+    // Analyze all templates.
     for template in program.get_templates().values() {
         info!("analyzing template '{}'", template.get_name());
         let (cfg, mut new_reports) =
