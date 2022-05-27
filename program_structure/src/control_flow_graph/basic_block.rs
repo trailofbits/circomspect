@@ -1,7 +1,7 @@
 use log::trace;
 use std::collections::HashSet;
 
-use crate::static_single_assignment::traits::DirectedGraphNode;
+use crate::ir::value_meta::ValueEnvironment;
 
 use crate::ir::variable_meta::{VariableMeta, VariableSet};
 use crate::ir::{Meta, Statement};
@@ -179,5 +179,12 @@ impl VariableMeta for BasicBlock {
         self.get_meta()
             .get_variable_knowledge()
             .get_variables_written()
+    }
+}
+
+impl BasicBlock {
+    pub fn propagate_values(&mut self, env: &mut ValueEnvironment) -> bool {
+        trace!("propagating values for basic block {}", self.get_index());
+        self.iter_mut().any(|stmt| stmt.propagate_values(env))
     }
 }

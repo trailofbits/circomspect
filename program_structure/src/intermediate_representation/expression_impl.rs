@@ -1,11 +1,15 @@
+use circom_algebra::modular_arithmetic;
 use log::trace;
+use std::collections::HashSet;
 use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
 
 use crate::ast;
+use crate::constants::UsefulConstants;
 
 use super::errors::{IRError, IRResult};
 use super::ir::*;
+use super::value_meta::{ValueEnvironment, ValueMeta, ValueReduction};
 use super::variable_meta::{VariableMeta, VariableSet};
 
 impl Expression {
@@ -91,7 +95,7 @@ impl VariableMeta for Expression {
                 variables_read.extend(if_false.get_variables_read().iter().cloned());
             }
             Variable { name, .. } => {
-                trace!("adding {name} to variables read");
+                trace!("adding `{name}` to variables read");
                 variables_read.insert(name.clone());
             }
             Component { .. } | Signal { .. } | Number(_, _) => {}
@@ -134,6 +138,308 @@ impl VariableMeta for Expression {
         self.get_meta()
             .get_variable_knowledge()
             .get_variables_written()
+    }
+}
+
+impl ValueMeta for Expression {
+    fn propagate_values(&mut self, env: &mut ValueEnvironment) -> bool {
+        // Avoid recursing into sub-expressions if we already know the value of
+        // this expression.
+        if self.get_reduces_to().is_some() {
+            return false;
+        }
+        use Expression::*;
+        use ValueReduction::*;
+        match self {
+            InfixOp {
+                meta,
+                lhe,
+                infix_op,
+                rhe,
+                ..
+            } => {
+                let sub_result = lhe.propagate_values(env) | rhe.propagate_values(env);
+                match infix_op.propagate_values(lhe.get_reduces_to(), rhe.get_reduces_to()) {
+                    Some(value) => {
+                        sub_result || meta.get_value_knowledge_mut().set_reduces_to(value)
+                    }
+                    None => sub_result,
+                }
+            }
+            PrefixOp {
+                meta,
+                prefix_op,
+                rhe,
+            } => {
+                let sub_result = rhe.propagate_values(env);
+                match prefix_op.propagate_values(rhe.get_reduces_to()) {
+                    Some(value) => {
+                        sub_result || meta.get_value_knowledge_mut().set_reduces_to(value)
+                    }
+                    None => sub_result,
+                }
+            }
+            InlineSwitchOp {
+                meta,
+                cond,
+                if_true,
+                if_false,
+            } => {
+                let sub_result = cond.propagate_values(env)
+                    | if_true.propagate_values(env)
+                    | if_false.propagate_values(env);
+                match (
+                    cond.get_reduces_to(),
+                    if_true.get_reduces_to(),
+                    if_false.get_reduces_to(),
+                ) {
+                    (
+                        // The case true? value: _
+                        Some(Boolean { value: cond }),
+                        Some(value),
+                        _,
+                    ) if *cond => {
+                        sub_result || meta.get_value_knowledge_mut().set_reduces_to(value.clone())
+                    }
+                    (
+                        // The case false? _: value
+                        Some(Boolean { value: cond }),
+                        _,
+                        Some(value),
+                    ) if !cond => {
+                        sub_result || meta.get_value_knowledge_mut().set_reduces_to(value.clone())
+                    }
+                    _ => sub_result,
+                }
+            }
+            Variable {
+                meta, name, access, ..
+            } => {
+                // TODO: Handle non-trivial variable accesses.
+                if !access.is_empty() {
+                    false
+                } else if let Some(value) = env.get_variable(&name.to_string()) {
+                    meta.get_value_knowledge_mut().set_reduces_to(value.clone())
+                } else {
+                    false
+                }
+            }
+            Signal { .. } => {
+                // TODO: Handle signal accesses.
+                false
+            }
+            Component { .. } => {
+                // TODO: Handle component accesses.
+                false
+            }
+            Number(meta, value) => {
+                let value = FieldElement {
+                    value: value.clone(),
+                };
+                meta.get_value_knowledge_mut().set_reduces_to(value)
+            }
+            Call { args, .. } => {
+                // TODO: Handle function calls.
+                args.iter_mut().any(|arg| arg.propagate_values(env))
+            }
+            ArrayInLine { values, .. } => {
+                // TODO: Handle inline arrays.
+                values.iter_mut().any(|value| value.propagate_values(env))
+            }
+            Phi { meta, args, .. } => {
+                // Only set the value of the phi expression if all arguments agree on the value.
+                let sub_result = args.iter_mut().any(|arg| arg.propagate_values(env));
+                let values = args
+                    .iter()
+                    .map(|arg| arg.get_reduces_to())
+                    .collect::<Option<HashSet<_>>>();
+                match values {
+                    Some(values) if values.len() == 1 => {
+                        // This unwrap is safe since the size is non-zero.
+                        let value = *values.iter().next().unwrap();
+                        sub_result || meta.get_value_knowledge_mut().set_reduces_to(value.clone())
+                    }
+                    _ => sub_result,
+                }
+            }
+        }
+    }
+
+    fn is_constant(&self) -> bool {
+        self.get_reduces_to().is_some()
+    }
+
+    fn is_boolean(&self) -> bool {
+        matches!(self.get_reduces_to(), Some(ValueReduction::Boolean { .. }))
+    }
+
+    fn is_field_element(&self) -> bool {
+        matches!(
+            self.get_reduces_to(),
+            Some(ValueReduction::FieldElement { .. })
+        )
+    }
+
+    fn get_reduces_to(&self) -> Option<&ValueReduction> {
+        self.get_meta().get_value_knowledge().get_reduces_to()
+    }
+}
+
+impl ExpressionInfixOpcode {
+    fn propagate_values(
+        &self,
+        lhv: Option<&ValueReduction>,
+        rhv: Option<&ValueReduction>,
+    ) -> Option<ValueReduction> {
+        let constants = UsefulConstants::default();
+        let p = constants.get_p();
+
+        use ValueReduction::*;
+        match (lhv, rhv) {
+            // lhv and rhv reduce to two field elements.
+            (Some(FieldElement { value: lhv }), Some(FieldElement { value: rhv })) => {
+                use ExpressionInfixOpcode::*;
+                match self {
+                    Mul => {
+                        let value = modular_arithmetic::mul(lhv, rhv, p);
+                        Some(FieldElement { value })
+                    }
+                    Div => modular_arithmetic::div(lhv, rhv, p)
+                        .ok()
+                        .map(|value| FieldElement { value }),
+                    Add => {
+                        let value = modular_arithmetic::add(lhv, rhv, p);
+                        Some(FieldElement { value })
+                    }
+                    Sub => {
+                        let value = modular_arithmetic::sub(lhv, rhv, p);
+                        Some(FieldElement { value })
+                    }
+                    Pow => {
+                        let value = modular_arithmetic::pow(lhv, rhv, p);
+                        Some(FieldElement { value })
+                    }
+                    IntDiv => modular_arithmetic::idiv(lhv, rhv, p)
+                        .ok()
+                        .map(|value| FieldElement { value }),
+                    Mod => modular_arithmetic::mod_op(lhv, rhv, p)
+                        .ok()
+                        .map(|value| FieldElement { value }),
+                    ShiftL => modular_arithmetic::shift_l(lhv, rhv, p)
+                        .ok()
+                        .map(|value| FieldElement { value }),
+                    ShiftR => modular_arithmetic::shift_r(lhv, rhv, p)
+                        .ok()
+                        .map(|value| FieldElement { value }),
+                    LesserEq => {
+                        let value = modular_arithmetic::lesser_eq(lhv, rhv, p);
+                        Some(Boolean {
+                            value: modular_arithmetic::as_bool(&value, p),
+                        })
+                    }
+                    GreaterEq => {
+                        let value = modular_arithmetic::greater_eq(lhv, rhv, p);
+                        Some(Boolean {
+                            value: modular_arithmetic::as_bool(&value, p),
+                        })
+                    }
+                    Lesser => {
+                        let value = modular_arithmetic::lesser(lhv, rhv, p);
+                        Some(Boolean {
+                            value: modular_arithmetic::as_bool(&value, p),
+                        })
+                    }
+                    Greater => {
+                        let value = modular_arithmetic::greater(lhv, rhv, p);
+                        Some(Boolean {
+                            value: modular_arithmetic::as_bool(&value, p),
+                        })
+                    }
+                    Eq => {
+                        let value = modular_arithmetic::eq(lhv, rhv, p);
+                        Some(Boolean {
+                            value: modular_arithmetic::as_bool(&value, p),
+                        })
+                    }
+                    NotEq => {
+                        let value = modular_arithmetic::not_eq(lhv, rhv, p);
+                        Some(Boolean {
+                            value: modular_arithmetic::as_bool(&value, p),
+                        })
+                    }
+                    BitOr => {
+                        let value = modular_arithmetic::bit_or(lhv, rhv, p);
+                        Some(FieldElement { value })
+                    }
+                    BitAnd => {
+                        let value = modular_arithmetic::bit_and(lhv, rhv, p);
+                        Some(FieldElement { value })
+                    }
+                    BitXor => {
+                        let value = modular_arithmetic::bit_xor(lhv, rhv, p);
+                        Some(FieldElement { value })
+                    }
+                    // Remaining operations do not make sense.
+                    // TODO: Add report/error propagation here.
+                    _ => None,
+                }
+            }
+            // lhv and rhv reduce to two booleans.
+            (Some(Boolean { value: lhv }), Some(Boolean { value: rhv })) => {
+                use ExpressionInfixOpcode::*;
+                match self {
+                    BoolAnd => Some(Boolean {
+                        value: *lhv && *rhv,
+                    }),
+                    BoolOr => Some(Boolean {
+                        value: *lhv || *rhv,
+                    }),
+                    // Remaining operations do not make sense.
+                    // TODO: Add report propagation here as well.
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    }
+}
+
+impl ExpressionPrefixOpcode {
+    fn propagate_values(&self, rhe: Option<&ValueReduction>) -> Option<ValueReduction> {
+        let constants = UsefulConstants::default();
+        let p = constants.get_p();
+
+        use ValueReduction::*;
+        match rhe {
+            // arg reduces to a field element.
+            Some(FieldElement { value: arg }) => {
+                use ExpressionPrefixOpcode::*;
+                match self {
+                    Sub => {
+                        let value = modular_arithmetic::prefix_sub(arg, p);
+                        Some(FieldElement { value })
+                    }
+                    Complement => {
+                        let value = modular_arithmetic::complement_256(arg, p);
+                        Some(FieldElement { value })
+                    }
+                    // Remaining operations do not make sense.
+                    // TODO: Add report propagation here as well.
+                    _ => None,
+                }
+            }
+            // arg reduces to a boolean.
+            Some(Boolean { value: arg }) => {
+                use ExpressionPrefixOpcode::*;
+                match self {
+                    BoolNot => Some(Boolean { value: !arg }),
+                    // Remaining operations do not make sense.
+                    // TODO: Add report propagation here as well.
+                    _ => None,
+                }
+            }
+            None => None,
+        }
     }
 }
 
@@ -204,7 +510,7 @@ impl TryIntoIR for ast::Expression {
                 } else {
                     Err(IRError::UndefinedVariableError {
                         name: name.to_string(),
-                        file_id: meta.get_file_id(),
+                        file_id: meta.file_id.unwrap_or_default(),
                         file_location: meta.file_location(),
                     })
                 }
@@ -282,7 +588,7 @@ impl Display for Expression {
             } => write!(f, "({}?{}:{})", cond, if_true, if_false),
             Call { id, args, .. } => write!(f, "{}({})", id, vec_to_string(args)),
             ArrayInLine { values, .. } => write!(f, "[{}]", vec_to_string(values)),
-            Phi { args, .. } => write!(f, "phi({})", vec_to_string(&args)),
+            Phi { args, .. } => write!(f, "φ({})", vec_to_string(&args)),
         }
     }
 }
@@ -333,4 +639,69 @@ fn vec_to_string(elems: &Vec<Expression>) -> String {
         .map(|arg| arg.to_string())
         .collect::<Vec<String>>()
         .join(", ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_propagate_values() {
+        use Expression::*;
+        use ExpressionInfixOpcode::*;
+        use ValueReduction::*;
+        let mut lhe = Number(Meta::default(), 7u64.into());
+        let mut rhe = Variable {
+            meta: Meta::default(),
+            name: VariableName::name("v"),
+            access: Vec::new(),
+        };
+        let mut env = ValueEnvironment::new();
+        env.add_variable("v", FieldElement { value: 3u64.into() });
+        lhe.propagate_values(&mut env);
+        rhe.propagate_values(&mut env);
+
+        // Infix multiplication.
+        let mut expr = InfixOp {
+            meta: Meta::default(),
+            infix_op: Mul,
+            lhe: Box::new(lhe.clone()),
+            rhe: Box::new(rhe.clone()),
+        };
+        expr.propagate_values(&mut env.clone());
+        assert_eq!(
+            expr.get_reduces_to(),
+            Some(&FieldElement {
+                value: 21u64.into()
+            })
+        );
+
+        // Infix addition.
+        let mut expr = InfixOp {
+            meta: Meta::default(),
+            infix_op: Add,
+            lhe: Box::new(lhe.clone()),
+            rhe: Box::new(rhe.clone()),
+        };
+        expr.propagate_values(&mut env.clone());
+        assert_eq!(
+            expr.get_reduces_to(),
+            Some(&FieldElement {
+                value: 10u64.into()
+            })
+        );
+
+        // Infix integer division.
+        let mut expr = InfixOp {
+            meta: Meta::default(),
+            infix_op: IntDiv,
+            lhe: Box::new(lhe.clone()),
+            rhe: Box::new(rhe.clone()),
+        };
+        expr.propagate_values(&mut env.clone());
+        assert_eq!(
+            expr.get_reduces_to(),
+            Some(&FieldElement { value: 2u64.into() })
+        );
+    }
 }

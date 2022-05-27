@@ -146,4 +146,15 @@ impl Cfg {
             .map(|&i| &self.basic_blocks[i])
             .collect()
     }
+
+
+    /// Propagate constant values along the CFG.
+    fn propagate_values(&mut self) {
+        debug!("propagating constant values for `{}`", self.get_name());
+        let mut env = ValueEnvironment::new();
+        while self
+            .iter_mut()
+            .any(|basic_block| basic_block.propagate_values(&mut env))
+        {}
+    }
 }

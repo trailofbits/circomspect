@@ -6,6 +6,7 @@ use crate::ast;
 
 use super::errors::{IRError, IRResult};
 use super::ir::*;
+use super::value_meta::{ValueEnvironment, ValueMeta};
 use super::variable_meta::{VariableMeta, VariableSet};
 
 impl Statement {
@@ -48,6 +49,36 @@ impl Statement {
             LogCall { .. } => StatementType::LogCall,
             Assert { .. } => StatementType::Assert,
             ConstraintEquality { .. } => StatementType::ConstraintEquality,
+        }
+    }
+}
+
+impl Statement {
+    pub fn propagate_values(&mut self, env: &mut ValueEnvironment) -> bool {
+        use Statement::*;
+        match self {
+            IfThenElse { cond, .. } => cond.propagate_values(env),
+            Return { value, .. } => value.propagate_values(env),
+            Declaration { .. } => false,
+            Substitution {
+                var, access, rhe, ..
+            } => {
+                // TODO: Handle non-trivial variable accesses.
+                if rhe.propagate_values(env) && access.is_empty() {
+                    match rhe.get_reduces_to() {
+                        Some(value) => env.add_variable(&var.to_string(), value.clone()),
+                        None => (),
+                    }
+                    true
+                } else {
+                    false
+                }
+            }
+            ConstraintEquality { lhe, rhe, .. } => {
+                lhe.propagate_values(env) | rhe.propagate_values(env)
+            }
+            LogCall { arg, .. } => arg.propagate_values(env),
+            Assert { arg, .. } => arg.propagate_values(env),
         }
     }
 }
@@ -137,7 +168,7 @@ impl VariableMeta for Statement {
                 rhe.cache_variable_use();
                 variables_read.extend(rhe.get_variables_read().iter().cloned());
                 if matches!(op, AssignOp::AssignVar) {
-                    trace!("adding {var} to variables written");
+                    trace!("adding `{var}` to variables written");
                     variables_written.insert(var.clone());
                 }
             }
@@ -157,10 +188,10 @@ impl VariableMeta for Statement {
             }
         }
         self.get_mut_meta()
-            .get_mut_variable_knowledge()
+            .get_variable_knowledge_mut()
             .set_variables_read(&variables_read);
         self.get_mut_meta()
-            .get_mut_variable_knowledge()
+            .get_variable_knowledge_mut()
             .set_variables_written(&variables_written);
     }
 

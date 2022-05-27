@@ -75,6 +75,7 @@ pub enum ReportCode {
     FieldElementArithmetic,
     AssignSignalStatement,
     DeadAssignment,
+    ConstantBranchCondition,
 }
 impl fmt::Display for ReportCode {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -152,6 +153,7 @@ impl fmt::Display for ReportCode {
             FieldElementArithmetic => "CS0004",
             AssignSignalStatement => "CS0005",
             DeadAssignment => "CS0006",
+            ConstantBranchCondition => "CS0007",
         };
         f.write_str(string_format)
     }
