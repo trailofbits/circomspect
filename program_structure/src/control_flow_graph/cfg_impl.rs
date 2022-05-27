@@ -256,7 +256,7 @@ fn visit_statement(
                 let pred_set = HashSet::from([current_index]);
                 complete_basic_block(basic_blocks, &pred_set, meta);
 
-                let else_pred_set = visit_statement(&if_case, env, basic_blocks)?;
+                let mut else_pred_set = visit_statement(&else_case, env, basic_blocks)?;
                 Ok(if_pred_set.union(&else_pred_set).cloned().collect())
             } else {
                 Ok(if_pred_set)
