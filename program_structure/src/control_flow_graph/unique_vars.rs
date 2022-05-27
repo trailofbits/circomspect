@@ -206,7 +206,7 @@ fn visit_statement(
             if let Some(declaration) = env.get_declaration(name) {
                 reports.push(build_report(name, &meta, declaration));
             }
-            match env.add_declaration(name, meta.get_file_id(), meta.file_location()) {
+            match env.add_declaration(name, meta.file_id.unwrap_or_default(), meta.file_location()) {
                 // This is a declaration of a previously unseen variable. It should not be versioned.
                 None => {}
                 // This is a declaration of a previously seen variable. It needs to be versioned.
@@ -324,7 +324,7 @@ fn visit_expression(expr: &mut Expression, env: &DeclarationEnvironment) {
 fn build_report(name: &str, primary_meta: &Meta, secondary_decl: &DeclarationData) -> Report {
     CFGError::produce_report(CFGError::ShadowingVariableWarning {
         name: name.to_string(),
-        primary_file_id: primary_meta.get_file_id(),
+        primary_file_id: primary_meta.file_id.unwrap_or_default(),
         primary_location: primary_meta.file_location(),
         secondary_file_id: secondary_decl.get_file_id(),
         secondary_location: secondary_decl.file_location(),

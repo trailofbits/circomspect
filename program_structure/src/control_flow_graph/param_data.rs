@@ -1,3 +1,4 @@
+use crate::ast::Definition;
 use crate::file_definition::{FileID, FileLocation};
 use crate::function_data::FunctionData;
 use crate::template_data::TemplateData;
@@ -60,6 +61,17 @@ impl From<&TemplateData> for ParameterData {
             template.get_file_id(),
             template.get_param_location().clone(),
         )
+    }
+}
+
+impl From<&Definition> for ParameterData {
+    fn from(definition: &Definition) -> ParameterData {
+        match definition {
+            Definition::Function { meta, args, arg_location, .. } |
+            Definition::Template { meta, args, arg_location, .. } => {
+                ParameterData::new(args, meta.file_id.unwrap_or_default(), arg_location.clone())
+            }
+        }
     }
 }
 

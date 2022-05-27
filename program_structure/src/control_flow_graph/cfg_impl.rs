@@ -1,16 +1,17 @@
 use log::{debug, trace};
 use std::collections::HashSet;
 use std::convert::TryFrom;
+use std::convert::TryInto;
 
 use crate::ast;
+use crate::ast::Definition;
 use crate::error_definition::ReportCollection;
 use crate::function_data::FunctionData;
 
 use crate::ir;
 use crate::ir::{IREnvironment, TryIntoIR};
 use crate::nonempty_vec::NonEmptyVec;
-use crate::static_single_assignment::dominator_tree::DominatorTree;
-use crate::static_single_assignment::traits::DirectedGraphNode;
+use crate::ssa::dominator_tree::DominatorTree;
 use crate::template_data::TemplateData;
 
 use super::basic_block::BasicBlock;
@@ -67,6 +68,41 @@ impl TryFrom<&FunctionData> for (Cfg, ReportCollection) {
             Cfg::new(name, param_data, basic_blocks, dominator_tree),
             reports,
         ))
+    }
+}
+
+impl TryFrom<&Definition> for (Cfg, ReportCollection) {
+    type Error = CFGError;
+
+    fn try_from(definition: &Definition) -> CFGResult<(Cfg, ReportCollection)> {
+        match definition {
+            Definition::Function { name, body, .. } |
+            Definition::Template { name, body, .. } => {
+                let param_data = definition.into();
+
+                // Ensure that variable names are globally unique before converting to basic blocks.
+                let mut body = body.clone();
+                let reports = ensure_unique_variables(&mut body, &param_data)?;
+
+                // Convert function AST to CFG and compute dominator tree.
+                debug!("building CFG for `{name}`");
+                let basic_blocks =
+                build_basic_blocks(&body, &mut IREnvironment::from(&param_data))?;
+                let dominator_tree = DominatorTree::new(&basic_blocks);
+                Ok((
+                    Cfg::new(name.to_string(), param_data, basic_blocks, dominator_tree),
+                    reports,
+                ))
+            }
+        }
+    }
+}
+
+impl TryFrom<Definition> for (Cfg, ReportCollection) {
+    type Error = CFGError;
+
+    fn try_from(definition: Definition) -> CFGResult<(Cfg, ReportCollection)> {
+        (&definition).try_into()
     }
 }
 
