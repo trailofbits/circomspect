@@ -15,7 +15,7 @@ num-traits = "0.2.6"
 program_structure = {path = "../program_structure"}
 lalrpop = { version = "0.18.1", features = ["lexer"] }
 lalrpop-util = "0.18.1"
-regex = "1.1.2"
+regex = "1.5.5"
 rustc-hex = "2.0.1"
 num-bigint-dig = "0.6.0"
 num-traits = "0.2.6"
