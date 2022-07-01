@@ -36,6 +36,7 @@ pub enum ValueReduction {
 pub struct ValueKnowledge {
     reduces_to: Option<ValueReduction>,
 }
+
 impl ValueKnowledge {
     #[must_use]
     pub fn new() -> ValueKnowledge {

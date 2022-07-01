@@ -373,7 +373,7 @@ pub enum Expression {
     },
     Phi {
         meta: Meta,
-        args: Vec<Expression>,
+        args: Vec<VariableName>,
     },
 }
 

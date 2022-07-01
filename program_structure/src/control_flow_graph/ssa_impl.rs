@@ -14,20 +14,22 @@ use super::param_data::ParameterData;
 type Version = usize;
 
 #[derive(Clone)]
+/// A type which tracks variable metadata relevant for SSA.
 pub struct VersionEnvironment {
-    // Tracks the current scoped version of each variable. This is scoped to
-    // ensure that versions are updated when a variable goes out of scope.
+    /// Tracks the current scoped version of each variable. This is scoped to
+    /// ensure that versions are updated when a variable goes out of scope.
     scoped_versions: VarEnvironment<Version>,
-    // Tracks the maximum version seen of each variable. This is not scoped to
-    // ensure that we do not apply the same version to different occurrences of
-    // the same variable names.
+    /// Tracks the maximum version seen of each variable. This is not scoped to
+    /// ensure that we do not apply the same version to different occurrences of
+    /// the same variable names.
     global_versions: VarEnvironment<Version>,
-    // Tracks defined signals to ensure that we know if a variable use represents
-    // a variable, signal, or component.
+    /// Tracks defined signals to ensure that we know if a variable use represents
+    /// a variable, signal, or component.
     declarations: DeclarationMap,
 }
 
 impl VersionEnvironment {
+    /// Returns a new environment initialized with the parameters of the template or function.
     pub fn new(parameters: &ParameterData, declarations: &DeclarationMap) -> VersionEnvironment {
         let mut env = VersionEnvironment {
             scoped_versions: VarEnvironment::new(),
@@ -40,13 +42,13 @@ impl VersionEnvironment {
         env
     }
 
-    // Get the current (scoped) version of the variable.
+    /// Gets the current (scoped) version of the variable.
     pub fn get_current_version(&self, name: &VariableName) -> Option<Version> {
         let name = name.to_string_without_version();
         self.scoped_versions.get_variable(&name).cloned()
     }
 
-    // Get the range of versions seen for the variable.
+    /// Gets the range of versions seen for the variable.
     pub fn get_version_range(&self, name: &VariableName) -> Option<Range<Version>> {
         let name = name.to_string_without_version();
         self.global_versions
@@ -54,7 +56,7 @@ impl VersionEnvironment {
             .map(|max| 0..(max + 1))
     }
 
-    // Get the version to apply for a newly assigned variable.
+    /// Gets the version to apply for a newly assigned variable.
     fn get_next_version(&mut self, name: &VariableName) -> Version {
         // Update the global version.
         let name = name.to_string_without_version();
@@ -69,6 +71,12 @@ impl VersionEnvironment {
         version
     }
 
+    /// Gets the dimensions of the given variable. We only version non-array variables.
+    fn get_dimensions(&self, name: &VariableName) -> Option<&Vec<Expression>> {
+        self.declarations.get_dimensions(name)
+    }
+
+    /// Returns true if the given name is a signal.
     fn has_signal(&self, name: &VariableName) -> bool {
         matches!(
             self.declarations.get_type(name),
@@ -76,6 +84,7 @@ impl VersionEnvironment {
         )
     }
 
+    /// Returns true if the given name is a component.
     fn has_component(&self, name: &VariableName) -> bool {
         matches!(
             self.declarations.get_type(name),
@@ -178,21 +187,14 @@ impl SSAStatement<VersionEnvironment> for Statement {
                 ..
             } => {
                 trace!("phi statement for variable `{name}` found");
-                if let Some(version) = env.get_current_version(name) {
+                if let Some(env_version) = env.get_current_version(name) {
                     // If the argument list does not contain the current version of the variable we add it.
-                    if args.iter().any(|arg| {
-                        matches!(
-                            arg,
-                            Variable { name, ..  } if name.get_version() == &Some(version)
-                        )
-                    }) {
+                    if args.iter().any(|arg|
+                        matches!( arg.get_version(), &Some(arg_version) if arg_version == env_version)
+                    ) {
                         return;
                     }
-                    args.push(Variable {
-                        meta: Meta::default(),
-                        name: name.with_version(version),
-                        access: Vec::new(),
-                    });
+                    args.push(name.with_version(env_version));
                     self.cache_variable_use();
                 }
             }
@@ -211,9 +213,9 @@ impl SSAStatement<VersionEnvironment> for Statement {
                 assert!(var.get_version().is_none());
                 // We need to visit the right-hand expression before updating the environment.
                 visit_expression(rhe, env)?;
-                *var = match op {
-                    // If this is a variable assignment we need to version the variable.
-                    AssignOp::AssignVar => {
+                *var = match (op, env.get_dimensions(var)) {
+                    // If this is a non-array variable assignment we need to version the variable.
+                    (AssignOp::AssignVar, Some(dimensions)) if dimensions.is_empty() => {
                         // If this is the first assignment to the variable we set the version to 0,
                         // otherwise we increase the version by one.
                         let version = env.get_next_version(var);
@@ -223,7 +225,7 @@ impl SSAStatement<VersionEnvironment> for Statement {
                         );
                         versioned_var
                     }
-                    // If this is a signal or component assignment we ignore it.
+                    // If this is an array, a signal or component assignment we ignore it.
                     _ => var.clone(),
                 };
                 Ok(())
@@ -255,6 +257,12 @@ fn visit_expression(expr: &mut Expression, env: &VersionEnvironment) -> SSAResul
             // Ignore declared signals and components.
             if env.has_signal(name) || env.has_component(name) {
                 return Ok(());
+            }
+            // Ignore arrays.
+            if let Some(dimensions) = env.get_dimensions(name) {
+                if !dimensions.is_empty() {
+                    return Ok(());
+                }
             }
             match env.get_current_version(name) {
                 Some(version) => {

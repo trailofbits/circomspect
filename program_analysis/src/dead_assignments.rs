@@ -145,15 +145,8 @@ fn visit_statement(
             ..
         } => {
             for arg in args {
-                match arg {
-                    Variable { name, .. } => {
-                        variables_read.add_variable_read(
-                            name,
-                            VariableRead::PhiStatement { var: var.clone() },
-                        );
-                    }
-                    _ => unreachable!("invalid phi function argument"),
-                }
+                variables_read
+                    .add_variable_read(arg, VariableRead::PhiStatement { var: var.clone() });
             }
         }
         Substitution {

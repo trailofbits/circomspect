@@ -75,12 +75,12 @@ impl VariableMeta for Expression {
             InfixOp { lhe, rhe, .. } => {
                 lhe.cache_variable_use();
                 rhe.cache_variable_use();
-                variables_read.extend(lhe.get_variables_read().iter().cloned());
-                variables_read.extend(rhe.get_variables_read().iter().cloned());
+                variables_read.extend(lhe.get_variables_read().clone());
+                variables_read.extend(rhe.get_variables_read().clone());
             }
             PrefixOp { rhe, .. } => {
                 rhe.cache_variable_use();
-                variables_read.extend(rhe.get_variables_read().iter().cloned());
+                variables_read.extend(rhe.get_variables_read().clone());
             }
             InlineSwitchOp {
                 cond,
@@ -103,19 +103,16 @@ impl VariableMeta for Expression {
             Call { args, .. } => {
                 args.iter_mut().for_each(|arg| {
                     arg.cache_variable_use();
-                    variables_read.extend(arg.get_variables_read().iter().cloned());
+                    variables_read.extend(arg.get_variables_read().clone());
                 });
             }
             Phi { args, .. } => {
-                args.iter_mut().for_each(|arg| {
-                    arg.cache_variable_use();
-                    variables_read.extend(arg.get_variables_read().iter().cloned());
-                });
+                variables_read.extend(args.clone());
             }
             ArrayInLine { values, .. } => {
                 values.iter_mut().for_each(|value| {
                     value.cache_variable_use();
-                    variables_read.extend(value.get_variables_read().iter().cloned());
+                    variables_read.extend(value.get_variables_read().clone());
                 });
             }
         }
@@ -144,11 +141,6 @@ impl VariableMeta for Expression {
 
 impl ValueMeta for Expression {
     fn propagate_values(&mut self, env: &mut ValueEnvironment) -> bool {
-        // Avoid recursing into sub-expressions if we already know the value of
-        // this expression.
-        if self.get_reduces_to().is_some() {
-            return false;
-        }
         use Expression::*;
         use ValueReduction::*;
         match self {
@@ -249,18 +241,17 @@ impl ValueMeta for Expression {
             }
             Phi { meta, args, .. } => {
                 // Only set the value of the phi expression if all arguments agree on the value.
-                let sub_result = args.iter_mut().any(|arg| arg.propagate_values(env));
                 let values = args
                     .iter()
-                    .map(|arg| arg.get_reduces_to())
+                    .map(|name| env.get_variable(&name.to_string()))
                     .collect::<Option<HashSet<_>>>();
                 match values {
                     Some(values) if values.len() == 1 => {
                         // This unwrap is safe since the size is non-zero.
                         let value = *values.iter().next().unwrap();
-                        sub_result || meta.get_value_knowledge_mut().set_reduces_to(value.clone())
+                        meta.get_value_knowledge_mut().set_reduces_to(value.clone())
                     }
-                    _ => sub_result,
+                    _ => false,
                 }
             }
         }
@@ -638,9 +629,8 @@ impl Display for ExpressionPrefixOpcode {
 }
 
 #[must_use]
-fn vec_to_string(elems: &[Expression]) -> String {
-    elems
-        .iter()
+fn vec_to_string<T: ToString>(args: &[T]) -> String {
+    args.iter()
         .map(|arg| arg.to_string())
         .collect::<Vec<String>>()
         .join(", ")

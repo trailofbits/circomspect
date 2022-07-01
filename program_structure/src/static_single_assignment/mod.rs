@@ -1,3 +1,5 @@
+//! This module implements a generic conversion into single-static assignment
+//! form.
 pub mod dominator_tree;
 pub mod errors;
 pub mod traits;
@@ -11,7 +13,7 @@ use traits::*;
 /// Insert a dummy phi statement in block `j`, for each variable written in block
 /// `i`, if `j` is in the dominance frontier of `i`.
 pub fn insert_phi_statements<Environment, BasicBlock>(
-    basic_blocks: &mut Vec<BasicBlock>,
+    basic_blocks: &mut [BasicBlock],
     dominator_tree: &DominatorTree<BasicBlock>,
 ) where
     Environment: SSAEnvironment,
@@ -53,7 +55,7 @@ pub fn insert_phi_statements<Environment, BasicBlock>(
 /// 2. Updates phi expression arguments in each successor of the current
 ///    block, adding the correct versioned arguments to the expression.
 pub fn insert_ssa_variables<'a, Environment, BasicBlock>(
-    basic_blocks: &'a mut Vec<BasicBlock>,
+    basic_blocks: &'a mut [BasicBlock],
     dominator_tree: &DominatorTree<BasicBlock>,
     env: &mut Environment,
 ) -> SSAResult<()>
@@ -67,7 +69,7 @@ where
 
 fn insert_ssa_variables_impl<Environment, BasicBlock>(
     current_index: Index,
-    basic_blocks: &mut Vec<BasicBlock>,
+    basic_blocks: &mut [BasicBlock],
     dominator_tree: &DominatorTree<BasicBlock>,
     env: &mut Environment,
 ) -> SSAResult<()>

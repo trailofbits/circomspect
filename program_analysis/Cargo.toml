@@ -6,4 +6,5 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0"
 log = "0.4"
+parser = { path = "../parser" }
 program_structure = { path = "../program_structure" }

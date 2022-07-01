@@ -61,3 +61,43 @@ fn build_report(meta: &Meta, value: bool) -> Report {
     }
     .into_report()
 }
+
+#[cfg(test)]
+mod tests {
+    use parser::parse_definition;
+    use super::*;
+
+    #[test]
+    fn test_constant_conditional() {
+        let src = r#"
+            function f(x) {
+                var a = 1;
+                var b = (2 * a * a + 1) << 2;
+                var c = (3 * b / b - 2) >> 1;
+                if (c > 4) {
+                    a += x;
+                    b += x * a;
+                }
+                return a + b;
+            }
+        "#;
+        validate_reports(src, &[0..1]);
+    }
+
+    fn validate_reports(src: &str, locations: &[FileLocation]) {
+        // Build CFG.
+        let (mut cfg, _) = parse_definition(src)
+            .unwrap()
+            .try_into()
+            .unwrap();
+
+        // Convert CFG into SSA.
+        cfg.into_ssa().unwrap();
+
+        // Generate report collection.
+        let reports =
+            find_constant_conditional_statement(&cfg);
+
+        assert_eq!(reports.len(), locations.len());
+    }
+}

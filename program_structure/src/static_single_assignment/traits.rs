@@ -122,8 +122,8 @@ pub trait SSAStatement<Environment: SSAEnvironment>: Clone {
 pub type Index = usize;
 pub type IndexSet = HashSet<Index>;
 
-// This trait is used to make graph algorithms (like dominator tree and dominator
-// frontier generation) generic over the graph node type for unit testing purposes.
+/// This trait is used to make graph algorithms (like dominator tree and dominator
+/// frontier generation) generic over the graph node type for unit testing purposes.
 pub trait DirectedGraphNode {
     fn get_index(&self) -> Index;
 

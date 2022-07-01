@@ -81,7 +81,9 @@ impl Cfg {
         // 5. Update declaration map to track SSA variables.
         let mut versioned_declarations = DeclarationMap::new();
         for (name, declaration) in self.declarations.iter() {
-            if matches!(declaration.get_type(), VariableType::Var) {
+            if matches!(declaration.get_type(), VariableType::Var)
+                && declaration.get_dimensions().is_empty()
+            {
                 // Add a new declaration for each version of the variable.
                 for version in env
                     .get_version_range(name)
@@ -98,7 +100,7 @@ impl Cfg {
                     versioned_declarations.add_declaration(&versioned_name, versioned_declaration);
                 }
             } else {
-                // Declarations of signals and components are just copied over.
+                // Declarations of arrays, signals and components are just copied over.
                 versioned_declarations.add_declaration(name, declaration.clone());
             }
         }
@@ -136,16 +138,19 @@ impl Cfg {
         &self.parameters
     }
 
+    /// Returns the variable declaration for the CFG.
     #[must_use]
     pub fn get_declarations(&self) -> &DeclarationMap {
         &self.declarations
     }
 
-    #[must_use]
+    /// Returns an iterator over the set of variables defined by the CFG.
     pub fn get_variables(&self) -> impl Iterator<Item = &VariableName> {
         self.declarations.iter().map(|(name, _)| name)
     }
 
+    /// Returns the declaration of the given variable.
+    #[must_use]
     pub fn get_declaration(&self, name: &VariableName) -> Option<&Declaration> {
         self.declarations.get_declaration(name)
     }

@@ -130,7 +130,7 @@ impl TryFrom<&ParameterData> for DeclarationEnvironment {
             {
                 return Err(CFGError::ParameterNameCollisionError {
                     name: name.to_string(),
-                    file_id: file_id,
+                    file_id,
                     file_location,
                 });
             }
@@ -173,6 +173,7 @@ impl TryFrom<&ParameterData> for DeclarationEnvironment {
 ///         n = x;
 ///     }
 /// }
+/// ```
 ///
 /// In this case one of the declared variables still has to be renamed to ensure
 /// global uniqueness.

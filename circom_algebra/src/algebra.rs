@@ -1176,7 +1176,7 @@ impl<C: Default + Clone + Display + Hash + Eq> Constraint<C> {
     ) -> Substitution<C> {
         debug_assert!(Constraint::is_linear(&constraint));
         debug_assert!(constraint.c.contains_key(signal));
-        let raw_expression = Constraint::clear_signal(constraint.c, &signal, field);
+        let raw_expression = Constraint::clear_signal(constraint.c, signal, field);
         Substitution {
             from: signal.clone(),
             to: raw_expression,
@@ -1218,7 +1218,7 @@ impl<C: Default + Clone + Display + Hash + Eq> Constraint<C> {
         key: &C,
         field: &BigInt,
     ) -> HashMap<C, BigInt> {
-        let key_value = symbols.remove(&key).unwrap();
+        let key_value = symbols.remove(key).unwrap();
         assert!(!key_value.is_zero());
         let value_to_the_right = modular_arithmetic::mul(&key_value, &BigInt::from(-1), field);
         ArithmeticExpression::initialize_hashmap_for_expression(&mut symbols);
@@ -1314,7 +1314,7 @@ impl Constraint<usize> {
         let c = apply_raw_offset(&self.c, offset);
         Constraint::new(a, b, c)
     }
-    pub fn apply_witness(&self, witness: &Vec<usize>) -> Constraint<usize> {
+    pub fn apply_witness(&self, witness: &[usize]) -> Constraint<usize> {
         let a = apply_vectored_correspondence(&self.a, witness);
         let b = apply_vectored_correspondence(&self.b, witness);
         let c = apply_vectored_correspondence(&self.c, witness);
@@ -1327,7 +1327,7 @@ type RawExpr<C> = HashMap<C, BigInt>;
 
 fn apply_vectored_correspondence(
     symbols: &HashMap<usize, BigInt>,
-    map: &Vec<usize>,
+    map: &[usize],
 ) -> HashMap<usize, BigInt> {
     let mut mapped = HashMap::new();
     for (s, v) in symbols {
@@ -1350,8 +1350,8 @@ where
         let id = if key.eq(&constant_coefficient) {
             ArithmeticExpression::constant_coefficient()
         } else {
-            map.get(&key)
-                .expect(&format!("Unknown signal: {}", key))
+            map.get(key)
+                .unwrap_or_else(|| panic!("Unknown signal: {}", key))
                 .clone()
         };
         coefficients_as_correspondence.insert(id, value.clone());
