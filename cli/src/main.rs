@@ -35,7 +35,7 @@ impl FromStr for Level {
 }
 
 const DEFAULT_VERSION: &str = "2.0.3";
-const DEFAULT_LEVEL: &str = "warning";
+const DEFAULT_LEVEL: &str = "WARNING";
 
 #[derive(StructOpt)]
 /// A static analyzer for Circom programs.
@@ -44,11 +44,11 @@ struct Cli {
     #[structopt(name = "input")]
     input_file: String,
 
-    /// Output level (either 'info', 'warning', or 'error')
+    /// Output level (either INFO, WARNING, or ERROR)
     #[structopt(long, name = "level", default_value = DEFAULT_LEVEL)]
     output_level: Level,
 
-    /// Sarif output file
+    /// Output analysis results to a Sarif file
     #[structopt(long, name = "output")]
     sarif_file: Option<PathBuf>,
 
