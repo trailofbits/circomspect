@@ -1,6 +1,6 @@
 # Circomspect
 
-![Circomspect output](doc/circomspect.png)
+![Circomspect output](doc/demo.gif)
 
 Circomspect is a static analyzer and linter for the Circom programming language. The codebase borrows heavily from the Rust Circom compiler built by iden3.
 
@@ -87,7 +87,7 @@ Signals should typically be assigned using the constraint assignment operator `<
 If a branching statement condition always evaluates to either `true` or `false`, this means that the branch is either always taken, or never taken. This typically indicates a mistake in the code which should be fixed.
 
 
-#### 5. Bit arithmetic on field elements (Warning)
+#### 5. Bitwise arithmetic on field elements (Warning)
 
 Circom supports bitwise arithmetic operations like `|` (or), `&` (and), `^` (xor), and `~` (256-bit bitwise complement). Many of these operations do not commute with reductions modulo `p`, which could lead to surprising results.
 
@@ -99,4 +99,4 @@ Circom supports a large number of arithmetic expressions. Since arithmetic expre
 
 #### 7. Field element comparisons (Informational)
 
-Field elements are normalized to the interval `(-p/2, p/2]` before they are compared by first reducing them modulo `p` and then mapping them to the correct interval by mapping `x` to `x > p/2? x - p: x`. In particular, this means that `p/2 + 1 < 0 < p/2 - 1`. This can be surprising if you are used to thinking of elements in `GF(p)` as unsigned integers.
+Field elements are normalized to the interval `(-p/2, p/2]` before they are compared by first reducing them modulo `p` and then mapping them to the correct interval by subtracting `p` from the value `x`, if `x` is greater than `p/2`. In particular, this means that `p/2 + 1 < 0 < p/2 - 1`. This can be surprising if you are used to thinking of elements in `GF(p)` as unsigned integers.
