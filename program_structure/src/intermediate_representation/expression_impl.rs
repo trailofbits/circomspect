@@ -69,6 +69,7 @@ impl Expression {
 impl VariableMeta for Expression {
     fn cache_variable_use(&mut self) {
         let mut variables_read = VariableSet::new();
+        let mut signals_read = VariableSet::new();
 
         use Expression::*;
         match self {
@@ -77,10 +78,13 @@ impl VariableMeta for Expression {
                 rhe.cache_variable_use();
                 variables_read.extend(lhe.get_variables_read().clone());
                 variables_read.extend(rhe.get_variables_read().clone());
+                signals_read.extend(lhe.get_signals_read().clone());
+                signals_read.extend(rhe.get_signals_read().clone());
             }
             PrefixOp { rhe, .. } => {
                 rhe.cache_variable_use();
                 variables_read.extend(rhe.get_variables_read().clone());
+                signals_read.extend(rhe.get_signals_read().clone());
             }
             InlineSwitchOp {
                 cond,
@@ -94,16 +98,24 @@ impl VariableMeta for Expression {
                 variables_read.extend(cond.get_variables_read().iter().cloned());
                 variables_read.extend(if_true.get_variables_read().iter().cloned());
                 variables_read.extend(if_false.get_variables_read().iter().cloned());
+                signals_read.extend(cond.get_signals_read().iter().cloned());
+                signals_read.extend(if_true.get_signals_read().iter().cloned());
+                signals_read.extend(if_false.get_signals_read().iter().cloned());
             }
             Variable { name, .. } => {
                 trace!("adding `{name}` to variables read");
                 variables_read.insert(name.clone());
             }
-            Component { .. } | Signal { .. } | Number(_, _) => {}
+            Signal { name, .. } => {
+                trace!("adding `{name}` to signals read");
+                signals_read.insert(name.clone());
+            }
+            Component { .. } | Number(_, _) => {}
             Call { args, .. } => {
                 args.iter_mut().for_each(|arg| {
                     arg.cache_variable_use();
                     variables_read.extend(arg.get_variables_read().clone());
+                    signals_read.extend(arg.get_signals_read().clone());
                 });
             }
             Phi { args, .. } => {
@@ -113,15 +125,16 @@ impl VariableMeta for Expression {
                 values.iter_mut().for_each(|value| {
                     value.cache_variable_use();
                     variables_read.extend(value.get_variables_read().clone());
+                    signals_read.extend(value.get_signals_read().clone());
                 });
             }
         }
         self.get_mut_meta()
             .get_variable_knowledge_mut()
-            .set_variables_read(&variables_read);
-        self.get_mut_meta()
-            .get_variable_knowledge_mut()
-            .set_variables_written(&VariableSet::new());
+            .set_variables_read(&variables_read)
+            .set_variables_written(&VariableSet::new())
+            .set_signals_read(&signals_read)
+            .set_signals_written(&VariableSet::new());
     }
 
     #[must_use]
@@ -136,6 +149,18 @@ impl VariableMeta for Expression {
         self.get_meta()
             .get_variable_knowledge()
             .get_variables_written()
+    }
+
+    #[must_use]
+    fn get_signals_read(&self) -> &VariableSet {
+        self.get_meta().get_variable_knowledge().get_signals_read()
+    }
+
+    #[must_use]
+    fn get_signals_written(&self) -> &VariableSet {
+        self.get_meta()
+            .get_variable_knowledge()
+            .get_signals_written()
     }
 }
 
@@ -499,11 +524,11 @@ impl TryIntoIR for ast::Expression {
                     }),
                     Component => Ok(Expression::Component {
                         meta: meta.into(),
-                        name: name.clone(),
+                        name: name[..].into(),
                     }),
                     Signal(_, _) => Ok(Expression::Signal {
                         meta: meta.into(),
-                        name: name.clone(),
+                        name: name[..].into(),
                         access: access
                             .iter()
                             .map(|acc| acc.try_into_ir(env))

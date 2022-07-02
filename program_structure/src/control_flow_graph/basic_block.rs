@@ -1,5 +1,6 @@
 use log::trace;
 use std::collections::HashSet;
+use std::fmt;
 
 use crate::ir::value_meta::ValueEnvironment;
 use crate::ssa::traits::DirectedGraphNode;
@@ -148,25 +149,40 @@ impl VariableMeta for BasicBlock {
         );
         // Variable use for the block is simply the union of the variable use
         // over all statements in the block.
-        self.iter_mut().for_each(|stmt| stmt.cache_variable_use());
+        for stmt in self.iter_mut() {
+            stmt.cache_variable_use();
+        }
 
         // Cache variables read.
         let variables_read = self
             .iter()
-            .flat_map(|stmt| stmt.get_variables_read().iter().cloned())
+            .flat_map(|stmt| stmt.get_variables_read().clone())
             .collect();
-        self.get_meta_mut()
-            .get_variable_knowledge_mut()
-            .set_variables_read(&variables_read);
 
         // Cache variables written.
         let variables_written = self
             .iter()
-            .flat_map(|stmt| stmt.get_variables_written().iter().cloned())
+            .flat_map(|stmt| stmt.get_variables_written().clone())
             .collect();
+
+        // Cache signals read.
+        let signals_read = self
+            .iter()
+            .flat_map(|stmt| stmt.get_signals_read().clone())
+            .collect();
+
+        // Cache signals written.
+        let signals_written = self
+            .iter()
+            .flat_map(|stmt| stmt.get_signals_written().clone())
+            .collect();
+
         self.get_meta_mut()
             .get_variable_knowledge_mut()
-            .set_variables_written(&variables_written);
+            .set_variables_read(&variables_read)
+            .set_variables_written(&variables_written)
+            .set_signals_read(&signals_read)
+            .set_signals_written(&signals_written);
     }
 
     fn get_variables_read(&self) -> &VariableSet {
@@ -178,6 +194,33 @@ impl VariableMeta for BasicBlock {
         self.get_meta()
             .get_variable_knowledge()
             .get_variables_written()
+    }
+
+    fn get_signals_read(&self) -> &VariableSet {
+        self.get_meta().get_variable_knowledge().get_signals_read()
+    }
+    fn get_signals_written(&self) -> &VariableSet {
+        self.get_meta()
+            .get_variable_knowledge()
+            .get_signals_written()
+    }
+}
+
+impl fmt::Debug for BasicBlock {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let lines = self.iter().map(ToString::to_string).collect::<Vec<_>>();
+        let width = 5 + lines
+            .iter()
+            .map(|line| line.len())
+            .max()
+            .unwrap_or_default();
+        let border: String = (0..width).map(|_| '-').collect();
+
+        writeln!(f, "{}", &border)?;
+        for line in lines {
+            writeln!(f, "| {}; |", line)?;
+        }
+        writeln!(f, "{}", &border)
     }
 }
 

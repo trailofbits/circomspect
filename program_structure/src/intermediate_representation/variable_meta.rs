@@ -11,19 +11,29 @@ pub trait VariableMeta {
     /// the cached variable use.
     fn cache_variable_use(&mut self);
 
-    /// Get the names of all variables read by the node.
+    /// Get the names of all variables read by the IR node.
     #[must_use]
     fn get_variables_read(&self) -> &VariableSet;
 
-    /// Get the names of all variables written by the node.
+    /// Get the names of all variables written by the IR node.
     #[must_use]
     fn get_variables_written(&self) -> &VariableSet;
+
+    /// Get the names of all signals read by the IR node.
+    #[must_use]
+    fn get_signals_read(&self) -> &VariableSet;
+
+    /// Get the names of all signals written by the IR node.
+    #[must_use]
+    fn get_signals_written(&self) -> &VariableSet;
 }
 
 #[derive(Default, Clone)]
 pub struct VariableKnowledge {
     variables_read: Option<VariableSet>,
     variables_written: Option<VariableSet>,
+    signals_read: Option<VariableSet>,
+    signals_written: Option<VariableSet>,
 }
 
 impl VariableKnowledge {
@@ -37,28 +47,24 @@ impl VariableKnowledge {
         matches!(self.variables_read, Some(_)) && matches!(self.variables_written, Some(_))
     }
 
-    pub fn add_variable_read(&mut self, name: &VariableName) {
-        if let Some(variables_read) = self.variables_read.as_mut() {
-            variables_read.insert(name.clone());
-        } else {
-            self.variables_read = Some(VariableSet::from([name.clone()]))
-        }
+    pub fn set_variables_read(&mut self, names: &VariableSet) -> &mut Self {
+        self.variables_read = Some(names.clone());
+        self
     }
 
-    pub fn set_variables_read(&mut self, names: &VariableSet) {
-        self.variables_read = Some(names.clone())
+    pub fn set_variables_written(&mut self, names: &VariableSet) -> &mut Self {
+        self.variables_written = Some(names.clone());
+        self
     }
 
-    pub fn add_variable_written(&mut self, name: &VariableName) {
-        if let Some(variables_written) = self.variables_read.as_mut() {
-            variables_written.insert(name.clone());
-        } else {
-            self.variables_written = Some(VariableSet::from([name.clone()]))
-        }
+    pub fn set_signals_read(&mut self, names: &VariableSet) -> &mut Self {
+        self.signals_read = Some(names.clone());
+        self
     }
 
-    pub fn set_variables_written(&mut self, names: &VariableSet) {
-        self.variables_written = Some(names.clone())
+    pub fn set_signals_written(&mut self, names: &VariableSet) -> &mut Self {
+        self.signals_written = Some(names.clone());
+        self
     }
 
     #[must_use]
@@ -71,6 +77,20 @@ impl VariableKnowledge {
     #[must_use]
     pub fn get_variables_written(&self) -> &VariableSet {
         self.variables_written
+            .as_ref()
+            .expect("variable knowledge must be initialized before it is read")
+    }
+
+    #[must_use]
+    pub fn get_signals_read(&self) -> &VariableSet {
+        self.signals_read
+            .as_ref()
+            .expect("variable knowledge must be initialized before it is read")
+    }
+
+    #[must_use]
+    pub fn get_signals_written(&self) -> &VariableSet {
+        self.signals_written
             .as_ref()
             .expect("variable knowledge must be initialized before it is read")
     }

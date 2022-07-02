@@ -122,46 +122,65 @@ impl VariableMeta for Statement {
     fn cache_variable_use(&mut self) {
         let mut variables_read = VariableSet::new();
         let mut variables_written = VariableSet::new();
+        let mut signals_read = VariableSet::new();
+        let mut signals_written = VariableSet::new();
 
         use Statement::*;
         match self {
             IfThenElse { cond, .. } => {
                 cond.cache_variable_use();
-                variables_read.extend(cond.get_variables_read().iter().cloned());
+                variables_read.extend(cond.get_variables_read().clone());
+                signals_read.extend(cond.get_signals_read().clone());
             }
             Return { value, .. } => {
                 value.cache_variable_use();
-                variables_read.extend(value.get_variables_read().iter().cloned());
+                variables_read.extend(value.get_variables_read().clone());
+                signals_read.extend(value.get_signals_read().clone());
             }
             Substitution { var, op, rhe, .. } => {
                 rhe.cache_variable_use();
-                variables_read.extend(rhe.get_variables_read().iter().cloned());
-                if matches!(op, AssignOp::AssignVar) {
-                    trace!("adding `{var}` to variables written");
-                    variables_written.insert(var.clone());
+                variables_read.extend(rhe.get_variables_read().clone());
+                signals_read.extend(rhe.get_signals_read().clone());
+                match op {
+                    AssignOp::AssignVar => {
+                        trace!("adding `{var}` to variables written");
+                        variables_written.insert(var.clone());
+                    }
+                    AssignOp::AssignSignal => {
+                        trace!("adding `{var}` to signals written");
+                        signals_written.insert(var.clone());
+                    }
+                    AssignOp::AssignConstraintSignal => {
+                        trace!("adding `{var}` to signals written");
+                        signals_written.insert(var.clone());
+                    }
                 }
             }
             LogCall { arg, .. } => {
                 arg.cache_variable_use();
-                variables_read.extend(arg.get_variables_read().iter().cloned());
+                variables_read.extend(arg.get_variables_read().clone());
+                signals_read.extend(arg.get_signals_read().clone());
             }
             Assert { arg, .. } => {
                 arg.cache_variable_use();
-                variables_read.extend(arg.get_variables_read().iter().cloned());
+                variables_read.extend(arg.get_variables_read().clone());
+                signals_read.extend(arg.get_signals_read().clone());
             }
             ConstraintEquality { lhe, rhe, .. } => {
                 lhe.cache_variable_use();
                 rhe.cache_variable_use();
-                variables_read.extend(lhe.get_variables_read().iter().cloned());
-                variables_read.extend(rhe.get_variables_read().iter().cloned());
+                variables_read.extend(lhe.get_variables_read().clone());
+                variables_read.extend(rhe.get_variables_read().clone());
+                signals_read.extend(lhe.get_signals_read().clone());
+                signals_read.extend(rhe.get_signals_read().clone());
             }
         }
         self.get_mut_meta()
             .get_variable_knowledge_mut()
-            .set_variables_read(&variables_read);
-        self.get_mut_meta()
-            .get_variable_knowledge_mut()
-            .set_variables_written(&variables_written);
+            .set_variables_read(&variables_read)
+            .set_variables_written(&variables_written)
+            .set_signals_read(&signals_read)
+            .set_signals_written(&signals_written);
     }
 
     fn get_variables_read(&self) -> &VariableSet {
@@ -173,6 +192,15 @@ impl VariableMeta for Statement {
         self.get_meta()
             .get_variable_knowledge()
             .get_variables_written()
+    }
+
+    fn get_signals_read(&self) -> &VariableSet {
+        self.get_meta().get_variable_knowledge().get_signals_read()
+    }
+    fn get_signals_written(&self) -> &VariableSet {
+        self.get_meta()
+            .get_variable_knowledge()
+            .get_signals_written()
     }
 }
 
