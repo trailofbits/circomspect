@@ -9,7 +9,7 @@ use program_structure::ir::*;
 
 pub struct ConstantBranchConditionWarning {
     value: bool,
-    file_id: FileID,
+    file_id: Option<FileID>,
     file_location: FileLocation,
 }
 
@@ -19,11 +19,13 @@ impl ConstantBranchConditionWarning {
             "Constant branching statement condition found.".to_string(),
             ReportCode::ConstantBranchCondition,
         );
-        report.add_primary(
-            self.file_location,
-            self.file_id,
-            format!("This condition is always {}.", self.value),
-        );
+        if let Some(file_id) = self.file_id {
+            report.add_primary(
+                self.file_location,
+                file_id,
+                format!("This condition is always {}.", self.value),
+            );
+        }
         report
     }
 }
@@ -65,6 +67,7 @@ fn build_report(meta: &Meta, value: bool) -> Report {
 #[cfg(test)]
 mod tests {
     use parser::parse_definition;
+
     use super::*;
 
     #[test]
@@ -81,23 +84,33 @@ mod tests {
                 return a + b;
             }
         "#;
-        validate_reports(src, &[0..1]);
+        validate_reports(src, 1);
+
+        let src = r#"
+            function f(x) {
+                var a = 1;
+                var b = (2 * a * a + 1) << 2;
+                var c = (3 * b / x - 2) >> 1;
+                if (c > 4) {
+                    a += x;
+                    b += x * a;
+                }
+                return a + b;
+            }
+        "#;
+        validate_reports(src, 0);
     }
 
-    fn validate_reports(src: &str, locations: &[FileLocation]) {
+    fn validate_reports(src: &str, expected_len: usize) {
         // Build CFG.
-        let (mut cfg, _) = parse_definition(src)
-            .unwrap()
-            .try_into()
-            .unwrap();
+        let (cfg, _) = parse_definition(src).unwrap().try_into().unwrap();
 
         // Convert CFG into SSA.
         let cfg = cfg.into_ssa().unwrap();
 
         // Generate report collection.
-        let reports =
-            find_constant_conditional_statement(&cfg);
+        let reports = find_constant_conditional_statement(&cfg);
 
-        assert_eq!(reports.len(), locations.len());
+        assert_eq!(reports.len(), expected_len);
     }
 }

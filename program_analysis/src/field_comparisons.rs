@@ -7,7 +7,7 @@ use program_structure::file_definition::{FileID, FileLocation};
 use program_structure::ir::*;
 
 pub struct FieldElementComparisonWarning {
-    file_id: FileID,
+    file_id: Option<FileID>,
     file_location: FileLocation,
 }
 
@@ -18,13 +18,15 @@ impl FieldElementComparisonWarning {
                 .to_string(),
             ReportCode::FieldElementComparison,
         );
-        report.add_primary(
-            self.file_location,
-            self.file_id,
-            "Field element comparison here.".to_string(),
-        );
+        if let Some(file_id) = self.file_id {
+            report.add_primary(
+                self.file_location,
+                file_id,
+                "Field element comparison here.".to_string(),
+            );
+        }
         report.add_note(
-            "Field elements `x` are always normalized as `x > p/2? x - p: x` before they are compared.".to_string()
+            "Field elements are always normalized to the interval `(p/2, p/2]` before they are compared.".to_string()
         );
         report
     }
@@ -32,11 +34,11 @@ impl FieldElementComparisonWarning {
 
 /// Field element comparisons in Circom may produce surprising results since
 /// elements are normalized to the the half-open interval `(-p/2, p/2]` before
-/// they are compared. In particular, this means that
+/// they are compared. In particular, this means that the statements
 ///
-///   - `p/2 < 0`,
-///   - `p/2 + 1 < p/2 - 1`, and
-///   - `2 * x < x` for any `p/4 < x < p/2`
+///   1. `p/2 + 1 < 0`,
+///   2. `p/2 + 1 < p/2 - 1`, and
+///   3. `2 * x < x` for any `p/4 < x < p/2`
 ///
 /// are all true.
 pub fn find_field_element_comparisons(cfg: &Cfg) -> ReportCollection {
@@ -55,13 +57,14 @@ fn visit_statement(stmt: &Statement, reports: &mut ReportCollection) {
     use Statement::*;
     match stmt {
         IfThenElse { cond, .. } => visit_expression(cond, reports),
+        Substitution { rhe, .. } => visit_expression(rhe, reports),
+        Return { value, .. } => visit_expression(value, reports),
         LogCall { arg, .. } => visit_expression(arg, reports),
         Assert { arg, .. } => visit_expression(arg, reports),
         ConstraintEquality { lhe, rhe, .. } => {
             visit_expression(lhe, reports);
             visit_expression(rhe, reports);
         }
-        Return { .. } | Substitution { .. } => (),
     }
 }
 
@@ -105,4 +108,40 @@ fn build_report(meta: &Meta) -> Report {
         file_location: meta.file_location(),
     }
     .into_report()
+}
+
+#[cfg(test)]
+mod tests {
+    use parser::parse_definition;
+
+    use super::*;
+
+    #[test]
+    fn test_field_comparisons() {
+        let src = r#"
+            function f(a) {
+                var b = a + 1;
+                while (a > 0) {
+                    a -= 1;
+                }
+                if (b < a + 2) {
+                    a += 1;
+                }
+                var c = a + b + 1;
+                return (a < b) && (b < c);
+            }
+        "#;
+        validate_reports(src, 4);
+    }
+
+    fn validate_reports(src: &str, expected_len: usize) {
+        // Build CFG.
+        let (cfg, _) = parse_definition(src).unwrap().try_into().unwrap();
+        let cfg = cfg.into_ssa().unwrap();
+
+        // Generate report collection.
+        let reports = find_field_element_comparisons(&cfg);
+
+        assert_eq!(reports.len(), expected_len);
+    }
 }

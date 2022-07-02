@@ -7,7 +7,7 @@ use program_structure::file_definition::{FileID, FileLocation};
 use program_structure::ir::*;
 
 pub struct FieldElementArithmeticWarning {
-    file_id: FileID,
+    file_id: Option<FileID>,
     file_location: FileLocation,
 }
 
@@ -18,11 +18,13 @@ impl FieldElementArithmeticWarning {
                 .to_string(),
             ReportCode::FieldElementArithmetic,
         );
-        report.add_primary(
-            self.file_location,
-            self.file_id,
-            "Field element arithmetic here.".to_string(),
-        );
+        if let Some(file_id) = self.file_id {
+            report.add_primary(
+                self.file_location,
+                file_id,
+                "Field element arithmetic here.".to_string(),
+            );
+        }
         report
     }
 }
@@ -93,4 +95,34 @@ fn build_report(meta: &Meta) -> Report {
         file_location: meta.file_location(),
     }
     .into_report()
+}
+
+#[cfg(test)]
+mod tests {
+    use parser::parse_definition;
+
+    use super::*;
+
+    #[test]
+    fn test_field_arithmetic() {
+        let src = r#"
+            function f(a) {
+                var b = a + 1;
+                var c = a + b + 1;
+                return a + b + c + 1;
+            }
+        "#;
+        validate_reports(src, 3);
+    }
+
+    fn validate_reports(src: &str, expected_len: usize) {
+        // Build CFG.
+        let (cfg, _) = parse_definition(src).unwrap().try_into().unwrap();
+        let cfg = cfg.into_ssa().unwrap();
+
+        // Generate report collection.
+        let reports = find_field_element_arithmetic(&cfg);
+
+        assert_eq!(reports.len(), expected_len);
+    }
 }

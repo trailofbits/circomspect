@@ -9,7 +9,7 @@ use program_structure::ir::*;
 
 pub struct DeadAssignmentWarning {
     name: String,
-    file_id: FileID,
+    file_id: Option<FileID>,
     file_location: FileLocation,
 }
 
@@ -22,11 +22,13 @@ impl DeadAssignmentWarning {
             ),
             ReportCode::DeadAssignment,
         );
-        report.add_primary(
-            self.file_location,
-            self.file_id,
-            "The value assigned here is never read.".to_string(),
-        );
+        if let Some(file_id) = self.file_id {
+            report.add_primary(
+                self.file_location,
+                file_id,
+                "The value assigned here is never read.".to_string(),
+            );
+        }
         report
     }
 }
@@ -104,9 +106,6 @@ impl VariableReads {
 
 /// Assignments to variables which are never read may indicate a logic error in
 /// the code.
-///
-/// TODO: The current analysis does not catch variables which are part of the RHS
-/// of a phi statement, where the LHS of the phi statement is never read.
 pub fn find_dead_assignments(cfg: &Cfg) -> ReportCollection {
     debug!("running dead assignment analysis pass");
     // Collect all variable assignment locations.
@@ -221,4 +220,57 @@ fn build_report(name: &str, meta: &Meta) -> Report {
         file_location: meta.file_location(),
     }
     .into_report()
+}
+
+#[cfg(test)]
+mod tests {
+    use parser::parse_definition;
+
+    use super::*;
+
+    #[test]
+    fn test_dead_assignments() {
+        let src = r#"
+            function f(x) {
+                // a.0 = 0;
+                var a = 0;
+                if (x > 0) {
+                    // a.1 = a.0 + 1;
+                    a = a + 1;
+                } else {
+                    // a.2 = a.0 - 1;
+                    a = a - 1;
+                }
+                // a.3 = phi(a.1, a.2);
+                return x + 1;
+            }
+        "#;
+        validate_reports(src, 2);
+
+        let src = r#"
+            function f(x) {
+                // a.0 = 0;
+                var a = 0;
+                while (x > 0) {
+                    // a.1 = a.0 + 1;
+                    a = a + 1;
+                    x = x - a;
+                }
+                // a.2 = phi(a.0, a.1);
+                return x + 1;
+            }
+        "#;
+        validate_reports(src, 0);
+    }
+
+    fn validate_reports(src: &str, expected_len: usize) {
+        // Build CFG.
+        let (cfg, _) = parse_definition(src).unwrap().try_into().unwrap();
+        let cfg = cfg.into_ssa().unwrap();
+
+        // Generate report collection.
+        let reports = find_dead_assignments(&cfg);
+
+        assert_eq!(reports.len(), expected_len);
+    }
 }
