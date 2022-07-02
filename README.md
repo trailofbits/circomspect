@@ -7,7 +7,7 @@ Circomspect is a static analyzer and linter for the [Circom](https://github.com/
 Circomspect currently implements a number of analysis passes which can identify potential issues in Circom circuits. It is our goal to continue to add new analysis passes to be able to detect more issues in the future.
 
 
-## Building
+## Building Circomspect
 
 To build circomspect, simply clone the repository and build the project by invoking `cargo build` in the project root.
 
@@ -17,6 +17,17 @@ To build circomspect, simply clone the repository and build the project by invok
   cargo build --release
   cp target/release/circomspect ~/.cargo/bin
 ```
+
+
+## Running Circomspect
+
+To run circomspect on a file, simple run
+
+```sh
+  circomspect path/to/circuit.circom
+```
+
+To get more (or less) verbose input you can set the output level using the `--output-level` flag. To output the results to a Sarif file (which can be read by the [VSCode Sarif Viewer](https://marketplace.visualstudio.com/items?itemName=MS-SarifVSCode.sarif-viewer)), use the flag `--sarif-file`.
 
 
 ## Analysis Passes
