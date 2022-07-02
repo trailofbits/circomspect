@@ -106,6 +106,7 @@ pub fn parse_file(src: &str, file_id: FileID) -> Result<AST, Report> {
 }
 
 pub fn parse_string(src: &str) -> Option<AST> {
+    let src = preprocess(src, 0).ok()?;
     lang::ParseAstParser::new().parse(&src).ok()
 }
 
@@ -117,6 +118,7 @@ mod tests {
     fn test_parse_string() {
         let function = r#"
             function f(m) {
+                // This is a comment.
                 var x = 1024;
                 var y = 16;
                 while (x < m) {
@@ -125,6 +127,7 @@ mod tests {
                 if (x == m) {
                     x = 0;
                 }
+                /* This is another comment. */
                 return x;
             }
         "#;
