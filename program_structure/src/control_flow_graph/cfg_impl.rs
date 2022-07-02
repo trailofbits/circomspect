@@ -2,6 +2,7 @@ use log::{debug, trace};
 use std::collections::HashSet;
 use std::convert::TryFrom;
 use std::convert::TryInto;
+use std::fmt;
 
 use crate::ast;
 use crate::ast::Definition;
@@ -112,6 +113,22 @@ impl TryFrom<Definition> for (Cfg, ReportCollection) {
 
     fn try_from(definition: Definition) -> CFGResult<(Cfg, ReportCollection)> {
         (&definition).try_into()
+    }
+}
+
+impl fmt::Debug for Cfg {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for basic_block in self.iter() {
+            writeln!(
+                f,
+                "basic block {}, predecessors: {:?}, successors: {:?}",
+                basic_block.get_index(),
+                basic_block.get_predecessors(),
+                basic_block.get_successors(),
+            )?;
+            write!(f, "{:?}", basic_block)?;
+        }
+        Ok(())
     }
 }
 
