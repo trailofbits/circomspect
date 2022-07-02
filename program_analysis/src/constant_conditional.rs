@@ -92,7 +92,7 @@ mod tests {
             .unwrap();
 
         // Convert CFG into SSA.
-        cfg.into_ssa().unwrap();
+        let cfg = cfg.into_ssa().unwrap();
 
         // Generate report collection.
         let reports =

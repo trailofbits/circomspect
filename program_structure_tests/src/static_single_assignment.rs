@@ -93,8 +93,8 @@ fn test_ssa_from_nested_while() {
 
 fn validate_ssa(src: &str, variables: &[&str]) {
     // 1. Generate CFG and convert to SSA.
-    let (mut cfg, _) = parse_definition(src).unwrap().try_into().unwrap();
-    cfg.into_ssa().unwrap();
+    let (cfg, _) = parse_definition(src).unwrap().try_into().unwrap();
+    let cfg = cfg.into_ssa().unwrap();
 
     // 2. Check that each variable is assigned at most once.
     use AssignOp::*;

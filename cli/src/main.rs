@@ -79,13 +79,13 @@ where
     T: TryInto<(Cfg, ReportCollection)>,
     T::Error: Into<Report>,
 {
-    let (mut cfg, reports) = ast.try_into().map_err(|error| {
+    let (cfg, reports) = ast.try_into().map_err(|error| {
         let reports = [error.into()];
         Report::print_reports(&reports, files);
         anyhow!("failed to generate CFG for '{name}'")
     })?;
     match cfg.into_ssa() {
-        Ok(()) => Ok((cfg, reports)),
+        Ok(cfg) => Ok((cfg, reports)),
         Err(error) => {
             let reports = [error.into()];
             Report::print_reports(&reports, files);

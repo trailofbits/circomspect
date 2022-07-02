@@ -58,7 +58,7 @@ impl Cfg {
         self.basic_blocks.len()
     }
     /// Convert the CFG into SSA form.
-    pub fn into_ssa(&mut self) -> SSAResult<()> {
+    pub fn into_ssa(mut self) -> SSAResult<Cfg> {
         debug!("converting `{}` CFG to SSA", self.get_name());
 
         // 1. Cache variable use before running SSA.
@@ -114,10 +114,10 @@ impl Cfg {
                 basic_block.get_successors(),
             );
             for stmt in basic_block.iter() {
-                trace!("    `{stmt};`")
+                trace!("    {stmt};")
             }
         }
-        Ok(())
+        Ok(self)
     }
 
     /// Get the name of the corresponding function or template.
