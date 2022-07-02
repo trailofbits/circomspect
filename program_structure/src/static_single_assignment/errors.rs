@@ -8,7 +8,7 @@ pub enum SSAError {
     /// The variable is read before it is declared/written.
     UndefinedVariableError {
         name: String,
-        file_id: FileID,
+        file_id: Option<FileID>,
         location: FileLocation,
     },
 }
@@ -28,7 +28,13 @@ impl SSAError {
                     format!("variable `{name}` is used before it is defined"),
                     ReportCode::UninitializedSymbolInExpression,
                 );
-                report.add_primary(location, file_id, "variable is first seen here".to_string());
+                if let Some(file_id) = file_id {
+                    report.add_primary(
+                        location,
+                        file_id,
+                        "variable is first seen here".to_string(),
+                    );
+                }
                 report
             }
         }

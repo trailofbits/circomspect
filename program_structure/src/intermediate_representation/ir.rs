@@ -4,7 +4,7 @@ use std::fmt;
 
 use crate::ast;
 use crate::environment::VarEnvironment;
-use crate::file_definition::FileLocation;
+use crate::file_definition::{FileID, FileLocation};
 
 use super::declaration_map::Declaration;
 use super::value_meta::ValueKnowledge;
@@ -78,7 +78,7 @@ pub trait TryIntoIR {
 pub struct Meta {
     pub elem_id: usize,
     pub location: FileLocation,
-    pub file_id: Option<usize>,
+    pub file_id: Option<FileID>,
     value_knowledge: ValueKnowledge,
     variable_knowledge: VariableKnowledge,
 }
@@ -93,12 +93,8 @@ impl Meta {
         self.location.end
     }
     #[must_use]
-    pub fn get_file_id(&self) -> usize {
-        if let Option::Some(id) = self.file_id {
-            id
-        } else {
-            panic!("Empty file id accessed")
-        }
+    pub fn get_file_id(&self) -> Option<FileID> {
+        self.file_id
     }
     #[must_use]
     pub fn file_location(&self) -> FileLocation {
@@ -121,6 +117,28 @@ impl Meta {
         &mut self.variable_knowledge
     }
 }
+
+impl std::hash::Hash for Meta {
+    fn hash<H>(&self, state: &mut H)
+    where
+        H: std::hash::Hasher,
+    {
+        self.elem_id.hash(state);
+        self.location.hash(state);
+        self.file_id.hash(state);
+        state.finish();
+    }
+}
+
+impl PartialEq for Meta {
+    fn eq(&self, other: &Meta) -> bool {
+        self.elem_id == other.elem_id
+            && self.location == other.location
+            && self.file_id == other.file_id
+    }
+}
+
+impl Eq for Meta {}
 
 impl From<&ast::Meta> for Meta {
     fn from(meta: &ast::Meta) -> Meta {
@@ -177,6 +195,55 @@ pub enum StatementType {
     ConstraintEquality,
     LogCall,
     Assert,
+}
+
+#[derive(Clone, Hash, Eq, PartialEq)]
+pub enum Expression {
+    InfixOp {
+        meta: Meta,
+        lhe: Box<Expression>,
+        infix_op: ExpressionInfixOpcode,
+        rhe: Box<Expression>,
+    },
+    PrefixOp {
+        meta: Meta,
+        prefix_op: ExpressionPrefixOpcode,
+        rhe: Box<Expression>,
+    },
+    InlineSwitchOp {
+        meta: Meta,
+        cond: Box<Expression>,
+        if_true: Box<Expression>,
+        if_false: Box<Expression>,
+    },
+    Variable {
+        meta: Meta,
+        name: VariableName,
+        access: Vec<Access>,
+    },
+    Signal {
+        meta: Meta,
+        name: VariableName,
+        access: Vec<Access>,
+    },
+    Component {
+        meta: Meta,
+        name: VariableName,
+    },
+    Number(Meta, BigInt),
+    Call {
+        meta: Meta,
+        id: String,
+        args: Vec<Expression>,
+    },
+    ArrayInLine {
+        meta: Meta,
+        values: Vec<Expression>,
+    },
+    Phi {
+        meta: Meta,
+        args: Vec<VariableName>,
+    },
 }
 
 /// There are only two hard things in Computer Science: cache invalidation and
@@ -328,55 +395,6 @@ impl fmt::Display for VariableName {
     }
 }
 
-#[derive(Clone)]
-pub enum Expression {
-    InfixOp {
-        meta: Meta,
-        lhe: Box<Expression>,
-        infix_op: ExpressionInfixOpcode,
-        rhe: Box<Expression>,
-    },
-    PrefixOp {
-        meta: Meta,
-        prefix_op: ExpressionPrefixOpcode,
-        rhe: Box<Expression>,
-    },
-    InlineSwitchOp {
-        meta: Meta,
-        cond: Box<Expression>,
-        if_true: Box<Expression>,
-        if_false: Box<Expression>,
-    },
-    Variable {
-        meta: Meta,
-        name: VariableName,
-        access: Vec<Access>,
-    },
-    Signal {
-        meta: Meta,
-        name: String,
-        access: Vec<Access>,
-    },
-    Component {
-        meta: Meta,
-        name: String,
-    },
-    Number(Meta, BigInt),
-    Call {
-        meta: Meta,
-        id: String,
-        args: Vec<Expression>,
-    },
-    ArrayInLine {
-        meta: Meta,
-        values: Vec<Expression>,
-    },
-    Phi {
-        meta: Meta,
-        args: Vec<VariableName>,
-    },
-}
-
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub enum ExpressionType {
     InfixOp,
@@ -391,13 +409,13 @@ pub enum ExpressionType {
     Phi,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Hash, Eq, PartialEq)]
 pub enum Access {
     ArrayAccess(Expression),
     ComponentAccess(String),
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, Hash, Eq, PartialEq)]
 pub enum AssignOp {
     AssignVar,
     AssignSignal,
@@ -415,7 +433,7 @@ impl From<&ast::AssignOp> for AssignOp {
     }
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, Hash, Eq, PartialEq)]
 pub enum ExpressionInfixOpcode {
     Mul,
     Div,
@@ -467,7 +485,7 @@ impl From<&ast::ExpressionInfixOpcode> for ExpressionInfixOpcode {
     }
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, Hash, Eq, PartialEq)]
 pub enum ExpressionPrefixOpcode {
     Sub,
     BoolNot,
