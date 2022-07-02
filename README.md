@@ -27,7 +27,8 @@ To run circomspect on a file, simple run
   circomspect path/to/circuit.circom
 ```
 
-To get more (or less) verbose input you can set the output level using the `--output-level` flag. To output the results to a Sarif file (which can be read by the [VSCode Sarif Viewer](https://marketplace.visualstudio.com/items?itemName=MS-SarifVSCode.sarif-viewer)), use the flag `--sarif-file`.
+To get more (or less) verbose output you can set the output level using the `--output-level` flag. To output the results to a Sarif file (which can be read by the [VSCode Sarif Viewer](https://marketplace.visualstudio.com/items?itemName=MS-SarifVSCode.sarif-viewer)), use the flag `--sarif-file`.
+
 
 
 ## Analysis Passes
