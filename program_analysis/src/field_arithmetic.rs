@@ -81,7 +81,6 @@ fn visit_expression(expr: &Expression, reports: &mut ReportCollection) {
             visit_expression(cond, reports);
             visit_expression(if_true, reports);
             visit_expression(if_false, reports);
-
         }
         Call { args, .. } => {
             for arg in args {
@@ -101,7 +100,7 @@ fn visit_expression(expr: &Expression, reports: &mut ReportCollection) {
                 }
             }
         }
-        Number(_,_) | Component { .. } | Phi { .. } => (),
+        Number(_, _) | Component { .. } | Phi { .. } => (),
     }
 }
 

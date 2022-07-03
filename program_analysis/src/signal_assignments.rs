@@ -119,7 +119,12 @@ pub fn find_signal_assignments(cfg: &Cfg) -> ReportCollection {
     let mut reports = ReportCollection::new();
     for (signal, assignment_access, assignment_meta) in constraints.get_assignments() {
         let constraint_meta = constraints.has_constraint(signal);
-        reports.push(build_report(signal, assignment_access, assignment_meta, &constraint_meta));
+        reports.push(build_report(
+            signal,
+            assignment_access,
+            assignment_meta,
+            &constraint_meta,
+        ));
     }
 
     debug!("{} new reports generated", reports.len());
