@@ -65,14 +65,43 @@ fn visit_expression(expr: &Expression, reports: &mut ReportCollection) {
         InfixOp { meta, infix_op, .. } if may_overflow(infix_op) => {
             reports.push(build_report(meta));
         }
-        InfixOp { rhe, lhe, .. } => {
+        InfixOp { lhe, rhe, .. } => {
             visit_expression(lhe, reports);
             visit_expression(rhe, reports);
         }
         PrefixOp { rhe, .. } => {
             visit_expression(rhe, reports);
         }
-        _ => (),
+        InlineSwitchOp {
+            cond,
+            if_true,
+            if_false,
+            ..
+        } => {
+            visit_expression(cond, reports);
+            visit_expression(if_true, reports);
+            visit_expression(if_false, reports);
+
+        }
+        Call { args, .. } => {
+            for arg in args {
+                visit_expression(arg, reports);
+            }
+        }
+        ArrayInLine { values, .. } => {
+            for value in values {
+                visit_expression(value, reports);
+            }
+        }
+        Variable { access, .. } | Signal { access, .. } => {
+            use Access::*;
+            for index in access {
+                if let ArrayAccess(index) = index {
+                    visit_expression(index, reports);
+                }
+            }
+        }
+        Number(_,_) | Component { .. } | Phi { .. } => (),
     }
 }
 
@@ -86,7 +115,8 @@ fn is_arithmetic_infix_op(op: &ExpressionInfixOpcode) -> bool {
 
 fn may_overflow(op: &ExpressionInfixOpcode) -> bool {
     use ExpressionInfixOpcode::*;
-    is_arithmetic_infix_op(op) && !matches!(op, IntDiv | Mod | ShiftR | BitAnd)
+    // Note that right-shift may overflow if the shift is less than 0.
+    is_arithmetic_infix_op(op) && !matches!(op, IntDiv | Mod | BitAnd)
 }
 
 fn build_report(meta: &Meta) -> Report {
@@ -107,12 +137,12 @@ mod tests {
     fn test_field_arithmetic() {
         let src = r#"
             function f(a) {
-                var b = a + 1;
-                var c = a + b + 1;
-                return a + b + c + 1;
+                var b[2] = [0, 1];
+                var c = b[a + 1];
+                return a + b[1] + c;
             }
         "#;
-        validate_reports(src, 3);
+        validate_reports(src, 2);
     }
 
     fn validate_reports(src: &str, expected_len: usize) {
