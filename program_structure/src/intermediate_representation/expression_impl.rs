@@ -102,11 +102,25 @@ impl VariableMeta for Expression {
                 signals_read.extend(if_true.get_signals_read().iter().cloned());
                 signals_read.extend(if_false.get_signals_read().iter().cloned());
             }
-            Variable { name, .. } => {
+            Variable { name, access, .. } => {
+                access.iter_mut().for_each(|access| {
+                    use Access::*;
+                    if let ArrayAccess(index) = access {
+                        index.cache_variable_use();
+                        variables_read.extend(index.get_variables_read().clone());
+                    }
+                });
                 trace!("adding `{name}` to variables read");
                 variables_read.insert(name.clone());
             }
-            Signal { name, .. } => {
+            Signal { name, access, .. } => {
+                access.iter_mut().for_each(|access| {
+                    use Access::*;
+                    if let ArrayAccess(index) = access {
+                        index.cache_variable_use();
+                        variables_read.extend(index.get_variables_read().clone());
+                    }
+                });
                 trace!("adding `{name}` to signals read");
                 signals_read.insert(name.clone());
             }
