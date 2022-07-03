@@ -101,7 +101,7 @@ If a branching statement condition always evaluates to either `true` or `false`,
 
 #### 5. Bitwise complement of field elements (Informational)
 
-Circom supports taking the 256-bit complement `~x` of a field element `x`. Since the result is reduced modulo `p`, it will typically not satisfy the expected relations `(~x)ᵢ != ~(xᵢ)` for each bit `i`, which could lead to surprising results.
+Circom supports taking the 256-bit complement `~x` of a field element `x`. Since the result is reduced modulo `p`, it will typically not satisfy the expected relations `(~x)ᵢ == ~(xᵢ)` for each bit `i`, which could lead to surprising results.
 
 
 #### 6. Field element arithmetic (Informational)
