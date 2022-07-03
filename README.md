@@ -1,4 +1,4 @@
-# Circomspect
+# Circomspect 🔎
 
 ![Circomspect output](doc/demo.gif)
 
