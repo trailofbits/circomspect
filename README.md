@@ -99,9 +99,9 @@ Signals should typically be assigned using the constraint assignment operator `<
 If a branching statement condition always evaluates to either `true` or `false`, this means that the branch is either always taken, or never taken. This typically indicates a mistake in the code which should be fixed.
 
 
-#### 5. Bitwise arithmetic on field elements (Warning)
+#### 5. Bitwise complement of field elements (Informational)
 
-Circom supports bitwise arithmetic operations like `|` (or), `&` (and), `^` (xor), and `~` (256-bit bitwise complement). Many of these operations do not commute with reductions modulo `p`, which could lead to surprising results.
+Circom supports taking the 256-bit complement `~x` of a field element `x`. Since the result is reduced modulo `p`, it will typically not satisfy the expected relations `(~x)ᵢ != ~(xᵢ)` for each bit `i`, which could lead to surprising results.
 
 
 #### 6. Field element arithmetic (Informational)
