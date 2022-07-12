@@ -1,5 +1,7 @@
 use anyhow::{anyhow, Result};
 use log::info;
+use parser::{Definitions, ParseResult};
+use program_structure::ast::Definition;
 use std::convert::TryInto;
 use std::fs::File;
 use std::io::Write;
@@ -57,40 +59,17 @@ struct Cli {
     compiler_version: String,
 }
 
-fn parse_project(initial_file: &str, compiler_version: &str) -> Result<ProgramArchive> {
-    match parser::run_parser(initial_file.to_string(), compiler_version) {
-        Ok((program, warnings)) => {
-            Report::print_reports(&warnings, &program.file_library);
-            Ok(program)
-        }
-        Err((files, errors)) => {
-            Report::print_reports(&errors, &files);
-            Err(anyhow!("failed to parse {}", initial_file))
-        }
-    }
-}
-
 fn generate_cfg<T: TryInto<(Cfg, ReportCollection)>>(
     ast: T,
-    name: &str,
-    files: &FileLibrary,
-) -> Result<(Cfg, ReportCollection)>
+) -> Result<(Cfg, ReportCollection), ReportCollection>
 where
     T: TryInto<(Cfg, ReportCollection)>,
     T::Error: Into<Report>,
 {
-    let (cfg, reports) = ast.try_into().map_err(|error| {
-        let reports = [error.into()];
-        Report::print_reports(&reports, files);
-        anyhow!("failed to generate CFG for '{name}'")
-    })?;
+    let (cfg, reports) = ast.try_into().map_err(|error| vec![error.into()])?;
     match cfg.into_ssa() {
         Ok(cfg) => Ok((cfg, reports)),
-        Err(error) => {
-            let reports = [error.into()];
-            Report::print_reports(&reports, files);
-            Err(anyhow!("failed to convert '{name}' to SSA"))
-        }
+        Err(error) => Err(vec![error.into()]),
     }
 }
 
@@ -115,32 +94,93 @@ fn filter_by_level(report: &Report, output_level: &Level) -> bool {
     }
 }
 
-fn main() -> Result<()> {
-    pretty_env_logger::init();
-    let options = Cli::from_args();
-    let program = parse_project(&options.input_file, &options.compiler_version)?;
-    let mut reports = ReportCollection::new();
+/// Analyze a complete Circom program.
+fn analyze_program(program: &ProgramArchive, output_level: &Level) -> ReportCollection {
+    let mut reports = Vec::new();
 
     // Analyze all functions.
     for function in program.get_functions().values() {
         info!("analyzing function '{}'", function.get_name());
-        let (cfg, mut new_reports) =
-            generate_cfg(function, function.get_name(), &program.file_library)?;
-        new_reports.extend(analyze_cfg(&cfg, &options.output_level));
+        let (cfg, mut new_reports) = match generate_cfg(function) {
+            Ok((cfg, warnings)) => (cfg, warnings),
+            Err(errors) => return errors,
+        };
+        new_reports.extend(analyze_cfg(&cfg, output_level));
         Report::print_reports(&new_reports, &program.file_library);
         reports.extend(new_reports);
     }
     // Analyze all templates.
     for template in program.get_templates().values() {
         info!("analyzing template '{}'", template.get_name());
-        let (cfg, mut new_reports) =
-            generate_cfg(template, template.get_name(), &program.file_library)?;
-        new_reports.extend(analyze_cfg(&cfg, &options.output_level));
+        let (cfg, mut new_reports) = match generate_cfg(template) {
+            Ok((cfg, warnings)) => (cfg, warnings),
+            Err(errors) => return errors,
+        };
+        new_reports.extend(analyze_cfg(&cfg, output_level));
         Report::print_reports(&new_reports, &program.file_library);
         reports.extend(new_reports);
     }
+    reports
+}
+
+/// Analyze a set of Circom function and/or template definitions.
+fn analyze_definitions(
+    definitions: &Definitions,
+    file_library: &FileLibrary,
+    output_level: &Level,
+) -> ReportCollection {
+    let mut reports = Vec::new();
+
+    for definitions in definitions.values() {
+        for definition in definitions {
+            match definition {
+                Definition::Function { name, .. } => {
+                    info!("analyzing function '{name}'");
+                }
+                Definition::Template { name, .. } => {
+                    info!("analyzing template '{name}'");
+                }
+            };
+            let (cfg, mut new_reports) = match generate_cfg(definition) {
+                Ok((cfg, warnings)) => (cfg, warnings),
+                Err(errors) => return errors,
+            };
+            new_reports.extend(analyze_cfg(&cfg, output_level));
+            Report::print_reports(&new_reports, file_library);
+            reports.extend(new_reports);
+        }
+    }
+    reports
+}
+
+fn main() -> Result<()> {
+    pretty_env_logger::init();
+    let options = Cli::from_args();
+    let mut reports = ReportCollection::new();
+
+    let file_library = match parser::parse_files(&options.input_file, &options.compiler_version) {
+        // Analyze a complete Circom program.
+        ParseResult::Complete(program, mut warnings) => {
+            Report::print_reports(&warnings, &program.file_library);
+            reports.append(&mut warnings);
+            reports.append(&mut analyze_program(&program, &options.output_level));
+            program.file_library
+        }
+        // Analyze a set of Circom definitions.
+        ParseResult::Partial(definitions, file_library, mut errors) => {
+            Report::print_reports(&reports, &file_library);
+            reports.append(&mut errors);
+            reports.append(&mut analyze_definitions(
+                &definitions,
+                &file_library,
+                &options.output_level,
+            ));
+            file_library
+        }
+    };
+
     if let Some(sarif_path) = options.sarif_file {
-        let sarif = reports.to_sarif(&program.file_library)?;
+        let sarif = reports.to_sarif(&file_library)?;
         let json = serde_json::to_string_pretty(&sarif)?;
         let mut sarif_file = File::create(sarif_path)?;
         writeln!(sarif_file, "{}", &json)?;

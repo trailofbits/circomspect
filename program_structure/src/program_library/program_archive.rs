@@ -5,9 +5,9 @@ use super::program_merger::Merger;
 use super::template_data::{TemplateData, TemplateInfo};
 use crate::abstract_syntax_tree::ast::FillMeta;
 use crate::error_definition::Report;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
-type Contents = Vec<(FileID, Vec<Definition>)>;
+type Contents = HashMap<FileID, Vec<Definition>>;
 
 #[derive(Clone)]
 pub struct ProgramArchive {
@@ -25,13 +25,13 @@ impl ProgramArchive {
     pub fn new(
         file_library: FileLibrary,
         file_id_main: FileID,
-        main_component: MainComponent,
-        program_contents: Contents,
+        main_component: &MainComponent,
+        program_contents: &Contents,
     ) -> Result<ProgramArchive, (FileLibrary, Vec<Report>)> {
         let mut merger = Merger::new();
         let mut reports = vec![];
         for (file_id, definitions) in program_contents {
-            if let Err(mut errs) = merger.add_definitions(file_id, definitions) {
+            if let Err(mut errs) = merger.add_definitions(*file_id, definitions) {
                 reports.append(&mut errs);
             }
         }
@@ -44,7 +44,7 @@ impl ProgramArchive {
         for key in templates.keys() {
             template_keys.insert(key.clone());
         }
-        let (public_inputs, mut initial_template_call) = main_component;
+        let (public_inputs, mut initial_template_call) = main_component.clone();
         initial_template_call.fill(file_id_main, &mut fresh_id);
         if reports.is_empty() {
             Ok(ProgramArchive {
@@ -53,10 +53,10 @@ impl ProgramArchive {
                 file_library,
                 functions,
                 templates,
-                public_inputs,
                 initial_template_call,
                 function_keys,
                 template_keys,
+                public_inputs,
             })
         } else {
             Err((file_library, reports))

@@ -28,7 +28,7 @@ impl Merger {
     pub fn add_definitions(
         &mut self,
         file_id: FileID,
-        definitions: Vec<Definition>,
+        definitions: &Vec<Definition>,
     ) -> Result<(), Vec<Report>> {
         let mut reports = vec![];
         for definition in definitions {
@@ -47,12 +47,12 @@ impl Merger {
                         let new_data = TemplateData::new(
                             name.clone(),
                             file_id,
-                            body,
+                            body.clone(),
                             args.len(),
-                            args,
-                            arg_location,
+                            args.clone(),
+                            arg_location.clone(),
                             &mut self.fresh_id,
-                            parallel,
+                            parallel.clone(),
                         );
                         self.get_mut_template_info().insert(name.clone(), new_data);
                         (Option::None, meta)
@@ -71,10 +71,10 @@ impl Merger {
                         let new_data = FunctionData::new(
                             name.clone(),
                             file_id,
-                            body,
+                            body.clone(),
                             args.len(),
-                            args,
-                            arg_location,
+                            args.clone(),
+                            arg_location.clone(),
                             &mut self.fresh_id,
                         );
                         self.get_mut_function_info().insert(name.clone(), new_data);

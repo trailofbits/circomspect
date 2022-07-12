@@ -161,6 +161,53 @@ pub fn build_function(
     }
 }
 
+impl Definition {
+    pub fn get_meta(&self) -> &Meta {
+        use Definition::*;
+        match self {
+            Function { meta, .. } | Template { meta, .. } => meta,
+        }
+    }
+
+    pub fn get_meta_mut(&mut self) -> &mut Meta {
+        use Definition::*;
+        match self {
+            Function { meta, .. } | Template { meta, .. } => meta,
+        }
+    }
+
+    pub fn get_name(&self) -> &String {
+        use Definition::*;
+        match self {
+            Function { name, .. } | Template { name, .. } => name,
+        }
+    }
+
+    pub fn get_body(&self) -> &Statement {
+        use Definition::*;
+        match self {
+            Function { body, .. } | Template { body, .. } => body,
+        }
+    }
+
+    pub fn get_body_mut(&mut self) -> &mut Statement {
+        use Definition::*;
+        match self {
+            Function { body, .. } | Template { body, .. } => body,
+        }
+    }
+}
+
+impl FillMeta for Definition {
+    fn fill(&mut self, file_id: usize, elem_id: &mut usize) {
+        self.get_meta_mut().set_file_id(file_id);
+        self.get_meta_mut().elem_id = *elem_id;
+
+        *elem_id += 1;
+        self.get_body_mut().fill(file_id, elem_id);
+    }
+}
+
 #[derive(Clone)]
 pub enum Statement {
     IfThenElse {

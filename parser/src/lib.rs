@@ -11,121 +11,149 @@ mod errors;
 mod include_logic;
 mod parser_logic;
 use include_logic::FileStack;
-use program_structure::ast::Definition;
+use program_structure::ast::{Definition, Version, AST, FillMeta};
 use program_structure::error_definition::{Report, ReportCollection};
-use program_structure::file_definition::FileLibrary;
+use program_structure::file_definition::{FileID, FileLibrary};
 use program_structure::program_archive::ProgramArchive;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::str::FromStr;
 
-pub type Version = (usize, usize, usize);
+pub type Definitions = HashMap<FileID, Vec<Definition>>;
 
-pub fn run_parser(
-    file: String,
-    version: &str,
-) -> Result<(ProgramArchive, ReportCollection), (FileLibrary, ReportCollection)> {
-    let mut file_library = FileLibrary::new();
-    let mut definitions = Vec::new();
-    let mut main_components = Vec::new();
-    let mut file_stack = FileStack::new(PathBuf::from(file));
-    let mut warnings = Vec::new();
+pub enum ParseResult {
+    // The program was successfully parsed without issues.
+    Complete(ProgramArchive, ReportCollection),
+    // The parser failed to parse a complete program.
+    Partial(Definitions, FileLibrary, ReportCollection),
+}
 
-    while let Some(crr_file) = FileStack::take_next(&mut file_stack) {
-        let (path, src) = open_file(crr_file).map_err(|e| (file_library.clone(), vec![e]))?;
-        let file_id = file_library.add_file(path.clone(), src.clone());
-        let program =
-            parser_logic::parse_file(&src, file_id).map_err(|e| (file_library.clone(), vec![e]))?;
-
-        if let Some(main) = program.main_component {
-            main_components.push((file_id, main));
-        }
-        let includes = program.includes;
-        definitions.push((file_id, program.definitions));
-        for include in includes {
-            FileStack::add_include(&mut file_stack, include)
-                .map_err(|e| (file_library.clone(), vec![e]))?;
-        }
-        warnings.append(
-            &mut check_number_version(
-                path,
-                program.compiler_version,
-                parse_number_version(version),
-            )
-            .map_err(|e| (file_library.clone(), vec![e]))?,
-        );
+fn parse_file(
+    file_path: &PathBuf,
+    file_stack: &mut FileStack,
+    file_library: &mut FileLibrary,
+    compiler_version: &Version,
+) -> Result<(FileID, AST, ReportCollection), Report> {
+    let (path_str, file_content) = open_file(file_path)?;
+    let file_id = file_library.add_file(path_str, file_content.clone());
+    let program = parser_logic::parse_file(&file_content, file_id)?;
+    for include in &program.includes {
+        // TODO: This will fail on the first invalid include statement.
+        FileStack::add_include(file_stack, include.clone())?;
     }
+    let warnings = check_compiler_version(file_path, program.compiler_version, compiler_version)?;
+    Ok((file_id, program, warnings))
+}
 
-    if main_components.len() == 0 {
-        let report = errors::NoMainError::produce_report();
-        Err((file_library, vec![report]))
-    } else if main_components.len() > 1 {
-        let report = errors::MultipleMainError::produce_report();
-        Err((file_library, vec![report]))
-    } else {
-        let (main_id, main_component) = main_components.pop().unwrap();
-        let result_program_archive =
-            ProgramArchive::new(file_library, main_id, main_component, definitions);
-        match result_program_archive {
-            Err((lib, rep)) => Err((lib, rep)),
-            Ok(program_archive) => Ok((program_archive, warnings)),
+pub fn parse_files(file_path: &str, compiler_version: &str) -> ParseResult {
+    let compiler_version = parse_version_string(compiler_version);
+
+    let mut file_stack = FileStack::new(PathBuf::from(file_path));
+    let mut file_library = FileLibrary::new();
+    let mut definitions = HashMap::new();
+    let mut main_components = Vec::new();
+    let mut reports = Vec::new();
+    while let Some(file_path) = FileStack::take_next(&mut file_stack) {
+        match parse_file(
+            &file_path,
+            &mut file_stack,
+            &mut file_library,
+            &compiler_version,
+        ) {
+            Ok((file_id, program, mut warnings)) => {
+                if let Some(main_component) = program.main_component {
+                    main_components.push((file_id, main_component));
+                }
+                definitions.insert(file_id, program.definitions);
+                reports.append(&mut warnings);
+            }
+            Err(error) => {
+                reports.push(error);
+            }
+        }
+    }
+    let mut element_id = 0;
+    for (file_id, definitions) in &mut definitions {
+        for definition in definitions {
+            definition.fill(*file_id, &mut element_id);
+        }
+    }
+    match &main_components[..] {
+        [(main_id, main_component)] => {
+            // TODO: This calls FillMeta::fill a second time.
+            match ProgramArchive::new(file_library, *main_id, main_component, &definitions) {
+                Ok(program_archive) => ParseResult::Complete(program_archive, reports),
+                Err((file_library, mut errors)) => {
+                    reports.append(&mut errors);
+                    ParseResult::Partial(definitions, file_library, reports)
+                }
+            }
+        }
+        [] => {
+            reports.push(errors::NoMainError::produce_report());
+            ParseResult::Partial(definitions, file_library, reports)
+        }
+        _ => {
+            reports.push(errors::MultipleMainError::produce_report());
+            ParseResult::Partial(definitions, file_library, reports)
         }
     }
 }
 
-fn open_file(path: PathBuf) -> Result<(String, String), Report> /* path, src*/ {
+fn open_file(file_path: &PathBuf) -> Result<(String, String), Report> /* path, src*/ {
     use errors::FileOsError;
     use std::fs::read_to_string;
-    let path_str = format!("{:?}", path);
-    read_to_string(path)
+    let path_str = format!("{}", file_path.display());
+    read_to_string(file_path)
         .map(|contents| (path_str.clone(), contents))
         .map_err(|_| FileOsError {
             path: path_str.clone(),
         })
-        .map_err(|e| FileOsError::produce_report(e))
+        .map_err(|error| FileOsError::produce_report(error))
 }
 
-fn parse_number_version(version: &str) -> Version {
-    let version_splitted: Vec<&str> = version.split(".").collect();
-
+fn parse_version_string(version: &str) -> Version {
+    let split_version: Vec<&str> = version.split(".").collect();
+    // This is only called on the internally defined version, so it is ok to
+    // call `unwrap` here.
     (
-        usize::from_str(version_splitted[0]).unwrap(),
-        usize::from_str(version_splitted[1]).unwrap(),
-        usize::from_str(version_splitted[2]).unwrap(),
+        usize::from_str(split_version[0]).unwrap(),
+        usize::from_str(split_version[1]).unwrap(),
+        usize::from_str(split_version[2]).unwrap(),
     )
 }
 
-fn check_number_version(
-    file_path: String,
-    version_file: Option<Version>,
-    version_compiler: Version,
+fn check_compiler_version(
+    file_path: &PathBuf,
+    file_version: Option<Version>,
+    compiler_version: &Version,
 ) -> Result<ReportCollection, Report> {
     use errors::{CompilerVersionError, NoCompilerVersionWarning};
-    if let Some(required_version) = version_file {
-        if required_version.0 == version_compiler.0
-            && required_version.1 == version_compiler.1
-            && required_version.2 <= version_compiler.2
+    if let Some(required_version) = file_version {
+        if required_version.0 == compiler_version.0
+            && required_version.1 == compiler_version.1
+            && required_version.2 <= compiler_version.2
         {
             Ok(vec![])
         } else {
             let report = CompilerVersionError::produce_report(CompilerVersionError {
-                path: file_path,
+                path: format!("{}", file_path.display()),
                 required_version: required_version,
-                version: version_compiler,
+                version: compiler_version.clone(),
             });
             Err(report)
         }
     } else {
         let report = NoCompilerVersionWarning::produce_report(NoCompilerVersionWarning {
-            path: file_path,
-            version: version_compiler,
+            path: format!("{}", file_path.display()),
+            version: compiler_version.clone(),
         });
         Ok(vec![report])
     }
 }
 
+/// Parse a single (function or template) definition for testing purposes.
 pub fn parse_definition(src: &str) -> Option<Definition> {
-    use program_structure::ast::AST;
-
     match parser_logic::parse_string(src) {
         Some(AST {
             mut definitions, ..
