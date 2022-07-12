@@ -75,6 +75,7 @@ pub enum ReportCode {
     FieldElementArithmetic,
     AssignSignalStatement,
     DeadAssignment,
+    UnusedParameter,
     ConstantBranchCondition,
 }
 impl fmt::Display for ReportCode {
@@ -153,7 +154,8 @@ impl fmt::Display for ReportCode {
             FieldElementArithmetic => "CS0004",
             AssignSignalStatement => "CS0005",
             DeadAssignment => "CS0006",
-            ConstantBranchCondition => "CS0007",
+            UnusedParameter => "CS0007",
+            ConstantBranchCondition => "CS0008",
         };
         f.write_str(string_format)
     }

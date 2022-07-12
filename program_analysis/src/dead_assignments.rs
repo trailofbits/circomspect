@@ -1,5 +1,6 @@
 use log::debug;
 use std::collections::HashMap;
+use std::fmt;
 
 use program_structure::cfg::Cfg;
 use program_structure::error_code::ReportCode;
@@ -33,11 +34,82 @@ impl DeadAssignmentWarning {
     }
 }
 
-type VariableWrites = HashMap<VariableName, Meta>;
+pub struct UnusedParameterWarning {
+    name: String,
+    file_id: Option<FileID>,
+    file_location: FileLocation,
+}
+
+impl UnusedParameterWarning {
+    pub fn into_report(self) -> Report {
+        let mut report = Report::warning(
+            format!("The parameter `{}` is never read.", self.name),
+            ReportCode::UnusedParameter,
+        );
+        if let Some(file_id) = self.file_id {
+            report.add_primary(
+                self.file_location,
+                file_id,
+                format!("The value of `{}` is never used.", self.name),
+            );
+        }
+        report
+    }
+}
+
+#[derive(Clone, PartialEq)]
+enum VariableWrite {
+    /// An oridnary write indicates a location where the variable is written to.
+    OrdinaryWrite(Meta),
+    /// A parameter write indicates that the variable is passed as a parameter
+    /// to the function or template.
+    Parameter(Option<FileID>, FileLocation),
+}
+
+impl fmt::Debug for VariableWrite {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            VariableWrite::OrdinaryWrite(meta) => {
+                write!(
+                    f,
+                    "variable assignment at {}-{}",
+                    meta.get_start(),
+                    meta.get_end()
+                )
+            }
+            VariableWrite::Parameter(_, file_location) => {
+                write!(
+                    f,
+                    "parameter at {}-{}",
+                    file_location.start, file_location.end
+                )
+            }
+        }
+    }
+}
+
+struct VariableWrites(HashMap<VariableName, VariableWrite>);
+
+impl VariableWrites {
+    pub fn new() -> VariableWrites {
+        VariableWrites(HashMap::new())
+    }
+
+    /// Adds a variable write to the set.
+    pub fn add_variable_written(&mut self, name: &VariableName, write: VariableWrite) {
+        // This should always return `None` if we're running on SSA.
+        assert_eq!(self.0.insert(name.clone(), write), None, "false");
+    }
+
+    /// Iterates over all parameter and variable assignments.
+    pub fn iter(&self) -> impl Iterator<Item = (&VariableName, &VariableWrite)> {
+        self.0.iter()
+    }
+}
 
 #[derive(Clone, PartialEq)]
 enum VariableRead {
-    /// An ordinary read indicated a location where the variable is read in the
+    /// An ordinary read indicates a location where the variable is read in the
     /// original program. All normal occurrences of the variable outside phi
     /// statements are ordinary reads.
     OrdinaryRead,
@@ -70,7 +142,7 @@ impl VariableReads {
         self.0.get(name).cloned().unwrap_or_default()
     }
 
-    // Returns true if the variable is read outside a phi statement.
+    /// Returns true if the variable is read outside a phi statement.
     pub fn has_ordinary_read(&self, name: &VariableName) -> bool {
         self.get_variable_reads(name)
             .iter()
@@ -85,8 +157,8 @@ impl VariableReads {
         }
     }
 
-    // Returns the variable names of phi statements where the given variable is
-    // in the list of phi function arguments.
+    /// Returns the variable names of phi statements where the given variable is
+    /// in the list of phi function arguments.
     pub fn get_phi_statement_vars(&self, name: &VariableName) -> Vec<VariableName> {
         self.get_variable_reads(name)
             .iter()
@@ -94,7 +166,7 @@ impl VariableReads {
             .collect()
     }
 
-    // Returns true if the variable flows to an ordinary read.
+    /// Returns true if the variable flows to an ordinary read.
     pub fn flows_to_ordinary_read(&self, name: &VariableName) -> bool {
         self.has_ordinary_read(name)
             || self
@@ -111,16 +183,21 @@ pub fn find_dead_assignments(cfg: &Cfg) -> ReportCollection {
     // Collect all variable assignment locations.
     let mut variables_read = VariableReads::new();
     let mut variables_written = VariableWrites::new();
+    for name in cfg.get_parameters().iter() {
+        let file_id = cfg.get_parameters().get_file_id();
+        let file_location = cfg.get_parameters().get_location();
+        variables_written
+            .add_variable_written(name, VariableWrite::Parameter(*file_id, file_location));
+    }
     for basic_block in cfg.iter() {
         for stmt in basic_block.iter() {
             visit_statement(stmt, &mut variables_read, &mut variables_written);
         }
     }
     let mut reports = ReportCollection::new();
-    for (name, meta) in variables_written.iter() {
-        // We assume that the CFG is converted to SSA here.
+    for (name, write) in variables_written.iter() {
         if !variables_read.flows_to_ordinary_read(name) {
-            reports.push(build_report(name.get_name(), meta));
+            reports.push(build_report(name.get_name(), write));
         }
     }
     debug!("{} new reports generated", reports.len());
@@ -153,10 +230,8 @@ fn visit_statement(
         } => {
             // If this is a variable assignment we add it to the variables written.
             if matches!(op, AssignOp::AssignVar) {
-                // Ensure that we are running this on SSA and that no variable is written multiple times.
-                assert!(variables_written
-                    .insert(var.clone(), meta.clone())
-                    .is_none())
+                variables_written
+                    .add_variable_written(var, VariableWrite::OrdinaryWrite(meta.clone()));
             }
             visit_expression(rhe, variables_read);
         }
@@ -213,13 +288,22 @@ fn visit_expression(expr: &Expression, variables_read: &mut VariableReads) {
     }
 }
 
-fn build_report(name: &str, meta: &Meta) -> Report {
-    DeadAssignmentWarning {
-        name: name.to_string(),
-        file_id: meta.get_file_id(),
-        file_location: meta.file_location(),
+fn build_report(name: &str, write: &VariableWrite) -> Report {
+    use VariableWrite::*;
+    match write {
+        OrdinaryWrite(meta) => DeadAssignmentWarning {
+            name: name.to_string(),
+            file_id: meta.get_file_id(),
+            file_location: meta.file_location(),
+        }
+        .into_report(),
+        Parameter(file_id, file_location) => UnusedParameterWarning {
+            name: name.to_string(),
+            file_id: *file_id,
+            file_location: file_location.clone(),
+        }
+        .into_report(),
     }
-    .into_report()
 }
 
 #[cfg(test)]
