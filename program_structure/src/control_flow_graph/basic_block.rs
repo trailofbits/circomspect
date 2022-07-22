@@ -165,6 +165,18 @@ impl VariableMeta for BasicBlock {
             .flat_map(|stmt| stmt.get_variables_written().clone())
             .collect();
 
+        // Cache components read.
+        let components_read = self
+            .iter()
+            .flat_map(|stmt| stmt.get_components_read().clone())
+            .collect();
+
+        // Cache components written.
+        let components_written = self
+            .iter()
+            .flat_map(|stmt| stmt.get_components_written().clone())
+            .collect();
+
         // Cache signals read.
         let signals_read = self
             .iter()
@@ -181,6 +193,8 @@ impl VariableMeta for BasicBlock {
             .get_variable_knowledge_mut()
             .set_variables_read(&variables_read)
             .set_variables_written(&variables_written)
+            .set_components_read(&components_read)
+            .set_components_written(&components_written)
             .set_signals_read(&signals_read)
             .set_signals_written(&signals_written);
     }
@@ -194,6 +208,17 @@ impl VariableMeta for BasicBlock {
         self.get_meta()
             .get_variable_knowledge()
             .get_variables_written()
+    }
+
+    fn get_components_read(&self) -> &VariableSet {
+        self.get_meta()
+            .get_variable_knowledge()
+            .get_components_read()
+    }
+    fn get_components_written(&self) -> &VariableSet {
+        self.get_meta()
+            .get_variable_knowledge()
+            .get_components_written()
     }
 
     fn get_signals_read(&self) -> &VariableSet {

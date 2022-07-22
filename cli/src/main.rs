@@ -1,22 +1,22 @@
 use anyhow::{anyhow, Result};
+use clap::Parser;
 use log::info;
-use parser::{Definitions, ParseResult};
-use program_structure::ast::Definition;
-use std::convert::TryInto;
+use parser::ParseResult;
+use program_structure::function_data::FunctionInfo;
+use program_structure::template_data::TemplateInfo;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use std::str::FromStr;
-use structopt::StructOpt;
 
 use program_analysis::get_analysis_passes;
 use program_structure::cfg::Cfg;
 use program_structure::error_definition::MessageCategory;
 use program_structure::error_definition::{Report, ReportCollection};
 use program_structure::file_definition::FileLibrary;
-use program_structure::program_archive::ProgramArchive;
 use program_structure::sarif_conversion::ToSarif;
 
+#[derive(Debug)]
 pub enum Level {
     Info,
     Warning,
@@ -85,6 +85,39 @@ fn analyze_cfg(cfg: &Cfg, output_level: &Level) -> ReportCollection {
         .collect()
 }
 
+fn analyze_definitions(
+    functions: &FunctionInfo,
+    templates: &TemplateInfo,
+    file_library: &FileLibrary,
+    output_level: &Level,
+) -> ReportCollection {
+    let mut reports = Vec::new();
+
+    // Analyze all functions.
+    for (name, function) in functions {
+        info!("analyzing function '{name}'");
+        let (cfg, mut new_reports) = match generate_cfg(function) {
+            Ok((cfg, warnings)) => (cfg, warnings),
+            Err(errors) => return errors,
+        };
+        new_reports.extend(analyze_cfg(&cfg, output_level));
+        Report::print_reports(&new_reports, file_library);
+        reports.extend(new_reports);
+    }
+    // Analyze all templates.
+    for (name, template) in templates {
+        info!("analyzing template '{name}'");
+        let (cfg, mut new_reports) = match generate_cfg(template) {
+            Ok((cfg, warnings)) => (cfg, warnings),
+            Err(errors) => return errors,
+        };
+        new_reports.extend(analyze_cfg(&cfg, output_level));
+        Report::print_reports(&new_reports, file_library);
+        reports.extend(new_reports);
+    }
+    reports
+}
+
 fn filter_by_level(report: &Report, output_level: &Level) -> bool {
     use MessageCategory::*;
     match output_level {
@@ -94,65 +127,6 @@ fn filter_by_level(report: &Report, output_level: &Level) -> bool {
     }
 }
 
-/// Analyze a complete Circom program.
-fn analyze_program(program: &ProgramArchive, output_level: &Level) -> ReportCollection {
-    let mut reports = Vec::new();
-
-    // Analyze all functions.
-    for function in program.get_functions().values() {
-        info!("analyzing function '{}'", function.get_name());
-        let (cfg, mut new_reports) = match generate_cfg(function) {
-            Ok((cfg, warnings)) => (cfg, warnings),
-            Err(errors) => return errors,
-        };
-        new_reports.extend(analyze_cfg(&cfg, output_level));
-        Report::print_reports(&new_reports, &program.file_library);
-        reports.extend(new_reports);
-    }
-    // Analyze all templates.
-    for template in program.get_templates().values() {
-        info!("analyzing template '{}'", template.get_name());
-        let (cfg, mut new_reports) = match generate_cfg(template) {
-            Ok((cfg, warnings)) => (cfg, warnings),
-            Err(errors) => return errors,
-        };
-        new_reports.extend(analyze_cfg(&cfg, output_level));
-        Report::print_reports(&new_reports, &program.file_library);
-        reports.extend(new_reports);
-    }
-    reports
-}
-
-/// Analyze a set of Circom function and/or template definitions.
-fn analyze_definitions(
-    definitions: &Definitions,
-    file_library: &FileLibrary,
-    output_level: &Level,
-) -> ReportCollection {
-    let mut reports = Vec::new();
-
-    for definitions in definitions.values() {
-        for definition in definitions {
-            match definition {
-                Definition::Function { name, .. } => {
-                    info!("analyzing function '{name}'");
-                }
-                Definition::Template { name, .. } => {
-                    info!("analyzing template '{name}'");
-                }
-            };
-            let (cfg, mut new_reports) = match generate_cfg(definition) {
-                Ok((cfg, warnings)) => (cfg, warnings),
-                Err(errors) => return errors,
-            };
-            new_reports.extend(analyze_cfg(&cfg, output_level));
-            Report::print_reports(&new_reports, file_library);
-            reports.extend(new_reports);
-        }
-    }
-    reports
-}
-
 fn main() -> Result<()> {
     pretty_env_logger::init();
     let options = Cli::from_args();
@@ -160,22 +134,28 @@ fn main() -> Result<()> {
 
     let file_library = match parser::parse_files(&options.input_file, &options.compiler_version) {
         // Analyze a complete Circom program.
-        ParseResult::Complete(program, mut warnings) => {
+        ParseResult::Program(program, mut warnings) => {
             Report::print_reports(&warnings, &program.file_library);
             reports.append(&mut warnings);
-            reports.append(&mut analyze_program(&program, &options.output_level));
+            reports.append(&mut analyze_definitions(
+                &program.functions,
+                &program.templates,
+                &program.file_library,
+                &options.output_level,
+            ));
             program.file_library
         }
         // Analyze a set of Circom definitions.
-        ParseResult::Partial(definitions, file_library, mut errors) => {
-            Report::print_reports(&reports, &file_library);
+        ParseResult::Library(library, mut errors) => {
+            Report::print_reports(&reports, &library.file_library);
             reports.append(&mut errors);
             reports.append(&mut analyze_definitions(
-                &definitions,
-                &file_library,
+                &library.functions,
+                &library.templates,
+                &library.file_library,
                 &options.output_level,
             ));
-            file_library
+            library.file_library
         }
     };
 
