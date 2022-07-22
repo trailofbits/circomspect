@@ -39,23 +39,23 @@ impl FromStr for Level {
 const DEFAULT_VERSION: &str = "2.0.3";
 const DEFAULT_LEVEL: &str = "WARNING";
 
-#[derive(StructOpt)]
+#[derive(Parser, Debug)]
 /// A static analyzer for Circom programs.
 struct Cli {
     /// Initial input file
-    #[structopt(name = "input")]
+    #[clap(name = "INPUT")]
     input_file: String,
 
     /// Output level (either INFO, WARNING, or ERROR)
-    #[structopt(long, name = "level", default_value = DEFAULT_LEVEL)]
+    #[clap(short, long, name = "LEVEL", default_value = DEFAULT_LEVEL)]
     output_level: Level,
 
     /// Output analysis results to a Sarif file
-    #[structopt(long, name = "output")]
+    #[clap(short, long, name = "OUTPUT")]
     sarif_file: Option<PathBuf>,
 
     /// Expected compiler version
-    #[structopt(long, name = "version", default_value = DEFAULT_VERSION)]
+    #[clap(short, long, name = "VERSION", default_value = DEFAULT_VERSION)]
     compiler_version: String,
 }
 
