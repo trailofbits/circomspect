@@ -575,6 +575,10 @@ impl TryIntoIR for ast::Expression {
                     Component => Ok(Expression::Component {
                         meta: meta.into(),
                         name: name[..].into(),
+                        access: access
+                            .iter()
+                            .map(|acc| acc.try_into_ir(env))
+                            .collect::<IRResult<Vec<Access>>>()?,
                     }),
                     Signal(_, _) => Ok(Expression::Signal {
                         meta: meta.into(),
@@ -644,9 +648,27 @@ impl Display for Expression {
         use Expression::*;
         match self {
             Number(_, value) => write!(f, "{}", value),
-            Signal { name, .. } => write!(f, "{name}"),
-            Component { name, .. } => write!(f, "{name}"),
-            Variable { name, .. } => write!(f, "{name}"),
+            Signal { name, access, .. } => {
+                write!(f, "{name}")?;
+                for access in access {
+                    write!(f, "{}", access)?;
+                }
+                Ok(())
+            }
+            Component { name, access, .. } => {
+                write!(f, "{name}")?;
+                for access in access {
+                    write!(f, "{}", access)?;
+                }
+                Ok(())
+            }
+            Variable { name, access, .. } => {
+                write!(f, "{name}")?;
+                for access in access {
+                    write!(f, "{}", access)?;
+                }
+                Ok(())
+            }
             InfixOp {
                 lhe, infix_op, rhe, ..
             } => write!(f, "({} {} {})", lhe, infix_op, rhe),
@@ -699,6 +721,16 @@ impl Display for ExpressionPrefixOpcode {
             Sub => f.write_str("-"),
             BoolNot => f.write_str("!"),
             Complement => f.write_str("~"),
+        }
+    }
+}
+
+impl Display for Access {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        use Access::*;
+        match self {
+            ArrayAccess(index) => write!(f, "[{index}]"),
+            ComponentAccess(name) => write!(f, ".{name}"),
         }
     }
 }
