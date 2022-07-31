@@ -76,7 +76,6 @@ pub trait TryIntoIR {
 
 #[derive(Clone, Default)]
 pub struct Meta {
-    pub elem_id: usize,
     pub location: FileLocation,
     pub file_id: Option<FileID>,
     value_knowledge: ValueKnowledge,
@@ -84,6 +83,16 @@ pub struct Meta {
 }
 
 impl Meta {
+    #[must_use]
+    pub fn new(location: &FileLocation, file_id: &Option<FileID>) -> Meta {
+        Meta {
+            location: location.clone(),
+            file_id: file_id.clone(),
+            value_knowledge: ValueKnowledge::default(),
+            variable_knowledge: VariableKnowledge::default(),
+        }
+    }
+
     #[must_use]
     pub fn get_start(&self) -> usize {
         self.location.start
@@ -123,7 +132,6 @@ impl std::hash::Hash for Meta {
     where
         H: std::hash::Hasher,
     {
-        self.elem_id.hash(state);
         self.location.hash(state);
         self.file_id.hash(state);
         state.finish();
@@ -132,9 +140,7 @@ impl std::hash::Hash for Meta {
 
 impl PartialEq for Meta {
     fn eq(&self, other: &Meta) -> bool {
-        self.elem_id == other.elem_id
-            && self.location == other.location
-            && self.file_id == other.file_id
+        self.location == other.location && self.file_id == other.file_id
     }
 }
 
@@ -142,13 +148,7 @@ impl Eq for Meta {}
 
 impl From<&ast::Meta> for Meta {
     fn from(meta: &ast::Meta) -> Meta {
-        Meta {
-            elem_id: meta.elem_id,
-            location: meta.file_location(),
-            file_id: meta.file_id,
-            value_knowledge: ValueKnowledge::default(),
-            variable_knowledge: VariableKnowledge::default(),
-        }
+        Meta::new(&meta.location, &meta.file_id)
     }
 }
 
@@ -229,6 +229,7 @@ pub enum Expression {
     Component {
         meta: Meta,
         name: VariableName,
+        access: Vec<Access>,
     },
     Number(Meta, BigInt),
     Call {
@@ -400,20 +401,14 @@ pub enum Access {
 
 #[derive(Copy, Clone, Hash, Eq, PartialEq)]
 pub enum AssignOp {
+    /// A variable assignment (using `=`).
     AssignVar,
+    /// A signal assignment (using `<--`)
     AssignSignal,
+    /// A component initialization (using `=`)
+    AssignComponent,
+    /// A signal assignment (using `<==`)
     AssignConstraintSignal,
-}
-
-impl From<&ast::AssignOp> for AssignOp {
-    fn from(op: &ast::AssignOp) -> AssignOp {
-        use ast::AssignOp::*;
-        match op {
-            AssignVar => AssignOp::AssignVar,
-            AssignSignal => AssignOp::AssignSignal,
-            AssignConstraintSignal => AssignOp::AssignConstraintSignal,
-        }
-    }
 }
 
 #[derive(Copy, Clone, Hash, Eq, PartialEq)]
