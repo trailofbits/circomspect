@@ -4,45 +4,53 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 pub struct FileStack {
-    current_location: PathBuf,
+    current_location: Option<PathBuf>,
     black_paths: HashSet<PathBuf>,
     stack: Vec<PathBuf>,
 }
 
 impl FileStack {
-    pub fn new(src: PathBuf) -> FileStack {
-        let mut location = src.clone();
-        location.pop();
+    pub fn new(file_paths: &Vec<PathBuf>) -> FileStack {
+        let location = file_paths
+            .iter()
+            .next()
+            .cloned()
+            .map(|mut file_path| {
+                file_path.pop();
+                file_path
+            });
         FileStack {
             current_location: location,
             black_paths: HashSet::new(),
-            stack: vec![src],
+            stack: file_paths.clone(),
         }
     }
 
-    pub fn add_include(f_stack: &mut FileStack, path: String) -> Result<(), Report> {
-        let mut crr = f_stack.current_location.clone();
-        crr.push(path.clone());
-        let path = std::fs::canonicalize(crr)
-            .map_err(|_| FileOsError { path: path.clone() })
-            .map_err(|e| FileOsError::produce_report(e))?;
-        if !f_stack.black_paths.contains(&path) {
-            f_stack.stack.push(path);
+    pub fn add_include(stack: &mut FileStack, path: String) -> Result<(), Report> {
+        if let Some(mut location) = stack.current_location.clone() {
+            location.push(path.clone());
+            let path = std::fs::canonicalize(location)
+                .map_err(|_| FileOsError { path: path.clone() })
+                .map_err(|e| FileOsError::produce_report(e))?;
+            if !stack.black_paths.contains(&path) {
+                stack.stack.push(path);
+            }
         }
         Ok(())
     }
 
-    pub fn take_next(f_stack: &mut FileStack) -> Option<PathBuf> {
+    pub fn take_next(stack: &mut FileStack) -> Option<PathBuf> {
         loop {
-            match f_stack.stack.pop() {
+            match stack.stack.pop() {
                 None => {
                     break None;
                 }
-                Some(file) if !f_stack.black_paths.contains(&file) => {
-                    f_stack.current_location = file.clone();
-                    f_stack.current_location.pop();
-                    f_stack.black_paths.insert(file.clone());
-                    break Some(file);
+                Some(file_path) if !stack.black_paths.contains(&file_path) => {
+                    let mut location = file_path.clone();
+                    location.pop();
+                    stack.current_location = Some(location);
+                    stack.black_paths.insert(file_path.clone());
+                    break Some(file_path);
                 }
                 _ => {}
             }

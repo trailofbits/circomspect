@@ -44,7 +44,7 @@ const DEFAULT_LEVEL: &str = "WARNING";
 struct Cli {
     /// Initial input file
     #[clap(name = "INPUT")]
-    input_file: String,
+    input_file: Vec<PathBuf>,
 
     /// Output level (either INFO, WARNING, or ERROR)
     #[clap(short, long, name = "LEVEL", default_value = DEFAULT_LEVEL)]
