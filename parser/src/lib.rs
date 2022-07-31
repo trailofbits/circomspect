@@ -11,21 +11,20 @@ mod errors;
 mod include_logic;
 mod parser_logic;
 use include_logic::FileStack;
-use program_structure::ast::{Definition, Version, AST, FillMeta};
+use program_structure::ast::{Version, AST};
 use program_structure::error_definition::{Report, ReportCollection};
 use program_structure::file_definition::{FileID, FileLibrary};
 use program_structure::program_archive::ProgramArchive;
+use program_structure::template_library::TemplateLibrary;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::str::FromStr;
 
-pub type Definitions = HashMap<FileID, Vec<Definition>>;
-
 pub enum ParseResult {
     // The program was successfully parsed without issues.
-    Complete(ProgramArchive, ReportCollection),
+    Program(ProgramArchive, ReportCollection),
     // The parser failed to parse a complete program.
-    Partial(Definitions, FileLibrary, ReportCollection),
+    Library(TemplateLibrary, ReportCollection),
 }
 
 fn parse_file(
@@ -72,30 +71,27 @@ pub fn parse_files(file_path: &str, compiler_version: &str) -> ParseResult {
             }
         }
     }
-    let mut element_id = 0;
-    for (file_id, definitions) in &mut definitions {
-        for definition in definitions {
-            definition.fill(*file_id, &mut element_id);
-        }
-    }
     match &main_components[..] {
         [(main_id, main_component)] => {
             // TODO: This calls FillMeta::fill a second time.
             match ProgramArchive::new(file_library, *main_id, main_component, &definitions) {
-                Ok(program_archive) => ParseResult::Complete(program_archive, reports),
+                Ok(program_archive) => ParseResult::Program(program_archive, reports),
                 Err((file_library, mut errors)) => {
                     reports.append(&mut errors);
-                    ParseResult::Partial(definitions, file_library, reports)
+                    let template_library = TemplateLibrary::new(definitions, file_library);
+                    ParseResult::Library(template_library, reports)
                 }
             }
         }
         [] => {
             reports.push(errors::NoMainError::produce_report());
-            ParseResult::Partial(definitions, file_library, reports)
+            let template_library = TemplateLibrary::new(definitions, file_library);
+            ParseResult::Library(template_library, reports)
         }
         _ => {
             reports.push(errors::MultipleMainError::produce_report());
-            ParseResult::Partial(definitions, file_library, reports)
+            let template_library = TemplateLibrary::new(definitions, file_library);
+            ParseResult::Library(template_library, reports)
         }
     }
 }
@@ -153,6 +149,8 @@ fn check_compiler_version(
 }
 
 /// Parse a single (function or template) definition for testing purposes.
+use program_structure::ast::Definition;
+
 pub fn parse_definition(src: &str) -> Option<Definition> {
     match parser_logic::parse_string(src) {
         Some(AST {
