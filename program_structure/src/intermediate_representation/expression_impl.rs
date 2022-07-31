@@ -11,7 +11,7 @@ use super::declaration_map::VariableType;
 use super::errors::{IRError, IRResult};
 use super::ir::*;
 use super::value_meta::{ValueEnvironment, ValueMeta, ValueReduction};
-use super::variable_meta::{VariableMeta, VariableSet};
+use super::variable_meta::{VariableMeta, VariableUse, VariableUses};
 
 impl Expression {
     #[must_use]
@@ -68,23 +68,27 @@ impl Expression {
 
 impl VariableMeta for Expression {
     fn cache_variable_use(&mut self) {
-        let mut variables_read = VariableSet::new();
-        let mut signals_read = VariableSet::new();
+        let mut variables_read = VariableUses::new();
+        let mut signals_read = VariableUses::new();
+        let mut components_read = VariableUses::new();
 
         use Expression::*;
         match self {
             InfixOp { lhe, rhe, .. } => {
                 lhe.cache_variable_use();
                 rhe.cache_variable_use();
-                variables_read.extend(lhe.get_variables_read().clone());
-                variables_read.extend(rhe.get_variables_read().clone());
-                signals_read.extend(lhe.get_signals_read().clone());
-                signals_read.extend(rhe.get_signals_read().clone());
+                variables_read.extend(lhe.get_variables_read().iter().cloned());
+                variables_read.extend(rhe.get_variables_read().iter().cloned());
+                signals_read.extend(lhe.get_signals_read().iter().cloned());
+                signals_read.extend(rhe.get_signals_read().iter().cloned());
+                components_read.extend(lhe.get_components_read().iter().cloned());
+                components_read.extend(rhe.get_components_read().iter().cloned());
             }
             PrefixOp { rhe, .. } => {
                 rhe.cache_variable_use();
-                variables_read.extend(rhe.get_variables_read().clone());
-                signals_read.extend(rhe.get_signals_read().clone());
+                variables_read.extend(rhe.get_variables_read().iter().cloned());
+                signals_read.extend(rhe.get_signals_read().iter().cloned());
+                components_read.extend(rhe.get_components_read().iter().cloned());
             }
             InlineSwitchOp {
                 cond,
@@ -95,86 +99,118 @@ impl VariableMeta for Expression {
                 cond.cache_variable_use();
                 if_true.cache_variable_use();
                 if_false.cache_variable_use();
-                variables_read.extend(cond.get_variables_read().iter().cloned());
-                variables_read.extend(if_true.get_variables_read().iter().cloned());
-                variables_read.extend(if_false.get_variables_read().iter().cloned());
-                signals_read.extend(cond.get_signals_read().iter().cloned());
-                signals_read.extend(if_true.get_signals_read().iter().cloned());
-                signals_read.extend(if_false.get_signals_read().iter().cloned());
+                variables_read.extend(cond.get_variables_read().clone());
+                variables_read.extend(if_true.get_variables_read().clone());
+                variables_read.extend(if_false.get_variables_read().clone());
+                signals_read.extend(cond.get_signals_read().clone());
+                signals_read.extend(if_true.get_signals_read().clone());
+                signals_read.extend(if_false.get_signals_read().clone());
+                components_read.extend(cond.get_components_read().clone());
+                components_read.extend(if_true.get_components_read().clone());
+                components_read.extend(if_false.get_components_read().clone());
             }
-            Variable { name, access, .. } => {
+            Variable { meta, name, access } => {
                 access.iter_mut().for_each(|access| {
-                    use Access::*;
-                    if let ArrayAccess(index) = access {
+                    if let Access::ArrayAccess(index) = access {
                         index.cache_variable_use();
                         variables_read.extend(index.get_variables_read().clone());
+                        signals_read.extend(index.get_signals_read().clone());
+                        components_read.extend(index.get_components_read().clone());
                     }
                 });
                 trace!("adding `{name}` to variables read");
-                variables_read.insert(name.clone());
+                variables_read.insert(VariableUse::new(meta, name, access));
             }
-            Signal { name, access, .. } => {
+            Signal { meta, name, access } => {
                 access.iter_mut().for_each(|access| {
-                    use Access::*;
-                    if let ArrayAccess(index) = access {
+                    if let Access::ArrayAccess(index) = access {
                         index.cache_variable_use();
                         variables_read.extend(index.get_variables_read().clone());
+                        signals_read.extend(index.get_signals_read().clone());
+                        components_read.extend(index.get_components_read().clone());
                     }
                 });
                 trace!("adding `{name}` to signals read");
-                signals_read.insert(name.clone());
+                signals_read.insert(VariableUse::new(meta, name, access));
             }
-            Component { .. } | Number(_, _) => {}
+            Component { meta, name, access } => {
+                access.iter_mut().for_each(|access| {
+                    if let Access::ArrayAccess(index) = access {
+                        index.cache_variable_use();
+                        variables_read.extend(index.get_variables_read().clone());
+                        signals_read.extend(index.get_signals_read().clone());
+                        components_read.extend(index.get_components_read().clone());
+                    }
+                });
+                trace!("adding `{name}` to components read");
+                components_read.insert(VariableUse::new(meta, name, access));
+            }
             Call { args, .. } => {
                 args.iter_mut().for_each(|arg| {
                     arg.cache_variable_use();
                     variables_read.extend(arg.get_variables_read().clone());
                     signals_read.extend(arg.get_signals_read().clone());
+                    components_read.extend(arg.get_components_read().clone());
                 });
             }
-            Phi { args, .. } => {
-                variables_read.extend(args.clone());
+            Phi { meta, args, .. } => {
+                variables_read.extend(
+                    args.iter()
+                        .map(|name| VariableUse::new(meta, name, &Vec::new())),
+                );
             }
             ArrayInLine { values, .. } => {
                 values.iter_mut().for_each(|value| {
                     value.cache_variable_use();
                     variables_read.extend(value.get_variables_read().clone());
                     signals_read.extend(value.get_signals_read().clone());
+                    components_read.extend(value.get_components_read().clone());
                 });
             }
+            Number(_, _) => {}
         }
         self.get_mut_meta()
             .get_variable_knowledge_mut()
             .set_variables_read(&variables_read)
-            .set_variables_written(&VariableSet::new())
+            .set_variables_written(&VariableUses::new())
             .set_signals_read(&signals_read)
-            .set_signals_written(&VariableSet::new());
+            .set_signals_written(&VariableUses::new())
+            .set_components_read(&components_read)
+            .set_components_written(&VariableUses::new());
     }
 
-    #[must_use]
-    fn get_variables_read(&self) -> &VariableSet {
+    fn get_variables_read(&self) -> &VariableUses {
         self.get_meta()
             .get_variable_knowledge()
             .get_variables_read()
     }
 
-    #[must_use]
-    fn get_variables_written(&self) -> &VariableSet {
+    fn get_variables_written(&self) -> &VariableUses {
         self.get_meta()
             .get_variable_knowledge()
             .get_variables_written()
     }
 
-    #[must_use]
-    fn get_signals_read(&self) -> &VariableSet {
+    fn get_signals_read(&self) -> &VariableUses {
         self.get_meta().get_variable_knowledge().get_signals_read()
     }
 
-    #[must_use]
-    fn get_signals_written(&self) -> &VariableSet {
+    fn get_signals_written(&self) -> &VariableUses {
         self.get_meta()
             .get_variable_knowledge()
             .get_signals_written()
+    }
+
+    fn get_components_read(&self) -> &VariableUses {
+        self.get_meta()
+            .get_variable_knowledge()
+            .get_components_read()
+    }
+
+    fn get_components_written(&self) -> &VariableUses {
+        self.get_meta()
+            .get_variable_knowledge()
+            .get_components_written()
     }
 }
 

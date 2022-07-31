@@ -1,4 +1,5 @@
 use log::debug;
+use program_structure::ir::Access;
 use std::collections::HashSet;
 
 use program_structure::cfg::Cfg;
@@ -50,57 +51,93 @@ impl SignalAssignmentWarning {
     }
 }
 
+type AssignmentSet = HashSet<Assignment>;
+/// A signal assignment (implemented using either `<--` or `<==`).
+#[derive(Clone, Hash, PartialEq, Eq)]
+struct Assignment {
+    pub meta: Meta,
+    pub signal: VariableName,
+    pub access: Vec<Access>,
+}
+
+impl Assignment {
+    fn new(meta: &Meta, signal: &VariableName, access: &Vec<Access>) -> Assignment {
+        Assignment {
+            meta: meta.clone(),
+            signal: signal.clone(),
+            access: access.clone(),
+        }
+    }
+}
+
+type ConstraintSet = HashSet<Constraint>;
+
+#[derive(Clone, Hash, PartialEq, Eq)]
+struct Constraint {
+    pub meta: Meta,
+    pub lhe: Expression,
+    pub rhe: Expression,
+}
+
+impl Constraint {
+    fn new(meta: &Meta, lhe: &Expression, rhe: &Expression) -> Constraint {
+        Constraint {
+            meta: meta.clone(),
+            lhe: lhe.clone(),
+            rhe: rhe.clone(),
+        }
+    }
+}
+
 /// This structure tracks signal assignments and constraints in a single
 /// template.
 #[derive(Clone, Default)]
-struct ConstraintInfo {
-    assignments: HashSet<(VariableName, Vec<Access>, Meta)>,
-    constraints: HashSet<(Expression, Expression, Meta)>,
+struct SignalData {
+    assignments: AssignmentSet,
+    constraints: ConstraintSet,
 }
 
-impl ConstraintInfo {
+impl SignalData {
     /// Create a new `ConstraintInfo` instance.
-    fn new() -> ConstraintInfo {
-        ConstraintInfo::default()
+    fn new() -> SignalData {
+        SignalData::default()
     }
 
-    /// Add an assignment `signal <-- expr`.
+    /// Add an assignment `var[access] <-- expr`.
     fn add_assignment(&mut self, var: &VariableName, access: &Vec<Access>, meta: &Meta) {
-        self.assignments
-            .insert((var.clone(), access.clone(), meta.clone()));
+        self.assignments.insert(Assignment::new(meta, var, access));
     }
 
-    /// Add a constraint `expr === expr`.
+    /// Add a constraint `lhe === rhe`.
     fn add_constraint(&mut self, lhe: &Expression, rhe: &Expression, meta: &Meta) {
-        self.constraints
-            .insert((lhe.clone(), rhe.clone(), meta.clone()));
+        self.constraints.insert(Constraint::new(meta, lhe, rhe));
     }
 
     /// Get all assignments.
-    fn get_assignments(&self) -> &HashSet<(VariableName, Vec<Access>, Meta)> {
+    fn get_assignments(&self) -> &AssignmentSet {
         &self.assignments
     }
 
     /// Get the set of constraints that contain the given variable.
-    fn get_constraints(&self, signal: &VariableName) -> Vec<(&Expression, &Expression, &Meta)> {
-        let mut constraints = Vec::new();
-        for (lhe, rhe, meta) in &self.constraints {
-            if lhe.get_signals_read().contains(signal) || rhe.get_signals_read().contains(signal) {
-                constraints.push((lhe, rhe, meta));
-            }
-        }
-        constraints
+    fn get_constraints(&self, signal: &VariableName) -> Vec<&Constraint> {
+        self.constraints
+            .iter()
+            .filter(|constraint| {
+                let lhe = constraint.lhe.get_signals_read().iter();
+                let rhe = constraint.rhe.get_signals_read().iter();
+                lhe.chain(rhe)
+                    .any(|signal_use| signal_use.get_name() == &signal.clone())
+            })
+            .collect()
     }
 
     /// Returns the corresponding `Meta` of a constraint containing the given
     /// signal, or `None` if no such constraint exists.
     fn has_constraint(&self, signal: &VariableName) -> Option<Meta> {
-        for (lhe, rhe, meta) in self.get_constraints(signal) {
-            if lhe.get_signals_read().contains(signal) || rhe.get_signals_read().contains(signal) {
-                return Some(meta.clone());
-            }
-        }
-        None
+        self.get_constraints(signal)
+            .iter()
+            .next()
+            .map(|constraint| constraint.meta.clone())
     }
 }
 
@@ -110,19 +147,19 @@ impl ConstraintInfo {
 pub fn find_signal_assignments(cfg: &Cfg) -> ReportCollection {
     debug!("running signal assignment analysis pass");
 
-    let mut constraints = ConstraintInfo::new();
+    let mut signal_data = SignalData::new();
     for basic_block in cfg.iter() {
         for stmt in basic_block.iter() {
-            visit_statement(stmt, &mut constraints);
+            visit_statement(stmt, &mut signal_data);
         }
     }
     let mut reports = ReportCollection::new();
-    for (signal, assignment_access, assignment_meta) in constraints.get_assignments() {
-        let constraint_meta = constraints.has_constraint(signal);
+    for assignment in signal_data.get_assignments() {
+        let constraint_meta = signal_data.has_constraint(&assignment.signal);
         reports.push(build_report(
-            signal,
-            assignment_access,
-            assignment_meta,
+            &assignment.signal,
+            &assignment.access,
+            &assignment.meta,
             &constraint_meta,
         ));
     }
@@ -131,7 +168,7 @@ pub fn find_signal_assignments(cfg: &Cfg) -> ReportCollection {
     reports
 }
 
-fn visit_statement(stmt: &Statement, constraints: &mut ConstraintInfo) {
+fn visit_statement(stmt: &Statement, signal_data: &mut SignalData) {
     use Statement::*;
     match stmt {
         Substitution {
@@ -143,15 +180,17 @@ fn visit_statement(stmt: &Statement, constraints: &mut ConstraintInfo) {
         } => {
             match op {
                 AssignOp::AssignSignal => {
-                    constraints.add_assignment(var, access, meta);
+                    signal_data.add_assignment(var, access, meta);
                 }
                 // A signal cannot occur as the LHS of both a `<--` and a
                 // `<==` statement, so we ignore constraint assignments.
-                AssignOp::AssignVar | AssignOp::AssignConstraintSignal => {}
+                AssignOp::AssignVar
+                | AssignOp::AssignComponent
+                | AssignOp::AssignConstraintSignal => {}
             }
         }
         ConstraintEquality { meta, lhe, rhe } => {
-            constraints.add_constraint(lhe, rhe, meta);
+            signal_data.add_constraint(lhe, rhe, meta);
         }
         _ => {}
     }

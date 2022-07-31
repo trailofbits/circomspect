@@ -5,7 +5,7 @@ use std::fmt;
 use crate::ir::value_meta::ValueEnvironment;
 use crate::ssa::traits::DirectedGraphNode;
 
-use crate::ir::variable_meta::{VariableMeta, VariableSet};
+use crate::ir::variable_meta::{VariableMeta, VariableUses};
 use crate::ir::{Meta, Statement};
 
 type Index = usize;
@@ -156,78 +156,87 @@ impl VariableMeta for BasicBlock {
         // Cache variables read.
         let variables_read = self
             .iter()
-            .flat_map(|stmt| stmt.get_variables_read().clone())
+            .flat_map(|stmt| stmt.get_variables_read())
+            .cloned()
             .collect();
 
         // Cache variables written.
         let variables_written = self
             .iter()
-            .flat_map(|stmt| stmt.get_variables_written().clone())
-            .collect();
-
-        // Cache components read.
-        let components_read = self
-            .iter()
-            .flat_map(|stmt| stmt.get_components_read().clone())
-            .collect();
-
-        // Cache components written.
-        let components_written = self
-            .iter()
-            .flat_map(|stmt| stmt.get_components_written().clone())
+            .flat_map(|stmt| stmt.get_variables_written())
+            .cloned()
             .collect();
 
         // Cache signals read.
         let signals_read = self
             .iter()
-            .flat_map(|stmt| stmt.get_signals_read().clone())
+            .flat_map(|stmt| stmt.get_signals_read())
+            .cloned()
             .collect();
 
         // Cache signals written.
         let signals_written = self
             .iter()
-            .flat_map(|stmt| stmt.get_signals_written().clone())
+            .flat_map(|stmt| stmt.get_signals_written())
+            .cloned()
+            .collect();
+
+        // Cache components read.
+        let components_read = self
+            .iter()
+            .flat_map(|stmt| stmt.get_components_read())
+            .cloned()
+            .collect();
+
+        // Cache components written.
+        let components_written = self
+            .iter()
+            .flat_map(|stmt| stmt.get_components_written())
+            .cloned()
             .collect();
 
         self.get_meta_mut()
             .get_variable_knowledge_mut()
             .set_variables_read(&variables_read)
             .set_variables_written(&variables_written)
-            .set_components_read(&components_read)
-            .set_components_written(&components_written)
             .set_signals_read(&signals_read)
-            .set_signals_written(&signals_written);
+            .set_signals_written(&signals_written)
+            .set_components_read(&components_read)
+            .set_components_written(&components_written);
     }
 
-    fn get_variables_read(&self) -> &VariableSet {
+    fn get_variables_read(&self) -> &VariableUses {
         self.get_meta()
             .get_variable_knowledge()
             .get_variables_read()
     }
-    fn get_variables_written(&self) -> &VariableSet {
+
+    fn get_variables_written(&self) -> &VariableUses {
         self.get_meta()
             .get_variable_knowledge()
             .get_variables_written()
     }
 
-    fn get_components_read(&self) -> &VariableSet {
+    fn get_signals_read(&self) -> &VariableUses {
+        self.get_meta().get_variable_knowledge().get_signals_read()
+    }
+
+    fn get_signals_written(&self) -> &VariableUses {
+        self.get_meta()
+            .get_variable_knowledge()
+            .get_signals_written()
+    }
+
+    fn get_components_read(&self) -> &VariableUses {
         self.get_meta()
             .get_variable_knowledge()
             .get_components_read()
     }
-    fn get_components_written(&self) -> &VariableSet {
+
+    fn get_components_written(&self) -> &VariableUses {
         self.get_meta()
             .get_variable_knowledge()
             .get_components_written()
-    }
-
-    fn get_signals_read(&self) -> &VariableSet {
-        self.get_meta().get_variable_knowledge().get_signals_read()
-    }
-    fn get_signals_written(&self) -> &VariableSet {
-        self.get_meta()
-            .get_variable_knowledge()
-            .get_signals_written()
     }
 }
 

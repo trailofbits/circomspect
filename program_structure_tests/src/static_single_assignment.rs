@@ -133,18 +133,20 @@ fn validate_reads(current_block: &BasicBlock, cfg: &Cfg, env: &mut HashSet<Varia
         // Ignore phi function arguments as they may be generated from a loop back-edge.
         if !stmt.is_phi_statement() {
             // Check that all read variables are in the environment.
-            for name in stmt.get_variables_read() {
+            for var_use in stmt.get_variables_read() {
                 assert!(
-                    env.contains(name),
-                    "variable `{name}` is read before it is written"
+                    env.contains(var_use.get_name()),
+                    "variable `{}` is read before it is written",
+                    var_use.get_name(),
                 );
             }
         }
         // Check that no written variables are in the environment.
-        for name in VariableMeta::get_variables_written(stmt) {
+        for var_use in VariableMeta::get_variables_written(stmt) {
             assert!(
-                env.insert(name.clone()),
-                "variable `{name}` is written multiple times"
+                env.insert(var_use.get_name().clone()),
+                "variable `{}` is written multiple times",
+                var_use.get_name(),
             );
         }
     }
