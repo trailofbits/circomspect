@@ -75,6 +75,8 @@ impl TryFrom<&FunctionData> for (Cfg, ReportCollection) {
     }
 }
 
+/// Construct a CFG directly from a function or template definition (for testing
+/// purposes).
 impl TryFrom<&Definition> for (Cfg, ReportCollection) {
     type Error = CFGError;
 
