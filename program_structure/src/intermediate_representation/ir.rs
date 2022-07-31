@@ -246,7 +246,7 @@ pub enum Expression {
     },
 }
 
-/// There are only two hard things in Computer Science: cache invalidation and
+/// There are only two hard things in computer science: cache invalidation and
 /// naming things.
 #[derive(Clone, Hash, PartialEq, Eq)]
 pub struct VariableName {
@@ -308,30 +308,6 @@ impl VariableName {
         &self.version
     }
 
-    /// Returns a string representing the variable (with suffix and version).
-    #[must_use]
-    pub fn to_string_with_version(&self) -> String {
-        let mut result = self.name.clone();
-        result = match self.get_suffix() {
-            Some(suffix) => format!("{}_{}", result, suffix),
-            None => result,
-        };
-        result = match self.get_version() {
-            Some(version) => format!("{}.{}", result, version),
-            None => result,
-        };
-        result
-    }
-
-    /// Returns a string representing the unversioned variable (without suffix).
-    #[must_use]
-    pub fn to_string_without_version(&self) -> String {
-        match self.get_suffix() {
-            Some(suffix) => format!("{}_{}", self.name, suffix),
-            None => self.name.clone(),
-        }
-    }
-
     /// Returns a new copy of the variable name, adding the given suffix.
     #[must_use]
     pub fn with_suffix<S: ToString>(&self, suffix: S) -> VariableName {
@@ -383,15 +359,22 @@ impl From<&str> for VariableName {
     }
 }
 
-impl fmt::Debug for VariableName {
+impl fmt::Display for VariableName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        write!(f, "{}", self.to_string_with_version())
+        write!(f, "{}", self.name)?;
+        if let Some(suffix) = self.get_suffix() {
+            write!(f, "_{suffix}")?;
+        }
+        if let Some(version) = self.get_version() {
+            write!(f, ".{version}")?;
+        }
+        Ok(())
     }
 }
 
-impl fmt::Display for VariableName {
+impl fmt::Debug for VariableName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        write!(f, "{}", self.to_string_with_version())
+        write!(f, "{self}")
     }
 }
 

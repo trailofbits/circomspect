@@ -44,13 +44,13 @@ impl VersionEnvironment {
 
     /// Gets the current (scoped) version of the variable.
     pub fn get_current_version(&self, name: &VariableName) -> Option<Version> {
-        let name = name.to_string_without_version();
+        let name = name.without_version().to_string();
         self.scoped_versions.get_variable(&name).cloned()
     }
 
     /// Gets the range of versions seen for the variable.
     pub fn get_version_range(&self, name: &VariableName) -> Option<Range<Version>> {
-        let name = name.to_string_without_version();
+        let name = name.without_version().to_string();
         self.global_versions
             .get_variable(&name)
             .map(|max| 0..(max + 1))
@@ -59,7 +59,7 @@ impl VersionEnvironment {
     /// Gets the version to apply for a newly assigned variable.
     fn get_next_version(&mut self, name: &VariableName) -> Version {
         // Update the global version.
-        let name = name.to_string_without_version();
+        let name = name.without_version().to_string();
         let version = match self.global_versions.get_variable(&name) {
             // The variable has not been seen before. This is version 0 of the variable.
             None => 0,
@@ -125,7 +125,7 @@ impl SSAStatement<VersionEnvironment> for Statement {
     fn get_variables_written(&self) -> VariableSet {
         VariableMeta::get_variables_written(self)
             .iter()
-            .map(ToString::to_string)
+            .map(|var_use| var_use.get_name().to_string())
             .collect()
     }
 
@@ -266,10 +266,10 @@ fn visit_expression(expr: &mut Expression, env: &VersionEnvironment) -> SSAResul
             }
             match env.get_current_version(name) {
                 Some(version) => {
-                    *name = name.with_version(version);
                     trace!(
                         "replacing (read) variable `{name}` with SSA variable `{name}.{version}`"
                     );
+                    *name = name.with_version(version);
                     Ok(())
                 }
                 None => {
