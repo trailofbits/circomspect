@@ -26,7 +26,7 @@ impl FieldElementComparisonWarning {
             );
         }
         report.add_note(
-            "Field elements are always normalized to the interval `(p/2, p/2]` before they are compared.".to_string()
+            "Field elements are always normalized to the interval `(-p/2, p/2]` before they are compared.".to_string()
         );
         report
     }
