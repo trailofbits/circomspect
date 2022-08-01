@@ -1,4 +1,4 @@
-use log::debug;
+use log::{trace, debug};
 use program_structure::ir::Access;
 use std::collections::HashSet;
 
@@ -10,6 +10,7 @@ use program_structure::ir::*;
 
 pub struct SignalAssignmentWarning {
     signal: VariableName,
+    access: Vec<Access>,
     assignment_meta: Meta,
     constraint_meta: Option<Meta>,
 }
@@ -26,8 +27,9 @@ impl SignalAssignmentWarning {
                 self.assignment_meta.location,
                 file_id,
                 format!(
-                    "The assigned signal `{}` is not constrained here.",
-                    self.signal
+                    "The assigned signal `{}{}` is not constrained here.",
+                    self.signal,
+                    access_to_string(&self.access)
                 ),
             );
         }
@@ -40,7 +42,11 @@ impl SignalAssignmentWarning {
             report.add_secondary(
                 location,
                 file_id,
-                Some(format!("The signal `{}` is constrained here.", self.signal)),
+                Some(format!(
+                    "The signal `{}{}` is constrained here.",
+                    self.signal,
+                    access_to_string(&self.access),
+                )),
             );
         } else {
             report.add_note(
@@ -105,11 +111,13 @@ impl SignalData {
 
     /// Add an assignment `var[access] <-- expr`.
     fn add_assignment(&mut self, var: &VariableName, access: &Vec<Access>, meta: &Meta) {
+        trace!("adding signal assignment for `{var}` access");
         self.assignments.insert(Assignment::new(meta, var, access));
     }
 
     /// Add a constraint `lhe === rhe`.
     fn add_constraint(&mut self, lhe: &Expression, rhe: &Expression, meta: &Meta) {
+        trace!("adding constraint `{lhe} === {rhe}`");
         self.constraints.insert(Constraint::new(meta, lhe, rhe));
     }
 
@@ -119,22 +127,24 @@ impl SignalData {
     }
 
     /// Get the set of constraints that contain the given variable.
-    fn get_constraints(&self, signal: &VariableName) -> Vec<&Constraint> {
+    fn get_constraints(&self, signal: &VariableName, access: &Vec<Access>) -> Vec<&Constraint> {
         self.constraints
             .iter()
             .filter(|constraint| {
                 let lhe = constraint.lhe.get_signals_read().iter();
                 let rhe = constraint.rhe.get_signals_read().iter();
                 lhe.chain(rhe)
-                    .any(|signal_use| signal_use.get_name() == &signal.clone())
+                    .any(|signal_use|
+                        signal_use.get_name() == signal && signal_use.get_access() == access
+                    )
             })
             .collect()
     }
 
     /// Returns the corresponding `Meta` of a constraint containing the given
     /// signal, or `None` if no such constraint exists.
-    fn has_constraint(&self, signal: &VariableName) -> Option<Meta> {
-        self.get_constraints(signal)
+    fn get_constraint_meta(&self, signal: &VariableName, access: &Vec<Access>) -> Option<Meta> {
+        self.get_constraints(signal, access)
             .iter()
             .next()
             .map(|constraint| constraint.meta.clone())
@@ -155,7 +165,8 @@ pub fn find_signal_assignments(cfg: &Cfg) -> ReportCollection {
     }
     let mut reports = ReportCollection::new();
     for assignment in signal_data.get_assignments() {
-        let constraint_meta = signal_data.has_constraint(&assignment.signal);
+        let constraint_meta = signal_data
+            .get_constraint_meta(&assignment.signal, &assignment.access);
         reports.push(build_report(
             &assignment.signal,
             &assignment.access,
@@ -176,17 +187,26 @@ fn visit_statement(stmt: &Statement, signal_data: &mut SignalData) {
             var,
             access,
             op,
-            ..
+            rhe,
         } => {
             match op {
                 AssignOp::AssignSignal => {
                     signal_data.add_assignment(var, access, meta);
                 }
-                // A signal cannot occur as the LHS of both a `<--` and a
-                // `<==` statement, so we ignore constraint assignments.
-                AssignOp::AssignVar
-                | AssignOp::AssignComponent
-                | AssignOp::AssignConstraintSignal => {}
+                // A signal cannot occur as the LHS of both a signal assignment
+                // and a signal constraint assignment. However, we still need to
+                // record the constraint added for each constraint assignment
+                // found.
+                AssignOp::AssignConstraintSignal => {
+
+                    let lhe = Expression::Signal {
+                        meta: meta.clone(),
+                        name: var.clone(),
+                        access: access.clone()
+                    };
+                    signal_data.add_constraint(&lhe, rhe, meta)
+                }
+                AssignOp::AssignVar | AssignOp::AssignComponent => {}
             }
         }
         ConstraintEquality { meta, lhe, rhe } => {
@@ -198,26 +218,25 @@ fn visit_statement(stmt: &Statement, signal_data: &mut SignalData) {
 
 fn build_report(
     signal: &VariableName,
-    assignment_access: &Vec<Access>,
+    access: &Vec<Access>,
     assignment_meta: &Meta,
     constraint_meta: &Option<Meta>,
 ) -> Report {
-    // TODO: determine matching constraints for array accesses.
-    if assignment_access.is_empty() {
-        SignalAssignmentWarning {
-            signal: signal.clone(),
-            assignment_meta: assignment_meta.clone(),
-            constraint_meta: constraint_meta.clone(),
-        }
-        .into_report()
-    } else {
-        SignalAssignmentWarning {
-            signal: signal.clone(),
-            assignment_meta: assignment_meta.clone(),
-            constraint_meta: None,
-        }
-        .into_report()
+    SignalAssignmentWarning {
+        signal: signal.clone(),
+        access: access.clone(),
+        assignment_meta: assignment_meta.clone(),
+        constraint_meta: constraint_meta.clone(),
     }
+    .into_report()
+}
+
+#[must_use]
+fn access_to_string(access: &[Access]) -> String {
+    access.iter()
+        .map(|access| access.to_string())
+        .collect::<Vec<String>>()
+        .join("")
 }
 
 #[cfg(test)]
