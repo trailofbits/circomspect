@@ -66,6 +66,87 @@ impl Expression {
     }
 }
 
+/// Syntactic equality for expressions.
+impl PartialEq for Expression {
+    fn eq(&self, other: &Expression) -> bool {
+        use Expression::*;
+        match (self, other) {
+            (
+                InfixOp { lhe: self_lhe, infix_op: self_op, rhe: self_rhe, .. },
+                InfixOp { lhe: other_lhe, infix_op: other_op, rhe: other_rhe, .. },
+            ) => {
+                self_op == other_op &&
+                self_lhe == other_lhe &&
+                self_rhe == other_rhe
+            },
+            (
+                PrefixOp { prefix_op: self_op, rhe: self_rhe, .. },
+                PrefixOp { prefix_op: other_op, rhe: other_rhe, .. },
+            ) => {
+                self_op == other_op &&
+                self_rhe == other_rhe
+            },
+            (
+                InlineSwitchOp { cond: self_cond, if_true: self_true, if_false: self_false, .. },
+                InlineSwitchOp { cond: other_cond, if_true: other_true, if_false: other_false, .. },
+            ) => {
+                self_cond == other_cond &&
+                self_true == other_true &&
+                self_false == other_false
+            },
+            (
+                Variable { name: self_name, access: self_access, .. },
+                Variable { name: other_name, access: other_access, .. },
+            ) => {
+                self_name == other_name &&
+                self_access == other_access
+            }
+            (
+                Signal { name: self_name, access: self_access, .. },
+                Signal { name: other_name, access: other_access, .. },
+            ) => {
+                self_name == other_name &&
+                self_access == other_access
+            }
+            (
+                Component { name: self_name, access: self_access, .. },
+                Component { name: other_name, access: other_access, .. },
+            ) => {
+                self_name == other_name &&
+                self_access == other_access
+            }
+            (
+                Number(_, self_value),
+                Number(_, other_value),
+            ) => {
+                self_value == other_value
+            }
+            (
+                Call { id: self_id, args: self_args, .. },
+                Call { id: other_id, args: other_args, .. },
+            ) => {
+                self_id == other_id &&
+                self_args == other_args
+            }
+            (
+                ArrayInLine { values: self_values, .. },
+                ArrayInLine { values: other_values, .. },
+            ) => {
+                self_values == other_values
+            }
+            (
+                Phi { args: self_args, .. },
+                Phi { args: other_args, .. },
+            ) => {
+                self_args == other_args
+            }
+            _ => false
+        }
+    }
+}
+
+impl Eq for Expression {}
+
 impl VariableMeta for Expression {
     fn cache_variable_use(&mut self) {
         let mut variables_read = VariableUses::new();

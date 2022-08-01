@@ -197,7 +197,7 @@ pub enum StatementType {
     Assert,
 }
 
-#[derive(Clone, Hash, Eq, PartialEq)]
+#[derive(Clone, Hash)]
 pub enum Expression {
     InfixOp {
         meta: Meta,
