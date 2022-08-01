@@ -209,9 +209,14 @@ impl SSAStatement<VersionEnvironment> for Statement {
         let result = match self {
             IfThenElse { cond, .. } => visit_expression(cond, env),
             Return { value, .. } => visit_expression(value, env),
-            Substitution { var, op, rhe, .. } => {
+            Substitution { var, access, op, rhe, .. } => {
                 assert!(var.get_version().is_none());
-                // We need to visit the right-hand expression before updating the environment.
+                // We need to visit array indices and the right-hand expression before updating the environment.
+                for access in access {
+                    if let Access::ArrayAccess(index) = access {
+                        visit_expression(index, env)?;
+                    }
+                }
                 visit_expression(rhe, env)?;
                 *var = match (op, env.get_dimensions(var)) {
                     // If this is a non-array variable assignment we need to version the variable.
@@ -249,11 +254,17 @@ fn visit_expression(expr: &mut Expression, env: &VersionEnvironment) -> SSAResul
     use Expression::*;
     match expr {
         // Variables are decorated with the corresponding SSA version.
-        Variable { meta, name, .. } => {
+        Variable { meta, name, access, .. } => {
             assert!(
                 name.get_version().is_none(),
                 "variable already converted to SSA form"
             );
+            // Visit array indices.
+            for access in access {
+                if let Access::ArrayAccess(index) = access {
+                    visit_expression(index, env)?;
+                }
+            }
             // Ignore declared signals and components.
             if env.has_signal(name) || env.has_component(name) {
                 return Ok(());
@@ -282,6 +293,14 @@ fn visit_expression(expr: &mut Expression, env: &VersionEnvironment) -> SSAResul
                     })
                 }
             }
+        },
+        Signal { access, .. } | Component { access, .. } => {
+            for access in access {
+                if let Access::ArrayAccess(index) = access {
+                    visit_expression(index, env)?;
+                }
+            }
+            Ok(())
         }
         // For all other expression types we simply recurse into their children.
         PrefixOp { rhe, .. } => visit_expression(rhe, env),
@@ -312,6 +331,6 @@ fn visit_expression(expr: &mut Expression, env: &VersionEnvironment) -> SSAResul
             Ok(())
         }
         // phi expression arguments are updated in a later pass.
-        Phi { .. } | Signal { .. } | Component { .. } | Number(_, _) => Ok(()),
+        Phi { .. } | Number(_, _) => Ok(()),
     }
 }
