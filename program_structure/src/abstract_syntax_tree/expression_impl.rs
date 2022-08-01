@@ -181,16 +181,7 @@ fn fill_array_inline(
 
 impl Debug for Expression {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        use Expression::*;
-        match self {
-            Number(_, _) => f.write_str("Number"),
-            Variable { .. } => f.write_str("Variable"),
-            InfixOp { .. } => f.write_str("InfixOp"),
-            PrefixOp { .. } => f.write_str("PrefixOp"),
-            InlineSwitchOp { .. } => f.write_str("InlineSwitchOp"),
-            Call { .. } => f.write_str("Call"),
-            ArrayInLine { .. } => f.write_str("ArrayInline"),
-        }
+        write!(f, "{}", self)
     }
 }
 

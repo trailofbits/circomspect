@@ -360,6 +360,7 @@ impl From<&str> for VariableName {
     }
 }
 
+/// Display for VariableName only outputs the original name.
 impl fmt::Display for VariableName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "{}", self.name)?;
@@ -373,9 +374,17 @@ impl fmt::Display for VariableName {
     }
 }
 
+/// Debug for VariableName outputs the full name (including suffix and version).
 impl fmt::Debug for VariableName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        write!(f, "{self}")
+        write!(f, "{}", self.name)?;
+        if let Some(suffix) = self.get_suffix() {
+            write!(f, "_{suffix}")?;
+        }
+        if let Some(version) = self.get_version() {
+            write!(f, ".{version}")?;
+        }
+        Ok(())
     }
 }
 
