@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use clap::Parser;
-use log::info;
+use log::{info, error};
 use parser::ParseResult;
 use program_structure::function_data::FunctionInfo;
 use program_structure::template_data::TemplateInfo;
@@ -8,6 +8,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::process::ExitCode;
 
 use program_analysis::get_analysis_passes;
 use program_structure::cfg::Cfg;
@@ -43,11 +44,11 @@ const DEFAULT_LEVEL: &str = "WARNING";
 /// A static analyzer for Circom programs.
 struct Cli {
     /// Initial input file
-    #[clap(name = "INPUT")]
-    input_file: Vec<PathBuf>,
+    #[clap(name = "INPUT", required = true)]
+    input_files: Vec<PathBuf>,
 
     /// Output level (either INFO, WARNING, or ERROR)
-    #[clap(short, long, name = "LEVEL", default_value = DEFAULT_LEVEL)]
+    #[clap(short = 'l', long, name = "LEVEL", default_value = DEFAULT_LEVEL)]
     output_level: Level,
 
     /// Output analysis results to a Sarif file
@@ -127,12 +128,20 @@ fn filter_by_level(report: &Report, output_level: &Level) -> bool {
     }
 }
 
-fn main() -> Result<()> {
+fn serialize_reports(sarif_path: &PathBuf, reports: &ReportCollection, file_library: &FileLibrary) -> Result<()> {
+    let sarif = reports.to_sarif(file_library)?;
+    let json = serde_json::to_string_pretty(&sarif)?;
+    let mut sarif_file = File::create(sarif_path)?;
+    writeln!(sarif_file, "{}", &json)?;
+    Ok(())
+}
+
+fn main() -> ExitCode {
     pretty_env_logger::init();
     let options = Cli::from_args();
     let mut reports = ReportCollection::new();
 
-    let file_library = match parser::parse_files(&options.input_file, &options.compiler_version) {
+    let file_library = match parser::parse_files(&options.input_files, &options.compiler_version) {
         // Analyze a complete Circom program.
         ParseResult::Program(program, mut warnings) => {
             Report::print_reports(&warnings, &program.file_library);
@@ -145,7 +154,7 @@ fn main() -> Result<()> {
             ));
             program.file_library
         }
-        // Analyze a set of Circom definitions.
+        // Analyze a set of Circom template files.
         ParseResult::Library(library, mut errors) => {
             Report::print_reports(&reports, &library.file_library);
             reports.append(&mut errors);
@@ -158,12 +167,17 @@ fn main() -> Result<()> {
             library.file_library
         }
     };
-
+    // If a Sarif file is passed to the program we write the reports to it.
     if let Some(sarif_path) = options.sarif_file {
-        let sarif = reports.to_sarif(&file_library)?;
-        let json = serde_json::to_string_pretty(&sarif)?;
-        let mut sarif_file = File::create(sarif_path)?;
-        writeln!(sarif_file, "{}", &json)?;
+        match serialize_reports(&sarif_path, &reports, &file_library) {
+            Ok(()) => info!("reports written to `{}`", sarif_path.display()),
+            Err(_) => error!("failed to write reports to `{}`", sarif_path.display()),
+        }
     }
-    Ok(())
+    // Use the exit code to indicate if any issues were found.
+    if reports.is_empty() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
