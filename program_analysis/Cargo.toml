@@ -6,5 +6,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0"
 log = "0.4"
+num-bigint-dig = "0.6.0"
+num-traits = "0.2.6"
 parser = { path = "../parser" }
 program_structure = { path = "../program_structure" }

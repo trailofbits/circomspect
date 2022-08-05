@@ -199,7 +199,6 @@ fn visit_statement(stmt: &Statement, signal_data: &mut SignalData) {
                 // record the constraint added for each constraint assignment
                 // found.
                 AssignOp::AssignConstraintSignal => {
-
                     let lhe = Expression::Signal {
                         meta: meta.clone(),
                         name: var.clone(),

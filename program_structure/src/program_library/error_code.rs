@@ -77,6 +77,7 @@ pub enum ReportCode {
     DeadAssignment,
     UnusedParameter,
     ConstantBranchCondition,
+    NonStrictBinaryConversion,
 }
 impl fmt::Display for ReportCode {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -156,6 +157,7 @@ impl fmt::Display for ReportCode {
             DeadAssignment => "CS0006",
             UnusedParameter => "CS0007",
             ConstantBranchCondition => "CS0008",
+            NonStrictBinaryConversion => "CS0009",
         };
         f.write_str(string_format)
     }

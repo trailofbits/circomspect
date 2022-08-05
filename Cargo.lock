@@ -785,6 +785,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "log",
+ "num-bigint-dig",
+ "num-traits",
  "parser",
  "program_structure",
 ]

@@ -1,0 +1,141 @@
+use log::debug;
+use num_bigint::BigInt;
+
+use program_structure::cfg::Cfg;
+use program_structure::error_code::ReportCode;
+use program_structure::error_definition::{Report, ReportCollection};
+use program_structure::file_definition::{FileID, FileLocation};
+use program_structure::ir::value_meta::ValueReduction;
+use program_structure::ir::*;
+
+pub enum NonStrictBinaryConversionWarning {
+    Num2Bits { file_id: Option<FileID>, location: FileLocation },
+    Bits2Num { file_id: Option<FileID>, location: FileLocation },
+}
+
+
+impl  NonStrictBinaryConversionWarning {
+    pub fn into_report(self) -> Report {
+        match self {
+            NonStrictBinaryConversionWarning::Num2Bits { file_id, location } => {
+                let mut report = Report::warning(
+                    "Using `Num2Bits` to convert field elements to bits may lead to aliasing issues".to_string(),
+                    ReportCode::NonStrictBinaryConversion,
+                );
+                if let Some(file_id) = file_id {
+                    report.add_primary(
+                        location,
+                        file_id,
+                        "Circomlib template `Num2Bits` instantiated here.".to_string(),
+                    );
+                }
+                report.add_note("Consider using `Num2Bits_strict` if the input may be 254 bits or larger".to_string());
+                report
+            },
+            NonStrictBinaryConversionWarning::Bits2Num { file_id, location } => {
+                let mut report = Report::warning(
+                    "Using `Bits2Num` to convert arrays to field elements may lead to aliasing issues".to_string(),
+                    ReportCode::NonStrictBinaryConversion,
+                );
+                if let Some(file_id) = file_id {
+                    report.add_primary(
+                        location,
+                        file_id,
+                        "Circomlib template `Bits2Num` instantiated here.".to_string(),
+                    );
+                }
+                report.add_note("Consider using `Bits2Num_strict` if the input may be 254 bits or larger".to_string());
+                report
+            }
+        }
+    }
+}
+
+/// If the input `x` to the Circomlib circuit `NumBits` is 254 bits or greater
+/// there will be two valid bit-representations of the input: One representation
+/// of `x` and one of `p + x`. This is typically not expected by developers and
+/// may lead to issues.
+pub fn find_nonstrict_binary_conversion(cfg: &Cfg) -> ReportCollection {
+    debug!("running non-strict `Num2Bits` analysis pass");
+    let mut reports = ReportCollection::new();
+    for basic_block in cfg.iter() {
+        for stmt in basic_block.iter() {
+            visit_statement(stmt, &mut reports);
+        }
+    }
+    debug!("{} new reports generated", reports.len());
+    reports
+}
+
+fn visit_statement(stmt: &Statement, reports: &mut ReportCollection) {
+    use AssignOp::*;
+    use Statement::*;
+    use Expression::*;
+    use ValueReduction::*;
+    match stmt {
+        // A component initialization on the form `var = id(args, ...)`.
+        Substitution { op: AssignComponent, rhe: Call { meta, id, args }, .. } => {
+            // We assume this is the `Num2Bits` circuit from Circomlib.
+            if (id == "Num2Bits" || id == "Bits2Num") && args.len() == 1 {
+                let arg = &args[0];
+                // If the input size is known to be < 254, this initialization is safe.
+                if let Some(FieldElement { value }) = arg
+                    .get_meta()
+                    .get_value_knowledge()
+                    .get_reduces_to()
+                {
+                    if value < &BigInt::from(254u8) {
+                        return;
+                    }
+                }
+                reports.push(build_report(id, meta));
+            }
+        },
+        _ => {},
+    }
+}
+
+fn build_report(id: &str, meta: &Meta) -> Report {
+    use NonStrictBinaryConversionWarning::*;
+    match id {
+        "Num2Bits" => Num2Bits { file_id: meta.get_file_id(), location: meta.file_location() },
+        "Bits2Num" => Bits2Num { file_id: meta.get_file_id(), location: meta.file_location() },
+        _ => panic!(),
+    }
+    .into_report()
+}
+
+#[cfg(test)]
+mod tests {
+    use parser::parse_definition;
+
+    use super::*;
+
+    #[test]
+    fn test_nonstrict_num2bits() {
+        let src = r#"
+            template F(n) {
+                signal input in;
+                signal output out[n];
+
+                component n2b = Num2Bits(n);
+                n2b.in === in;
+                for (var i = 0; i < n; i++) {
+                    out[i] <== n2b.out[i];
+                }
+            }
+        "#;
+        validate_reports(src, 1);
+    }
+
+    fn validate_reports(src: &str, expected_len: usize) {
+        // Build CFG.
+        let (cfg, _) = parse_definition(src).unwrap().try_into().unwrap();
+        let cfg = cfg.into_ssa().unwrap();
+
+        // Generate report collection.
+        let reports = find_nonstrict_binary_conversion(&cfg);
+
+        assert_eq!(reports.len(), expected_len);
+    }
+}
