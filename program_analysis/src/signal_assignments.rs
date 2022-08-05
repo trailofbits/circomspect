@@ -12,7 +12,7 @@ pub struct SignalAssignmentWarning {
     signal: VariableName,
     access: Vec<Access>,
     assignment_meta: Meta,
-    constraint_meta: Option<Meta>,
+    constraint_metas: Vec<Meta>,
 }
 
 impl SignalAssignmentWarning {
@@ -22,6 +22,7 @@ impl SignalAssignmentWarning {
                 .to_string(),
             ReportCode::FieldElementComparison,
         );
+        // Add signal assignment warning.
         if let Some(file_id) = self.assignment_meta.file_id {
             report.add_primary(
                 self.assignment_meta.location,
@@ -33,22 +34,22 @@ impl SignalAssignmentWarning {
                 ),
             );
         }
-        if let Some(Meta {
-            file_id: Some(file_id),
-            location,
-            ..
-        }) = self.constraint_meta
-        {
-            report.add_secondary(
-                location,
-                file_id,
-                Some(format!(
-                    "The signal `{}{}` is constrained here.",
-                    self.signal,
-                    access_to_string(&self.access),
-                )),
-            );
-        } else {
+        // Add any constraints as secondary labels.
+        for meta in self.constraint_metas {
+            if let Some(file_id) = meta.file_id {
+                report.add_secondary(
+                    meta.location,
+                    file_id,
+                    Some(format!(
+                        "The signal `{}{}` is constrained here.",
+                        self.signal,
+                        access_to_string(&self.access),
+                    )),
+                );
+            }
+        }
+        // If no constraints are identified, suggest using `<==` instead.
+        if report.get_secondary().is_empty() {
             report.add_note(
                 "Consider using the constraint assignment operator `<==` instead.".to_string(),
             );
@@ -143,11 +144,11 @@ impl SignalData {
 
     /// Returns the corresponding `Meta` of a constraint containing the given
     /// signal, or `None` if no such constraint exists.
-    fn get_constraint_meta(&self, signal: &VariableName, access: &Vec<Access>) -> Option<Meta> {
+    fn get_constraint_metas(&self, signal: &VariableName, access: &Vec<Access>) -> Vec<Meta> {
         self.get_constraints(signal, access)
             .iter()
-            .next()
             .map(|constraint| constraint.meta.clone())
+            .collect()
     }
 }
 
@@ -166,7 +167,7 @@ pub fn find_signal_assignments(cfg: &Cfg) -> ReportCollection {
     let mut reports = ReportCollection::new();
     for assignment in signal_data.get_assignments() {
         let constraint_meta = signal_data
-            .get_constraint_meta(&assignment.signal, &assignment.access);
+            .get_constraint_metas(&assignment.signal, &assignment.access);
         reports.push(build_report(
             &assignment.signal,
             &assignment.access,
@@ -220,13 +221,13 @@ fn build_report(
     signal: &VariableName,
     access: &Vec<Access>,
     assignment_meta: &Meta,
-    constraint_meta: &Option<Meta>,
+    constraint_metas: &Vec<Meta>,
 ) -> Report {
     SignalAssignmentWarning {
         signal: signal.clone(),
         access: access.clone(),
         assignment_meta: assignment_meta.clone(),
-        constraint_meta: constraint_meta.clone(),
+        constraint_metas: constraint_metas.clone(),
     }
     .into_report()
 }
