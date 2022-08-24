@@ -2,6 +2,7 @@ use super::errors::FileOsError;
 use program_structure::error_definition::Report;
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::fs;
 
 pub struct FileStack {
     current_location: Option<PathBuf>,
@@ -10,46 +11,66 @@ pub struct FileStack {
 }
 
 impl FileStack {
-    pub fn new(file_paths: &Vec<PathBuf>) -> FileStack {
-        let location = file_paths
-            .iter()
-            .next()
-            .cloned()
-            .map(|mut file_path| {
-                file_path.pop();
-                file_path
-            });
-        FileStack {
-            current_location: location,
+    pub fn new(paths: &Vec<PathBuf>) -> FileStack {
+        let mut result = FileStack {
+            current_location: None,
             black_paths: HashSet::new(),
-            stack: file_paths.clone(),
-        }
+            stack: Vec::new(),
+        };
+        result.add_files(paths);
+        result
     }
 
-    pub fn add_include(stack: &mut FileStack, path: String) -> Result<(), Report> {
-        if let Some(mut location) = stack.current_location.clone() {
-            location.push(path.clone());
-            let path = std::fs::canonicalize(location)
-                .map_err(|_| FileOsError { path: path.clone() })
-                .map_err(|e| FileOsError::produce_report(e))?;
-            if !stack.black_paths.contains(&path) {
-                stack.stack.push(path);
+    fn add_files(&mut self, paths: &Vec<PathBuf>) {
+        for path in paths {
+            if path.is_dir() {
+                // Handle directories on a best effort basis only.
+                let mut paths = Vec::new();
+                if let Ok(entries) = fs::read_dir(path) {
+                    for entry in entries {
+                        if let Ok(entry) = entry {
+                            paths.push(entry.path())
+                        }
+                    }
+                }
+                self.add_files(&paths);
+            } else if let Some(extension) = path.extension() {
+                // Add Circom files to file stack.
+                if extension == "circom" {
+                    self.stack.push(path.clone());
+                }
             }
         }
-        Ok(())
     }
 
-    pub fn take_next(stack: &mut FileStack) -> Option<PathBuf> {
+    pub fn add_include(&mut self, path: &String) -> Result<(), Report> {
+        let mut location = self
+            .current_location
+            .clone()
+            .expect("parsing file");
+        location.push(path.clone());
+        match fs::canonicalize(location) {
+            Ok(path) => {
+                if !self.black_paths.contains(&path) {
+                    self.stack.push(path);
+                }
+                Ok(())
+            },
+            Err(_) => Err(FileOsError { path: path.clone() }.into_report())
+        }
+    }
+
+    pub fn take_next(&mut self) -> Option<PathBuf> {
         loop {
-            match stack.stack.pop() {
+            match self.stack.pop() {
                 None => {
                     break None;
                 }
-                Some(file_path) if !stack.black_paths.contains(&file_path) => {
+                Some(file_path) if !self.black_paths.contains(&file_path) => {
                     let mut location = file_path.clone();
                     location.pop();
-                    stack.current_location = Some(location);
-                    stack.black_paths.insert(file_path.clone());
+                    self.current_location = Some(location);
+                    self.black_paths.insert(file_path.clone());
                     break Some(file_path);
                 }
                 _ => {}

@@ -14,7 +14,7 @@ impl UnclosedCommentError {
         report.add_primary(
             error.location,
             error.file_id,
-            format!("Comment starts here"),
+            format!("Comment starts here."),
         );
         report
     }
@@ -38,20 +38,10 @@ pub struct FileOsError {
     pub path: String,
 }
 impl FileOsError {
-    pub fn produce_report(error: Self) -> Report {
+    pub fn into_report(self) -> Report {
         Report::error(
-            format!("Could not open file {}", error.path),
+            format!("Failed to open file `{}`.", self.path),
             ReportCode::ParseFail,
-        )
-    }
-}
-
-pub struct NoMainError;
-impl NoMainError {
-    pub fn produce_report() -> Report {
-        Report::error(
-            format!("No main specified in the project structure"),
-            ReportCode::NoMainFoundInProject,
         )
     }
 }
@@ -60,7 +50,7 @@ pub struct MultipleMainError;
 impl MultipleMainError {
     pub fn produce_report() -> Report {
         Report::error(
-            format!("Multiple main components in the project structure"),
+            format!("Multiple main components found in the project structure."),
             ReportCode::MultipleMainInComponent,
         )
     }
@@ -74,7 +64,7 @@ pub struct CompilerVersionError {
 impl CompilerVersionError {
     pub fn produce_report(error: Self) -> Report {
         let message = format!(
-            "File {} requires pragma version {}, which is not supported by circomspect (version {})",
+            "File `{}` requires pragma version {}, which is not supported by circomspect (version {}).",
             error.path,
             version_string(&error.required_version),
             version_string(&error.version),
@@ -91,7 +81,7 @@ impl NoCompilerVersionWarning {
     pub fn produce_report(error: Self) -> Report {
         Report::warning(
             format!(
-                "File {} does not include pragma version. Assuming pragma version {}",
+                "File `{}` does not include pragma version. Assuming pragma version {}.",
                 error.path,
                 version_string(&error.version)
             ),
