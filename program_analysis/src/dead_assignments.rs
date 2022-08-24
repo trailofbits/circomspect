@@ -1,4 +1,4 @@
-use log::debug;
+use log::{debug, trace};
 use std::collections::HashMap;
 use std::fmt;
 
@@ -60,7 +60,7 @@ impl UnusedParameterWarning {
 #[derive(Clone, PartialEq)]
 enum VariableWrite {
     /// An oridnary write indicates a location where the variable is written to.
-    OrdinaryWrite(Meta),
+    OrdinaryWrite(Option<FileID>, FileLocation),
     /// A parameter write indicates that the variable is passed as a parameter
     /// to the function or template.
     Parameter(Option<FileID>, FileLocation),
@@ -69,12 +69,11 @@ enum VariableWrite {
 impl fmt::Debug for VariableWrite {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            VariableWrite::OrdinaryWrite(meta) => {
+            VariableWrite::OrdinaryWrite(_, file_location) => {
                 write!(
                     f,
                     "variable assignment at {}-{}",
-                    meta.get_start(),
-                    meta.get_end()
+                    file_location.start, file_location.end
                 )
             }
             VariableWrite::Parameter(_, file_location) => {
@@ -183,11 +182,11 @@ pub fn find_dead_assignments(cfg: &Cfg) -> ReportCollection {
     // Collect all variable assignment locations.
     let mut variables_read = VariableReads::new();
     let mut variables_written = VariableWrites::new();
-    for name in cfg.get_parameters().iter() {
-        let file_id = cfg.get_parameters().get_file_id();
-        let file_location = cfg.get_parameters().get_location();
+    for name in cfg.parameters().iter() {
+        let file_id = cfg.parameters().file_id().clone();
+        let file_location = cfg.parameters().file_location().clone();
         variables_written
-            .add_variable_written(name, VariableWrite::Parameter(*file_id, file_location));
+            .add_variable_written(name, VariableWrite::Parameter(file_id, file_location));
     }
     for basic_block in cfg.iter() {
         for stmt in basic_block.iter() {
@@ -197,7 +196,7 @@ pub fn find_dead_assignments(cfg: &Cfg) -> ReportCollection {
     let mut reports = ReportCollection::new();
     for (name, write) in variables_written.iter() {
         if !variables_read.flows_to_ordinary_read(name) {
-            reports.push(build_report(name.get_name(), write));
+            reports.push(build_report(name.name(), write));
         }
     }
     debug!("{} new reports generated", reports.len());
@@ -209,6 +208,7 @@ fn visit_statement(
     variables_read: &mut VariableReads,
     variables_written: &mut VariableWrites,
 ) {
+    trace!("visiting `{stmt}`");
     use Expression::*;
     use Statement::*;
     match stmt {
@@ -225,13 +225,12 @@ fn visit_statement(
                     .add_variable_read(arg, VariableRead::PhiStatement { var: var.clone() });
             }
         }
-        Substitution {
-            meta, var, op, rhe, ..
-        } => {
+        Substitution { meta, var, rhe, .. } => {
             // If this is a variable assignment we add it to the variables written.
-            if matches!(op, AssignOp::AssignVar) {
+            if matches!(meta.type_knowledge().variable_type(), Some(VariableType::Local { .. })) {
+                trace!("adding `{var}` to variables written");
                 variables_written
-                    .add_variable_written(var, VariableWrite::OrdinaryWrite(meta.clone()));
+                    .add_variable_written(var, VariableWrite::OrdinaryWrite(meta.file_id, meta.location.clone()));
             }
             visit_expression(rhe, variables_read);
         }
@@ -249,9 +248,30 @@ fn visit_statement(
 fn visit_expression(expr: &Expression, variables_read: &mut VariableReads) {
     use Expression::*;
     match expr {
-        // Phi expressions are handled at the statement level since we need to track the assigned variable.
+        // Phi expressions are handled at the statement level since we need to
+        // track the assigned variable.
         Phi { .. } => unreachable!("invalid expression type"),
+        Access { var, access, .. } => {
+            trace!("adding `{var}` to variables read");
+            variables_read.add_variable_read(var, VariableRead::OrdinaryRead);
+            for access in access {
+                if let AccessType::ArrayAccess(index) = access {
+                    visit_expression(index, variables_read);
+                }
+            }
+        },
+        Update { var, access, rhe, .. } => {
+            trace!("adding `{var}` to variables read");
+            variables_read.add_variable_read(var, VariableRead::OrdinaryRead);
+            for access in access {
+                if let AccessType::ArrayAccess(index) = access {
+                    visit_expression(index, variables_read);
+                }
+            }
+            visit_expression(rhe, variables_read);
+        }
         Variable { name, .. } => {
+            trace!("adding `{name}` to variables read");
             variables_read.add_variable_read(name, VariableRead::OrdinaryRead);
         }
         PrefixOp { rhe, .. } => {
@@ -261,7 +281,7 @@ fn visit_expression(expr: &Expression, variables_read: &mut VariableReads) {
             visit_expression(lhe, variables_read);
             visit_expression(rhe, variables_read);
         }
-        InlineSwitchOp {
+        SwitchOp {
             cond,
             if_true,
             if_false,
@@ -276,14 +296,11 @@ fn visit_expression(expr: &Expression, variables_read: &mut VariableReads) {
                 visit_expression(arg, variables_read);
             }
         }
-
-        ArrayInLine { values, .. } => {
+        Array { values, .. } => {
             for value in values {
                 visit_expression(value, variables_read);
             }
         }
-        Component { .. } => (),
-        Signal { .. } => (),
         Number(_, _) => (),
     }
 }
@@ -291,15 +308,15 @@ fn visit_expression(expr: &Expression, variables_read: &mut VariableReads) {
 fn build_report(name: &str, write: &VariableWrite) -> Report {
     use VariableWrite::*;
     match write {
-        OrdinaryWrite(meta) => DeadAssignmentWarning {
+        OrdinaryWrite(file_id, file_location) => DeadAssignmentWarning {
             name: name.to_string(),
-            file_id: meta.get_file_id(),
-            file_location: meta.file_location(),
+            file_id: file_id.clone(),
+            file_location: file_location.clone(),
         }
         .into_report(),
         Parameter(file_id, file_location) => UnusedParameterWarning {
             name: name.to_string(),
-            file_id: *file_id,
+            file_id: file_id.clone(),
             file_location: file_location.clone(),
         }
         .into_report(),
@@ -309,6 +326,7 @@ fn build_report(name: &str, write: &VariableWrite) -> Report {
 #[cfg(test)]
 mod tests {
     use parser::parse_definition;
+    use program_structure::cfg::IntoCfg;
 
     use super::*;
 
@@ -345,12 +363,28 @@ mod tests {
             }
         "#;
         validate_reports(src, 0);
+
+        let src = r#"
+            function f(){
+                var out[2];
+                out[0] = g(0);
+                out[1] = g(1);
+                return out;
+            }
+        "#;
+        validate_reports(src, 0);
     }
 
     fn validate_reports(src: &str, expected_len: usize) {
         // Build CFG.
-        let (cfg, _) = parse_definition(src).unwrap().try_into().unwrap();
-        let cfg = cfg.into_ssa().unwrap();
+        let mut reports = ReportCollection::new();
+        let cfg = parse_definition(src)
+            .unwrap()
+            .into_cfg(&mut reports)
+            .unwrap()
+            .into_ssa()
+            .unwrap();
+        assert!(reports.is_empty());
 
         // Generate report collection.
         let reports = find_dead_assignments(&cfg);

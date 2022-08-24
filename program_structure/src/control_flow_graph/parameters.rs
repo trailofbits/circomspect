@@ -1,44 +1,38 @@
 use crate::ast::Definition;
 use crate::file_definition::{FileID, FileLocation};
 use crate::function_data::FunctionData;
-use crate::ir::declaration_map::{Declaration, VariableType};
 use crate::template_data::TemplateData;
 
-use crate::ir::{IREnvironment, VariableName};
+use crate::ir::VariableName;
 
-pub struct ParameterData {
+pub struct Parameters {
     param_names: Vec<VariableName>,
     file_id: Option<FileID>,
     file_location: FileLocation,
 }
 
-impl ParameterData {
+impl Parameters {
     #[must_use]
     pub fn new(
         param_names: &[String],
         file_id: Option<FileID>,
         file_location: FileLocation,
-    ) -> ParameterData {
-        ParameterData {
-            param_names: param_names.iter().map(VariableName::name).collect(),
+    ) -> Parameters {
+        Parameters {
+            param_names: param_names.iter().map(VariableName::from_name).collect(),
             file_id,
             file_location,
         }
     }
 
     #[must_use]
-    pub fn get_name(&self, i: usize) -> &VariableName {
-        &self.param_names[i]
-    }
-
-    #[must_use]
-    pub fn get_file_id(&self) -> &Option<FileID> {
+    pub fn file_id(&self) -> &Option<FileID> {
         &self.file_id
     }
 
     #[must_use]
-    pub fn get_location(&self) -> FileLocation {
-        self.file_location.clone()
+    pub fn file_location(&self) -> &FileLocation {
+        &self.file_location
     }
 
     #[must_use]
@@ -46,6 +40,7 @@ impl ParameterData {
         self.param_names.len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -59,9 +54,9 @@ impl ParameterData {
     }
 }
 
-impl From<&FunctionData> for ParameterData {
-    fn from(function: &FunctionData) -> ParameterData {
-        ParameterData::new(
+impl From<&FunctionData> for Parameters {
+    fn from(function: &FunctionData) -> Parameters {
+        Parameters::new(
             function.get_name_of_params(),
             Some(function.get_file_id()),
             function.get_param_location(),
@@ -69,9 +64,9 @@ impl From<&FunctionData> for ParameterData {
     }
 }
 
-impl From<&TemplateData> for ParameterData {
-    fn from(template: &TemplateData) -> ParameterData {
-        ParameterData::new(
+impl From<&TemplateData> for Parameters {
+    fn from(template: &TemplateData) -> Parameters {
+        Parameters::new(
             template.get_name_of_params(),
             Some(template.get_file_id()),
             template.get_param_location(),
@@ -79,8 +74,8 @@ impl From<&TemplateData> for ParameterData {
     }
 }
 
-impl From<&Definition> for ParameterData {
-    fn from(definition: &Definition) -> ParameterData {
+impl From<&Definition> for Parameters {
+    fn from(definition: &Definition) -> Parameters {
         match definition {
             Definition::Function {
                 meta,
@@ -93,24 +88,7 @@ impl From<&Definition> for ParameterData {
                 args,
                 arg_location,
                 ..
-            } => ParameterData::new(args, meta.file_id, arg_location.clone()),
+            } => Parameters::new(args, meta.file_id, arg_location.clone()),
         }
-    }
-}
-
-impl From<&ParameterData> for IREnvironment {
-    fn from(param_data: &ParameterData) -> IREnvironment {
-        let mut env = IREnvironment::new();
-        for name in param_data.iter() {
-            let declaration = Declaration::new(
-                name,
-                &VariableType::Var,
-                &Vec::new(),
-                param_data.file_id,
-                &param_data.file_location,
-            );
-            env.add_declaration(&name.to_string(), declaration);
-        }
-        env
     }
 }

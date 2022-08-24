@@ -206,6 +206,11 @@ where
             unreachable!();
         }
     }
+    pub fn variable_iter(&self) -> impl Iterator<Item = (&String, &VC)> {
+        self.variables
+            .iter()
+            .flat_map(|block| block.iter())
+    }
 }
 
 impl<T, CC, SC, VC> RawEnvironment<T, CC, SC, VC>
@@ -511,6 +516,9 @@ impl<VC> VariableBlock<VC> {
     pub fn get_mut_variable(&mut self, symbol: &str) -> &mut VC {
         assert!(self.contains_variable(symbol));
         self.variables.get_mut(symbol).unwrap()
+    }
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &VC)> {
+        self.variables.iter()
     }
     pub fn merge(
         left: VariableBlock<VC>,

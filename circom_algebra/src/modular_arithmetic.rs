@@ -128,7 +128,6 @@ pub fn bit_and(left: &BigInt, right: &BigInt, field: &BigInt) -> BigInt {
     modulus(&(left & right), field)
 }
 pub fn bit_xor(left: &BigInt, right: &BigInt, field: &BigInt) -> BigInt {
-    println!("{} ^ {} = {}", left, right, modulus(&(left ^ right), field));
     modulus(&(left ^ right), field)
 }
 

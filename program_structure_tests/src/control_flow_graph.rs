@@ -2,6 +2,8 @@ use std::collections::HashSet;
 
 use parser::parse_definition;
 use program_structure::cfg::*;
+use program_structure::error_definition::ReportCollection;
+use program_structure::ir::VariableName;
 
 #[test]
 fn test_cfg_from_if() {
@@ -175,14 +177,15 @@ fn validate_cfg(
     edges: &[(Vec<Index>, Vec<Index>)],
 ) {
     // 1. Generate CFG from source.
-    let (cfg, _) = parse_definition(src).unwrap().try_into().unwrap();
+    let mut reports = ReportCollection::new();
+    let cfg = parse_definition(src).unwrap().into_cfg(&mut reports).unwrap();
 
     // 2. Verify declared variables.
     assert_eq!(
-        cfg.get_variables().cloned().collect::<HashSet<_>>(),
+        cfg.variables().cloned().collect::<HashSet<_>>(),
         variables
             .iter()
-            .map(|name| name[..].into())
+            .map(|name| VariableName::from_name(name))
             .collect::<HashSet<_>>()
     );
 
@@ -193,22 +196,22 @@ fn validate_cfg(
 
     // 4. Validate block edges against input.
     for (basic_block, edges) in cfg.iter().zip(edges.iter()) {
-        let actual_predecessors = basic_block.get_predecessors();
+        let actual_predecessors = basic_block.predecessors();
         let expected_predecessors: HashSet<_> = edges.0.iter().cloned().collect();
         assert_eq!(
             actual_predecessors,
             &expected_predecessors,
             "unexpected predecessor set for block {}",
-            basic_block.get_index()
+            basic_block.index()
         );
 
-        let actual_successors = basic_block.get_successors();
+        let actual_successors = basic_block.successors();
         let expected_successors: HashSet<_> = edges.1.iter().cloned().collect();
         assert_eq!(
             actual_successors,
             &expected_successors,
             "unexpected successor set for block {}",
-            basic_block.get_index()
+            basic_block.index()
         );
     }
 
@@ -217,14 +220,14 @@ fn validate_cfg(
         for second_block in cfg.iter() {
             assert_eq!(
                 first_block
-                    .get_successors()
-                    .contains(&second_block.get_index()),
+                    .successors()
+                    .contains(&second_block.index()),
                 second_block
-                    .get_predecessors()
-                    .contains(&first_block.get_index()),
+                    .predecessors()
+                    .contains(&first_block.index()),
                 "basic block {} is not a predecessor of a successor block {}",
-                first_block.get_index(),
-                second_block.get_index()
+                first_block.index(),
+                second_block.index()
             );
         }
     }

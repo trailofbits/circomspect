@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 use log::{info, error};
 use parser::ParseResult;
 use program_structure::function_data::FunctionInfo;
@@ -11,7 +11,7 @@ use std::str::FromStr;
 use std::process::ExitCode;
 
 use program_analysis::get_analysis_passes;
-use program_structure::cfg::Cfg;
+use program_structure::cfg::{Cfg, IntoCfg};
 use program_structure::error_definition::MessageCategory;
 use program_structure::error_definition::{Report, ReportCollection};
 use program_structure::file_definition::FileLibrary;
@@ -37,53 +37,47 @@ impl FromStr for Level {
     }
 }
 
-const DEFAULT_VERSION: &str = "2.0.3";
+const COMPILER_VERSION: &str = "2.0.3";
 const DEFAULT_LEVEL: &str = "WARNING";
 
 #[derive(Parser, Debug)]
 /// A static analyzer for Circom programs.
 struct Cli {
-    /// Initial input file
-    #[clap(name = "INPUT", required = true)]
+    /// Initial input file(s)
+    #[clap(name = "INPUT")]
     input_files: Vec<PathBuf>,
 
-    /// Output level (either INFO, WARNING, or ERROR)
+    /// Output level (INFO, WARNING, or ERROR)
     #[clap(short = 'l', long, name = "LEVEL", default_value = DEFAULT_LEVEL)]
     output_level: Level,
 
     /// Output analysis results to a Sarif file
     #[clap(short, long, name = "OUTPUT")]
     sarif_file: Option<PathBuf>,
-
-    /// Expected compiler version
-    #[clap(short, long, name = "VERSION", default_value = DEFAULT_VERSION)]
-    compiler_version: String,
 }
 
-fn generate_cfg<T: TryInto<(Cfg, ReportCollection)>>(
-    ast: T,
-) -> Result<(Cfg, ReportCollection), ReportCollection>
-where
-    T: TryInto<(Cfg, ReportCollection)>,
-    T::Error: Into<Report>,
-{
-    let (cfg, reports) = ast.try_into().map_err(|error| vec![error.into()])?;
-    match cfg.into_ssa() {
-        Ok(cfg) => Ok((cfg, reports)),
-        Err(error) => Err(vec![error.into()]),
-    }
+fn generate_cfg<Ast: IntoCfg>(ast: Ast, reports: &mut ReportCollection) -> Result<Cfg, Report> {
+    ast.into_cfg(reports)
+        .map_err(Into::<Report>::into)?
+        .into_ssa()
+        .map_err(Into::<Report>::into)
 }
 
-fn analyze_cfg(cfg: &Cfg, output_level: &Level) -> ReportCollection {
-    let mut reports = ReportCollection::new();
+fn analyze_cfg(cfg: &Cfg, reports: &mut ReportCollection) {
     for analysis_pass in get_analysis_passes() {
         reports.extend(analysis_pass(cfg));
     }
-    reports
-        .iter()
-        .filter(|report| filter_by_level(report, output_level))
-        .cloned()
-        .collect()
+}
+
+fn analyze_ast<Ast: IntoCfg>(ast: Ast, reports: &mut ReportCollection) {
+    match generate_cfg(ast, reports) {
+        Ok(cfg) => {
+            analyze_cfg(&cfg, reports);
+        }
+        Err(error) => {
+            reports.push(error);
+        }
+    };
 }
 
 fn analyze_definitions(
@@ -92,31 +86,35 @@ fn analyze_definitions(
     file_library: &FileLibrary,
     output_level: &Level,
 ) -> ReportCollection {
-    let mut reports = Vec::new();
+    let mut all_reports = ReportCollection::new();
 
     // Analyze all functions.
     for (name, function) in functions {
         info!("analyzing function '{name}'");
-        let (cfg, mut new_reports) = match generate_cfg(function) {
-            Ok((cfg, warnings)) => (cfg, warnings),
-            Err(errors) => return errors,
-        };
-        new_reports.extend(analyze_cfg(&cfg, output_level));
+        let mut new_reports = ReportCollection::new();
+        analyze_ast(function, &mut new_reports);
+        filter_reports(&mut new_reports, output_level);
         Report::print_reports(&new_reports, file_library);
-        reports.extend(new_reports);
+        all_reports.extend(new_reports);
     }
     // Analyze all templates.
     for (name, template) in templates {
         info!("analyzing template '{name}'");
-        let (cfg, mut new_reports) = match generate_cfg(template) {
-            Ok((cfg, warnings)) => (cfg, warnings),
-            Err(errors) => return errors,
-        };
-        new_reports.extend(analyze_cfg(&cfg, output_level));
+        let mut new_reports = ReportCollection::new();
+        analyze_ast(template, &mut new_reports);
+        filter_reports(&mut new_reports, output_level);
         Report::print_reports(&new_reports, file_library);
-        reports.extend(new_reports);
+        all_reports.extend(new_reports);
     }
-    reports
+    all_reports
+}
+
+fn filter_reports(reports: &mut ReportCollection, output_level: &Level) {
+    *reports = reports
+        .iter()
+        .filter(|report| filter_by_level(report, output_level))
+        .cloned()
+        .collect();
 }
 
 fn filter_by_level(report: &Report, output_level: &Level) -> bool {
@@ -139,9 +137,15 @@ fn serialize_reports(sarif_path: &PathBuf, reports: &ReportCollection, file_libr
 fn main() -> ExitCode {
     pretty_env_logger::init();
     let options = Cli::from_args();
-    let mut reports = ReportCollection::new();
+    if options.input_files.is_empty() {
+        match Cli::command().print_help() {
+            Ok(()) => return ExitCode::SUCCESS,
+            Err(_) => return ExitCode::FAILURE,
+        }
+    }
 
-    let file_library = match parser::parse_files(&options.input_files, &options.compiler_version) {
+    let mut reports = ReportCollection::new();
+    let file_library = match parser::parse_files(&options.input_files, COMPILER_VERSION) {
         // Analyze a complete Circom program.
         ParseResult::Program(program, mut warnings) => {
             Report::print_reports(&warnings, &program.file_library);
@@ -155,9 +159,9 @@ fn main() -> ExitCode {
             program.file_library
         }
         // Analyze a set of Circom template files.
-        ParseResult::Library(library, mut errors) => {
-            Report::print_reports(&reports, &library.file_library);
-            reports.append(&mut errors);
+        ParseResult::Library(library, mut warnings) => {
+            Report::print_reports(&warnings, &library.file_library);
+            reports.append(&mut warnings);
             reports.append(&mut analyze_definitions(
                 &library.functions,
                 &library.templates,
@@ -176,8 +180,14 @@ fn main() -> ExitCode {
     }
     // Use the exit code to indicate if any issues were found.
     if reports.is_empty() {
+        println!("No issues found.");
         ExitCode::SUCCESS
     } else {
+        if reports.len() == 1 {
+            println!("{} issue found.", reports.len());
+        } else {
+            println!("{} issues found.", reports.len());
+        }
         ExitCode::FAILURE
     }
 }

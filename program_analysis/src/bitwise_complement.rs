@@ -74,7 +74,7 @@ fn visit_expression(expr: &Expression, reports: &mut ReportCollection) {
             visit_expression(lhe, reports);
             visit_expression(rhe, reports);
         }
-        InlineSwitchOp {
+        SwitchOp {
             cond,
             if_true,
             if_false,
@@ -89,26 +89,33 @@ fn visit_expression(expr: &Expression, reports: &mut ReportCollection) {
                 visit_expression(arg, reports);
             }
         }
-        ArrayInLine { values, .. } => {
+        Array { values, .. } => {
             for value in values {
                 visit_expression(value, reports);
             }
         }
-        Variable { access, .. } | Signal { access, .. } => {
-            use Access::*;
-            for index in access {
-                if let ArrayAccess(index) = index {
+        Access { access, .. } => {
+            for access in access {
+                if let AccessType::ArrayAccess(index) = access {
                     visit_expression(index, reports);
                 }
             }
         }
-        Number(_, _) | Component { .. } | Phi { .. } => (),
+        Update { access, rhe, .. } => {
+            visit_expression(rhe, reports);
+            for access in access {
+                if let AccessType::ArrayAccess(index) = access {
+                    visit_expression(index, reports);
+                }
+            }
+        }
+        Variable { .. } | Number(_, _) | Phi { .. } => (),
     }
 }
 
 fn build_report(meta: &Meta) -> Report {
     BitwiseComplementWarning {
-        file_id: meta.get_file_id(),
+        file_id: meta.file_id(),
         file_location: meta.file_location(),
     }
     .into_report()
@@ -117,6 +124,7 @@ fn build_report(meta: &Meta) -> Report {
 #[cfg(test)]
 mod tests {
     use parser::parse_definition;
+    use program_structure::cfg::IntoCfg;
 
     use super::*;
 
@@ -132,8 +140,14 @@ mod tests {
 
     fn validate_reports(src: &str, expected_len: usize) {
         // Build CFG.
-        let (cfg, _) = parse_definition(src).unwrap().try_into().unwrap();
-        let cfg = cfg.into_ssa().unwrap();
+        let mut reports = ReportCollection::new();
+        let cfg = parse_definition(src)
+            .unwrap()
+            .into_cfg(&mut reports)
+            .unwrap()
+            .into_ssa()
+            .unwrap();
+        assert!(reports.is_empty());
 
         // Generate report collection.
         let reports = find_bitwise_complement(&cfg);

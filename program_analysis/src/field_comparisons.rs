@@ -74,16 +74,49 @@ fn visit_expression(expr: &Expression, reports: &mut ReportCollection) {
         InfixOp { meta, infix_op, .. } if is_comparison_op(infix_op) => {
             reports.push(build_report(meta));
         }
-        InfixOp {
-            infix_op, rhe, lhe, ..
-        } if is_boolean_infix_op(infix_op) => {
+        InfixOp { lhe, rhe, .. } => {
             visit_expression(lhe, reports);
             visit_expression(rhe, reports);
         }
-        PrefixOp { prefix_op, rhe, .. } if is_boolean_prefix_op(prefix_op) => {
+        PrefixOp { rhe, .. } => {
             visit_expression(rhe, reports);
         }
-        _ => (),
+        SwitchOp {
+            cond,
+            if_true,
+            if_false,
+            ..
+        } => {
+            visit_expression(cond, reports);
+            visit_expression(if_true, reports);
+            visit_expression(if_false, reports);
+        }
+        Call { args, .. } => {
+            for arg in args {
+                visit_expression(arg, reports);
+            }
+        }
+        Array { values, .. } => {
+            for value in values {
+                visit_expression(value, reports);
+            }
+        }
+        Access { access, .. } => {
+            for index in access {
+                if let AccessType::ArrayAccess(index) = index {
+                    visit_expression(index, reports);
+                }
+            }
+        }
+        Update { access, rhe, .. } => {
+            for index in access {
+                if let AccessType::ArrayAccess(index) = index {
+                    visit_expression(index, reports);
+                }
+            }
+            visit_expression(rhe, reports);
+        }
+        Number(_, _) | Variable { .. } | Phi { .. } => (),
     }
 }
 
@@ -92,19 +125,9 @@ fn is_comparison_op(op: &ExpressionInfixOpcode) -> bool {
     matches!(op, LesserEq | GreaterEq | Lesser | Greater)
 }
 
-fn is_boolean_infix_op(op: &ExpressionInfixOpcode) -> bool {
-    use ExpressionInfixOpcode::*;
-    matches!(op, BoolAnd | BoolOr)
-}
-
-fn is_boolean_prefix_op(op: &ExpressionPrefixOpcode) -> bool {
-    use ExpressionPrefixOpcode::*;
-    matches!(op, BoolNot)
-}
-
 fn build_report(meta: &Meta) -> Report {
     FieldElementComparisonWarning {
-        file_id: meta.get_file_id(),
+        file_id: meta.file_id(),
         file_location: meta.file_location(),
     }
     .into_report()
@@ -113,6 +136,7 @@ fn build_report(meta: &Meta) -> Report {
 #[cfg(test)]
 mod tests {
     use parser::parse_definition;
+    use program_structure::cfg::IntoCfg;
 
     use super::*;
 
@@ -136,8 +160,14 @@ mod tests {
 
     fn validate_reports(src: &str, expected_len: usize) {
         // Build CFG.
-        let (cfg, _) = parse_definition(src).unwrap().try_into().unwrap();
-        let cfg = cfg.into_ssa().unwrap();
+        let mut reports = ReportCollection::new();
+        let cfg = parse_definition(src)
+            .unwrap()
+            .into_cfg(&mut reports)
+            .unwrap()
+            .into_ssa()
+            .unwrap();
+        assert!(reports.is_empty());
 
         // Generate report collection.
         let reports = find_field_element_comparisons(&cfg);

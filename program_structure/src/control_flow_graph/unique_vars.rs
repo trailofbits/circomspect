@@ -2,7 +2,7 @@ use log::trace;
 use std::convert::{TryFrom, TryInto};
 
 use super::errors::{CFGError, CFGResult};
-use super::param_data::ParameterData;
+use super::parameters::Parameters;
 
 use crate::ast::{Expression, Meta, Statement};
 use crate::environment::VarEnvironment;
@@ -12,20 +12,20 @@ use crate::file_definition::{FileID, FileLocation};
 type Version = usize;
 
 // Location of the last seen declaration of a variable.
-struct DeclarationData {
+struct Declaration {
     file_id: Option<FileID>,
     file_location: FileLocation,
 }
 
-impl DeclarationData {
-    fn new(file_id: Option<FileID>, file_location: FileLocation) -> DeclarationData {
-        DeclarationData {
+impl Declaration {
+    fn new(file_id: Option<FileID>, file_location: FileLocation) -> Declaration {
+        Declaration {
             file_id,
             file_location,
         }
     }
 
-    fn get_file_id(&self) -> Option<FileID> {
+    fn file_id(&self) -> Option<FileID> {
         self.file_id
     }
 
@@ -37,7 +37,7 @@ impl DeclarationData {
 struct DeclarationEnvironment {
     // Tracks the last seen declaration of each variable. This is scoped to
     // ensure that we know when a new declaration shadows a previous declaration.
-    declarations: VarEnvironment<DeclarationData>,
+    declarations: VarEnvironment<Declaration>,
     // Tracks the current scoped version of each variable. This is scoped to
     // ensure that versions are updated when a variable goes out of scope.
     scoped_versions: VarEnvironment<Version>,
@@ -58,7 +58,7 @@ impl DeclarationEnvironment {
     }
 
     // Get the last declaration seen for the given variable.
-    pub fn get_declaration(&self, name: &str) -> Option<&DeclarationData> {
+    pub fn get_declaration(&self, name: &str) -> Option<&Declaration> {
         self.declarations.get_variable(name)
     }
 
@@ -70,7 +70,7 @@ impl DeclarationEnvironment {
         file_location: FileLocation,
     ) -> Option<Version> {
         self.declarations
-            .add_variable(name, DeclarationData::new(file_id, file_location));
+            .add_variable(name, Declaration::new(file_id, file_location));
         self.get_next_version(name)
     }
 
@@ -116,22 +116,22 @@ impl DeclarationEnvironment {
     }
 }
 
-impl TryFrom<&ParameterData> for DeclarationEnvironment {
+impl TryFrom<&Parameters> for DeclarationEnvironment {
     type Error = CFGError;
 
-    fn try_from(param_data: &ParameterData) -> CFGResult<Self> {
+    fn try_from(params: &Parameters) -> CFGResult<Self> {
         let mut env = DeclarationEnvironment::new();
-        for name in param_data.iter() {
-            let file_id = *param_data.get_file_id();
-            let file_location = param_data.get_location();
+        for name in params.iter() {
+            let file_id = params.file_id().clone();
+            let file_location = params.file_location().clone();
             if env
-                .add_declaration(&name.to_string(), file_id, file_location.clone())
+                .add_declaration(&name.to_string(), file_id, file_location)
                 .is_some()
             {
                 return Err(CFGError::ParameterNameCollisionError {
                     name: name.to_string(),
-                    file_id,
-                    file_location,
+                    file_id: params.file_id().clone(),
+                    file_location: params.file_location().clone(),
                 });
             }
         }
@@ -182,15 +182,15 @@ impl TryFrom<&ParameterData> for DeclarationEnvironment {
 /// already unique and `x` should not be renamed.
 pub fn ensure_unique_variables(
     stmt: &mut Statement,
-    param_data: &ParameterData,
-) -> CFGResult<ReportCollection> {
+    param_data: &Parameters,
+    reports: &mut ReportCollection,
+) -> CFGResult<()> {
     // Ensure that this method is only called on function or template bodies.
     assert!(matches!(stmt, Statement::Block { .. }));
 
     let mut env = param_data.try_into()?;
-    let mut reports = ReportCollection::new();
-    visit_statement(stmt, &mut env, &mut reports);
-    Ok(reports)
+    visit_statement(stmt, &mut env, reports);
+    Ok(())
 }
 
 fn visit_statement(
@@ -212,7 +212,7 @@ fn visit_statement(
                 None => {}
                 // This is a declaration of a previously seen variable. It needs to be versioned.
                 Some(version) => {
-                    trace!("renaming declared shadowing variable `{name}` to `{name}.{version}`");
+                    trace!("renaming declared variable `{name}` to `{name}.{version}`");
                     // It is a bit hacky to track the variable version as part of the variable name,
                     // but we do this in order to remain compatible with the original Circom AST.
                     *name = format!("{name}.{version}");
@@ -322,12 +322,12 @@ fn visit_expression(expr: &mut Expression, env: &DeclarationEnvironment) {
     }
 }
 
-fn build_report(name: &str, primary_meta: &Meta, secondary_decl: &DeclarationData) -> Report {
+fn build_report(name: &str, primary_meta: &Meta, secondary_decl: &Declaration) -> Report {
     CFGError::produce_report(CFGError::ShadowingVariableWarning {
         name: name.to_string(),
         primary_file_id: primary_meta.file_id,
         primary_location: primary_meta.file_location(),
-        secondary_file_id: secondary_decl.get_file_id(),
+        secondary_file_id: secondary_decl.file_id(),
         secondary_location: secondary_decl.file_location(),
     })
 }

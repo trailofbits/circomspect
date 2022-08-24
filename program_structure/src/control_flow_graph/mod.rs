@@ -1,10 +1,12 @@
 pub mod basic_block;
 pub mod errors;
-pub mod param_data;
+pub mod parameters;
 
 mod cfg;
-mod cfg_impl;
 mod ssa_impl;
+mod lifting;
 mod unique_vars;
 
-pub use cfg::*;
+pub use cfg::{Cfg, Index};
+pub use basic_block::BasicBlock;
+pub use lifting::IntoCfg;

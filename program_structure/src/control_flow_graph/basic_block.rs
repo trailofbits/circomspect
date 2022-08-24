@@ -2,6 +2,7 @@ use log::trace;
 use std::collections::HashSet;
 use std::fmt;
 
+use crate::ir::declarations::Declarations;
 use crate::ir::value_meta::ValueEnvironment;
 use crate::ssa::traits::DirectedGraphNode;
 
@@ -68,27 +69,27 @@ impl BasicBlock {
         self.stmts.iter_mut()
     }
     #[must_use]
-    pub fn get_index(&self) -> Index {
+    pub fn index(&self) -> Index {
         self.index
     }
 
     #[must_use]
-    pub fn get_meta(&self) -> &Meta {
+    pub fn meta(&self) -> &Meta {
         &self.meta
     }
 
     #[must_use]
-    pub(crate) fn get_meta_mut(&mut self) -> &mut Meta {
+    pub(crate) fn meta_mut(&mut self) -> &mut Meta {
         &mut self.meta
     }
 
     #[must_use]
-    pub fn get_statements(&self) -> &Vec<Statement> {
+    pub fn statements(&self) -> &Vec<Statement> {
         &self.stmts
     }
 
     #[must_use]
-    pub(crate) fn get_statements_mut(&mut self) -> &mut Vec<Statement> {
+    pub(crate) fn statements_mut(&mut self) -> &mut Vec<Statement> {
         &mut self.stmts
     }
 
@@ -101,12 +102,12 @@ impl BasicBlock {
     }
 
     #[must_use]
-    pub fn get_predecessors(&self) -> &IndexSet {
+    pub fn predecessors(&self) -> &IndexSet {
         &self.predecessors
     }
 
     #[must_use]
-    pub fn get_successors(&self) -> &IndexSet {
+    pub fn successors(&self) -> &IndexSet {
         &self.successors
     }
 
@@ -127,16 +128,39 @@ impl BasicBlock {
         );
         self.successors.insert(successor);
     }
+
+    pub fn propagate_values(&mut self, env: &mut ValueEnvironment) -> bool {
+        trace!("propagating values for basic block {}", self.index());
+        let mut result = false;
+        let mut rerun = true;
+        while rerun {
+            // Rerun value propagation if a single child node was updated.
+            rerun = false;
+            for stmt in self.iter_mut() {
+                rerun = rerun || stmt.propagate_values(env);
+            }
+            // Return true if a single child node was updated.
+            result = result || rerun;
+        }
+        result
+    }
+
+    pub fn propagate_types(&mut self, vars: &Declarations) {
+        trace!("propagating variable types for basic block {}", self.index());
+        for stmt in self.iter_mut() {
+            stmt.propagate_types(vars);
+        }
+    }
 }
 
 impl DirectedGraphNode for BasicBlock {
-    fn get_index(&self) -> Index {
+    fn index(&self) -> Index {
         self.index
     }
-    fn get_predecessors(&self) -> &IndexSet {
+    fn predecessors(&self) -> &IndexSet {
         &self.predecessors
     }
-    fn get_successors(&self) -> &IndexSet {
+    fn successors(&self) -> &IndexSet {
         &self.successors
     }
 }
@@ -145,7 +169,7 @@ impl VariableMeta for BasicBlock {
     fn cache_variable_use(&mut self) {
         trace!(
             "computing variable use for basic block {}",
-            self.get_index()
+            self.index()
         );
         // Variable use for the block is simply the union of the variable use
         // over all statements in the block.
@@ -156,111 +180,104 @@ impl VariableMeta for BasicBlock {
         // Cache variables read.
         let variables_read = self
             .iter()
-            .flat_map(|stmt| stmt.get_variables_read())
+            .flat_map(|stmt| stmt.locals_read())
             .cloned()
             .collect();
 
         // Cache variables written.
         let variables_written = self
             .iter()
-            .flat_map(|stmt| stmt.get_variables_written())
+            .flat_map(|stmt| stmt.locals_written())
             .cloned()
             .collect();
 
         // Cache signals read.
         let signals_read = self
             .iter()
-            .flat_map(|stmt| stmt.get_signals_read())
+            .flat_map(|stmt| stmt.signals_read())
             .cloned()
             .collect();
 
         // Cache signals written.
         let signals_written = self
             .iter()
-            .flat_map(|stmt| stmt.get_signals_written())
+            .flat_map(|stmt| stmt.signals_written())
             .cloned()
             .collect();
 
         // Cache components read.
         let components_read = self
             .iter()
-            .flat_map(|stmt| stmt.get_components_read())
+            .flat_map(|stmt| stmt.components_read())
             .cloned()
             .collect();
 
         // Cache components written.
         let components_written = self
             .iter()
-            .flat_map(|stmt| stmt.get_components_written())
+            .flat_map(|stmt| stmt.components_written())
             .cloned()
             .collect();
 
-        self.get_meta_mut()
-            .get_variable_knowledge_mut()
-            .set_variables_read(&variables_read)
-            .set_variables_written(&variables_written)
+        self.meta_mut()
+            .variable_knowledge_mut()
+            .set_locals_read(&variables_read)
+            .set_locals_written(&variables_written)
             .set_signals_read(&signals_read)
             .set_signals_written(&signals_written)
             .set_components_read(&components_read)
             .set_components_written(&components_written);
     }
 
-    fn get_variables_read(&self) -> &VariableUses {
-        self.get_meta()
-            .get_variable_knowledge()
-            .get_variables_read()
+    fn locals_read(&self) -> &VariableUses {
+        self.meta()
+            .variable_knowledge()
+            .locals_read()
     }
 
-    fn get_variables_written(&self) -> &VariableUses {
-        self.get_meta()
-            .get_variable_knowledge()
-            .get_variables_written()
+    fn locals_written(&self) -> &VariableUses {
+        self.meta()
+            .variable_knowledge()
+            .locals_written()
     }
 
-    fn get_signals_read(&self) -> &VariableUses {
-        self.get_meta().get_variable_knowledge().get_signals_read()
+    fn signals_read(&self) -> &VariableUses {
+        self.meta().variable_knowledge().signals_read()
     }
 
-    fn get_signals_written(&self) -> &VariableUses {
-        self.get_meta()
-            .get_variable_knowledge()
-            .get_signals_written()
+    fn signals_written(&self) -> &VariableUses {
+        self.meta()
+            .variable_knowledge()
+            .signals_written()
     }
 
-    fn get_components_read(&self) -> &VariableUses {
-        self.get_meta()
-            .get_variable_knowledge()
-            .get_components_read()
+    fn components_read(&self) -> &VariableUses {
+        self.meta()
+            .variable_knowledge()
+            .components_read()
     }
 
-    fn get_components_written(&self) -> &VariableUses {
-        self.get_meta()
-            .get_variable_knowledge()
-            .get_components_written()
+    fn components_written(&self) -> &VariableUses {
+        self.meta()
+            .variable_knowledge()
+            .components_written()
     }
 }
 
 impl fmt::Debug for BasicBlock {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let lines = self.iter().map(ToString::to_string).collect::<Vec<_>>();
-        let width = 5 + lines
+        let lines = self.iter().map(|stmt| format!("{:?}", stmt)).collect::<Vec<_>>();
+        let width = lines
             .iter()
             .map(|line| line.len())
             .max()
             .unwrap_or_default();
-        let border: String = (0..width).map(|_| '-').collect();
+        let border = format!("+{}+", (0..width + 2).map(|_| '-').collect::<String>());
 
         writeln!(f, "{}", &border)?;
         for line in lines {
-            writeln!(f, "| {}; |", line)?;
+            writeln!(f, "| {:width$} |", line)?;
         }
         writeln!(f, "{}", &border)
-    }
-}
-
-impl BasicBlock {
-    pub fn propagate_values(&mut self, env: &mut ValueEnvironment) -> bool {
-        trace!("propagating values for basic block {}", self.get_index());
-        self.iter_mut().any(|stmt| stmt.propagate_values(env))
     }
 }

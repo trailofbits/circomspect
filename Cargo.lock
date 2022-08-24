@@ -676,6 +676,7 @@ version = "2.0.1"
 dependencies = [
  "lalrpop",
  "lalrpop-util",
+ "log",
  "num-bigint-dig",
  "num-traits",
  "program_structure",

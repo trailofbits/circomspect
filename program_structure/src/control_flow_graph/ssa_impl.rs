@@ -1,21 +1,32 @@
 use log::{debug, error, trace};
+use std::collections::HashSet;
 use std::ops::Range;
 
 use crate::environment::VarEnvironment;
-use crate::ir::declaration_map::{DeclarationMap, VariableType};
+use crate::ir::declarations::Declarations;
 use crate::ir::variable_meta::VariableMeta;
 use crate::ir::*;
 use crate::ssa::errors::*;
 use crate::ssa::traits::*;
 
 use super::basic_block::BasicBlock;
-use super::param_data::ParameterData;
+use super::parameters::Parameters;
 
 type Version = usize;
 
+pub struct Config { }
+
+impl SSAConfig for Config {
+    type Version = Version;
+    type Variable = VariableName;
+    type Environment = Environment;
+    type Statement = Statement;
+    type BasicBlock = BasicBlock;
+}
+
 #[derive(Clone)]
 /// A type which tracks variable metadata relevant for SSA.
-pub struct VersionEnvironment {
+pub struct Environment {
     /// Tracks the current scoped version of each variable. This is scoped to
     /// ensure that versions are updated when a variable goes out of scope.
     scoped_versions: VarEnvironment<Version>,
@@ -23,15 +34,15 @@ pub struct VersionEnvironment {
     /// ensure that we do not apply the same version to different occurrences of
     /// the same variable names.
     global_versions: VarEnvironment<Version>,
-    /// Tracks defined signals to ensure that we know if a variable use represents
-    /// a variable, signal, or component.
-    declarations: DeclarationMap,
+    /// Tracks declared local variables, components, and signals to ensure that
+    /// we know if a variable use represents a variable, signal, or component.
+    declarations: Declarations,
 }
 
-impl VersionEnvironment {
+impl Environment {
     /// Returns a new environment initialized with the parameters of the template or function.
-    pub fn new(parameters: &ParameterData, declarations: &DeclarationMap) -> VersionEnvironment {
-        let mut env = VersionEnvironment {
+    pub fn new(parameters: &Parameters, declarations: &Declarations) -> Environment {
+        let mut env = Environment {
             scoped_versions: VarEnvironment::new(),
             global_versions: VarEnvironment::new(),
             declarations: declarations.clone(),
@@ -71,81 +82,70 @@ impl VersionEnvironment {
         version
     }
 
-    /// Gets the dimensions of the given variable. We only version non-array variables.
-    fn get_dimensions(&self, name: &VariableName) -> Option<&Vec<Expression>> {
-        self.declarations.get_dimensions(name)
-    }
-
-    /// Returns true if the given name is a signal.
-    fn has_signal(&self, name: &VariableName) -> bool {
+    /// Returns true if the given name is a local variable.
+    fn is_local(&self, name: &VariableName) -> bool {
         matches!(
             self.declarations.get_type(name),
-            Some(VariableType::Signal(_, _))
-        )
-    }
-
-    /// Returns true if the given name is a component.
-    fn has_component(&self, name: &VariableName) -> bool {
-        matches!(
-            self.declarations.get_type(name),
-            Some(VariableType::Component)
+            Some(VariableType::Local { .. })
         )
     }
 }
 
-impl SSAEnvironment for VersionEnvironment {
+impl SSAEnvironment for Environment {
     // Enter variable scope.
-    fn add_variable_block(&mut self) {
+    fn add_variable_scope(&mut self) {
         self.scoped_versions.add_variable_block();
     }
 
     // Leave variable scope.
-    fn remove_variable_block(&mut self) {
+    fn remove_variable_scope(&mut self) {
         self.scoped_versions.remove_variable_block();
     }
 }
 
-impl SSABasicBlock<VersionEnvironment> for BasicBlock {
-    type Statement = Statement;
-
-    fn insert_statement(&mut self, stmt: Statement) {
+impl SSABasicBlock<Config> for BasicBlock {
+    fn prepend_statement(&mut self, stmt: Statement) {
         self.prepend_statement(stmt);
     }
 
-    fn get_statements<'a>(&'a self) -> Box<dyn Iterator<Item = &'a Statement> + 'a> {
+    fn statements<'a>(&'a self) -> Box<dyn Iterator<Item = &'a Statement> + 'a> {
         Box::new(self.iter())
     }
 
-    fn get_statements_mut<'a>(&'a mut self) -> Box<dyn Iterator<Item = &'a mut Statement> + 'a> {
+    fn statements_mut<'a>(&'a mut self) -> Box<dyn Iterator<Item = &'a mut Statement> + 'a> {
         Box::new(self.iter_mut())
     }
 }
 
-impl SSAStatement<VersionEnvironment> for Statement {
-    fn get_variables_written(&self) -> VariableSet {
-        VariableMeta::get_variables_written(self)
+impl SSAStatement<Config> for Statement {
+    fn variables_written(&self) -> HashSet<VariableName> {
+        VariableMeta::locals_written(self)
             .iter()
-            .map(|var_use| var_use.get_name().to_string())
+            .map(|var_use| var_use.get_name())
+            .cloned()
             .collect()
     }
 
-    fn new_phi_statement(name: &str) -> Self {
+    fn new_phi_statement(name: &VariableName, env: &Environment) -> Self {
         use AssignOp::*;
         use Expression::*;
         use Statement::*;
         let phi = Phi {
+            // We have no location for this statement.
             meta: Meta::default(),
             // Phi expression arguments are added later.
             args: Vec::new(),
         };
         let mut stmt = Substitution {
             meta: Meta::default(),
-            // Variable name is versioned lated.
-            var: VariableName::name(name),
-            op: AssignVar,
+            // Variable name is versioned later.
+            var: name.without_version(),
+            op: AssignLocalOrComponent,
             rhe: phi,
-            access: Vec::new(),
         };
+        // We need to update the node metadata to have a current view of
+        // variable use.
+        stmt.propagate_types(&env.declarations);
         stmt.cache_variable_use();
         stmt
     }
@@ -162,7 +162,7 @@ impl SSAStatement<VersionEnvironment> for Statement {
         )
     }
 
-    fn is_phi_statement_for(&self, name: &str) -> bool {
+    fn is_phi_statement_for(&self, name: &VariableName) -> bool {
         use Expression::*;
         use Statement::*;
         match self {
@@ -170,12 +170,12 @@ impl SSAStatement<VersionEnvironment> for Statement {
                 var,
                 rhe: Phi { .. },
                 ..
-            } => var.to_string() == name,
+            } => var == name,
             _ => false,
         }
     }
 
-    fn ensure_phi_argument(&mut self, env: &VersionEnvironment) {
+    fn ensure_phi_argument(&mut self, env: &Environment) {
         use Expression::*;
         use Statement::*;
         match self {
@@ -187,14 +187,17 @@ impl SSAStatement<VersionEnvironment> for Statement {
                 ..
             } => {
                 trace!("phi statement for variable `{name}` found");
+                // If the environment knows about the variable, we ensure that
+                // the versioned variable occurs as an argument to the RHS.
                 if let Some(env_version) = env.get_current_version(name) {
                     // If the argument list does not contain the current version of the variable we add it.
                     if args.iter().any(|arg|
-                        matches!( arg.get_version(), &Some(arg_version) if arg_version == env_version)
+                        matches!( arg.version(), &Some(arg_version) if arg_version == env_version)
                     ) {
                         return;
                     }
                     args.push(name.with_version(env_version));
+                    self.propagate_types(&env.declarations);
                     self.cache_variable_use();
                 }
             }
@@ -203,77 +206,58 @@ impl SSAStatement<VersionEnvironment> for Statement {
         }
     }
 
-    fn insert_ssa_variables(&mut self, env: &mut VersionEnvironment) -> SSAResult<()> {
+    fn insert_ssa_variables(&mut self, env: &mut Environment) -> SSAResult<()> {
         debug!("converting `{self}` to SSA");
         use Statement::*;
         let result = match self {
-            IfThenElse { cond, .. } => visit_expression(cond, env),
-            Return { value, .. } => visit_expression(value, env),
-            Substitution { var, access, op, rhe, .. } => {
-                assert!(var.get_version().is_none());
-                // We need to visit array indices and the right-hand expression before updating the environment.
-                for access in access {
-                    if let Access::ArrayAccess(index) = access {
-                        visit_expression(index, env)?;
-                    }
-                }
+            Substitution { var, rhe, .. } => {
+                assert!(var.version().is_none());
                 visit_expression(rhe, env)?;
-                *var = match (op, env.get_dimensions(var)) {
-                    // If this is a non-array variable assignment we need to version the variable.
-                    (AssignOp::AssignVar, Some(dimensions)) if dimensions.is_empty() => {
-                        // If this is the first assignment to the variable we set the version to 0,
-                        // otherwise we increase the version by one.
-                        let version = env.get_next_version(var);
-                        let versioned_var = var.with_version(version);
-                        trace!(
-                            "replacing (written) variable `{var}` with SSA variable `{versioned_var}`"
-                        );
-                        versioned_var
-                    }
-                    // If this is an array, a signal or component assignment we ignore it.
-                    _ => var.clone(),
-                };
+                // If this is a variable assignment we need to version the variable.
+                // TODO: We should maybe treat undeclared variables as local variables.
+                if env.is_local(var) {
+                    // If this is the first assignment to the variable we set the version to 0,
+                    // otherwise we increase the version by one.
+                    let version = env.get_next_version(var);
+                    trace!(
+                        "replacing (written) variable `{var}` with SSA variable `{var}.{version}`"
+                    );
+                    *var = var.with_version(version);
+                }
                 Ok(())
             }
             ConstraintEquality { lhe, rhe, .. } => {
                 visit_expression(lhe, env)?;
                 visit_expression(rhe, env)
             }
+            IfThenElse { cond, .. } => visit_expression(cond, env),
+            Return { value, .. } => visit_expression(value, env),
             LogCall { arg, .. } => visit_expression(arg, env),
             Assert { arg, .. } => visit_expression(arg, env),
         };
-        // Since variables names may have changed we need to re-cache variable use.
+        // We need to update the node metadata to have a current view of
+        // variable use.
+        self.propagate_types(&env.declarations);
         self.cache_variable_use();
         result
     }
 }
 
 /// Replaces each occurrence of the variable `v` with a versioned SSA variable `v.n`.
-/// Currently, signals and components are not touched.
-fn visit_expression(expr: &mut Expression, env: &VersionEnvironment) -> SSAResult<()> {
+/// Signals and components are not touched.
+fn visit_expression(expr: &mut Expression, env: &mut Environment) -> SSAResult<()> {
     use Expression::*;
     match expr {
-        // Variables are decorated with the corresponding SSA version.
-        Variable { meta, name, access, .. } => {
+        // Variables are updated with the corresponding SSA version.
+        Variable { meta, name, .. } => {
             assert!(
-                name.get_version().is_none(),
+                name.version().is_none(),
                 "variable already converted to SSA form"
             );
-            // Visit array indices.
-            for access in access {
-                if let Access::ArrayAccess(index) = access {
-                    visit_expression(index, env)?;
-                }
-            }
-            // Ignore declared signals and components.
-            if env.has_signal(name) || env.has_component(name) {
+            // Ignore declared signals and components, and undeclared variables.
+            // TODO: We should maybe treat undeclared variables as local variables.
+            if !env.is_local(name) {
                 return Ok(());
-            }
-            // Ignore arrays.
-            if let Some(dimensions) = env.get_dimensions(name) {
-                if !dimensions.is_empty() {
-                    return Ok(());
-                }
             }
             match env.get_current_version(name) {
                 Some(version) => {
@@ -288,19 +272,80 @@ fn visit_expression(expr: &mut Expression, env: &VersionEnvironment) -> SSAResul
                     error!("failed to convert undeclared variable `{name}` to SSA");
                     Err(SSAError::UndefinedVariableError {
                         name: name.to_string(),
-                        file_id: meta.get_file_id(),
+                        file_id: meta.file_id(),
                         location: meta.file_location(),
                     })
                 }
             }
         },
-        Signal { access, .. } | Component { access, .. } => {
+        // Local array accesses are updated with the corresponding SSA version.
+        Access { meta, var, access } => {
             for access in access {
-                if let Access::ArrayAccess(index) = access {
+                if let AccessType::ArrayAccess(index) = access {
                     visit_expression(index, env)?;
                 }
             }
-            Ok(())
+            // Ignore declared signals and components, and undeclared variables.
+            if !env.is_local(var) {
+                return Ok(());
+            }
+            assert!(
+                var.version().is_none(),
+                "variable already converted to SSA form"
+            );
+            match env.get_current_version(var) {
+                Some(version) => {
+                    trace!(
+                        "replacing (read) variable `{var}` with SSA variable `{var}.{version}`"
+                    );
+                    *var = var.with_version(version);
+                    Ok(())
+                }
+                None => {
+                    // TODO: Handle undeclared variables more gracefully.
+                    error!("failed to convert undeclared variable `{var}` to SSA");
+                    Err(SSAError::UndefinedVariableError {
+                        name: var.to_string(),
+                        file_id: meta.file_id(),
+                        location: meta.file_location(),
+                    })
+                }
+            }
+        }
+        Update { var, access, rhe, .. } => {
+            visit_expression(rhe, env)?;
+            for access in access {
+                if let AccessType::ArrayAccess(index) = access {
+                    visit_expression(index, env)?;
+                }
+            }
+            // Ignore declared signals and components, and undeclared variables.
+            if !env.is_local(var) {
+                return Ok(());
+            }
+            assert!(
+                var.version().is_none(),
+                "variable already converted to SSA form"
+            );
+            match env.get_current_version(var) {
+                Some(version) => {
+                    trace!(
+                        "replacing (read) variable `{var}` with SSA variable `{var}.{version}`"
+                    );
+                    *var = var.with_version(version);
+                    Ok(())
+                }
+                None => {
+                    // This is the first assignment to an array. Add the
+                    // variable to the environment and get the first version.
+                    let version = env.get_next_version(var);
+                    trace!(
+                        "replacing (read) variable `{var}` with SSA variable `{var}.{version}`"
+                    );
+                    *var = var.with_version(version);
+                    Ok(())
+                }
+            }
         }
         // For all other expression types we simply recurse into their children.
         PrefixOp { rhe, .. } => visit_expression(rhe, env),
@@ -308,7 +353,7 @@ fn visit_expression(expr: &mut Expression, env: &VersionEnvironment) -> SSAResul
             visit_expression(lhe, env)?;
             visit_expression(rhe, env)
         }
-        InlineSwitchOp {
+        SwitchOp {
             cond,
             if_true,
             if_false,
@@ -324,7 +369,7 @@ fn visit_expression(expr: &mut Expression, env: &VersionEnvironment) -> SSAResul
             }
             Ok(())
         }
-        ArrayInLine { values, .. } => {
+        Array { values, .. } => {
             for value in values {
                 visit_expression(value, env)?;
             }

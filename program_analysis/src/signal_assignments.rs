@@ -1,5 +1,5 @@
 use log::{trace, debug};
-use program_structure::ir::Access;
+use program_structure::ir::AccessType;
 use std::collections::HashSet;
 
 use program_structure::cfg::Cfg;
@@ -10,7 +10,7 @@ use program_structure::ir::*;
 
 pub struct SignalAssignmentWarning {
     signal: VariableName,
-    access: Vec<Access>,
+    access: Vec<AccessType>,
     assignment_meta: Meta,
     constraint_metas: Vec<Meta>,
 }
@@ -64,11 +64,11 @@ type AssignmentSet = HashSet<Assignment>;
 struct Assignment {
     pub meta: Meta,
     pub signal: VariableName,
-    pub access: Vec<Access>,
+    pub access: Vec<AccessType>,
 }
 
 impl Assignment {
-    fn new(meta: &Meta, signal: &VariableName, access: &Vec<Access>) -> Assignment {
+    fn new(meta: &Meta, signal: &VariableName, access: &Vec<AccessType>) -> Assignment {
         Assignment {
             meta: meta.clone(),
             signal: signal.clone(),
@@ -111,7 +111,7 @@ impl SignalData {
     }
 
     /// Add an assignment `var[access] <-- expr`.
-    fn add_assignment(&mut self, var: &VariableName, access: &Vec<Access>, meta: &Meta) {
+    fn add_assignment(&mut self, var: &VariableName, access: &Vec<AccessType>, meta: &Meta) {
         trace!("adding signal assignment for `{var}` access");
         self.assignments.insert(Assignment::new(meta, var, access));
     }
@@ -128,12 +128,12 @@ impl SignalData {
     }
 
     /// Get the set of constraints that contain the given variable.
-    fn get_constraints(&self, signal: &VariableName, access: &Vec<Access>) -> Vec<&Constraint> {
+    fn get_constraints(&self, signal: &VariableName, access: &Vec<AccessType>) -> Vec<&Constraint> {
         self.constraints
             .iter()
             .filter(|constraint| {
-                let lhe = constraint.lhe.get_signals_read().iter();
-                let rhe = constraint.rhe.get_signals_read().iter();
+                let lhe = constraint.lhe.signals_read().iter();
+                let rhe = constraint.rhe.signals_read().iter();
                 lhe.chain(rhe)
                     .any(|signal_use|
                         signal_use.get_name() == signal && signal_use.get_access() == access
@@ -144,7 +144,7 @@ impl SignalData {
 
     /// Returns the corresponding `Meta` of a constraint containing the given
     /// signal, or `None` if no such constraint exists.
-    fn get_constraint_metas(&self, signal: &VariableName, access: &Vec<Access>) -> Vec<Meta> {
+    fn get_constraint_metas(&self, signal: &VariableName, access: &Vec<AccessType>) -> Vec<Meta> {
         self.get_constraints(signal, access)
             .iter()
             .map(|constraint| constraint.meta.clone())
@@ -182,13 +182,13 @@ pub fn find_signal_assignments(cfg: &Cfg) -> ReportCollection {
 
 fn visit_statement(stmt: &Statement, signal_data: &mut SignalData) {
     use Statement::*;
+    use Expression::*;
     match stmt {
         Substitution {
             meta,
             var,
-            access,
             op,
-            rhe,
+            rhe: Update { access, rhe, .. }
         } => {
             match op {
                 AssignOp::AssignSignal => {
@@ -199,14 +199,37 @@ fn visit_statement(stmt: &Statement, signal_data: &mut SignalData) {
                 // record the constraint added for each constraint assignment
                 // found.
                 AssignOp::AssignConstraintSignal => {
-                    let lhe = Expression::Signal {
+                    let lhe = Expression::Variable {
                         meta: meta.clone(),
                         name: var.clone(),
-                        access: access.clone()
                     };
                     signal_data.add_constraint(&lhe, rhe, meta)
                 }
-                AssignOp::AssignVar | AssignOp::AssignComponent => {}
+                AssignOp::AssignLocalOrComponent => {}
+            }
+        },
+        Substitution {
+            meta,
+            var,
+            op,
+            rhe,
+        } => {
+            match op {
+                AssignOp::AssignSignal => {
+                    signal_data.add_assignment(var, &Vec::new(), meta);
+                }
+                // A signal cannot occur as the LHS of both a signal assignment
+                // and a signal constraint assignment. However, we still need to
+                // record the constraint added for each constraint assignment
+                // found.
+                AssignOp::AssignConstraintSignal => {
+                    let lhe = Expression::Variable {
+                        meta: meta.clone(),
+                        name: var.clone(),
+                    };
+                    signal_data.add_constraint(&lhe, rhe, meta)
+                }
+                AssignOp::AssignLocalOrComponent => {}
             }
         }
         ConstraintEquality { meta, lhe, rhe } => {
@@ -218,7 +241,7 @@ fn visit_statement(stmt: &Statement, signal_data: &mut SignalData) {
 
 fn build_report(
     signal: &VariableName,
-    access: &Vec<Access>,
+    access: &Vec<AccessType>,
     assignment_meta: &Meta,
     constraint_metas: &Vec<Meta>,
 ) -> Report {
@@ -232,7 +255,7 @@ fn build_report(
 }
 
 #[must_use]
-fn access_to_string(access: &[Access]) -> String {
+fn access_to_string(access: &[AccessType]) -> String {
     access.iter()
         .map(|access| access.to_string())
         .collect::<Vec<String>>()
@@ -242,6 +265,7 @@ fn access_to_string(access: &[Access]) -> String {
 #[cfg(test)]
 mod tests {
     use parser::parse_definition;
+    use program_structure::cfg::IntoCfg;
 
     use super::*;
 
@@ -282,8 +306,14 @@ mod tests {
 
     fn validate_reports(src: &str, expected_len: usize) {
         // Build CFG.
-        let (cfg, _) = parse_definition(src).unwrap().try_into().unwrap();
-        let cfg = cfg.into_ssa().unwrap();
+        let mut reports = ReportCollection::new();
+        let cfg = parse_definition(src)
+            .unwrap()
+            .into_cfg(&mut reports)
+            .unwrap()
+            .into_ssa()
+            .unwrap();
+        assert!(reports.is_empty());
 
         // Generate report collection.
         let reports = find_signal_assignments(&cfg);

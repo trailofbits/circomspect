@@ -5,7 +5,7 @@ use program_structure::cfg::Cfg;
 use program_structure::error_code::ReportCode;
 use program_structure::error_definition::{Report, ReportCollection};
 use program_structure::file_definition::{FileID, FileLocation};
-use program_structure::ir::value_meta::ValueReduction;
+use program_structure::ir::value_meta::{ValueMeta, ValueReduction};
 use program_structure::ir::*;
 
 pub enum NonStrictBinaryConversionWarning {
@@ -73,41 +73,62 @@ fn visit_statement(stmt: &Statement, reports: &mut ReportCollection) {
     use Expression::*;
     use ValueReduction::*;
     match stmt {
-        // A component initialization on the form `var = id(args, ...)`.
-        Substitution { op: AssignComponent, rhe: Call { meta, id, args }, .. } => {
+        // A component initialization on the form `var = component_name(args, ...)`.
+        Substitution {
+            meta: var_meta,
+            op: AssignLocalOrComponent,
+            rhe: Call { meta: component_meta, name: component_name, args },
+            ..
+        } => {
+            // If the variable `var` is declared as a local variable or signal, we exit early.
+            if var_meta.type_knowledge().is_local() || var_meta.type_knowledge().is_signal() {
+                return
+            }
             // We assume this is the `Num2Bits` circuit from Circomlib.
-            if (id == "Num2Bits" || id == "Bits2Num") && args.len() == 1 {
+            if component_name == "Num2Bits" && args.len() == 1 {
                 let arg = &args[0];
                 // If the input size is known to be < 254, this initialization is safe.
-                if let Some(FieldElement { value }) = arg
-                    .get_meta()
-                    .get_value_knowledge()
-                    .get_reduces_to()
-                {
+                if let Some(FieldElement { value }) = arg.value() {
                     if value < &BigInt::from(254u8) {
                         return;
                     }
                 }
-                reports.push(build_report(id, meta));
+                reports.push(build_num2bits(component_meta));
+            }
+            // We assume this is the `Bits2Num` circuit from Circomlib.
+            if component_name == "Bits2Num" && args.len() == 1 {
+                let arg = &args[0];
+                // If the input size is known to be < 254, this initialization is safe.
+                if let Some(FieldElement { value }) = arg.value() {
+                    if value < &BigInt::from(254u8) {
+                        return;
+                    }
+                }
+                reports.push(build_bits2num(component_meta));
             }
         },
         _ => {},
     }
 }
 
-fn build_report(id: &str, meta: &Meta) -> Report {
-    use NonStrictBinaryConversionWarning::*;
-    match id {
-        "Num2Bits" => Num2Bits { file_id: meta.get_file_id(), location: meta.file_location() },
-        "Bits2Num" => Bits2Num { file_id: meta.get_file_id(), location: meta.file_location() },
-        _ => panic!(),
-    }
-    .into_report()
+fn build_num2bits(meta: &Meta) -> Report {
+    NonStrictBinaryConversionWarning::Num2Bits {
+        file_id: meta.file_id(),
+        location: meta.file_location()
+    }.into_report()
+}
+
+fn build_bits2num(meta: &Meta) -> Report {
+    NonStrictBinaryConversionWarning::Bits2Num {
+        file_id: meta.file_id(),
+        location: meta.file_location()
+    }.into_report()
 }
 
 #[cfg(test)]
 mod tests {
     use parser::parse_definition;
+    use program_structure::cfg::IntoCfg;
 
     use super::*;
 
@@ -130,8 +151,14 @@ mod tests {
 
     fn validate_reports(src: &str, expected_len: usize) {
         // Build CFG.
-        let (cfg, _) = parse_definition(src).unwrap().try_into().unwrap();
-        let cfg = cfg.into_ssa().unwrap();
+        let mut reports = ReportCollection::new();
+        let cfg = parse_definition(src)
+            .unwrap()
+            .into_cfg(&mut reports)
+            .unwrap()
+            .into_ssa()
+            .unwrap();
+        assert!(reports.is_empty());
 
         // Generate report collection.
         let reports = find_nonstrict_binary_conversion(&cfg);

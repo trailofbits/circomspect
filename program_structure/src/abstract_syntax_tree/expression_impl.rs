@@ -190,7 +190,13 @@ impl Display for Expression {
         use Expression::*;
         match self {
             Number(_, value) => write!(f, "{}", value),
-            Variable { name, .. } => write!(f, "{}", name),
+            Variable { name, access, .. } => {
+                write!(f, "{name}")?;
+                for access in access {
+                    write!(f, "{access}")?;
+                }
+                Ok(())
+            },
             InfixOp {
                 lhe, infix_op, rhe, ..
             } => write!(f, "({} {} {})", lhe, infix_op, rhe),
@@ -200,7 +206,7 @@ impl Display for Expression {
                 if_true,
                 if_false,
                 ..
-            } => write!(f, "({}?{}:{})", cond, if_true, if_false),
+            } => write!(f, "({}? {} : {})", cond, if_true, if_false),
             Call { id, args, .. } => write!(f, "{}({})", id, vec_to_string(args)),
             ArrayInLine { values, .. } => write!(f, "[{}]", vec_to_string(values)),
         }
@@ -242,6 +248,16 @@ impl Display for ExpressionPrefixOpcode {
             Sub => f.write_str("-"),
             BoolNot => f.write_str("!"),
             Complement => f.write_str("~"),
+        }
+    }
+}
+
+impl Display for Access {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        use Access::*;
+        match self {
+            ArrayAccess(index) => write!(f, "[{index}]"),
+            ComponentAccess(name) => write!(f, ".{name}"),
         }
     }
 }

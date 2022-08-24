@@ -1,26 +1,26 @@
+use std::fmt;
 use log::{debug, trace};
 
 use crate::file_definition::FileID;
-use crate::ir::declaration_map::{Declaration, DeclarationMap, VariableType};
+use crate::ir::declarations::{Declaration, Declarations};
 use crate::ir::value_meta::ValueEnvironment;
 use crate::ir::variable_meta::VariableMeta;
-use crate::ir::VariableName;
+use crate::ir::{VariableName, VariableType};
 use crate::ssa::dominator_tree::DominatorTree;
 use crate::ssa::errors::SSAResult;
-use crate::ssa::traits::Version;
 use crate::ssa::{insert_phi_statements, insert_ssa_variables};
 
 use super::basic_block::BasicBlock;
-use super::param_data::ParameterData;
-use super::ssa_impl::VersionEnvironment;
+use super::parameters::Parameters;
+use super::ssa_impl::{Config, Environment};
 
 /// Basic block index type.
 pub type Index = usize;
 
 pub struct Cfg {
     name: String,
-    parameters: ParameterData,
-    declarations: DeclarationMap,
+    parameters: Parameters,
+    declarations: Declarations,
     basic_blocks: Vec<BasicBlock>,
     dominator_tree: DominatorTree<BasicBlock>,
 }
@@ -28,8 +28,8 @@ pub struct Cfg {
 impl Cfg {
     pub(crate) fn new(
         name: String,
-        parameters: ParameterData,
-        declarations: DeclarationMap,
+        parameters: Parameters,
+        declarations: Declarations,
         basic_blocks: Vec<BasicBlock>,
         dominator_tree: DominatorTree<BasicBlock>,
     ) -> Cfg {
@@ -43,7 +43,7 @@ impl Cfg {
     }
     /// Returns the entry (first) block of the CFG.
     #[must_use]
-    pub fn get_entry_block(&self) -> &BasicBlock {
+    pub fn entry_block(&self) -> &BasicBlock {
         &self.basic_blocks[Index::default()]
     }
 
@@ -54,64 +54,61 @@ impl Cfg {
 
     /// Returns the number of basic blocks in the CFG.
     #[must_use]
-    pub fn nof_basic_blocks(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.basic_blocks.len()
     }
+
     /// Convert the CFG into SSA form.
     pub fn into_ssa(mut self) -> SSAResult<Cfg> {
-        debug!("converting `{}` CFG to SSA", self.get_name());
+        debug!("converting `{}` CFG to SSA", self.name());
 
-        // 1. Cache variable use before running SSA.
-        self.cache_variable_use();
+        // 1. Insert phi statements and convert variables to SSA.
+        let mut env = Environment::new(self.parameters(), self.declarations());
+        insert_phi_statements::<Config>(&mut self.basic_blocks, &self.dominator_tree, &mut env);
+        insert_ssa_variables::<Config>(&mut self.basic_blocks, &self.dominator_tree, &mut env)?;
 
-        // 2. Insert phi statements and convert variables to SSA.
-        let mut env = VersionEnvironment::new(self.get_parameters(), self.get_declarations());
-        insert_phi_statements(&mut self.basic_blocks, &self.dominator_tree);
-        insert_ssa_variables(&mut self.basic_blocks, &self.dominator_tree, &mut env)?;
-
-        // 3. Update parameters to SSA form.
+        // 2. Update parameters to SSA form.
         for name in self.parameters.iter_mut() {
-            *name = name.with_version(Version::default());
+            *name = name.with_version(0);
         }
 
-        // 4. Re-cache variable use, and run value propagation.
-        self.cache_variable_use();
+        // Propagate metadata to all child nodes. Since determining variable use
+        // requires that variable types are available, type propagation must run
+        // before caching variable use.
+        self.propagate_types();
         self.propagate_values();
+        self.cache_variable_use();
 
-        // 5. Update declaration map to track SSA variables.
-        let mut versioned_declarations = DeclarationMap::new();
+        // 4. Update declaration map to track SSA variables.
+        let mut versioned_declarations = Declarations::new();
         for (name, declaration) in self.declarations.iter() {
-            if matches!(declaration.get_type(), VariableType::Var)
-                && declaration.get_dimensions().is_empty()
-            {
-                // Add a new declaration for each version of the variable.
+            if matches!(declaration.variable_type(), VariableType::Local { .. }) {
+                // Add a new declaration for each version of the local variable.
                 for version in env
                     .get_version_range(name)
                     .expect("variable in environment")
                 {
-                    let versioned_name = declaration.get_name().with_version(version);
-                    let versioned_declaration = Declaration::new(
-                        &versioned_name,
-                        declaration.get_type(),
-                        declaration.get_dimensions(),
-                        declaration.get_file_id(),
-                        &declaration.get_location(),
-                    );
-                    versioned_declarations.add_declaration(&versioned_name, versioned_declaration);
+                    versioned_declarations.add_declaration(&Declaration::new(
+                        &declaration.variable_name().with_version(version),
+                        declaration.variable_type(),
+                        &declaration.file_id(),
+                        &declaration.file_location(),
+                    ));
                 }
             } else {
-                // Declarations of arrays, signals and components are just copied over.
-                versioned_declarations.add_declaration(name, declaration.clone());
+                // Declarations of signals and components are just copied over.
+                versioned_declarations.add_declaration(declaration);
             }
         }
         self.declarations = versioned_declarations;
 
+        // 5. Print trace output of CFG.
         for basic_block in self.basic_blocks.iter() {
             trace!(
                 "basic block {}: (predecessors: {:?}, successors: {:?})",
-                basic_block.get_index(),
-                basic_block.get_predecessors(),
-                basic_block.get_successors(),
+                basic_block.index(),
+                basic_block.predecessors(),
+                basic_block.successors(),
             );
             for stmt in basic_block.iter() {
                 trace!("    {stmt};")
@@ -122,30 +119,30 @@ impl Cfg {
 
     /// Get the name of the corresponding function or template.
     #[must_use]
-    pub fn get_name(&self) -> &str {
+    pub fn name(&self) -> &str {
         &self.name
     }
 
     /// Get the file ID for the corresponding function or template.
     #[must_use]
-    pub fn get_file_id(&self) -> &Option<FileID> {
-        &self.parameters.get_file_id()
+    pub fn file_id(&self) -> &Option<FileID> {
+        &self.parameters.file_id()
     }
 
     /// Returns the parameter data for the corresponding function or template.
     #[must_use]
-    pub fn get_parameters(&self) -> &ParameterData {
+    pub fn parameters(&self) -> &Parameters {
         &self.parameters
     }
 
     /// Returns the variable declaration for the CFG.
     #[must_use]
-    pub fn get_declarations(&self) -> &DeclarationMap {
+    pub fn declarations(&self) -> &Declarations {
         &self.declarations
     }
 
     /// Returns an iterator over the set of variables defined by the CFG.
-    pub fn get_variables(&self) -> impl Iterator<Item = &VariableName> {
+    pub fn variables(&self) -> impl Iterator<Item = &VariableName> {
         self.declarations.iter().map(|(name, _)| name)
     }
 
@@ -169,7 +166,7 @@ impl Cfg {
     #[must_use]
     pub fn get_dominators(&self, basic_block: &BasicBlock) -> Vec<&BasicBlock> {
         self.dominator_tree
-            .get_dominators(basic_block.get_index())
+            .get_dominators(basic_block.index())
             .iter()
             .map(|&i| &self.basic_blocks[i])
             .collect()
@@ -180,7 +177,7 @@ impl Cfg {
     #[must_use]
     pub fn get_immediate_dominator(&self, basic_block: &BasicBlock) -> Option<&BasicBlock> {
         self.dominator_tree
-            .get_immediate_dominator(basic_block.get_index())
+            .get_immediate_dominator(basic_block.index())
             .map(|i| &self.basic_blocks[i])
     }
 
@@ -189,7 +186,7 @@ impl Cfg {
     #[must_use]
     pub fn get_dominator_successors(&self, basic_block: &BasicBlock) -> Vec<&BasicBlock> {
         self.dominator_tree
-            .get_dominator_successors(basic_block.get_index())
+            .get_dominator_successors(basic_block.index())
             .iter()
             .map(|&i| &self.basic_blocks[i])
             .collect()
@@ -202,27 +199,58 @@ impl Cfg {
     #[must_use]
     pub fn get_dominance_frontier(&self, basic_block: &BasicBlock) -> Vec<&BasicBlock> {
         self.dominator_tree
-            .get_dominance_frontier(basic_block.get_index())
+            .get_dominance_frontier(basic_block.index())
             .iter()
             .map(|&i| &self.basic_blocks[i])
             .collect()
     }
 
     /// Cache variable use for each node in the CFG.
-    fn cache_variable_use(&mut self) {
-        debug!("computing variable use for `{}`", self.get_name());
+    pub(crate) fn cache_variable_use(&mut self) {
+        debug!("computing variable use for `{}`", self.name());
         for basic_block in self.iter_mut() {
             basic_block.cache_variable_use();
         }
     }
 
     /// Propagate constant values along the CFG.
-    fn propagate_values(&mut self) {
-        debug!("propagating constant values for `{}`", self.get_name());
+    pub (crate) fn propagate_values(&mut self) {
+        debug!("propagating constant values for `{}`", self.name());
         let mut env = ValueEnvironment::new();
-        while self
-            .iter_mut()
-            .any(|basic_block| basic_block.propagate_values(&mut env))
-        {}
+        let mut rerun = true;
+        while rerun {
+            // Rerun value propagation if a single child node was updated.
+            rerun = false;
+            for basic_block in self.iter_mut() {
+                rerun = rerun || basic_block.propagate_values(&mut env);
+            }
+        }
+    }
+
+    /// Propagate variable types along the CFG.
+    pub(crate) fn propagate_types(&mut self) {
+        debug!("propagating variable types for `{}`", self.name());
+        // Need to clone declarations here since we cannot borrow self both
+        // mutably and immutably.
+        let declarations = self.declarations.clone();
+        for basic_block in self.iter_mut() {
+            basic_block.propagate_types(&declarations);
+        }
+    }
+}
+
+impl fmt::Debug for Cfg {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for basic_block in self.iter() {
+            writeln!(
+                f,
+                "basic block {}, predecessors: {:?}, successors: {:?}",
+                basic_block.index(),
+                basic_block.predecessors(),
+                basic_block.successors(),
+            )?;
+            write!(f, "{:?}", basic_block)?;
+        }
+        Ok(())
     }
 }

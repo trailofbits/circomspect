@@ -48,9 +48,9 @@ fn visit_statement(stmt: &Statement, reports: &mut ReportCollection) {
     use Statement::*;
     use ValueReduction::*;
     if let IfThenElse { cond, .. } = stmt {
-        let value = cond.get_meta().get_value_knowledge().get_reduces_to();
+        let value = cond.meta().value_knowledge().get_reduces_to();
         if let Some(Boolean { value }) = value {
-            reports.push(build_report(cond.get_meta(), *value));
+            reports.push(build_report(cond.meta(), *value));
         }
     }
 }
@@ -58,7 +58,7 @@ fn visit_statement(stmt: &Statement, reports: &mut ReportCollection) {
 fn build_report(meta: &Meta, value: bool) -> Report {
     ConstantBranchConditionWarning {
         value,
-        file_id: meta.get_file_id(),
+        file_id: meta.file_id(),
         file_location: meta.file_location(),
     }
     .into_report()
@@ -67,6 +67,7 @@ fn build_report(meta: &Meta, value: bool) -> Report {
 #[cfg(test)]
 mod tests {
     use parser::parse_definition;
+    use program_structure::cfg::IntoCfg;
 
     use super::*;
 
@@ -103,11 +104,13 @@ mod tests {
 
     fn validate_reports(src: &str, expected_len: usize) {
         // Build CFG.
-        let (cfg, _) = parse_definition(src).unwrap().try_into().unwrap();
-
-        // Convert CFG into SSA.
-        let cfg = cfg.into_ssa().unwrap();
-
+        let mut reports = ReportCollection::new();
+        let cfg = parse_definition(src)
+            .unwrap()
+            .into_cfg(&mut reports)
+            .unwrap()
+            .into_ssa()
+            .unwrap();
         // Generate report collection.
         let reports = find_constant_conditional_statement(&cfg);
 

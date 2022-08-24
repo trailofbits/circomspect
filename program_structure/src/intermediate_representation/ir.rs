@@ -1,83 +1,20 @@
 use num_bigint::BigInt;
-use std::collections::HashSet;
 use std::fmt;
 
-use crate::ast;
-use crate::environment::VarEnvironment;
 use crate::file_definition::{FileID, FileLocation};
 
-use super::declaration_map::Declaration;
+use super::type_meta::TypeKnowledge;
 use super::value_meta::ValueKnowledge;
 use super::variable_meta::VariableKnowledge;
 
 type Index = usize;
 type Version = usize;
-type VariableSet = HashSet<String>;
-
-pub struct IREnvironment {
-    scoped_declarations: VarEnvironment<Declaration>,
-    global_declarations: VarEnvironment<Declaration>,
-    variables: VariableSet,
-}
-
-impl IREnvironment {
-    #[must_use]
-    pub fn new() -> IREnvironment {
-        IREnvironment {
-            scoped_declarations: VarEnvironment::new(),
-            global_declarations: VarEnvironment::new(),
-            variables: VariableSet::new(),
-        }
-    }
-
-    pub fn add_declaration(&mut self, name: &str, declaration: Declaration) {
-        self.variables.insert(name.to_string());
-        self.scoped_declarations
-            .add_variable(name, declaration.clone());
-        self.global_declarations.add_variable(name, declaration);
-    }
-
-    #[must_use]
-    pub fn get_declaration(&mut self, name: &str) -> Option<&Declaration> {
-        self.scoped_declarations.get_variable(name)
-    }
-
-    // Enter variable scope.
-    pub fn add_variable_block(&mut self) {
-        self.scoped_declarations.add_variable_block();
-    }
-
-    // Leave variable scope.
-    pub fn remove_variable_block(&mut self) {
-        self.scoped_declarations.remove_variable_block();
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = &String> {
-        self.variables.iter()
-    }
-
-    #[must_use]
-    pub fn scoped_declarations(&self) -> &VarEnvironment<Declaration> {
-        &self.scoped_declarations
-    }
-
-    #[must_use]
-    pub fn global_declarations(&self) -> &VarEnvironment<Declaration> {
-        &self.global_declarations
-    }
-}
-
-pub trait TryIntoIR {
-    type IR;
-    type Error;
-
-    fn try_into_ir(&self, env: &mut IREnvironment) -> Result<Self::IR, Self::Error>;
-}
 
 #[derive(Clone, Default)]
 pub struct Meta {
     pub location: FileLocation,
     pub file_id: Option<FileID>,
+    type_knowledge: TypeKnowledge,
     value_knowledge: ValueKnowledge,
     variable_knowledge: VariableKnowledge,
 }
@@ -88,41 +25,59 @@ impl Meta {
         Meta {
             location: location.clone(),
             file_id: file_id.clone(),
+            type_knowledge: TypeKnowledge::default(),
             value_knowledge: ValueKnowledge::default(),
             variable_knowledge: VariableKnowledge::default(),
         }
     }
 
     #[must_use]
-    pub fn get_start(&self) -> usize {
+    pub fn start(&self) -> usize {
         self.location.start
     }
+
     #[must_use]
-    pub fn get_end(&self) -> usize {
+    pub fn end(&self) -> usize {
         self.location.end
     }
+
     #[must_use]
-    pub fn get_file_id(&self) -> Option<FileID> {
+    pub fn file_id(&self) -> Option<FileID> {
         self.file_id
     }
+
     #[must_use]
     pub fn file_location(&self) -> FileLocation {
         self.location.clone()
     }
+
     #[must_use]
-    pub fn get_value_knowledge(&self) -> &ValueKnowledge {
+    pub fn type_knowledge(&self) -> &TypeKnowledge {
+        &self.type_knowledge
+    }
+
+    #[must_use]
+    pub fn value_knowledge(&self) -> &ValueKnowledge {
         &self.value_knowledge
     }
+
     #[must_use]
-    pub fn get_variable_knowledge(&self) -> &VariableKnowledge {
+    pub fn variable_knowledge(&self) -> &VariableKnowledge {
         &self.variable_knowledge
     }
+
     #[must_use]
-    pub fn get_value_knowledge_mut(&mut self) -> &mut ValueKnowledge {
+    pub fn type_knowledge_mut(&mut self) -> &mut TypeKnowledge {
+        &mut self.type_knowledge
+    }
+
+    #[must_use]
+    pub fn value_knowledge_mut(&mut self) -> &mut ValueKnowledge {
         &mut self.value_knowledge
     }
+
     #[must_use]
-    pub fn get_variable_knowledge_mut(&mut self) -> &mut VariableKnowledge {
+    pub fn variable_knowledge_mut(&mut self) -> &mut VariableKnowledge {
         &mut self.variable_knowledge
     }
 }
@@ -146,12 +101,6 @@ impl PartialEq for Meta {
 
 impl Eq for Meta {}
 
-impl From<&ast::Meta> for Meta {
-    fn from(meta: &ast::Meta) -> Meta {
-        Meta::new(&meta.location, &meta.file_id)
-    }
-}
-
 #[derive(Clone)]
 pub enum Statement {
     IfThenElse {
@@ -164,10 +113,14 @@ pub enum Statement {
         meta: Meta,
         value: Expression,
     },
+    // Array and component signal assignments (where `access` is non-empty) are
+    // rewritten using `Update` expressions. This allows us to track version
+    // information when transforming the CFG to SSA form.
+    //
+    // Note: The type metadata in `meta` tracks the type of the variable `var`.
     Substitution {
         meta: Meta,
         var: VariableName,
-        access: Vec<Access>,
         op: AssignOp,
         rhe: Expression,
     },
@@ -186,69 +139,115 @@ pub enum Statement {
     },
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
-pub enum StatementType {
-    IfThenElse,
-    Return,
-    Declaration,
-    Substitution,
-    ConstraintEquality,
-    LogCall,
-    Assert,
-}
-
 #[derive(Clone, Hash)]
 pub enum Expression {
+    /// An infix operation of the form `lhe * rhe`.
     InfixOp {
         meta: Meta,
         lhe: Box<Expression>,
         infix_op: ExpressionInfixOpcode,
         rhe: Box<Expression>,
     },
+    /// A prefix operation of the form `* rhe`.
     PrefixOp {
         meta: Meta,
         prefix_op: ExpressionPrefixOpcode,
         rhe: Box<Expression>,
     },
-    InlineSwitchOp {
+    /// An inline switch operation (or inline if-then-else) of the form `cond?
+    /// if_true: if_false`.
+    SwitchOp {
         meta: Meta,
         cond: Box<Expression>,
         if_true: Box<Expression>,
         if_false: Box<Expression>,
     },
+    /// A local variable, signal, or component.
     Variable {
         meta: Meta,
         name: VariableName,
-        access: Vec<Access>,
     },
-    Signal {
-        meta: Meta,
-        name: VariableName,
-        access: Vec<Access>,
-    },
-    Component {
-        meta: Meta,
-        name: VariableName,
-        access: Vec<Access>,
-    },
+    /// A constant field element.
     Number(Meta, BigInt),
+    /// A function call node.
     Call {
         meta: Meta,
-        id: String,
+        name: String,
         args: Vec<Expression>,
     },
-    ArrayInLine {
+    /// An inline array on the form `[value, ...]`.
+    Array {
         meta: Meta,
         values: Vec<Expression>,
     },
+    /// An `Access` node represents an array access of the form `a[i]...[k]`.
+    Access {
+        meta: Meta,
+        var: VariableName,
+        access: Vec<AccessType>,
+    },
+    /// Updates of the form `var[i]...[k] = rhe` lift to IR statements of the
+    /// form `var = update(var, (i, ..., k), rhe)`. This is needed when we
+    /// convert the CFG to SSA. Since arrays are versioned atomically, we need
+    /// to track which version of the array that is updated to obtain the new
+    /// version. (This is needed to track variable use, dead assignments, and
+    /// data flow.)
+    ///
+    /// Note: The type metadata in `meta` tracks the type of the variable `var`.
+    Update {
+        meta: Meta,
+        var: VariableName,
+        access: Vec<AccessType>,
+        rhe: Box<Expression>,
+    },
+    /// An SSA phi-expression.
     Phi {
         meta: Meta,
         args: Vec<VariableName>,
     },
 }
 
-/// There are only two hard things in computer science: cache invalidation and
-/// naming things.
+#[derive(Clone)]
+pub enum VariableType {
+    Local { dimensions: Vec<Expression> },
+    Component { dimensions: Vec<Expression> },
+    Signal { signal_type: SignalType, dimensions: Vec<Expression> },
+}
+
+impl fmt::Display for VariableType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        use VariableType::*;
+        match self {
+            Local { .. } => write!(f, "var"),
+            Component { .. } => write!(f, "component"),
+            Signal { signal_type, .. } => write!(f, "signal {signal_type}"),
+        }
+    }
+}
+
+#[derive(Copy, Clone, PartialEq)]
+pub enum SignalType {
+    Input,
+    Output,
+    Intermediate,
+}
+
+impl fmt::Display for SignalType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        use SignalType::*;
+        match self {
+            Input => write!(f, "input"),
+            Output => write!(f, "output"),
+            Intermediate => Ok(()), // Intermediate signals have no explicit signal type.
+        }
+    }
+}
+
+/// A IR variable name consists of three components.
+///
+///   1. The original name (obtained from the source code).
+///   2. An optional suffix (used to ensure uniqueness when lifting to IR).
+///   3. An optional version (applied when the CFG is converted to SSA form).
 #[derive(Clone, Hash, PartialEq, Eq)]
 pub struct VariableName {
     /// This is the original name of the variable from the function or template
@@ -266,7 +265,7 @@ pub struct VariableName {
 impl VariableName {
     /// Returns a new variable name with the given name (without suffix or version).
     #[must_use]
-    pub fn name<N: ToString>(name: N) -> VariableName {
+    pub fn from_name<N: ToString>(name: N) -> VariableName {
         VariableName {
             name: name.to_string(),
             suffix: None,
@@ -274,38 +273,18 @@ impl VariableName {
         }
     }
 
-    /// Returns a new variable name with the given name and suffix.
     #[must_use]
-    pub fn name_with_suffix<N: ToString, S: ToString>(name: N, suffix: S) -> VariableName {
-        VariableName {
-            name: name.to_string(),
-            suffix: Some(suffix.to_string()),
-            version: None,
-        }
-    }
-
-    /// Returns a new variable name with the given name and version.
-    #[must_use]
-    pub fn name_with_version<N: ToString>(name: N, version: Version) -> VariableName {
-        VariableName {
-            name: name.to_string(),
-            suffix: None,
-            version: Some(version),
-        }
-    }
-
-    #[must_use]
-    pub fn get_name(&self) -> &String {
+    pub fn name(&self) -> &String {
         &self.name
     }
 
     #[must_use]
-    pub fn get_suffix(&self) -> &Option<String> {
+    pub fn suffix(&self) -> &Option<String> {
         &self.suffix
     }
 
     #[must_use]
-    pub fn get_version(&self) -> &Option<Version> {
+    pub fn version(&self) -> &Option<Version> {
         &self.version
     }
 
@@ -342,35 +321,10 @@ impl VariableName {
     }
 }
 
-impl From<String> for VariableName {
-    fn from(name: String) -> VariableName {
-        Self::from(&name[..])
-    }
-}
-
-impl From<&str> for VariableName {
-    fn from(name: &str) -> VariableName {
-        // We assume that the input string uses '.' to separate the name from the suffix.
-        let tokens: Vec<_> = name.split('.').collect();
-        match tokens.len() {
-            1 => VariableName::name(tokens[0]),
-            2 => VariableName::name_with_suffix(tokens[0], tokens[1]),
-            _ => panic!("invalid variable name"),
-        }
-    }
-}
-
 /// Display for VariableName only outputs the original name.
 impl fmt::Display for VariableName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        write!(f, "{}", self.name)?;
-        if let Some(suffix) = self.get_suffix() {
-            write!(f, "_{suffix}")?;
-        }
-        if let Some(version) = self.get_version() {
-            write!(f, ".{version}")?;
-        }
-        Ok(())
+        write!(f, "{}", self.name)
     }
 }
 
@@ -378,46 +332,30 @@ impl fmt::Display for VariableName {
 impl fmt::Debug for VariableName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "{}", self.name)?;
-        if let Some(suffix) = self.get_suffix() {
+        if let Some(suffix) = self.suffix() {
             write!(f, "_{suffix}")?;
         }
-        if let Some(version) = self.get_version() {
+        if let Some(version) = self.version() {
             write!(f, ".{version}")?;
         }
         Ok(())
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
-pub enum ExpressionType {
-    InfixOp,
-    PrefixOp,
-    InlineSwitchOp,
-    Variable,
-    Signal,
-    Component,
-    Number,
-    Call,
-    ArrayInLine,
-    Phi,
-}
-
 #[derive(Clone, Hash, Eq, PartialEq)]
-pub enum Access {
+pub enum AccessType {
     ArrayAccess(Expression),
     ComponentAccess(String),
 }
 
 #[derive(Copy, Clone, Hash, Eq, PartialEq)]
 pub enum AssignOp {
-    /// A variable assignment (using `=`).
-    AssignVar,
     /// A signal assignment (using `<--`)
     AssignSignal,
-    /// A component initialization (using `=`)
-    AssignComponent,
     /// A signal assignment (using `<==`)
     AssignConstraintSignal,
+    /// A local variable assignment or component initialization (using `=`).
+    AssignLocalOrComponent,
 }
 
 #[derive(Copy, Clone, Hash, Eq, PartialEq)]
@@ -444,63 +382,9 @@ pub enum ExpressionInfixOpcode {
     BitXor,
 }
 
-impl From<&ast::ExpressionInfixOpcode> for ExpressionInfixOpcode {
-    fn from(op: &ast::ExpressionInfixOpcode) -> ExpressionInfixOpcode {
-        use ast::ExpressionInfixOpcode::*;
-        match op {
-            Mul => ExpressionInfixOpcode::Mul,
-            Div => ExpressionInfixOpcode::Div,
-            Add => ExpressionInfixOpcode::Add,
-            Sub => ExpressionInfixOpcode::Sub,
-            Pow => ExpressionInfixOpcode::Pow,
-            IntDiv => ExpressionInfixOpcode::IntDiv,
-            Mod => ExpressionInfixOpcode::Mod,
-            ShiftL => ExpressionInfixOpcode::ShiftL,
-            ShiftR => ExpressionInfixOpcode::ShiftR,
-            LesserEq => ExpressionInfixOpcode::LesserEq,
-            GreaterEq => ExpressionInfixOpcode::GreaterEq,
-            Lesser => ExpressionInfixOpcode::Lesser,
-            Greater => ExpressionInfixOpcode::Greater,
-            Eq => ExpressionInfixOpcode::Eq,
-            NotEq => ExpressionInfixOpcode::NotEq,
-            BoolOr => ExpressionInfixOpcode::BoolOr,
-            BoolAnd => ExpressionInfixOpcode::BoolAnd,
-            BitOr => ExpressionInfixOpcode::BitOr,
-            BitAnd => ExpressionInfixOpcode::BitAnd,
-            BitXor => ExpressionInfixOpcode::BitXor,
-        }
-    }
-}
-
 #[derive(Copy, Clone, Hash, Eq, PartialEq)]
 pub enum ExpressionPrefixOpcode {
     Sub,
     BoolNot,
     Complement,
-}
-
-impl From<&ast::ExpressionPrefixOpcode> for ExpressionPrefixOpcode {
-    fn from(op: &ast::ExpressionPrefixOpcode) -> ExpressionPrefixOpcode {
-        use ast::ExpressionPrefixOpcode::*;
-        match op {
-            Sub => ExpressionPrefixOpcode::Sub,
-            BoolNot => ExpressionPrefixOpcode::BoolNot,
-            Complement => ExpressionPrefixOpcode::Complement,
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use proptest::prelude::*;
-
-    proptest! {
-        #[test]
-        fn variable_name_from_string(name in "[$_]*[a-zA-Z][a-zA-Z$_0-9]*") {
-            use super::VariableName;
-            let var = VariableName::from(name);
-            assert!(var.get_suffix().is_none());
-            assert!(var.get_version().is_none());
-        }
-    }
 }

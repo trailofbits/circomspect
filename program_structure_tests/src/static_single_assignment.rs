@@ -1,11 +1,45 @@
 use std::collections::HashSet;
 
 use parser::parse_definition;
-use program_structure::cfg::basic_block::BasicBlock;
-use program_structure::cfg::Cfg;
+use program_structure::cfg::{BasicBlock, Cfg, IntoCfg};
+use program_structure::error_definition::ReportCollection;
 use program_structure::ir::variable_meta::VariableMeta;
 use program_structure::ir::{AssignOp, Statement, VariableName};
 use program_structure::ssa::traits::SSAStatement;
+
+#[test]
+fn test_ssa_with_array() {
+    let src = r#"
+        template F(x) {
+            var y[2] = [0, 1];
+            signal in;
+            signal out;
+            component c = G(y);
+
+            y[0] += y[1] * x;
+            c.in <== in + y;
+            out <== c.out;
+        }
+    "#;
+    validate_ssa(src, &["x.0", "y.0", "y.1", "in", "out", "c"]);
+}
+
+#[test]
+fn test_ssa_with_components_and_signals() {
+    let src = r#"
+        template F(x) {
+            var y = 0;
+            signal in;
+            signal out;
+            component c = G(y);
+
+            y += y * x;
+            c.in <== in + y;
+            out <== c.out;
+        }
+    "#;
+    validate_ssa(src, &["x.0", "y.0", "y.1", "in", "out", "c"]);
+}
 
 #[test]
 fn test_ssa_from_if() {
@@ -91,10 +125,17 @@ fn test_ssa_from_nested_while() {
     validate_ssa(&src, &["x.0", "y.0", "y.1", "y.2", "y.3", "y.4"]);
 }
 
+
+
 fn validate_ssa(src: &str, variables: &[&str]) {
     // 1. Generate CFG and convert to SSA.
-    let (cfg, _) = parse_definition(src).unwrap().try_into().unwrap();
-    let cfg = cfg.into_ssa().unwrap();
+    let mut reports = ReportCollection::new();
+    let cfg = parse_definition(src)
+        .unwrap()
+        .into_cfg(&mut reports)
+        .unwrap()
+        .into_ssa()
+        .unwrap();
 
     // 2. Check that each variable is assigned at most once.
     use AssignOp::*;
@@ -105,7 +146,7 @@ fn validate_ssa(src: &str, variables: &[&str]) {
         .flat_map(|basic_block| basic_block.iter())
         .filter_map(|stmt| match stmt {
             Substitution {
-                var, op: AssignVar, ..
+                var, op: AssignLocalOrComponent, ..
             } => Some(var),
             _ => None,
         })
@@ -113,13 +154,13 @@ fn validate_ssa(src: &str, variables: &[&str]) {
     assert!(result);
 
     // 3. Check that all variables are written before they are read.
-    let mut env = cfg.get_parameters().iter().cloned().collect();
-    validate_reads(cfg.get_entry_block(), &cfg, &mut env);
+    let mut env = cfg.parameters().iter().cloned().collect();
+    validate_reads(cfg.entry_block(), &cfg, &mut env);
 
     // 4. Verify declared variables.
     assert_eq!(
-        cfg.get_variables()
-            .map(|name| name.to_string())
+        cfg.variables()
+            .map(|name| format!("{:?}", name))  // Must use debug formatting here to include version.
             .collect::<HashSet<_>>(),
         variables
             .iter()
@@ -133,7 +174,7 @@ fn validate_reads(current_block: &BasicBlock, cfg: &Cfg, env: &mut HashSet<Varia
         // Ignore phi function arguments as they may be generated from a loop back-edge.
         if !stmt.is_phi_statement() {
             // Check that all read variables are in the environment.
-            for var_use in stmt.get_variables_read() {
+            for var_use in stmt.locals_read() {
                 assert!(
                     env.contains(var_use.get_name()),
                     "variable `{}` is read before it is written",
@@ -142,7 +183,7 @@ fn validate_reads(current_block: &BasicBlock, cfg: &Cfg, env: &mut HashSet<Varia
             }
         }
         // Check that no written variables are in the environment.
-        for var_use in VariableMeta::get_variables_written(stmt) {
+        for var_use in VariableMeta::locals_written(stmt) {
             assert!(
                 env.insert(var_use.get_name().clone()),
                 "variable `{}` is written multiple times",

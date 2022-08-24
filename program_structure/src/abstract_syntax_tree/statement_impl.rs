@@ -285,7 +285,13 @@ impl<'a> Display for Statement {
             While { cond, .. } => write!(f, "while {cond}"),
             Return { value, .. } => write!(f, "return {value}"),
             Declaration { name, xtype, .. } => write!(f, "{xtype} {name}"),
-            Substitution { var, op, rhe, .. } => write!(f, "{var} {op} {rhe}"),
+            Substitution { var, access, op, rhe, .. } => {
+                write!(f, "{var}")?;
+                for access in access {
+                    write!(f, "{access}")?;
+                }
+                write!(f, " {op} {rhe}")
+            },
             LogCall { arg, .. } => write!(f, "log({arg})"),
             // TODO: Remove this when switching to IR.
             Block { .. } => Ok(()),

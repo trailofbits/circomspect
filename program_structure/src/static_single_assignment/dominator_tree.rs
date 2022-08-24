@@ -69,7 +69,7 @@ fn compute_dominators<T: DirectedGraphNode>(basic_blocks: &[T]) -> DominatorInfo
         done = true;
         for i in 1..nof_blocks {
             let mut new_dominators: HashSet<usize> = (0..nof_blocks).collect();
-            for &j in basic_blocks[i].get_predecessors() {
+            for &j in basic_blocks[i].predecessors() {
                 new_dominators = new_dominators
                     .intersection(&dominators[j])
                     .copied()
@@ -145,8 +145,8 @@ fn compute_dominance_frontier<T: DirectedGraphNode>(
     let nof_blocks = basic_blocks.len();
     let mut dominance_frontier = vec![HashSet::new(); nof_blocks];
     for i in 0..nof_blocks {
-        if basic_blocks[i].get_predecessors().len() > 1 {
-            for &j in basic_blocks[i].get_predecessors() {
+        if basic_blocks[i].predecessors().len() > 1 {
+            for &j in basic_blocks[i].predecessors() {
                 let mut k = j;
                 while Some(k) != immediate_dominators[i] {
                     dominance_frontier[k].insert(i);
