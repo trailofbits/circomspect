@@ -12,6 +12,7 @@ use log::debug;
 mod errors;
 mod include_logic;
 mod parser_logic;
+use crate::errors::FileOsError;
 use include_logic::FileStack;
 use program_structure::ast::{Version, AST};
 use program_structure::error_definition::{Report, ReportCollection};
@@ -89,8 +90,19 @@ fn parse_file(
 ) -> Result<(FileID, AST, ReportCollection), Report> {
     let mut reports = ReportCollection::new();
 
+    // convert to absolute path, allowing sarif navigation
+    let file_path = match file_path.canonicalize() {
+        Ok(path) => path,
+        Err(_) => {
+            return Err(FileOsError {
+                path: format!("Could not get the absolute path of {:?}", file_path),
+            }
+            .into_report())
+        }
+    };
+
     debug!("reading file `{}`", file_path.display());
-    let (path_str, file_content) = open_file(file_path)?;
+    let (path_str, file_content) = open_file(&file_path)?;
     let file_id = file_library.add_file(path_str, file_content.clone());
 
     debug!("parsing file `{}`", file_path.display());
@@ -100,21 +112,21 @@ fn parse_file(
             reports.push(report);
         }
     }
-    match check_compiler_version(file_path, program.compiler_version, compiler_version) {
+    match check_compiler_version(&file_path, program.compiler_version, compiler_version) {
         Ok(warnings) => reports.extend(warnings),
         Err(error) => reports.push(error),
     }
     Ok((file_id, program, reports))
 }
 
-
 fn open_file(file_path: &PathBuf) -> Result<(String, String), Report> /* path, src*/ {
-    use errors::FileOsError;
     use std::fs::read_to_string;
     let path_str = format!("{}", file_path.display());
     read_to_string(file_path)
         .map(|contents| (path_str.clone(), contents))
-        .map_err(|_| FileOsError { path: path_str.clone() })
+        .map_err(|_| FileOsError {
+            path: path_str.clone(),
+        })
         .map_err(|error| error.into_report())
 }
 
