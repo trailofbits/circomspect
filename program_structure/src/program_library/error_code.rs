@@ -149,15 +149,15 @@ impl fmt::Display for ReportCode {
             NoOutputInInstance => "CA03",
             ErrorWat2Wasm => "W01",
             // Circomspect specific codes
-            ShadowingVariable => "CS0001",
-            ParameterNameCollision => "CS0002",
-            FieldElementComparison => "CS0003",
-            FieldElementArithmetic => "CS0004",
-            AssignSignalStatement => "CS0005",
-            DeadAssignment => "CS0006",
-            UnusedParameter => "CS0007",
-            ConstantBranchCondition => "CS0008",
-            NonStrictBinaryConversion => "CS0009",
+            ShadowingVariable => "ShadowingVariable",
+            ParameterNameCollision => "ParameterNameCollision",
+            FieldElementComparison => "FieldElementComparison",
+            FieldElementArithmetic => "FieldElementArithmetic",
+            AssignSignalStatement => "AssignSignalStatement",
+            DeadAssignment => "DeadAssignment",
+            UnusedParameter => "UnusedParameter",
+            ConstantBranchCondition => "ConstantBranchCondition",
+            NonStrictBinaryConversion => "NonStrictBinaryConversion",
         };
         f.write_str(string_format)
     }
