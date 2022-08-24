@@ -98,17 +98,22 @@ Signals should typically be assigned using the constraint assignment operator `<
 
 If a branching statement condition always evaluates to either `true` or `false`, this means that the branch is either always taken, or never taken. This typically indicates a mistake in the code which should be fixed.
 
+#### 5. Use of the non-strict versions of `Num2Bits` and `Bits2Num` (Warning)
 
-#### 5. Bitwise complement of field elements (Informational)
+Using `Num2Bits` to convert a field element to binary form is only safe if the input size is smaller than the size of the prime. If not, there may be multiple correct representations of the input which could cause issues since we typically want the output to be uniquely determined by the input.
+
+For example, Suppose that we create a component `n2b` given by `Num2Bits(254)` and set the input to `1`. Now, both the binary representation of `1` _and_ the representation of `p + 1` will satisfy the circuit, since both are 254-bit numbers. If you cannot restrict the input size below 254 bits you should use the strict versions `Num2Bits_strict` and `Bits2Num_strict` to convert to and from binary.
+
+#### 6. Bitwise complement of field elements (Informational)
 
 Circom supports taking the 256-bit complement `~x` of a field element `x`. Since the result is reduced modulo `p`, it will typically not satisfy the expected relations `(~x)ᵢ == ~(xᵢ)` for each bit `i`, which could lead to surprising results.
 
 
-#### 6. Field element arithmetic (Informational)
+#### 7. Field element arithmetic (Informational)
 
 Circom supports a large number of arithmetic expressions. Since arithmetic expressions can overflow or underflow in Circom it is worth paying extra attention to field arithmetic to ensure that elements are constrained to the correct range.
 
 
-#### 7. Field element comparisons (Informational)
+#### 8. Field element comparisons (Informational)
 
 Field elements are normalized to the interval `(-p/2, p/2]` before they are compared, by first reducing them modulo `p` and then mapping them to the correct interval by subtracting `p` from the value `x`, if `x` is greater than `p/2`. In particular, this means that `p/2 + 1 < 0 < p/2 - 1`. This can be surprising if you are used to thinking of elements in `GF(p)` as unsigned integers.
