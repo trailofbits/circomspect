@@ -82,7 +82,7 @@ impl NoSideEffectsWarning {
             report.add_primary(
                 self.file_location,
                 file_id,
-                format!("The variable `{}` could be removed.", self.name),
+                format!("This assignment to `{}` could be removed.", self.name),
             );
         }
         report
