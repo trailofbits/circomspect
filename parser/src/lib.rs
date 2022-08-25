@@ -32,11 +32,11 @@ pub enum ParseResult {
 pub fn parse_files(file_paths: &Vec<PathBuf>, compiler_version: &str) -> ParseResult {
     let compiler_version = parse_version_string(compiler_version);
 
-    let mut file_stack = FileStack::new(file_paths);
+    let mut reports = ReportCollection::new();
+    let mut file_stack = FileStack::new(file_paths, &mut reports);
     let mut file_library = FileLibrary::new();
     let mut definitions = HashMap::new();
     let mut main_components = Vec::new();
-    let mut reports = ReportCollection::new();
     while let Some(file_path) = FileStack::take_next(&mut file_stack) {
         match parse_file(
             &file_path,

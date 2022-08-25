@@ -1,6 +1,8 @@
+use crate::errors::FileOsError;
+
 use super::errors::IncludeError;
 use program_structure::ast::Include;
-use program_structure::error_definition::Report;
+use program_structure::error_definition::{Report, ReportCollection};
 use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
@@ -12,17 +14,17 @@ pub struct FileStack {
 }
 
 impl FileStack {
-    pub fn new(paths: &Vec<PathBuf>) -> FileStack {
+    pub fn new(paths: &Vec<PathBuf>, reports: &mut ReportCollection) -> FileStack {
         let mut result = FileStack {
             current_location: None,
             black_paths: HashSet::new(),
             stack: Vec::new(),
         };
-        result.add_files(paths);
+        result.add_files(paths, reports);
         result
     }
 
-    fn add_files(&mut self, paths: &Vec<PathBuf>) {
+    fn add_files(&mut self, paths: &Vec<PathBuf>, reports: &mut ReportCollection) {
         for path in paths {
             if path.is_dir() {
                 // Handle directories on a best effort basis only.
@@ -34,11 +36,18 @@ impl FileStack {
                         }
                     }
                 }
-                self.add_files(&paths);
+                self.add_files(&paths, reports);
             } else if let Some(extension) = path.extension() {
                 // Add Circom files to file stack.
                 if extension == "circom" {
-                    self.stack.push(path.clone());
+                    match fs::canonicalize(path) {
+                        Ok(path) => self.stack.push(path),
+                        Err(_) => {
+                            reports.push(FileOsError {
+                                path: path.display().to_string()
+                            }.into_report());
+                        }
+                    }
                 }
             }
         }
