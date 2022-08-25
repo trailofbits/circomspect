@@ -41,6 +41,7 @@ impl Merger {
                     meta,
                     parallel,
                 } => {
+                    println!("adding template `{name}`");
                     if self.contains_function(&name) || self.contains_template(&name) {
                         (Option::Some(name), meta)
                     } else {
@@ -65,6 +66,7 @@ impl Merger {
                     arg_location,
                     meta,
                 } => {
+                    println!("adding function `{name}`");
                     if self.contains_function(&name) || self.contains_template(&name) {
                         (Option::Some(name), meta)
                     } else {
@@ -84,13 +86,13 @@ impl Merger {
             };
             if let Option::Some(definition_name) = name {
                 let mut report = Report::error(
-                    String::from("Duplicated callable symbol"),
+                    String::from("Duplicated function or template."),
                     ReportCode::SameSymbolDeclaredTwice,
                 );
                 report.add_primary(
                     meta.file_location(),
                     file_id,
-                    format!("{} is already in use", definition_name),
+                    format!("The name `{}` is already used.", definition_name),
                 );
                 reports.push(report);
             }
