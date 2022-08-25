@@ -100,7 +100,10 @@ If a branching statement condition always evaluates to either `true` or `false`,
 
 #### 5. Use of the non-strict versions of `Num2Bits` and `Bits2Num` (Warning)
 
-Using `Num2Bits` to convert a field element to binary form is only safe if the input size is smaller than the size of the prime. If not, there may be multiple correct representations of the input which could cause issues since we typically want the output to be uniquely determined by the input.
+Using `Num2Bits` to convert a field element to binary form is only safe if the
+input size is smaller than the size of the prime. If not, there may be multiple
+correct representations of the input which could cause issues, since we
+typically want the output to be uniquely determined by the input.
 
 For example, Suppose that we create a component `n2b` given by `Num2Bits(254)` and set the input to `1`. Now, both the binary representation of `1` _and_ the representation of `p + 1` will satisfy the circuit, since both are 254-bit numbers. If you cannot restrict the input size below 254 bits you should use the strict versions `Num2Bits_strict` and `Bits2Num_strict` to convert to and from binary.
 
