@@ -1,4 +1,5 @@
 # Circomspect 🔎
+
 Circomspect is a static analyzer and linter for the [Circom](https://github.com/iden3/circom) programming language. The codebase borrows heavily from the Rust Circom compiler built by [iden3](https://github.com/iden3).
 
 Circomspect currently implements a number of analysis passes which can identify potential issues in Circom circuits. It is our goal to continue to add new analysis passes to be able to detect more issues in the future.
@@ -8,7 +9,7 @@ Circomspect currently implements a number of analysis passes which can identify 
 
 ## Building Circomspect
 
-To build circomspect, simply clone the repository and build the project by invoking `cargo build` in the project root.
+To build Circomspect, simply clone the repository and build the project by invoking `cargo build` in the project root.
 
 ```sh
   git clone https://github.com/trailofbits/circomspect
@@ -19,7 +20,7 @@ To build circomspect, simply clone the repository and build the project by invok
 
 ## Running Circomspect
 
-To run circomspect on a file or directory, simple run
+To run Circomspect on a file or directory, simple run
 
 ```sh
   circomspect path/to/circuit
@@ -36,7 +37,7 @@ The project currently implements analysis passes for the following types of issu
 
 #### 1. Side-effect free assignments (Warning)
 
-An assigned value which does not contribute either directly or indirectly to a constraint, or a function return value, typically indicates a mistake in the implementation of the circuit. For example, consider the following `BinSum` template from `circomlib` where we've changed the final constraint to introduce a bug.
+An assigned value which does not contribute either directly or indirectly to a constraint, or a function return value, typically indicates a mistake in the implementation of the circuit. For example, consider the following `BinSum` template from circomlib where we've changed the final constraint to introduce a bug.
 
 ```js
   template BinSum(n, ops) {
@@ -68,7 +69,7 @@ An assigned value which does not contribute either directly or indirectly to a c
   }
 ```
 
-Here, `lout` no longer influences the generated circuit, which is detected by `circomspect`.
+Here, `lout` no longer influences the generated circuit, which is detected by Circomspect.
 
 
 #### 2. Shadowing variable declarations (Warning)
@@ -96,7 +97,7 @@ Since a new variable `r` is declared in the while-statement body, the outer vari
 
 Signals should typically be assigned using the constraint assignment operator `<==`. This ensures that the circuit and witness generation stay in sync. If `<--` is used it is up to the developer to ensure that the signal is properly constrained.
 
-Sometimes more than one constraint is required to ensure that the assigned signal has the correct value. `circomspect` will try to list all constraints containing the assigned signal to make it easier for the developer (or reviewer) to ensure that the variable is properly constrained.
+Sometimes more than one constraint is required to ensure that the assigned signal has the correct value. Circomspect will try to list all constraints containing the assigned signal to make it easier for the developer (or reviewer) to ensure that the variable is properly constrained.
 
 The Tornado Cash codebase was originally affected by an issue of this type. For details see the Tornado Cash disclosure [here](https://tornado-cash.medium.com/tornado-cash-got-hacked-by-us-b1e012a3c9a8).
 
@@ -105,16 +106,17 @@ The Tornado Cash codebase was originally affected by an issue of this type. For 
 
 If a branching statement condition always evaluates to either `true` or `false`, this means that the branch is either always taken, or never taken. This typically indicates a mistake in the code which should be fixed.
 
-#### 5. Use of the non-strict versions of `Num2Bits` and `Bits2Num` (Warning)
+#### 5. Use of the non-strict versions of `Num2Bits` and `Bits2Num` from circomlib (Warning)
 
-Using `Num2Bits` to convert a field element to binary form is only safe if the
-input size is smaller than the size of the prime. If not, there may be multiple
-correct representations of the input which could cause issues, since we
-typically expect the circuit output to be uniquely determined by the input.
+Using `Num2Bits` and `Bits2Num` from circomlib to convert a field element to and
+from binary form is only safe if the input size is smaller than the size of the
+prime. If not, there may be multiple correct representations of the input which
+could cause issues, since we typically expect the circuit output to be uniquely
+determined by the input.
 
 For example, Suppose that we create a component `n2b` given by `Num2Bits(254)` and set the input to `1`. Now, both the binary representation of `1` _and_ the representation of `p + 1` will satisfy the circuit, since both are 254-bit numbers. If you cannot restrict the input size below 254 bits you should use the strict versions `Num2Bits_strict` and `Bits2Num_strict` to convert to and from binary.
 
-`circomspect` will generate a warning if it cannot prove that the input size passed to `Num2Bits` or `Bits2Num` is less than 254 bits.
+Circomspect will generate a warning if it cannot prove that the input size passed to `Num2Bits` or `Bits2Num` is less than 254 bits.
 
 
 #### 6. Bitwise complement of field elements (Informational)
