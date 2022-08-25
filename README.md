@@ -114,6 +114,8 @@ typically expect the circuit output to be uniquely determined by the input.
 
 For example, Suppose that we create a component `n2b` given by `Num2Bits(254)` and set the input to `1`. Now, both the binary representation of `1` _and_ the representation of `p + 1` will satisfy the circuit, since both are 254-bit numbers. If you cannot restrict the input size below 254 bits you should use the strict versions `Num2Bits_strict` and `Bits2Num_strict` to convert to and from binary.
 
+`circomspect` will generate a warning if it cannot prove that the input size passed to `Num2Bits` or `Bits2Num` is less than 254 bits.
+
 
 #### 6. Bitwise complement of field elements (Informational)
 
