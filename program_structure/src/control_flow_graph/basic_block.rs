@@ -146,7 +146,10 @@ impl BasicBlock {
     }
 
     pub fn propagate_types(&mut self, vars: &Declarations) {
-        trace!("propagating variable types for basic block {}", self.index());
+        trace!(
+            "propagating variable types for basic block {}",
+            self.index()
+        );
         for stmt in self.iter_mut() {
             stmt.propagate_types(vars);
         }
@@ -167,10 +170,7 @@ impl DirectedGraphNode for BasicBlock {
 
 impl VariableMeta for BasicBlock {
     fn cache_variable_use(&mut self) {
-        trace!(
-            "computing variable use for basic block {}",
-            self.index()
-        );
+        trace!("computing variable use for basic block {}", self.index());
         // Variable use for the block is simply the union of the variable use
         // over all statements in the block.
         for stmt in self.iter_mut() {
@@ -230,15 +230,11 @@ impl VariableMeta for BasicBlock {
     }
 
     fn locals_read(&self) -> &VariableUses {
-        self.meta()
-            .variable_knowledge()
-            .locals_read()
+        self.meta().variable_knowledge().locals_read()
     }
 
     fn locals_written(&self) -> &VariableUses {
-        self.meta()
-            .variable_knowledge()
-            .locals_written()
+        self.meta().variable_knowledge().locals_written()
     }
 
     fn signals_read(&self) -> &VariableUses {
@@ -246,27 +242,24 @@ impl VariableMeta for BasicBlock {
     }
 
     fn signals_written(&self) -> &VariableUses {
-        self.meta()
-            .variable_knowledge()
-            .signals_written()
+        self.meta().variable_knowledge().signals_written()
     }
 
     fn components_read(&self) -> &VariableUses {
-        self.meta()
-            .variable_knowledge()
-            .components_read()
+        self.meta().variable_knowledge().components_read()
     }
 
     fn components_written(&self) -> &VariableUses {
-        self.meta()
-            .variable_knowledge()
-            .components_written()
+        self.meta().variable_knowledge().components_written()
     }
 }
 
 impl fmt::Debug for BasicBlock {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let lines = self.iter().map(|stmt| format!("{:?}", stmt)).collect::<Vec<_>>();
+        let lines = self
+            .iter()
+            .map(|stmt| format!("{:?}", stmt))
+            .collect::<Vec<_>>();
         let width = lines
             .iter()
             .map(|line| line.len())

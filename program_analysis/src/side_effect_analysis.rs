@@ -3,10 +3,10 @@ use std::collections::HashSet;
 
 use program_structure::cfg::Cfg;
 use program_structure::error_code::ReportCode;
-use program_structure::file_definition::{FileID, FileLocation};
 use program_structure::error_definition::{Report, ReportCollection};
-use program_structure::ir::{SignalType, Statement, VariableName, VariableType};
+use program_structure::file_definition::{FileID, FileLocation};
 use program_structure::ir::variable_meta::VariableUse;
+use program_structure::ir::{SignalType, Statement, VariableName, VariableType};
 
 use crate::taint_analysis::run_taint_analysis;
 
@@ -55,8 +55,7 @@ impl UnusedParameterWarning {
                 file_id,
                 format!(
                     "The value of `{}` is never used in `{}`.",
-                    self.variable_name,
-                    self.function_name
+                    self.variable_name, self.function_name
                 ),
             );
         }
@@ -126,13 +125,13 @@ pub fn run_side_effect_analysis(cfg: &Cfg) -> ReportCollection {
                 // TODO: Restrict to constraints which affect input or output
                 // signals, either directly or indirectly. Also, consider adding
                 // `Assert`.
-                ConstraintEquality { meta, ..}
-                | IfThenElse { meta, .. }
-                | Return { meta, .. } => {
-                    sinks.extend(meta.variable_knowledge().variables_read().map(
-                        |var| var.name().clone()
-                    ));
-                },
+                ConstraintEquality { meta, .. } | IfThenElse { meta, .. } | Return { meta, .. } => {
+                    sinks.extend(
+                        meta.variable_knowledge()
+                            .variables_read()
+                            .map(|var| var.name().clone()),
+                    );
+                }
                 _ => {}
             }
         }
@@ -143,8 +142,7 @@ pub fn run_side_effect_analysis(cfg: &Cfg) -> ReportCollection {
         // If the source is also a sink we break early.
         if sinks.contains(source.name()) {
             continue;
-        }
-        else if taint_analysis.single_step_taint(source.name()).is_empty() {
+        } else if taint_analysis.single_step_taint(source.name()).is_empty() {
             // If the variable doesn't flow to anything at all, it is unused.
             if cfg.parameters().contains(source.name()) {
                 reports.push(build_unused_param(cfg.name(), source))
@@ -183,7 +181,8 @@ fn build_no_side_effect(definition: &VariableUse) -> Report {
         name: definition.name().to_string(),
         file_id: definition.meta().file_id(),
         file_location: definition.meta().file_location(),
-    }.into_report()
+    }
+    .into_report()
 }
 
 #[cfg(test)]

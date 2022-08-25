@@ -178,7 +178,10 @@ fn validate_cfg(
 ) {
     // 1. Generate CFG from source.
     let mut reports = ReportCollection::new();
-    let cfg = parse_definition(src).unwrap().into_cfg(&mut reports).unwrap();
+    let cfg = parse_definition(src)
+        .unwrap()
+        .into_cfg(&mut reports)
+        .unwrap();
 
     // 2. Verify declared variables.
     assert_eq!(
@@ -219,12 +222,8 @@ fn validate_cfg(
     for first_block in cfg.iter() {
         for second_block in cfg.iter() {
             assert_eq!(
-                first_block
-                    .successors()
-                    .contains(&second_block.index()),
-                second_block
-                    .predecessors()
-                    .contains(&first_block.index()),
+                first_block.successors().contains(&second_block.index()),
+                second_block.predecessors().contains(&first_block.index()),
                 "basic block {} is not a predecessor of a successor block {}",
                 first_block.index(),
                 second_block.index()

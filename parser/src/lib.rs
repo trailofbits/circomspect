@@ -107,14 +107,15 @@ fn parse_file(
     Ok((file_id, program, reports))
 }
 
-
 fn open_file(file_path: &PathBuf) -> Result<(String, String), Report> /* path, src*/ {
     use errors::FileOsError;
     use std::fs::read_to_string;
     let path_str = format!("{}", file_path.display());
     read_to_string(file_path)
         .map(|contents| (path_str.clone(), contents))
-        .map_err(|_| FileOsError { path: path_str.clone() })
+        .map_err(|_| FileOsError {
+            path: path_str.clone(),
+        })
         .map_err(|error| error.into_report())
 }
 

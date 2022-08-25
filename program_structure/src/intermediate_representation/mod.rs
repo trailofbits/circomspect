@@ -6,7 +6,7 @@ pub mod variable_meta;
 
 mod expression_impl;
 mod ir;
-mod statement_impl;
 pub mod lifting;
+mod statement_impl;
 
 pub use ir::*;

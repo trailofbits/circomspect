@@ -1,9 +1,9 @@
 use crate::ast;
 use crate::error_definition::ReportCollection;
 
+use crate::ir;
 use crate::ir::declarations::{Declaration, Declarations};
 use crate::ir::errors::{IRError, IRResult};
-use crate::ir;
 
 /// The `TryLift` trait is used to lift an AST node to an IR node. This may fail
 /// and produce an error. Even if the operation succeeds it may produce warnings
@@ -13,13 +13,17 @@ pub(crate) trait TryLift<Context> {
     type Error;
 
     /// Generate a corresponding IR node of type `Self::IR` from an AST node.
-    fn try_lift(&self, context: Context, reports: &mut ReportCollection) -> Result<Self::IR, Self::Error>;
+    fn try_lift(
+        &self,
+        context: Context,
+        reports: &mut ReportCollection,
+    ) -> Result<Self::IR, Self::Error>;
 }
 
 #[derive(Default)]
 pub(crate) struct LiftingEnvironment {
     /// Tracks all variable declarations.
-    declarations: Declarations
+    declarations: Declarations,
 }
 
 impl LiftingEnvironment {
@@ -88,19 +92,15 @@ impl TryLift<()> for ast::Statement {
                     lhe: lhe.try_lift((), reports)?,
                     rhe: rhe.try_lift((), reports)?,
                 })
-            },
-            ast::Statement::LogCall { meta, arg } => {
-                Ok(ir::Statement::LogCall {
-                    meta: meta.try_lift((), reports)?,
-                    arg: arg.try_lift((), reports)?,
-                })
-            },
-            ast::Statement::Assert { meta, arg } => {
-                Ok(ir::Statement::Assert {
-                    meta: meta.try_lift((), reports)?,
-                    arg: arg.try_lift((), reports)?,
-                })
-            },
+            }
+            ast::Statement::LogCall { meta, arg } => Ok(ir::Statement::LogCall {
+                meta: meta.try_lift((), reports)?,
+                arg: arg.try_lift((), reports)?,
+            }),
+            ast::Statement::Assert { meta, arg } => Ok(ir::Statement::Assert {
+                meta: meta.try_lift((), reports)?,
+                arg: arg.try_lift((), reports)?,
+            }),
             ast::Statement::Block { .. }
             | ast::Statement::While { .. }
             | ast::Statement::IfThenElse { .. }
@@ -168,7 +168,10 @@ impl TryLift<()> for ast::Expression {
                     })
                 }
             }
-            ast::Expression::Number(meta, value) => Ok(ir::Expression::Number(meta.try_lift((), reports)?, value.clone())),
+            ast::Expression::Number(meta, value) => Ok(ir::Expression::Number(
+                meta.try_lift((), reports)?,
+                value.clone(),
+            )),
             ast::Expression::Call { meta, id, args } => Ok(ir::Expression::Call {
                 meta: meta.try_lift((), reports)?,
                 name: id.clone(),
@@ -203,7 +206,11 @@ impl TryLift<&Vec<ast::Expression>> for ast::VariableType {
     type IR = ir::VariableType;
     type Error = IRError;
 
-    fn try_lift(&self, dimensions: &Vec<ast::Expression>, reports: &mut ReportCollection) -> IRResult<Self::IR> {
+    fn try_lift(
+        &self,
+        dimensions: &Vec<ast::Expression>,
+        reports: &mut ReportCollection,
+    ) -> IRResult<Self::IR> {
         let dimensions = dimensions
             .iter()
             .map(|dim| dim.try_lift((), reports))
@@ -211,12 +218,10 @@ impl TryLift<&Vec<ast::Expression>> for ast::VariableType {
         match self {
             ast::VariableType::Component => Ok(ir::VariableType::Component { dimensions }),
             ast::VariableType::Var => Ok(ir::VariableType::Local { dimensions }),
-            ast::VariableType::Signal(signal_type, _) => {
-                Ok(ir::VariableType::Signal {
-                    dimensions,
-                    signal_type: signal_type.try_lift((), reports)?
-                })
-            }
+            ast::VariableType::Signal(signal_type, _) => Ok(ir::VariableType::Signal {
+                dimensions,
+                signal_type: signal_type.try_lift((), reports)?,
+            }),
         }
     }
 }
@@ -252,7 +257,7 @@ impl TryLift<&ast::Meta> for String {
             _ => Err(IRError::InvalidVariableNameError {
                 name: self.clone(),
                 file_id: meta.file_id,
-                file_location: meta.location.clone()
+                file_location: meta.location.clone(),
             }),
         }
     }
@@ -265,7 +270,9 @@ impl TryLift<()> for ast::Access {
 
     fn try_lift(&self, _: (), reports: &mut ReportCollection) -> IRResult<Self::IR> {
         match self {
-            ast::Access::ArrayAccess(e) => Ok(ir::AccessType::ArrayAccess(e.try_lift((), reports)?)),
+            ast::Access::ArrayAccess(e) => {
+                Ok(ir::AccessType::ArrayAccess(e.try_lift((), reports)?))
+            }
             ast::Access::ComponentAccess(s) => Ok(ir::AccessType::ComponentAccess(s.clone())),
         }
     }

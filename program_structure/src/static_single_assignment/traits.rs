@@ -1,6 +1,6 @@
 use log::trace;
-use std::hash::Hash;
 use std::collections::HashSet;
+use std::hash::Hash;
 
 use super::errors::SSAResult;
 
@@ -48,24 +48,20 @@ pub trait SSABasicBlock<Cfg: SSAConfig>: DirectedGraphNode {
     /// Note: We have to use dynamic dispatch here because returning `impl
     /// Trait` from trait methods is not a thing yet. For details, see
     /// rust-lang.github.io/impl-trait-initiative/RFCs/rpit-in-traits.html)
-    fn statements_mut<'a>(
-        &'a mut self,
-    ) -> Box<dyn Iterator<Item = &'a mut Cfg::Statement> + 'a>;
+    fn statements_mut<'a>(&'a mut self) -> Box<dyn Iterator<Item = &'a mut Cfg::Statement> + 'a>;
 
     /// Returns the set of variables written by the basic block.
     fn variables_written(&self) -> HashSet<Cfg::Variable> {
-        self.statements()
-            .fold(HashSet::new(), |mut vars, stmt| {
-                vars.extend(stmt.variables_written());
-                vars
-            })
+        self.statements().fold(HashSet::new(), |mut vars, stmt| {
+            vars.extend(stmt.variables_written());
+            vars
+        })
     }
 
     /// Returns true if the basic block has a phi statement for the given
     /// variable.
     fn has_phi_statement(&self, var: &Cfg::Variable) -> bool {
-        self.statements()
-            .any(|stmt| stmt.is_phi_statement_for(var))
+        self.statements().any(|stmt| stmt.is_phi_statement_for(var))
     }
 
     /// Inserts a new phi statement for the given variable at the top of the basic

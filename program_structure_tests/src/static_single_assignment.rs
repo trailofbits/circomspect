@@ -125,8 +125,6 @@ fn test_ssa_from_nested_while() {
     validate_ssa(&src, &["x.0", "y.0", "y.1", "y.2", "y.3", "y.4"]);
 }
 
-
-
 fn validate_ssa(src: &str, variables: &[&str]) {
     // 1. Generate CFG and convert to SSA.
     let mut reports = ReportCollection::new();
@@ -146,7 +144,9 @@ fn validate_ssa(src: &str, variables: &[&str]) {
         .flat_map(|basic_block| basic_block.iter())
         .filter_map(|stmt| match stmt {
             Substitution {
-                var, op: AssignLocalOrComponent, ..
+                var,
+                op: AssignLocalOrComponent,
+                ..
             } => Some(var),
             _ => None,
         })
@@ -160,7 +160,7 @@ fn validate_ssa(src: &str, variables: &[&str]) {
     // 4. Verify declared variables.
     assert_eq!(
         cfg.variables()
-            .map(|name| format!("{:?}", name))  // Must use debug formatting here to include version.
+            .map(|name| format!("{:?}", name)) // Must use debug formatting here to include version.
             .collect::<HashSet<_>>(),
         variables
             .iter()

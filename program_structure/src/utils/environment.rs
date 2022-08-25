@@ -207,9 +207,7 @@ where
         }
     }
     pub fn variable_iter(&self) -> impl Iterator<Item = (&String, &VC)> {
-        self.variables
-            .iter()
-            .flat_map(|block| block.iter())
+        self.variables.iter().flat_map(|block| block.iter())
     }
 }
 

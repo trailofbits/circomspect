@@ -196,7 +196,7 @@ impl Display for Expression {
                     write!(f, "{access}")?;
                 }
                 Ok(())
-            },
+            }
             InfixOp {
                 lhe, infix_op, rhe, ..
             } => write!(f, "({} {} {})", lhe, infix_op, rhe),

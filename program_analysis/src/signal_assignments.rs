@@ -1,4 +1,4 @@
-use log::{trace, debug};
+use log::{debug, trace};
 use program_structure::ir::AccessType;
 use std::collections::HashSet;
 
@@ -135,9 +135,7 @@ impl SignalData {
                 let lhe = constraint.lhe.signals_read().iter();
                 let rhe = constraint.rhe.signals_read().iter();
                 lhe.chain(rhe)
-                    .any(|signal_use|
-                        signal_use.name() == signal && signal_use.access() == access
-                    )
+                    .any(|signal_use| signal_use.name() == signal && signal_use.access() == access)
             })
             .collect()
     }
@@ -166,8 +164,8 @@ pub fn find_signal_assignments(cfg: &Cfg) -> ReportCollection {
     }
     let mut reports = ReportCollection::new();
     for assignment in signal_data.get_assignments() {
-        let constraint_meta = signal_data
-            .get_constraint_metas(&assignment.signal, &assignment.access);
+        let constraint_meta =
+            signal_data.get_constraint_metas(&assignment.signal, &assignment.access);
         reports.push(build_report(
             &assignment.signal,
             &assignment.access,
@@ -181,14 +179,14 @@ pub fn find_signal_assignments(cfg: &Cfg) -> ReportCollection {
 }
 
 fn visit_statement(stmt: &Statement, signal_data: &mut SignalData) {
-    use Statement::*;
     use Expression::*;
+    use Statement::*;
     match stmt {
         Substitution {
             meta,
             var,
             op,
-            rhe: Update { access, rhe, .. }
+            rhe: Update { access, rhe, .. },
         } => {
             match op {
                 AssignOp::AssignSignal => {
@@ -207,13 +205,8 @@ fn visit_statement(stmt: &Statement, signal_data: &mut SignalData) {
                 }
                 AssignOp::AssignLocalOrComponent => {}
             }
-        },
-        Substitution {
-            meta,
-            var,
-            op,
-            rhe,
-        } => {
+        }
+        Substitution { meta, var, op, rhe } => {
             match op {
                 AssignOp::AssignSignal => {
                     signal_data.add_assignment(var, &Vec::new(), meta);
@@ -256,7 +249,8 @@ fn build_report(
 
 #[must_use]
 fn access_to_string(access: &[AccessType]) -> String {
-    access.iter()
+    access
+        .iter()
         .map(|access| access.to_string())
         .collect::<Vec<String>>()
         .join("")

@@ -1,11 +1,11 @@
-use log::{trace, debug};
+use log::{debug, trace};
 use program_structure::cfg::parameters::Parameters;
 use program_structure::intermediate_representation::Meta;
 use std::collections::{HashMap, HashSet};
 
 use program_structure::cfg::Cfg;
-use program_structure::ir::{Expression, Statement, VariableName};
 use program_structure::ir::variable_meta::{VariableMeta, VariableUse};
+use program_structure::ir::{Expression, Statement, VariableName};
 
 #[derive(Clone, Default)]
 pub struct TaintAnalysis {
@@ -17,17 +17,10 @@ impl TaintAnalysis {
     fn new(parameters: &Parameters) -> TaintAnalysis {
         // Add parameter definitions to taint analysis.
         let mut result = TaintAnalysis::default();
-        let meta = Meta::new(
-            parameters.file_location(),
-            parameters.file_id()
-        );
+        let meta = Meta::new(parameters.file_location(), parameters.file_id());
         for name in parameters.iter() {
             trace!("adding parameter declaration for `{name:?}`");
-            let definition = VariableUse::new(
-                &meta,
-                name,
-                &Vec::new()
-            );
+            let definition = VariableUse::new(&meta, name, &Vec::new());
             result.add_definition(&definition);
         }
         result
@@ -65,10 +58,7 @@ impl TaintAnalysis {
 
     /// Returns variables tainted in a single step by `source`.
     pub fn single_step_taint(&self, source: &VariableName) -> HashSet<VariableUse> {
-        self.taint_map
-            .get(source)
-            .cloned()
-            .unwrap_or_default()
+        self.taint_map.get(source).cloned().unwrap_or_default()
     }
 
     /// Returns variables tainted in zero or more steps by `source`.
@@ -89,7 +79,9 @@ impl TaintAnalysis {
     }
 
     pub fn taints_any(&self, source: &VariableName, sinks: &HashSet<VariableName>) -> bool {
-        self.multi_step_taint(source).iter().any(|sink| sinks.contains(sink.name()))
+        self.multi_step_taint(source)
+            .iter()
+            .any(|sink| sinks.contains(sink.name()))
     }
 }
 
@@ -97,14 +89,20 @@ pub fn run_taint_analysis(cfg: &Cfg) -> TaintAnalysis {
     debug!("running taint analysis pass");
     let mut result = TaintAnalysis::new(cfg.parameters());
 
-    use Statement::*;
     use Expression::*;
+    use Statement::*;
     for basic_block in cfg.iter() {
         for stmt in basic_block.iter() {
             trace!("visiting statement `{stmt:?}`");
             // The first iterator will be non-empty for assignments only.
             for sink in stmt.variables_written() {
-                if !matches!(stmt, Substitution { rhe: Phi { .. }, .. }) {
+                if !matches!(
+                    stmt,
+                    Substitution {
+                        rhe: Phi { .. },
+                        ..
+                    }
+                ) {
                     // Add the definition to the result.
                     trace!("adding variable declaration for `{:?}`", sink.name());
                     result.add_definition(sink);

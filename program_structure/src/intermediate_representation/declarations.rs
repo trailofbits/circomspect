@@ -30,8 +30,7 @@ impl Declarations {
 
     #[must_use]
     pub fn get_type(&self, name: &VariableName) -> Option<&VariableType> {
-        self.get_declaration(name)
-            .map(|decl| decl.variable_type())
+        self.get_declaration(name).map(|decl| decl.variable_type())
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&VariableName, &Declaration)> {

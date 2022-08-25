@@ -1,14 +1,14 @@
 use anyhow::{anyhow, Result};
 use clap::{CommandFactory, Parser};
-use log::{info, error};
+use log::{error, info};
 use parser::ParseResult;
 use program_structure::function_data::FunctionInfo;
 use program_structure::template_data::TemplateInfo;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
-use std::str::FromStr;
 use std::process::ExitCode;
+use std::str::FromStr;
 
 use program_analysis::get_analysis_passes;
 use program_structure::cfg::{Cfg, IntoCfg};
@@ -126,7 +126,11 @@ fn filter_by_level(report: &Report, output_level: &Level) -> bool {
     }
 }
 
-fn serialize_reports(sarif_path: &PathBuf, reports: &ReportCollection, file_library: &FileLibrary) -> Result<()> {
+fn serialize_reports(
+    sarif_path: &PathBuf,
+    reports: &ReportCollection,
+    file_library: &FileLibrary,
+) -> Result<()> {
     let sarif = reports.to_sarif(file_library)?;
     let json = serde_json::to_string_pretty(&sarif)?;
     let mut sarif_file = File::create(sarif_path)?;

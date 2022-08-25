@@ -163,10 +163,7 @@ pub enum Expression {
         if_false: Box<Expression>,
     },
     /// A local variable, signal, or component.
-    Variable {
-        meta: Meta,
-        name: VariableName,
-    },
+    Variable { meta: Meta, name: VariableName },
     /// A constant field element.
     Number(Meta, BigInt),
     /// A function call node.
@@ -176,10 +173,7 @@ pub enum Expression {
         args: Vec<Expression>,
     },
     /// An inline array on the form `[value, ...]`.
-    Array {
-        meta: Meta,
-        values: Vec<Expression>,
-    },
+    Array { meta: Meta, values: Vec<Expression> },
     /// An `Access` node represents an array access of the form `a[i]...[k]`.
     Access {
         meta: Meta,
@@ -201,17 +195,21 @@ pub enum Expression {
         rhe: Box<Expression>,
     },
     /// An SSA phi-expression.
-    Phi {
-        meta: Meta,
-        args: Vec<VariableName>,
-    },
+    Phi { meta: Meta, args: Vec<VariableName> },
 }
 
 #[derive(Clone)]
 pub enum VariableType {
-    Local { dimensions: Vec<Expression> },
-    Component { dimensions: Vec<Expression> },
-    Signal { signal_type: SignalType, dimensions: Vec<Expression> },
+    Local {
+        dimensions: Vec<Expression>,
+    },
+    Component {
+        dimensions: Vec<Expression>,
+    },
+    Signal {
+        signal_type: SignalType,
+        dimensions: Vec<Expression>,
+    },
 }
 
 impl fmt::Display for VariableType {

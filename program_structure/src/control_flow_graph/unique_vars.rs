@@ -4,7 +4,7 @@ use std::convert::{TryFrom, TryInto};
 use super::errors::{CFGError, CFGResult};
 use super::parameters::Parameters;
 
-use crate::ast::{Expression, Meta, Statement, Access};
+use crate::ast::{Access, Expression, Meta, Statement};
 use crate::environment::VarEnvironment;
 use crate::error_definition::{Report, ReportCollection};
 use crate::file_definition::{FileID, FileLocation};
@@ -200,7 +200,12 @@ fn visit_statement(
 ) {
     use Statement::*;
     match stmt {
-        Declaration { meta, name, dimensions, .. } => {
+        Declaration {
+            meta,
+            name,
+            dimensions,
+            ..
+        } => {
             trace!("visiting declared variable `{name}`");
             for size in dimensions {
                 visit_expression(size, env);
@@ -222,7 +227,9 @@ fn visit_statement(
                 }
             }
         }
-        Substitution { var, rhe, access, .. } => {
+        Substitution {
+            var, rhe, access, ..
+        } => {
             trace!("visiting assigned variable '{var}'");
             *var = match env.get_current_version(var) {
                 Some(version) => {
@@ -237,7 +244,6 @@ fn visit_statement(
                 }
             }
             visit_expression(rhe, env);
-
         }
         Return { value, .. } => {
             visit_expression(value, env);

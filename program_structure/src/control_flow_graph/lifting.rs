@@ -6,21 +6,21 @@ use crate::ast::Definition;
 
 use crate::function_data::FunctionData;
 use crate::ir;
-use crate::ir::VariableType;
 use crate::ir::declarations::{Declaration, Declarations};
 use crate::ir::errors::IRResult;
 use crate::ir::lifting::{LiftingEnvironment, TryLift};
+use crate::ir::VariableType;
 
-use crate::ssa::dominator_tree::DominatorTree;
-use crate::nonempty_vec::NonEmptyVec;
 use crate::error_definition::ReportCollection;
+use crate::nonempty_vec::NonEmptyVec;
+use crate::ssa::dominator_tree::DominatorTree;
 use crate::template_data::TemplateData;
 
-use super::Cfg;
 use super::basic_block::BasicBlock;
 use super::errors::{CFGError, CFGResult};
 use super::parameters::Parameters;
 use super::unique_vars::ensure_unique_variables;
+use super::Cfg;
 
 type Index = usize;
 type IndexSet = HashSet<Index>;
@@ -33,7 +33,7 @@ pub trait IntoCfg {
 
 impl<T> IntoCfg for T
 where
-    T: TryLift<(), IR = Cfg, Error = CFGError>
+    T: TryLift<(), IR = Cfg, Error = CFGError>,
 {
     fn into_cfg(&self, reports: &mut ReportCollection) -> CFGResult<Cfg> {
         self.try_lift((), reports)
@@ -46,7 +46,9 @@ impl From<&Parameters> for LiftingEnvironment {
         for name in params.iter() {
             let declaration = Declaration::new(
                 name,
-                &VariableType::Local { dimensions: Vec::new() },
+                &VariableType::Local {
+                    dimensions: Vec::new(),
+                },
                 params.file_id(),
                 params.file_location(),
             );
@@ -93,16 +95,21 @@ impl TryLift<()> for Definition {
             Definition::Template { name, body, .. } => {
                 debug!("building CFG for template `{name}`");
                 try_lift_impl(name.clone(), self.into(), body.clone(), reports)
-            },
+            }
             Definition::Function { name, body, .. } => {
                 debug!("building CFG for function `{name}`");
                 try_lift_impl(name.clone(), self.into(), body.clone(), reports)
-            },
+            }
         }
     }
 }
 
-fn try_lift_impl(name: String, parameters: Parameters, mut body: ast::Statement, reports: &mut ReportCollection) -> CFGResult<Cfg> {
+fn try_lift_impl(
+    name: String,
+    parameters: Parameters,
+    mut body: ast::Statement,
+    reports: &mut ReportCollection,
+) -> CFGResult<Cfg> {
     // 1. Ensure that variable names are globally unique before converting to basic blocks.
     ensure_unique_variables(&mut body, &parameters, reports)?;
 
@@ -135,10 +142,8 @@ pub(crate) fn build_basic_blocks(
 ) -> IRResult<Vec<BasicBlock>> {
     assert!(matches!(body, ast::Statement::Block { .. }));
 
-    let meta =
-        body.get_meta().try_lift((), reports)?;
-    let mut basic_blocks =
-        BasicBlockVec::new(BasicBlock::new(Index::default(), meta));
+    let meta = body.get_meta().try_lift((), reports)?;
+    let mut basic_blocks = BasicBlockVec::new(BasicBlock::new(Index::default(), meta));
     visit_statement(body, env, reports, &mut basic_blocks)?;
     Ok(basic_blocks.into())
 }
@@ -229,8 +234,7 @@ fn visit_statement(
             complete_basic_block(basic_blocks, &pred_set, meta);
 
             trace!("visiting while body");
-            let mut pred_set =
-                visit_statement(while_body, env, reports, basic_blocks)?;
+            let mut pred_set = visit_statement(while_body, env, reports, basic_blocks)?;
             // The returned predecessor set will be empty if the last statement
             // of the body is not a conditional. In this case we need to add the
             // last block of the body to complete the corresponding block.
@@ -274,8 +278,7 @@ fn visit_statement(
             complete_basic_block(basic_blocks, &pred_set, meta);
 
             trace!("visiting true if-statement branch");
-            let mut if_pred_set =
-                visit_statement(if_case, env, reports, basic_blocks)?;
+            let mut if_pred_set = visit_statement(if_case, env, reports, basic_blocks)?;
             // The returned predecessor set will be empty if the last statement
             // of the body is not a conditional. In this case we need to add the
             // last block of the body to complete the corresponding block.
@@ -290,8 +293,7 @@ fn visit_statement(
                 let pred_set = HashSet::from([current_index]);
                 complete_basic_block(basic_blocks, &pred_set, meta);
 
-                let mut else_pred_set =
-                    visit_statement(else_case, env, reports, basic_blocks)?;
+                let mut else_pred_set = visit_statement(else_case, env, reports, basic_blocks)?;
                 // The returned predecessor set will be empty if the last statement
                 // of the body is not a conditional. In this case we need to add the
                 // last block of the body to complete the corresponding block.
@@ -316,7 +318,7 @@ fn visit_statement(
                 &name.try_lift(meta, reports)?,
                 &xtype.try_lift(dimensions, reports)?,
                 &meta.file_id,
-                &meta.location
+                &meta.location,
             ));
             Ok(HashSet::new())
         }

@@ -2,8 +2,8 @@ use super::errors::IncludeError;
 use program_structure::ast::Include;
 use program_structure::error_definition::Report;
 use std::collections::HashSet;
-use std::path::PathBuf;
 use std::fs;
+use std::path::PathBuf;
 
 pub struct FileStack {
     current_location: Option<PathBuf>,
@@ -45,10 +45,7 @@ impl FileStack {
     }
 
     pub fn add_include(&mut self, include: &Include) -> Result<(), Report> {
-        let mut location = self
-            .current_location
-            .clone()
-            .expect("parsing file");
+        let mut location = self.current_location.clone().expect("parsing file");
         location.push(include.path.clone());
         match fs::canonicalize(location) {
             Ok(path) => {
@@ -56,12 +53,13 @@ impl FileStack {
                     self.stack.push(path);
                 }
                 Ok(())
-            },
+            }
             Err(_) => Err(IncludeError {
                 path: include.path.clone(),
                 file_id: include.meta.file_id,
                 file_location: include.meta.file_location(),
-            }.into_report())
+            }
+            .into_report()),
         }
     }
 

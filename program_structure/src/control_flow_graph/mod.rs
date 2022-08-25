@@ -3,10 +3,10 @@ pub mod errors;
 pub mod parameters;
 
 mod cfg;
-mod ssa_impl;
 mod lifting;
+mod ssa_impl;
 mod unique_vars;
 
-pub use cfg::{Cfg, Index};
 pub use basic_block::BasicBlock;
+pub use cfg::{Cfg, Index};
 pub use lifting::IntoCfg;

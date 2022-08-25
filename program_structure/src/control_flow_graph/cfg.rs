@@ -1,5 +1,5 @@
-use std::fmt;
 use log::{debug, trace};
+use std::fmt;
 
 use crate::file_definition::FileID;
 use crate::ir::declarations::{Declaration, Declarations};
@@ -214,7 +214,7 @@ impl Cfg {
     }
 
     /// Propagate constant values along the CFG.
-    pub (crate) fn propagate_values(&mut self) {
+    pub(crate) fn propagate_values(&mut self) {
         debug!("propagating constant values for `{}`", self.name());
         let mut env = ValueEnvironment::new();
         let mut rerun = true;

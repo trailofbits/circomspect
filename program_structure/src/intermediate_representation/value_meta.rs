@@ -1,12 +1,12 @@
-use std::fmt;
-use std::collections::HashMap;
 use num_bigint::BigInt;
+use std::collections::HashMap;
+use std::fmt;
 
 use super::ir::VariableName;
 
 #[derive(Default, Clone)]
 pub struct ValueEnvironment {
-    reduces_to: HashMap<VariableName, ValueReduction>
+    reduces_to: HashMap<VariableName, ValueReduction>,
 }
 
 impl ValueEnvironment {

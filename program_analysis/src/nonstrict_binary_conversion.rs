@@ -9,12 +9,17 @@ use program_structure::ir::value_meta::{ValueMeta, ValueReduction};
 use program_structure::ir::*;
 
 pub enum NonStrictBinaryConversionWarning {
-    Num2Bits { file_id: Option<FileID>, location: FileLocation },
-    Bits2Num { file_id: Option<FileID>, location: FileLocation },
+    Num2Bits {
+        file_id: Option<FileID>,
+        location: FileLocation,
+    },
+    Bits2Num {
+        file_id: Option<FileID>,
+        location: FileLocation,
+    },
 }
 
-
-impl  NonStrictBinaryConversionWarning {
+impl NonStrictBinaryConversionWarning {
     pub fn into_report(self) -> Report {
         match self {
             NonStrictBinaryConversionWarning::Num2Bits { file_id, location } => {
@@ -29,9 +34,12 @@ impl  NonStrictBinaryConversionWarning {
                         "Circomlib template `Num2Bits` instantiated here.".to_string(),
                     );
                 }
-                report.add_note("Consider using `Num2Bits_strict` if the input may be 254 bits or larger".to_string());
+                report.add_note(
+                    "Consider using `Num2Bits_strict` if the input may be 254 bits or larger"
+                        .to_string(),
+                );
                 report
-            },
+            }
             NonStrictBinaryConversionWarning::Bits2Num { file_id, location } => {
                 let mut report = Report::warning(
                     "Using `Bits2Num` to convert arrays to field elements may lead to aliasing issues".to_string(),
@@ -44,7 +52,10 @@ impl  NonStrictBinaryConversionWarning {
                         "Circomlib template `Bits2Num` instantiated here.".to_string(),
                     );
                 }
-                report.add_note("Consider using `Bits2Num_strict` if the input may be 254 bits or larger".to_string());
+                report.add_note(
+                    "Consider using `Bits2Num_strict` if the input may be 254 bits or larger"
+                        .to_string(),
+                );
                 report
             }
         }
@@ -69,20 +80,25 @@ pub fn find_nonstrict_binary_conversion(cfg: &Cfg) -> ReportCollection {
 
 fn visit_statement(stmt: &Statement, reports: &mut ReportCollection) {
     use AssignOp::*;
-    use Statement::*;
     use Expression::*;
+    use Statement::*;
     use ValueReduction::*;
     match stmt {
         // A component initialization on the form `var = component_name(args, ...)`.
         Substitution {
             meta: var_meta,
             op: AssignLocalOrComponent,
-            rhe: Call { meta: component_meta, name: component_name, args },
+            rhe:
+                Call {
+                    meta: component_meta,
+                    name: component_name,
+                    args,
+                },
             ..
         } => {
             // If the variable `var` is declared as a local variable or signal, we exit early.
             if var_meta.type_knowledge().is_local() || var_meta.type_knowledge().is_signal() {
-                return
+                return;
             }
             // We assume this is the `Num2Bits` circuit from Circomlib.
             if component_name == "Num2Bits" && args.len() == 1 {
@@ -106,23 +122,25 @@ fn visit_statement(stmt: &Statement, reports: &mut ReportCollection) {
                 }
                 reports.push(build_bits2num(component_meta));
             }
-        },
-        _ => {},
+        }
+        _ => {}
     }
 }
 
 fn build_num2bits(meta: &Meta) -> Report {
     NonStrictBinaryConversionWarning::Num2Bits {
         file_id: meta.file_id(),
-        location: meta.file_location()
-    }.into_report()
+        location: meta.file_location(),
+    }
+    .into_report()
 }
 
 fn build_bits2num(meta: &Meta) -> Report {
     NonStrictBinaryConversionWarning::Bits2Num {
         file_id: meta.file_id(),
-        location: meta.file_location()
-    }.into_report()
+        location: meta.file_location(),
+    }
+    .into_report()
 }
 
 #[cfg(test)]

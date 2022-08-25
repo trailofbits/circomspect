@@ -14,7 +14,7 @@ use super::parameters::Parameters;
 
 type Version = usize;
 
-pub struct Config { }
+pub struct Config {}
 
 impl SSAConfig for Config {
     type Version = Version;
@@ -277,7 +277,7 @@ fn visit_expression(expr: &mut Expression, env: &mut Environment) -> SSAResult<(
                     })
                 }
             }
-        },
+        }
         // Local array accesses are updated with the corresponding SSA version.
         Access { meta, var, access } => {
             for access in access {
@@ -295,9 +295,7 @@ fn visit_expression(expr: &mut Expression, env: &mut Environment) -> SSAResult<(
             );
             match env.get_current_version(var) {
                 Some(version) => {
-                    trace!(
-                        "replacing (read) variable `{var}` with SSA variable `{var}.{version}`"
-                    );
+                    trace!("replacing (read) variable `{var}` with SSA variable `{var}.{version}`");
                     *var = var.with_version(version);
                     Ok(())
                 }
@@ -312,7 +310,9 @@ fn visit_expression(expr: &mut Expression, env: &mut Environment) -> SSAResult<(
                 }
             }
         }
-        Update { var, access, rhe, .. } => {
+        Update {
+            var, access, rhe, ..
+        } => {
             visit_expression(rhe, env)?;
             for access in access {
                 if let AccessType::ArrayAccess(index) = access {
@@ -329,9 +329,7 @@ fn visit_expression(expr: &mut Expression, env: &mut Environment) -> SSAResult<(
             );
             match env.get_current_version(var) {
                 Some(version) => {
-                    trace!(
-                        "replacing (read) variable `{var}` with SSA variable `{var}.{version}`"
-                    );
+                    trace!("replacing (read) variable `{var}` with SSA variable `{var}.{version}`");
                     *var = var.with_version(version);
                     Ok(())
                 }
@@ -339,9 +337,7 @@ fn visit_expression(expr: &mut Expression, env: &mut Environment) -> SSAResult<(
                     // This is the first assignment to an array. Add the
                     // variable to the environment and get the first version.
                     let version = env.get_next_version(var);
-                    trace!(
-                        "replacing (read) variable `{var}` with SSA variable `{var}.{version}`"
-                    );
+                    trace!("replacing (read) variable `{var}` with SSA variable `{var}.{version}`");
                     *var = var.with_version(version);
                     Ok(())
                 }

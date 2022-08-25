@@ -43,7 +43,7 @@ impl Expression {
             | Array { meta, .. }
             | Update { meta, .. }
             | Access { meta, .. }
-            | Phi { meta, .. } => meta
+            | Phi { meta, .. } => meta,
         }
     }
 }
@@ -54,75 +54,111 @@ impl PartialEq for Expression {
         use Expression::*;
         match (self, other) {
             (
-                InfixOp { lhe: self_lhe, infix_op: self_op, rhe: self_rhe, .. },
-                InfixOp { lhe: other_lhe, infix_op: other_op, rhe: other_rhe, .. },
-            ) => {
-                self_op == other_op &&
-                self_lhe == other_lhe &&
-                self_rhe == other_rhe
-            },
+                InfixOp {
+                    lhe: self_lhe,
+                    infix_op: self_op,
+                    rhe: self_rhe,
+                    ..
+                },
+                InfixOp {
+                    lhe: other_lhe,
+                    infix_op: other_op,
+                    rhe: other_rhe,
+                    ..
+                },
+            ) => self_op == other_op && self_lhe == other_lhe && self_rhe == other_rhe,
             (
-                PrefixOp { prefix_op: self_op, rhe: self_rhe, .. },
-                PrefixOp { prefix_op: other_op, rhe: other_rhe, .. },
-            ) => {
-                self_op == other_op &&
-                self_rhe == other_rhe
-            },
+                PrefixOp {
+                    prefix_op: self_op,
+                    rhe: self_rhe,
+                    ..
+                },
+                PrefixOp {
+                    prefix_op: other_op,
+                    rhe: other_rhe,
+                    ..
+                },
+            ) => self_op == other_op && self_rhe == other_rhe,
             (
-                SwitchOp { cond: self_cond, if_true: self_true, if_false: self_false, .. },
-                SwitchOp { cond: other_cond, if_true: other_true, if_false: other_false, .. },
-            ) => {
-                self_cond == other_cond &&
-                self_true == other_true &&
-                self_false == other_false
-            },
+                SwitchOp {
+                    cond: self_cond,
+                    if_true: self_true,
+                    if_false: self_false,
+                    ..
+                },
+                SwitchOp {
+                    cond: other_cond,
+                    if_true: other_true,
+                    if_false: other_false,
+                    ..
+                },
+            ) => self_cond == other_cond && self_true == other_true && self_false == other_false,
             (
-                Variable { name: self_name, .. },
-                Variable { name: other_name, .. },
-            ) => {
-                self_name == other_name
-            }
+                Variable {
+                    name: self_name, ..
+                },
+                Variable {
+                    name: other_name, ..
+                },
+            ) => self_name == other_name,
+            (Number(_, self_value), Number(_, other_value)) => self_value == other_value,
             (
-                Number(_, self_value),
-                Number(_, other_value),
-            ) => {
-                self_value == other_value
-            }
+                Call {
+                    name: self_id,
+                    args: self_args,
+                    ..
+                },
+                Call {
+                    name: other_id,
+                    args: other_args,
+                    ..
+                },
+            ) => self_id == other_id && self_args == other_args,
             (
-                Call { name: self_id, args: self_args, .. },
-                Call { name: other_id, args: other_args, .. },
-            ) => {
-                self_id == other_id &&
-                self_args == other_args
-            }
+                Array {
+                    values: self_values,
+                    ..
+                },
+                Array {
+                    values: other_values,
+                    ..
+                },
+            ) => self_values == other_values,
             (
-                Array { values: self_values, .. },
-                Array { values: other_values, .. },
-            ) => {
-                self_values == other_values
-            }
+                Update {
+                    var: self_var,
+                    access: self_access,
+                    rhe: self_rhe,
+                    ..
+                },
+                Update {
+                    var: other_var,
+                    access: other_access,
+                    rhe: other_rhe,
+                    ..
+                },
+            ) => self_var == other_var && self_access == other_access && self_rhe == other_rhe,
             (
-                Update { var: self_var, access: self_access, rhe: self_rhe, .. },
-                Update { var: other_var, access: other_access, rhe: other_rhe, .. },
-            ) => {
-                self_var == other_var &&
-                self_access == other_access &&
-                self_rhe == other_rhe
-            }
+                Access {
+                    var: self_var,
+                    access: self_access,
+                    ..
+                },
+                Access {
+                    var: other_var,
+                    access: other_access,
+                    ..
+                },
+            ) => self_var == other_var && self_access == other_access,
             (
-                Access { var: self_var, access: self_access, .. },
-                Access { var: other_var, access: other_access, .. },
-            ) => {
-                self_var == other_var &&
-                self_access == other_access
-            }
-            (
-                Phi { args: self_args, .. },
-                Phi { args: other_args, .. },
-            ) => {
-                self_args == other_args
-            }
-            _ => false
+                Phi {
+                    args: self_args, ..
+                },
+                Phi {
+                    args: other_args, ..
+                },
+            ) => self_args == other_args,
+            _ => false,
         }
     }
 }
@@ -175,7 +211,13 @@ impl TypeMeta for Expression {
                     meta.type_knowledge_mut().set_variable_type(var_type);
                 }
             }
-            Update { meta, var, access, rhe, .. } => {
+            Update {
+                meta,
+                var,
+                access,
+                rhe,
+                ..
+            } => {
                 rhe.propagate_types(vars);
                 for access in access.iter_mut() {
                     if let AccessType::ArrayAccess(index) = access {
@@ -266,7 +308,7 @@ impl VariableMeta for Expression {
                     Some(VariableType::Signal { .. }) => {
                         trace!("adding `{name}` to signals read");
                         signals_read.insert(VariableUse::new(meta, name, &Vec::new()));
-                    },
+                    }
                     None => {
                         // If the variable type is unknown we ignore it.
                         trace!("variable `{name}` of unknown type read");
@@ -318,14 +360,20 @@ impl VariableMeta for Expression {
                     Some(VariableType::Signal { .. }) => {
                         trace!("adding `{var}` to signals read");
                         signals_read.insert(VariableUse::new(meta, var, access));
-                    },
+                    }
                     None => {
                         // If the variable type is unknown we ignore it.
                         trace!("variable `{var}` of unknown type read");
                     }
                 }
             }
-            Update { meta, var, access, rhe, .. } => {
+            Update {
+                meta,
+                var,
+                access,
+                rhe,
+                ..
+            } => {
                 // Cache RHS variable use.
                 rhe.cache_variable_use();
                 locals_read.extend(rhe.locals_read().iter().cloned());
@@ -354,7 +402,7 @@ impl VariableMeta for Expression {
                     Some(VariableType::Signal { .. }) => {
                         trace!("adding `{var}` to signals read");
                         signals_read.insert(VariableUse::new(meta, var, &Vec::new()));
-                    },
+                    }
                     None => {
                         // If the variable type is unknown we ignore it.
                         trace!("variable `{var}` of unknown type read");
@@ -374,15 +422,11 @@ impl VariableMeta for Expression {
     }
 
     fn locals_read(&self) -> &VariableUses {
-        self.meta()
-            .variable_knowledge()
-            .locals_read()
+        self.meta().variable_knowledge().locals_read()
     }
 
     fn locals_written(&self) -> &VariableUses {
-        self.meta()
-            .variable_knowledge()
-            .locals_written()
+        self.meta().variable_knowledge().locals_written()
     }
 
     fn signals_read(&self) -> &VariableUses {
@@ -390,21 +434,15 @@ impl VariableMeta for Expression {
     }
 
     fn signals_written(&self) -> &VariableUses {
-        self.meta()
-            .variable_knowledge()
-            .signals_written()
+        self.meta().variable_knowledge().signals_written()
     }
 
     fn components_read(&self) -> &VariableUses {
-        self.meta()
-            .variable_knowledge()
-            .components_read()
+        self.meta().variable_knowledge().components_read()
     }
 
     fn components_written(&self) -> &VariableUses {
-        self.meta()
-            .variable_knowledge()
-            .components_written()
+        self.meta().variable_knowledge().components_written()
     }
 }
 
@@ -425,7 +463,7 @@ impl ValueMeta for Expression {
                     Some(value) => {
                         result = result || meta.value_knowledge_mut().set_reduces_to(value)
                     }
-                    None => {},
+                    None => {}
                 }
                 result
             }
@@ -439,7 +477,7 @@ impl ValueMeta for Expression {
                     Some(value) => {
                         result = result || meta.value_knowledge_mut().set_reduces_to(value)
                     }
-                    None => {},
+                    None => {}
                 }
                 result
             }
@@ -452,11 +490,7 @@ impl ValueMeta for Expression {
                 let mut result = cond.propagate_values(env)
                     | if_true.propagate_values(env)
                     | if_false.propagate_values(env);
-                match (
-                    cond.value(),
-                    if_true.value(),
-                    if_false.value(),
-                ) {
+                match (cond.value(), if_true.value(), if_false.value()) {
                     (
                         // The case true? value: _
                         Some(Boolean { value: cond }),
@@ -489,18 +523,14 @@ impl ValueMeta for Expression {
                     ) if cond.is_zero() => {
                         result = result || meta.value_knowledge_mut().set_reduces_to(value.clone())
                     }
-                    _ => {},
+                    _ => {}
                 }
                 result
             }
-            Variable { meta, name, .. } => {
-                match env.get_variable(name) {
-                    Some(value) => {
-                        meta.value_knowledge_mut().set_reduces_to(value.clone())
-                    }
-                    None => false
-                }
-            }
+            Variable { meta, name, .. } => match env.get_variable(name) {
+                Some(value) => meta.value_knowledge_mut().set_reduces_to(value.clone()),
+                None => false,
+            },
             Number(meta, value) => {
                 let value = FieldElement {
                     value: value.clone(),
@@ -532,7 +562,7 @@ impl ValueMeta for Expression {
                     }
                 }
                 result
-            },
+            }
             Update { access, rhe, .. } => {
                 // TODO: Handle array values.
                 let mut result = rhe.propagate_values(env);
@@ -570,10 +600,7 @@ impl ValueMeta for Expression {
     }
 
     fn is_field_element(&self) -> bool {
-        matches!(
-            self.value(),
-            Some(ValueReduction::FieldElement { .. })
-        )
+        matches!(self.value(), Some(ValueReduction::FieldElement { .. }))
     }
 
     fn value(&self) -> Option<&ValueReduction> {
@@ -763,24 +790,26 @@ impl fmt::Debug for Expression {
                 let access = access
                     .iter()
                     .map(|access| match access {
-                            AccessType::ArrayAccess(index) => format!("{index:?}"),
-                            AccessType::ComponentAccess(name) => name.clone(),
+                        AccessType::ArrayAccess(index) => format!("{index:?}"),
+                        AccessType::ComponentAccess(name) => name.clone(),
                     })
                     .collect::<Vec<_>>()
                     .join(", ");
                 write!(f, "access({var:?}, [{access}])")
             }
-            Update { var, access, rhe, .. } => {
+            Update {
+                var, access, rhe, ..
+            } => {
                 let access = access
                     .iter()
                     .map(|access| match access {
-                            AccessType::ArrayAccess(index) => format!("{index:?}"),
-                            AccessType::ComponentAccess(name) => name.clone(),
+                        AccessType::ArrayAccess(index) => format!("{index:?}"),
+                        AccessType::ComponentAccess(name) => name.clone(),
                     })
                     .collect::<Vec<_>>()
                     .join(", ");
                 write!(f, "update({var:?}, [{access}], {rhe:?})")
-            },
+            }
             Phi { args, .. } => write!(f, "φ({})", vec_to_debug(args, ", ")),
         }
     }
@@ -818,7 +847,7 @@ impl fmt::Display for Expression {
                 // trying to display the RHS of an array assignment, we probably
                 // want the `rhe` input.
                 write!(f, "{rhe}")
-            },
+            }
             Phi { args, .. } => write!(f, "φ({})", vec_to_display(args, ", ")),
         }
     }
@@ -875,7 +904,8 @@ impl fmt::Display for AccessType {
 
 #[must_use]
 fn vec_to_debug<T: fmt::Debug>(elems: &[T], sep: &str) -> String {
-    elems.iter()
+    elems
+        .iter()
         .map(|elem| format!("{elem:?}"))
         .collect::<Vec<String>>()
         .join(sep)
@@ -883,7 +913,8 @@ fn vec_to_debug<T: fmt::Debug>(elems: &[T], sep: &str) -> String {
 
 #[must_use]
 fn vec_to_display<T: fmt::Display>(elems: &[T], sep: &str) -> String {
-    elems.iter()
+    elems
+        .iter()
         .map(|elem| format!("{elem}"))
         .collect::<Vec<String>>()
         .join(sep)
@@ -906,7 +937,7 @@ mod tests {
         let mut env = ValueEnvironment::new();
         env.add_variable(
             &VariableName::from_name("v"),
-            &FieldElement { value: 3u64.into() }
+            &FieldElement { value: 3u64.into() },
         );
         lhe.propagate_values(&mut env);
         rhe.propagate_values(&mut env);
@@ -949,9 +980,6 @@ mod tests {
             rhe: Box::new(rhe.clone()),
         };
         expr.propagate_values(&mut env.clone());
-        assert_eq!(
-            expr.value(),
-            Some(&FieldElement { value: 2u64.into() })
-        );
+        assert_eq!(expr.value(), Some(&FieldElement { value: 2u64.into() }));
     }
 }

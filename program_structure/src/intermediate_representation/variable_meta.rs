@@ -87,7 +87,11 @@ pub trait VariableMeta {
         let locals_written = self.locals_written().iter();
         let signals_written = self.signals_written().iter();
         let components_written = self.components_written().iter();
-        Box::new(locals_written.chain(signals_written).chain(components_written))
+        Box::new(
+            locals_written
+                .chain(signals_written)
+                .chain(components_written),
+        )
     }
 }
 
@@ -192,6 +196,10 @@ impl VariableKnowledge {
         let locals_written = self.locals_written().iter();
         let signals_written = self.signals_written().iter();
         let components_written = self.components_written().iter();
-        Box::new(locals_written.chain(signals_written).chain(components_written))
+        Box::new(
+            locals_written
+                .chain(signals_written)
+                .chain(components_written),
+        )
     }
 }

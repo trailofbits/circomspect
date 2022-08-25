@@ -113,11 +113,11 @@ impl<'a> fmt::Display for Statement {
                             write!(f, "{access}")?;
                         }
                         write!(f, " {op} {rhe}")
-                    },
+                    }
                     // This is an ordinary assignment.
                     _ => write!(f, "{var} {op} {rhe}"),
                 }
-            },
+            }
             ConstraintEquality { lhe, rhe, .. } => write!(f, "{lhe} === {rhe}"),
             IfThenElse { cond, .. } => write!(f, "if {cond}"),
             Return { value, .. } => write!(f, "return {value}"),
@@ -149,12 +149,7 @@ impl VariableMeta for Statement {
 
         use Statement::*;
         match self {
-            Substitution {
-                meta,
-                var,
-                rhe,
-                ..
-            } => {
+            Substitution { meta, var, rhe, .. } => {
                 rhe.cache_variable_use();
                 locals_read.extend(rhe.locals_read().clone());
                 signals_read.extend(rhe.signals_read().clone());
@@ -223,15 +218,11 @@ impl VariableMeta for Statement {
     }
 
     fn locals_read(&self) -> &VariableUses {
-        self.meta()
-            .variable_knowledge()
-            .locals_read()
+        self.meta().variable_knowledge().locals_read()
     }
 
     fn locals_written(&self) -> &VariableUses {
-        self.meta()
-            .variable_knowledge()
-            .locals_written()
+        self.meta().variable_knowledge().locals_written()
     }
 
     fn signals_read(&self) -> &VariableUses {
@@ -239,20 +230,14 @@ impl VariableMeta for Statement {
     }
 
     fn signals_written(&self) -> &VariableUses {
-        self.meta()
-            .variable_knowledge()
-            .signals_written()
+        self.meta().variable_knowledge().signals_written()
     }
 
     fn components_read(&self) -> &VariableUses {
-        self.meta()
-            .variable_knowledge()
-            .components_read()
+        self.meta().variable_knowledge().components_read()
     }
 
     fn components_written(&self) -> &VariableUses {
-        self.meta()
-            .variable_knowledge()
-            .components_written()
+        self.meta().variable_knowledge().components_written()
     }
 }

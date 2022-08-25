@@ -18,7 +18,7 @@ pub enum IRError {
         name: String,
         file_id: Option<FileID>,
         file_location: FileLocation,
-    }
+    },
 }
 
 pub type IRResult<T> = Result<T, IRError>;
@@ -44,11 +44,11 @@ impl IRError {
                     );
                 }
                 report
-            },
+            }
             InvalidVariableNameError {
                 name,
                 file_id,
-                file_location
+                file_location,
             } => {
                 let mut report = Report::error(
                     format!("Invalid variable name `{name}`."),

@@ -63,7 +63,7 @@ impl CFGError {
             InvalidVariableNameError {
                 name,
                 file_id,
-                file_location
+                file_location,
             } => {
                 let mut report = Report::error(
                     format!("Invalid variable name `{name}`."),
@@ -150,7 +150,7 @@ impl From<IRError> for CFGError {
             } => CFGError::InvalidVariableNameError {
                 name,
                 file_id,
-                file_location
+                file_location,
             },
         }
     }

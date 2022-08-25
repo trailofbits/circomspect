@@ -10,9 +10,9 @@ mod bitwise_complement;
 mod constant_conditional;
 mod field_arithmetic;
 mod field_comparisons;
-mod signal_assignments;
-mod side_effect_analysis;
 mod nonstrict_binary_conversion;
+mod side_effect_analysis;
+mod signal_assignments;
 
 pub fn get_analysis_passes<'a>() -> Vec<Box<dyn Fn(&'a Cfg) -> ReportCollection + 'a>> {
     vec![
