@@ -74,8 +74,9 @@ pub enum ReportCode {
     FieldElementComparison,
     FieldElementArithmetic,
     AssignSignalStatement,
-    DeadAssignment,
-    UnusedParameter,
+    UnusedVariableValue,
+    UnusedParameterValue,
+    NoSideEffectFromAssignment,
     ConstantBranchCondition,
     NonStrictBinaryConversion,
 }
@@ -154,10 +155,11 @@ impl fmt::Display for ReportCode {
             FieldElementComparison => "CS0003",
             FieldElementArithmetic => "CS0004",
             AssignSignalStatement => "CS0005",
-            DeadAssignment => "CS0006",
-            UnusedParameter => "CS0007",
-            ConstantBranchCondition => "CS0008",
-            NonStrictBinaryConversion => "CS0009",
+            UnusedVariableValue => "CS0006",
+            UnusedParameterValue => "CS0007",
+            NoSideEffectFromAssignment => "CS0008",
+            ConstantBranchCondition => "CS0009",
+            NonStrictBinaryConversion => "CS0010",
         };
         f.write_str(string_format)
     }

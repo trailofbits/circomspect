@@ -111,6 +111,8 @@ mod tests {
             .unwrap()
             .into_ssa()
             .unwrap();
+        assert!(reports.is_empty());
+
         // Generate report collection.
         let reports = find_constant_conditional_statement(&cfg);
 

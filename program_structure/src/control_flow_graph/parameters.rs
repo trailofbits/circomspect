@@ -52,6 +52,10 @@ impl Parameters {
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut VariableName> {
         self.param_names.iter_mut()
     }
+
+    pub fn contains(&self, param_name: &VariableName) -> bool {
+        self.param_names.contains(param_name)
+    }
 }
 
 impl From<&FunctionData> for Parameters {
