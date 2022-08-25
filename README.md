@@ -52,9 +52,9 @@ A shadowing variable declaration is a declaration of a variable with the same na
 _Figure 1.1: Since a new variable is declared in the while-statement body, the outer variable is never updated._
 
 
-#### 2. Unused variable assignments (Warning)
+#### 2. Side-effect free assignments (Warning)
 
-An unused assignment typically indicates a logical mistake in the code and merits further attention.
+An assigned value which does not contribute either directly or indirectly to a constraint, or a function return value, typically indicates a mistake in the implementation of the circuit. For example, consider the following `BinSum` template from `circomlib` where we've changed the final constraint to introduce a bug.
 
 ```js
   template BinSum(n, ops) {
@@ -87,10 +87,16 @@ An unused assignment typically indicates a logical mistake in the code and merit
 ```
 _Figure 2.1: Here, `out` is not properly constrained because of a typo on the last line of the function._
 
+Here, `lout` no longer influences the generated circuit, which is detected by `circomspect`.
+
 
 #### 3. Signal assignments using the signal assignment operator (Warning)
 
 Signals should typically be assigned using the constraint assignment operator `<==`. This ensures that the circuit and witness generation stay in sync. If `<--` is used it is up to the developer to ensure that the signal is properly constrained.
+
+Sometimes more than one constraint is required to ensure that the assigned signal has the correct value. `circomspect` will try to list all constraints containing the assigned signal to make it easier for the developer (or reviewer) to ensure that the variable is properly constrained.
+
+The Tornado Cash codebase was originally affected by an issue of this type. For details see the Tornado Cash disclosure [here](https://tornado-cash.medium.com/tornado-cash-got-hacked-by-us-b1e012a3c9a8).
 
 
 #### 4. Branching statement conditions that evaluate to a constant value (Warning)
@@ -102,9 +108,10 @@ If a branching statement condition always evaluates to either `true` or `false`,
 Using `Num2Bits` to convert a field element to binary form is only safe if the
 input size is smaller than the size of the prime. If not, there may be multiple
 correct representations of the input which could cause issues, since we
-typically want the output to be uniquely determined by the input.
+typically expect the circuit output to be uniquely determined by the input.
 
 For example, Suppose that we create a component `n2b` given by `Num2Bits(254)` and set the input to `1`. Now, both the binary representation of `1` _and_ the representation of `p + 1` will satisfy the circuit, since both are 254-bit numbers. If you cannot restrict the input size below 254 bits you should use the strict versions `Num2Bits_strict` and `Bits2Num_strict` to convert to and from binary.
+
 
 #### 6. Bitwise complement of field elements (Informational)
 
