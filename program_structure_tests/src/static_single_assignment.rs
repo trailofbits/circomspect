@@ -176,18 +176,18 @@ fn validate_reads(current_block: &BasicBlock, cfg: &Cfg, env: &mut HashSet<Varia
             // Check that all read variables are in the environment.
             for var_use in stmt.locals_read() {
                 assert!(
-                    env.contains(var_use.get_name()),
+                    env.contains(var_use.name()),
                     "variable `{}` is read before it is written",
-                    var_use.get_name(),
+                    var_use.name(),
                 );
             }
         }
         // Check that no written variables are in the environment.
         for var_use in VariableMeta::locals_written(stmt) {
             assert!(
-                env.insert(var_use.get_name().clone()),
+                env.insert(var_use.name().clone()),
                 "variable `{}` is written multiple times",
-                var_use.get_name(),
+                var_use.name(),
             );
         }
     }

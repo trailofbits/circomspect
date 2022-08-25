@@ -121,7 +121,7 @@ impl SSAStatement<Config> for Statement {
     fn variables_written(&self) -> HashSet<VariableName> {
         VariableMeta::locals_written(self)
             .iter()
-            .map(|var_use| var_use.get_name())
+            .map(|var_use| var_use.name())
             .cloned()
             .collect()
     }

@@ -19,15 +19,15 @@ impl VariableUse {
         }
     }
 
-    pub fn get_meta(&self) -> &Meta {
+    pub fn meta(&self) -> &Meta {
         &self.meta
     }
 
-    pub fn get_name(&self) -> &VariableName {
+    pub fn name(&self) -> &VariableName {
         &self.name
     }
 
-    pub fn get_access(&self) -> &Vec<AccessType> {
+    pub fn access(&self) -> &Vec<AccessType> {
         &self.access
     }
 }
@@ -69,6 +69,26 @@ pub trait VariableMeta {
     /// signal exported by the component.
     #[must_use]
     fn components_written(&self) -> &VariableUses;
+
+    /// Get the set of variables read by the IR node. Note that this is simply
+    /// the union of all locals, signals, and components read by the node.
+    #[must_use]
+    fn variables_read<'a>(&'a self) -> Box<dyn Iterator<Item = &'a VariableUse> + 'a> {
+        let locals_read = self.locals_read().iter();
+        let signals_read = self.signals_read().iter();
+        let components_read = self.components_read().iter();
+        Box::new(locals_read.chain(signals_read).chain(components_read))
+    }
+
+    /// Get the set of variables written by the IR node. Note that this is
+    /// simply the union of all locals, signals, and components written.
+    #[must_use]
+    fn variables_written<'a>(&'a self) -> Box<dyn Iterator<Item = &'a VariableUse> + 'a> {
+        let locals_written = self.locals_written().iter();
+        let signals_written = self.signals_written().iter();
+        let components_written = self.components_written().iter();
+        Box::new(locals_written.chain(signals_written).chain(components_written))
+    }
 }
 
 #[derive(Default, Clone)]
@@ -157,5 +177,21 @@ impl VariableKnowledge {
         self.components_written
             .as_ref()
             .expect("variable knowledge must be initialized before it is read")
+    }
+
+    #[must_use]
+    pub fn variables_read<'a>(&'a self) -> Box<dyn Iterator<Item = &'a VariableUse> + 'a> {
+        let locals_read = self.locals_read().iter();
+        let signals_read = self.signals_read().iter();
+        let components_read = self.components_read().iter();
+        Box::new(locals_read.chain(signals_read).chain(components_read))
+    }
+
+    #[must_use]
+    pub fn variables_written<'a>(&'a self) -> Box<dyn Iterator<Item = &'a VariableUse> + 'a> {
+        let locals_written = self.locals_written().iter();
+        let signals_written = self.signals_written().iter();
+        let components_written = self.components_written().iter();
+        Box::new(locals_written.chain(signals_written).chain(components_written))
     }
 }

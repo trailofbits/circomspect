@@ -136,7 +136,7 @@ impl SignalData {
                 let rhe = constraint.rhe.signals_read().iter();
                 lhe.chain(rhe)
                     .any(|signal_use|
-                        signal_use.get_name() == signal && signal_use.get_access() == access
+                        signal_use.name() == signal && signal_use.access() == access
                     )
             })
             .collect()
