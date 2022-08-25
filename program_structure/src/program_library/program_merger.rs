@@ -41,7 +41,6 @@ impl Merger {
                     meta,
                     parallel,
                 } => {
-                    println!("adding template `{name}`");
                     if self.contains_function(&name) || self.contains_template(&name) {
                         (Option::Some(name), meta)
                     } else {
@@ -66,7 +65,6 @@ impl Merger {
                     arg_location,
                     meta,
                 } => {
-                    println!("adding function `{name}`");
                     if self.contains_function(&name) || self.contains_template(&name) {
                         (Option::Some(name), meta)
                     } else {
