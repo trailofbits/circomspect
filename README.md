@@ -1,6 +1,6 @@
 # Circomspect 🔎
 
-![Circomspect output](doc/circomspect.png)
+<img src="doc/circomspect.png" alt="Output example image" width="200"/>
 
 Circomspect is a static analyzer and linter for the [Circom](https://github.com/iden3/circom) programming language. The codebase borrows heavily from the Rust Circom compiler built by [iden3](https://github.com/iden3).
 
@@ -14,22 +14,22 @@ To build circomspect, simply clone the repository and build the project by invok
 ```sh
   git clone https://github.com/trailofbits/circomspect
   cd circomspect
-  cargo build --release
-  cp target/release/circomspect ~/.cargo/bin
+  cargo install --path cli
 ```
 
 
 ## Running Circomspect
 
-To run circomspect on a file, simple run
+To run circomspect on a file or directory, simple run
 
 ```sh
-  circomspect path/to/circuit.circom
+  circomspect path/to/circuit
 ```
 
 To get more (or less) verbose output you can set the output level using the `--output-level` flag. To output the results to a Sarif file (which can be read by the [VSCode Sarif Viewer](https://marketplace.visualstudio.com/items?itemName=MS-SarifVSCode.sarif-viewer)), use the flag `--sarif-file`.
 
 
+<img src="doc/vscode.png" alt="VSCode example image" width="200"/>
 
 ## Analysis Passes
 
