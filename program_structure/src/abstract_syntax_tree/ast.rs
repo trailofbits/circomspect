@@ -7,11 +7,22 @@ pub trait FillMeta {
 }
 
 pub type MainComponent = (Vec<String>, Expression);
+
 pub fn build_main_component(public: Vec<String>, call: Expression) -> MainComponent {
     (public, call)
 }
 
 pub type Version = (usize, usize, usize);
+
+#[derive(Clone)]
+pub struct Include {
+    pub meta: Meta,
+    pub path: String,
+}
+
+pub fn build_include(meta: Meta, path: String) -> Include {
+    Include { meta, path }
+}
 
 #[derive(Clone)]
 pub struct Meta {
@@ -78,7 +89,7 @@ impl Meta {
 pub struct AST {
     pub meta: Meta,
     pub compiler_version: Option<Version>,
-    pub includes: Vec<String>,
+    pub includes: Vec<Include>,
     pub definitions: Vec<Definition>,
     pub main_component: Option<MainComponent>,
 }
@@ -86,7 +97,7 @@ impl AST {
     pub fn new(
         meta: Meta,
         compiler_version: Option<Version>,
-        includes: Vec<String>,
+        includes: Vec<Include>,
         definitions: Vec<Definition>,
         main_component: Option<MainComponent>,
     ) -> AST {

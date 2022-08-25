@@ -1,4 +1,5 @@
-use super::errors::FileOsError;
+use super::errors::IncludeError;
+use program_structure::ast::Include;
 use program_structure::error_definition::Report;
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -43,12 +44,12 @@ impl FileStack {
         }
     }
 
-    pub fn add_include(&mut self, path: &String) -> Result<(), Report> {
+    pub fn add_include(&mut self, include: &Include) -> Result<(), Report> {
         let mut location = self
             .current_location
             .clone()
             .expect("parsing file");
-        location.push(path.clone());
+        location.push(include.path.clone());
         match fs::canonicalize(location) {
             Ok(path) => {
                 if !self.black_paths.contains(&path) {
@@ -56,7 +57,11 @@ impl FileStack {
                 }
                 Ok(())
             },
-            Err(_) => Err(FileOsError { path: path.clone() }.into_report())
+            Err(_) => Err(IncludeError {
+                path: include.path.clone(),
+                file_id: include.meta.file_id,
+                file_location: include.meta.file_location(),
+            }.into_report())
         }
     }
 

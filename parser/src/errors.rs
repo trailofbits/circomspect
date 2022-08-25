@@ -46,6 +46,28 @@ impl FileOsError {
     }
 }
 
+pub struct IncludeError {
+    pub path: String,
+    pub file_id: Option<FileID>,
+    pub file_location: FileLocation,
+}
+impl IncludeError {
+    pub fn into_report(self) -> Report {
+        let mut report = Report::error(
+            format!("Failed to open file `{}`.", self.path),
+            ReportCode::ParseFail,
+        );
+        if let Some(file_id) = self.file_id {
+            report.add_primary(
+                self.file_location,
+                file_id,
+                "File included here.".to_string(),
+            );
+        }
+        report
+    }
+}
+
 pub struct MultipleMainError;
 impl MultipleMainError {
     pub fn produce_report() -> Report {
@@ -64,7 +86,7 @@ pub struct CompilerVersionError {
 impl CompilerVersionError {
     pub fn produce_report(error: Self) -> Report {
         let message = format!(
-            "File `{}` requires pragma version {}, which is not supported by circomspect (version {}).",
+            "File `{}` requires version {}, which is not supported by circomspect (version {}).",
             error.path,
             version_string(&error.required_version),
             version_string(&error.version),
@@ -81,7 +103,7 @@ impl NoCompilerVersionWarning {
     pub fn produce_report(error: Self) -> Report {
         Report::warning(
             format!(
-                "File `{}` does not include pragma version. Assuming pragma version {}.",
+                "File `{}` does not include a version pragma. Assuming version {}.",
                 error.path,
                 version_string(&error.version)
             ),

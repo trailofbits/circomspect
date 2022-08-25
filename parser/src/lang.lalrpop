@@ -30,28 +30,28 @@ ParsePragma : Version = { // maybe change to usize instead of BigInt
 
 // Includes are added at the start of the file.
 // Their structure is the following: #include "path to the file"
-ParseInclude : String = {
-    "include" <file: STRING>  ";"
-    => file,
+ParseInclude : Include = {
+    <s:@L> "include" <file: STRING>  ";" <e:@L>
+    => build_include(Meta::new(s, e), file),
 };
 
 // Parsing a program requires:
 // Parsing the "pragma" instruction, if there is one
-// Parsing "includes" instructions, if there is anyone,
+// Parsing "includes" instructions, if there are any,
 // Parsing function and template definitions,
 // Parsing the declaration of the main component
 pub ParseAst : AST = {
     <s:@L> <pragma: ParsePragma> <includes: ParseInclude*> <definitions: ParseDefinition*> <main: ParseMainComponent> <e:@R>
-    => AST::new(Meta::new(s,e), Option::Some(pragma), includes,definitions,Option::Some(main)),
+    => AST::new(Meta::new(s,e), Some(pragma), includes, definitions, Some(main)),
 
     <s:@L> <includes: ParseInclude*> <definitions: ParseDefinition*> <main: ParseMainComponent> <e:@R>
-    => AST::new(Meta::new(s,e),Option::None, includes,definitions,Option::Some(main)),
+    => AST::new(Meta::new(s,e), None, includes, definitions, Some(main)),
 
     <s:@L> <pragma: ParsePragma> <includes: ParseInclude*> <definitions: ParseDefinition*> <e:@R>
-    => AST::new(Meta::new(s,e), Option::Some(pragma), includes,definitions,Option::None),
+    => AST::new(Meta::new(s,e), Some(pragma), includes, definitions, None),
 
     <s:@L> <includes: ParseInclude*> <definitions: ParseDefinition*> <e:@R>
-    => AST::new(Meta::new(s,e), Option::None,includes,definitions,Option::None),
+    => AST::new(Meta::new(s,e), None, includes, definitions, None),
 };
 
 // ====================================================================

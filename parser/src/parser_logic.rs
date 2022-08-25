@@ -80,6 +80,13 @@ pub fn parse_file(src: &str, file_id: FileID) -> Result<AST, Report> {
     use lalrpop_util::ParseError::*;
     lang::ParseAstParser::new()
         .parse(&preprocess(src, file_id)?)
+        .map(|mut ast| {
+            // Set file ID for better error reporting.
+            for include in &mut ast.includes {
+                include.meta.set_file_id(file_id);
+            }
+            ast
+        })
         .map_err(|parse_error| match parse_error {
             InvalidToken { location } => ParsingError {
                 file_id,

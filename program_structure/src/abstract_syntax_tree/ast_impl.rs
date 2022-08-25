@@ -1,7 +1,7 @@
 use super::ast::*;
 
 impl AST {
-    pub fn get_includes(&self) -> &Vec<String> {
+    pub fn get_includes(&self) -> &Vec<Include> {
         &self.includes
     }
 
@@ -17,7 +17,7 @@ impl AST {
     ) -> (
         Meta,
         Option<Version>,
-        Vec<String>,
+        Vec<Include>,
         Vec<Definition>,
         Option<MainComponent>,
     ) {
