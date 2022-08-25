@@ -104,7 +104,7 @@ pub fn run_taint_analysis(cfg: &Cfg) -> TaintAnalysis {
                     }
                 ) {
                     // Add the definition to the result.
-                    trace!("adding variable declaration for `{:?}`", sink.name());
+                    trace!("adding variable assignment for `{:?}`", sink.name());
                     result.add_definition(sink);
                 }
                 for source in stmt.variables_read() {

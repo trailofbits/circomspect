@@ -122,6 +122,19 @@ pub fn run_side_effect_analysis(cfg: &Cfg) -> ReportCollection {
         for stmt in basic_block.iter() {
             use Statement::*;
             match stmt {
+                Substitution { meta, var, .. } => {
+                    // TODO: Maybe restrict to assignments of either input or
+                    // output signals.
+                    if !meta.type_knowledge().is_signal() {
+                        continue;
+                    }
+                    sinks.extend(
+                        meta.variable_knowledge()
+                            .variables_read()
+                            .map(|var| var.name().clone()),
+                    );
+                    sinks.insert(var.clone());
+                }
                 // TODO: Restrict to constraints which affect input or output
                 // signals, either directly or indirectly. Also, consider adding
                 // `Assert`.
