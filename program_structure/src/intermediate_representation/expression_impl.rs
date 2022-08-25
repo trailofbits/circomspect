@@ -269,6 +269,7 @@ impl VariableMeta for Expression {
                     },
                     None => {
                         // If the variable type is unknown we ignore it.
+                        trace!("variable `{name}` of unknown type read");
                     }
                 }
             }
@@ -320,6 +321,7 @@ impl VariableMeta for Expression {
                     },
                     None => {
                         // If the variable type is unknown we ignore it.
+                        trace!("variable `{var}` of unknown type read");
                     }
                 }
             }
@@ -355,6 +357,7 @@ impl VariableMeta for Expression {
                     },
                     None => {
                         // If the variable type is unknown we ignore it.
+                        trace!("variable `{var}` of unknown type read");
                     }
                 }
             }
@@ -742,43 +745,43 @@ impl fmt::Debug for Expression {
         match self {
             Number(_, value) => write!(f, "{}", value),
             Variable { name, .. } => {
-                write!(f, "{name}")
+                write!(f, "{name:?}")
             }
             InfixOp {
                 lhe, infix_op, rhe, ..
-            } => write!(f, "({lhe} {infix_op} {rhe})"),
-            PrefixOp { prefix_op, rhe, .. } => write!(f, "{}({})", prefix_op, rhe),
+            } => write!(f, "({lhe:?} {infix_op} {rhe:?})"),
+            PrefixOp { prefix_op, rhe, .. } => write!(f, "({prefix_op}{rhe:?})"),
             SwitchOp {
                 cond,
                 if_true,
                 if_false,
                 ..
-            } => write!(f, "({cond}? {if_true} : {if_false})"),
-            Call { name: id, args, .. } => write!(f, "{}({})", id, vec_to_string(args, ", ")),
-            Array { values, .. } => write!(f, "[{}]", vec_to_string(values, ", ")),
+            } => write!(f, "({cond:?}? {if_true:?} : {if_false:?})"),
+            Call { name: id, args, .. } => write!(f, "{}({})", id, vec_to_debug(args, ", ")),
+            Array { values, .. } => write!(f, "[{}]", vec_to_debug(values, ", ")),
             Access { var, access, .. } => {
                 let access = access
                     .iter()
                     .map(|access| match access {
-                            AccessType::ArrayAccess(index) => format!("{index}"),
+                            AccessType::ArrayAccess(index) => format!("{index:?}"),
                             AccessType::ComponentAccess(name) => name.clone(),
                     })
                     .collect::<Vec<_>>()
                     .join(", ");
-                write!(f, "access({var}, [{access}])")
+                write!(f, "access({var:?}, [{access}])")
             }
             Update { var, access, rhe, .. } => {
                 let access = access
                     .iter()
                     .map(|access| match access {
-                            AccessType::ArrayAccess(index) => format!("{index}"),
+                            AccessType::ArrayAccess(index) => format!("{index:?}"),
                             AccessType::ComponentAccess(name) => name.clone(),
                     })
                     .collect::<Vec<_>>()
                     .join(", ");
-                write!(f, "update({var}, [{access}], {rhe})")
+                write!(f, "update({var:?}, [{access}], {rhe:?})")
             },
-            Phi { args, .. } => write!(f, "φ({})", vec_to_string(args, ", ")),
+            Phi { args, .. } => write!(f, "φ({})", vec_to_debug(args, ", ")),
         }
     }
 }
@@ -801,8 +804,8 @@ impl fmt::Display for Expression {
                 if_false,
                 ..
             } => write!(f, "({cond}? {if_true} : {if_false})"),
-            Call { name: id, args, .. } => write!(f, "{}({})", id, vec_to_string(args, ", ")),
-            Array { values, .. } => write!(f, "[{}]", vec_to_string(values, ", ")),
+            Call { name: id, args, .. } => write!(f, "{}({})", id, vec_to_display(args, ", ")),
+            Array { values, .. } => write!(f, "[{}]", vec_to_display(values, ", ")),
             Access { var, access, .. } => {
                 write!(f, "{var}")?;
                 for access in access {
@@ -816,7 +819,7 @@ impl fmt::Display for Expression {
                 // want the `rhe` input.
                 write!(f, "{rhe}")
             },
-            Phi { args, .. } => write!(f, "φ({})", vec_to_string(args, ", ")),
+            Phi { args, .. } => write!(f, "φ({})", vec_to_display(args, ", ")),
         }
     }
 }
@@ -871,9 +874,17 @@ impl fmt::Display for AccessType {
 }
 
 #[must_use]
-fn vec_to_string<T: ToString>(elems: &[T], sep: &str) -> String {
+fn vec_to_debug<T: fmt::Debug>(elems: &[T], sep: &str) -> String {
     elems.iter()
-        .map(|elem| elem.to_string())
+        .map(|elem| format!("{elem:?}"))
+        .collect::<Vec<String>>()
+        .join(sep)
+}
+
+#[must_use]
+fn vec_to_display<T: fmt::Display>(elems: &[T], sep: &str) -> String {
+    elems.iter()
+        .map(|elem| format!("{elem}"))
         .collect::<Vec<String>>()
         .join(sep)
 }

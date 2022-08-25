@@ -111,7 +111,7 @@ impl Cfg {
                 basic_block.successors(),
             );
             for stmt in basic_block.iter() {
-                trace!("    {stmt};")
+                trace!("    {stmt:?}")
             }
         }
         Ok(self)
