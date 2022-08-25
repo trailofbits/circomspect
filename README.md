@@ -34,25 +34,7 @@ To get more (or less) verbose output you can set the output level using the `--o
 
 The project currently implements analysis passes for the following types of issues.
 
-#### 1. Shadowing variable declarations (Warning)
-
-A shadowing variable declaration is a declaration of a variable with the same name as a previously declared variable. This does not have to be a problem, but if a variable declared in an outer scope is shadowed by mistake, this could change the semantics of the program which would be an issue.
-
-```js
-  function numberOfBits(a) {
-      var n = 1;
-      var r = 0;  // Shadowed variable is declared here.
-      while (n - 1 < a) {
-          var r = r + 1;  // Shadowing declaration here.
-          n *= 2;
-      }
-      return r;
-  }
-```
-_Figure 1.1: Since a new variable is declared in the while-statement body, the outer variable is never updated._
-
-
-#### 2. Side-effect free assignments (Warning)
+#### 1. Side-effect free assignments (Warning)
 
 An assigned value which does not contribute either directly or indirectly to a constraint, or a function return value, typically indicates a mistake in the implementation of the circuit. For example, consider the following `BinSum` template from `circomlib` where we've changed the final constraint to introduce a bug.
 
@@ -87,6 +69,27 @@ An assigned value which does not contribute either directly or indirectly to a c
 ```
 
 Here, `lout` no longer influences the generated circuit, which is detected by `circomspect`.
+
+
+#### 2. Shadowing variable declarations (Warning)
+
+A shadowing variable declaration is a declaration of a variable with the same name as a previously declared variable. This does not have to be a problem, but if a variable declared in an outer scope is shadowed by mistake, this could change the semantics of the program which would be an issue.
+
+For example, consider this function which is supposed to compute the number of bits needed to represent `a`.
+
+```js
+  function numberOfBits(a) {
+      var n = 1;
+      var r = 0;  // Shadowed variable is declared here.
+      while (n - 1 < a) {
+          var r = r + 1;  // Shadowing declaration here.
+          n *= 2;
+      }
+      return r;
+  }
+```
+
+Since a new variable `r` is declared in the while-statement body, the outer variable is never updated and the return value is always 0.
 
 
 #### 3. Signal assignments using the signal assignment operator (Warning)
