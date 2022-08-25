@@ -79,7 +79,7 @@ An unused assignment typically indicates a logical mistake in the code and merit
           out[k] <-- (lin >> k) & 1;
           out[k] * (out[k] - 1) === 0;
 
-          lout += out[k] * e2;  // The value assigned here is never read.
+          lout += out[k] * e2;  // The value assigned here is not used.
           e2 = e2 + e2;
       }
 
