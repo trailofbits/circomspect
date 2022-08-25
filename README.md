@@ -5,7 +5,7 @@ Circomspect is a static analyzer and linter for the [Circom](https://github.com/
 Circomspect currently implements a number of analysis passes which can identify potential issues in Circom circuits. It is our goal to continue to add new analysis passes to be able to detect more issues in the future.
 
 <p align="center">
-  <img src="doc/circomspect.png" alt="Output example image" width="600"/>
+  <img src="doc/circomspect.png" alt="Output example image" width="700"/>
 </p>
 
 ## Building Circomspect
