@@ -85,7 +85,6 @@ An assigned value which does not contribute either directly or indirectly to a c
       lin === nout;  // Should use `lout`, but uses `nout` by mistake.
   }
 ```
-_Figure 2.1: Here, `out` is not properly constrained because of a typo on the last line of the function._
 
 Here, `lout` no longer influences the generated circuit, which is detected by `circomspect`.
 
