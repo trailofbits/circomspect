@@ -1,6 +1,6 @@
 # Circomspect 🔎
 
-![Circomspect output](doc/demo.gif)
+![Circomspect output](doc/circomspect.png)
 
 Circomspect is a static analyzer and linter for the [Circom](https://github.com/iden3/circom) programming language. The codebase borrows heavily from the Rust Circom compiler built by [iden3](https://github.com/iden3).
 
