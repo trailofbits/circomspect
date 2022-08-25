@@ -4,7 +4,7 @@ use std::convert::{TryFrom, TryInto};
 use super::errors::{CFGError, CFGResult};
 use super::parameters::Parameters;
 
-use crate::ast::{Expression, Meta, Statement};
+use crate::ast::{Expression, Meta, Statement, Access};
 use crate::environment::VarEnvironment;
 use crate::error_definition::{Report, ReportCollection};
 use crate::file_definition::{FileID, FileLocation};
@@ -200,8 +200,11 @@ fn visit_statement(
 ) {
     use Statement::*;
     match stmt {
-        Declaration { name, meta, .. } => {
+        Declaration { meta, name, dimensions, .. } => {
             trace!("visiting declared variable `{name}`");
+            for size in dimensions {
+                visit_expression(size, env);
+            }
             // If the current declaration shadows a previous declaration of the same
             // variable we generate a new report.
             if let Some(declaration) = env.get_declaration(name) {
@@ -219,7 +222,7 @@ fn visit_statement(
                 }
             }
         }
-        Substitution { var, rhe, .. } => {
+        Substitution { var, rhe, access, .. } => {
             trace!("visiting assigned variable '{var}'");
             *var = match env.get_current_version(var) {
                 Some(version) => {
@@ -228,7 +231,13 @@ fn visit_statement(
                 }
                 None => var.to_string(),
             };
+            for access in access {
+                if let Access::ArrayAccess(index) = access {
+                    visit_expression(index, env);
+                }
+            }
             visit_expression(rhe, env);
+
         }
         Return { value, .. } => {
             visit_expression(value, env);
