@@ -93,6 +93,12 @@ pub trait VariableMeta {
                 .chain(components_written),
         )
     }
+
+    /// Get the set of variables either read or written by the IR node.
+    #[must_use]
+    fn variables_used<'a>(&'a self) -> Box<dyn Iterator<Item = &'a VariableUse> + 'a> {
+        Box::new(self.variables_read().chain(self.variables_written()))
+    }
 }
 
 #[derive(Default, Clone)]
