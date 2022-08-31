@@ -28,6 +28,7 @@ use std::ops::{Index, IndexMut};
 /// assert_eq!(v.pop(), Some(2));
 /// assert_eq!(v.pop(), None);
 /// ```
+#[derive(Clone, PartialEq)]
 pub struct NonEmptyVec<T> {
     head: T,
     tail: Vec<T>,
@@ -108,6 +109,16 @@ impl<T> NonEmptyVec<T> {
 
     /// Returns an iterator over the vector.
     pub fn iter(&self) -> NonEmptyIter<'_, T> {
+        NonEmptyIter::new(self)
+    }
+}
+
+/// Allows for constructions on the form `for t in ts`.
+impl<'a, T> IntoIterator for &'a NonEmptyVec<T> {
+    type Item = &'a T;
+    type IntoIter = NonEmptyIter<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
         NonEmptyIter::new(self)
     }
 }
