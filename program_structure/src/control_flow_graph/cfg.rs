@@ -151,7 +151,9 @@ impl Cfg {
         self.basic_blocks.iter_mut()
     }
 
-    /// Returns the dominators of the given basic block
+    /// Returns the dominators of the given basic block. The basic block `i`
+    /// dominates `j` if any path from the entry point to `j` must contain `i`.
+    /// (Note that this relation is reflexive, so `i` always dominates itself.)
     #[must_use]
     pub fn get_dominators(&self, basic_block: &BasicBlock) -> Vec<&BasicBlock> {
         self.dominator_tree
@@ -192,6 +194,187 @@ impl Cfg {
             .iter()
             .map(|&i| &self.basic_blocks[i])
             .collect()
+    }
+
+    /// Returns the predecessors of the given basic block.
+    pub fn get_predecessors(&self, basic_block: &BasicBlock) -> Vec<&BasicBlock> {
+        let mut predecessors = HashSet::new();
+        let mut update = HashSet::from([basic_block.index()]);
+        while !update.is_subset(&predecessors) {
+            predecessors.extend(update.iter().cloned());
+            update = update
+                .iter()
+                .flat_map(|index| self
+                    .get_basic_block(*index)
+                    .expect("in control-flow graph")
+                    .predecessors()
+                    .iter()
+                    .cloned()
+                )
+                .collect();
+        }
+        // Remove the initial block.
+        predecessors.remove(&basic_block.index());
+        predecessors
+            .iter()
+            .map(|index| self
+                .get_basic_block(*index)
+                .expect("in control-flow graph")
+            )
+            .collect::<Vec<_>>()
+    }
+
+    /// Returns the successors of the given basic block.
+    pub fn get_successors(&self, basic_block: &BasicBlock) -> Vec<&BasicBlock> {
+        let mut successors = HashSet::new();
+        let mut update = HashSet::from([basic_block.index()]);
+        while !update.is_subset(&successors) {
+            successors.extend(update.iter().cloned());
+            update = update
+                .iter()
+                .flat_map(|index| self
+                    .get_basic_block(*index)
+                    .expect("in control-flow graph")
+                    .successors()
+                    .iter()
+                    .cloned()
+                )
+                .collect();
+        }
+        // Remove the initial block.
+        successors.remove(&basic_block.index());
+        successors
+            .iter()
+            .map(|index| self
+                .get_basic_block(*index)
+                .expect("in control-flow graph")
+            )
+            .collect::<Vec<_>>()
+    }
+
+    /// Returns all block in the interval [start_block, end_block). That is, all
+    /// successors of the starting block (including the starting block) which
+    /// are also predecessors of the end block.
+    pub fn get_interval(&self, start_block: &BasicBlock, end_block: &BasicBlock) -> Vec<&BasicBlock> {
+        // Compute the successors of the start block (including the start block).
+        let mut successors = HashSet::new();
+        let mut update = HashSet::from([start_block.index()]);
+        while !update.is_subset(&successors) {
+            successors.extend(update.iter().cloned());
+            update = update
+                .iter()
+                .flat_map(|index| self
+                    .get_basic_block(*index)
+                    .expect("in control-flow graph")
+                    .successors()
+                    .iter()
+                    .cloned()
+                )
+                .collect();
+        }
+        println!("successors of {}: {:?}", start_block.index(), successors);
+
+        // Compute the strict predecessors of the end block.
+        let mut predecessors = HashSet::new();
+        let mut update = HashSet::from([end_block.index()]);
+        while !update.is_subset(&predecessors) {
+            predecessors.extend(update.iter().cloned());
+            update = update
+                .iter()
+                .flat_map(|index| self
+                    .get_basic_block(*index)
+                    .expect("in control-flow graph")
+                    .predecessors()
+                    .iter()
+                    .cloned()
+                )
+                .collect();
+        }
+        predecessors.remove(&end_block.index());
+        println!("predecessors of {}: {:?}", end_block.index(), predecessors);
+
+        // Return the basic blocks corresponding to the intersection of the two
+        // sets.
+        successors
+            .intersection(&predecessors)
+            .map(|index| self
+                .get_basic_block(*index)
+                .expect("in control-flow graph")
+            )
+            .collect::<Vec<_>>()
+    }
+
+    /// Returns the basic blocks corresponding to the true branch of the
+    /// if-statement at the end of the given header block.
+    ///
+    /// # Panics
+    ///
+    /// This method panics if the given block does not end with an if-statement node.
+    pub fn get_true_branch(&self, header_block: &BasicBlock) -> Vec<&BasicBlock> {
+        use crate::ir::Statement::*;
+        if let Some(IfThenElse { true_index, .. }) = header_block.statements().last() {
+            let start_block = self
+                .get_basic_block(*true_index)
+                .expect("in control-flow graph");
+            let end_blocks = self.get_dominance_frontier(start_block);
+
+            if end_blocks.is_empty() {
+                // True and false branches do not join up.
+                let mut result = self.get_successors(start_block);
+                result.push(start_block);
+                result
+            } else {
+                // True and false branches join up at the dominance frontier.
+                let mut result = Vec::new();
+                for end_block in end_blocks {
+                    result.extend(self.get_interval(start_block, end_block))
+                }
+                result
+            }
+        } else {
+            panic!("the given header block does not end with an if-statement");
+        }
+    }
+
+    /// Returns the basic blocks corresponding to the false branch of the
+    /// if-statement at the end of the given header block.
+    ///
+    /// # Panics
+    ///
+    /// This method panics if the given block does not end with an if-statement node.
+    pub fn get_false_branch(&self, header_block: &BasicBlock) -> Vec<&BasicBlock> {
+        use crate::ir::Statement::*;
+        if let Some(IfThenElse { true_index, false_index, .. }) = header_block.statements().last() {
+            if let Some(false_index) = false_index {
+                println!("computing false branch at {false_index} for if-statement at {}", header_block.index());
+                if self.dominator_tree.get_dominance_frontier(*true_index).contains(false_index) {
+                    // The false branch is empty.
+                    return Vec::new()
+                }
+                let start_block = self
+                    .get_basic_block(*false_index)
+                    .expect("in control-flow graph");
+                let end_blocks = self.get_dominance_frontier(start_block);
+
+                if end_blocks.is_empty() {
+                    // True and false branches do not join up.
+                    let mut result = self.get_successors(start_block);
+                    result.push(start_block);
+                    result
+                } else {
+                    // True and false branches join up at the dominance frontier.
+                    let mut result = Vec::new();
+                    for end_block in end_blocks {
+                        result.extend(self.get_interval(start_block, end_block))
+                    }
+                    result
+                }
+            } else {
+                Vec::new()
+            }
+        } else {
+            panic!("the given header block does not end with an if-statement");
+        }
     }
 
     /// Cache variable use for each node in the CFG.

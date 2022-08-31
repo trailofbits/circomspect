@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 
 use parser::parse_definition;
 use program_structure::cfg::*;
@@ -20,7 +20,7 @@ fn test_cfg_from_if() {
     validate_cfg(
         src,
         &["x", "y"],
-        &[2, 2, 1],
+        &[3, 2, 1],
         &[
             (vec![], vec![1, 2]),
             (vec![0], vec![2]),
@@ -47,7 +47,7 @@ fn test_cfg_from_if_then_else() {
     validate_cfg(
         src,
         &["x", "y"],
-        &[2, 2, 2, 1],
+        &[3, 2, 2, 1],
         &[
             (vec![], vec![1, 2]),
             (vec![0], vec![3]),
@@ -71,7 +71,7 @@ fn test_cfg_from_while() {
     validate_cfg(
         src,
         &["x", "y"],
-        &[1, 1, 1, 1],
+        &[2, 1, 1, 1],
         &[
             (vec![], vec![1]),
             // 0:
@@ -107,7 +107,7 @@ fn test_cfg_from_nested_if() {
     validate_cfg(
         src,
         &["x", "y"],
-        &[2, 2, 1, 1],
+        &[3, 2, 1, 1],
         &[
             (vec![], vec![1, 3]),
             // 0:
@@ -145,7 +145,7 @@ fn test_cfg_from_nested_while() {
     validate_cfg(
         src,
         &["x", "y"],
-        &[1, 1, 1, 1, 1, 1],
+        &[2, 1, 1, 1, 1, 1],
         &[
             (vec![], vec![1]),
             // 0:
@@ -170,6 +170,183 @@ fn test_cfg_from_nested_while() {
     );
 }
 
+#[test]
+fn test_dominance_from_nested_if() {
+    // 0:
+    // var y;
+    // y = 0;
+    // if (y <= 0)
+    //
+    //   1:
+    //   y *= 2;
+    //   if (y == x)
+    //
+    //     2:
+    //     y *= 2;
+    //
+    // 3:
+    // return y + x;
+    let src = r#"
+        function f(x) {
+            var y = 0;
+            if (y <= x) {
+                y *= 2;
+                if (y == x) {
+                    y *= 2;
+                }
+            }
+            return y + x;
+        }
+    "#;
+
+    let mut immediate_dominators = HashMap::new();
+    immediate_dominators.insert(0, None);
+    immediate_dominators.insert(1, Some(0));
+    immediate_dominators.insert(2, Some(1));
+    immediate_dominators.insert(3, Some(0));
+
+    let mut dominance_frontier = HashMap::new();
+    dominance_frontier.insert(0, HashSet::new());
+    dominance_frontier.insert(1, HashSet::from([3]));
+    dominance_frontier.insert(2, HashSet::from([3]));
+    dominance_frontier.insert(3, HashSet::new());
+
+    validate_dominance(&src, &immediate_dominators, &dominance_frontier);
+}
+
+#[test]
+fn test_dominance_from_nested_if_then_else() {
+    // 0:
+    // var y;
+    // y = 2;
+    // if (x > 0)
+    //
+    //   1:
+    //   return x * y;
+    //
+    //   2:
+    //   if (x < 0)
+    //
+    //     3:
+    //     return x - y;
+    //
+    //     4:
+    //     return y;
+    let src = r#"
+        function f(x) {
+            var y = 2;
+            if (x > 0) {
+                return x * y;
+            } else {
+                if (x < 0) {
+                    return x - y;
+                } else {
+                    return y;
+                }
+            }
+        }
+    "#;
+
+    let mut immediate_dominators = HashMap::new();
+    immediate_dominators.insert(0, None);
+    immediate_dominators.insert(1, Some(0));
+    immediate_dominators.insert(2, Some(0));
+    immediate_dominators.insert(3, Some(2));
+    immediate_dominators.insert(4, Some(2));
+
+    let mut dominance_frontier = HashMap::new();
+    dominance_frontier.insert(0, HashSet::new());
+    dominance_frontier.insert(1, HashSet::new());
+    dominance_frontier.insert(2, HashSet::new());
+    dominance_frontier.insert(3, HashSet::new());
+
+    validate_dominance(&src, &immediate_dominators, &dominance_frontier);
+}
+
+#[test]
+fn test_branches_from_nested_if_then_else() {
+    // 0:
+    // var y;
+    // y = 2;
+    // if (x > 0)
+    //
+    //   1:
+    //   return x * y;
+    //
+    //   2:
+    //   if (x < 0)
+    //
+    //     3:
+    //     return x - y;
+    //
+    //     4:
+    //     return y;
+    let src = r#"
+        function f(x) {
+            var y = 2;
+            if (x > 0) {
+                return x * y;
+            } else {
+                if (x < 0) {
+                    return x - y;
+                } else {
+                    return y;
+                }
+            }
+        }
+    "#;
+
+    let mut true_branches = HashMap::new();
+    true_branches.insert(0, HashSet::from([1]));
+    true_branches.insert(2, HashSet::from([3]));
+
+    let mut false_branches = HashMap::new();
+    false_branches.insert(0, HashSet::from([2, 3, 4]));
+    false_branches.insert(2, HashSet::from([4]));
+
+    validate_branches(&src, &true_branches, &false_branches);
+}
+
+#[test]
+fn test_branches_from_nested_if() {
+    // 0:
+    // var y;
+    // y = 0;
+    // if (y <= 0)
+    //
+    //   1:
+    //   y *= 2;
+    //   if (y == x)
+    //
+    //     2:
+    //     y *= 2;
+    //
+    // 3:
+    // return y + x;
+    let src = r#"
+        function f(x) {
+            var y = 0;
+            if (y <= x) {
+                y *= 2;
+                if (y == x) {
+                    y *= 2;
+                }
+            }
+            return y + x;
+        }
+    "#;
+
+    let mut true_branches = HashMap::new();
+    true_branches.insert(0, HashSet::from([1, 2]));
+    true_branches.insert(1, HashSet::from([2]));
+
+    let mut false_branches = HashMap::new();
+    false_branches.insert(0, HashSet::new());
+    false_branches.insert(1, HashSet::new());
+
+    validate_branches(&src, &true_branches, &false_branches);
+}
+
 fn validate_cfg(
     src: &str,
     variables: &[&str],
@@ -182,6 +359,7 @@ fn validate_cfg(
         .unwrap()
         .into_cfg(&mut reports)
         .unwrap();
+    assert!(reports.is_empty());
 
     // 2. Verify declared variables.
     assert_eq!(
@@ -229,5 +407,75 @@ fn validate_cfg(
                 second_block.index()
             );
         }
+    }
+}
+
+fn validate_dominance(
+    src: &str,
+    immediate_dominators: &HashMap<usize, Option<usize>>,
+    dominance_frontier: &HashMap<usize, HashSet<usize>>,
+) {
+    // 1. Generate CFG from source.
+    let mut reports = ReportCollection::new();
+    let cfg = parse_definition(src)
+        .unwrap()
+        .into_cfg(&mut reports)
+        .unwrap();
+    assert!(reports.is_empty());
+
+    // 2. Validate immediate dominators.
+    for (index, expected_dominator) in immediate_dominators {
+        let basic_block = cfg.get_basic_block(*index).unwrap();
+        let immediate_dominator = cfg
+            .get_immediate_dominator(basic_block)
+            .map(|dominator_block| dominator_block.index());
+        assert_eq!(&immediate_dominator, expected_dominator);
+    }
+
+    // 3. Validate dominance frontier.
+    for (index, expected_frontier) in dominance_frontier {
+        let basic_block = cfg.get_basic_block(*index).unwrap();
+        let dominance_frontier = cfg
+            .get_dominance_frontier(basic_block)
+            .iter()
+            .map(|frontier_block| frontier_block.index())
+            .collect::<HashSet<_>>();
+        assert_eq!(&dominance_frontier, expected_frontier);
+    }
+}
+
+fn validate_branches(
+    src: &str,
+    true_branches: &HashMap<usize, HashSet<usize>>,
+    false_branches: &HashMap<usize, HashSet<usize>>
+) {
+    // 1. Generate CFG from source.
+    let mut reports = ReportCollection::new();
+    let cfg = parse_definition(src)
+        .unwrap()
+        .into_cfg(&mut reports)
+        .unwrap();
+    assert!(reports.is_empty());
+
+    // 2. Validate the set of true branches.
+    for (header_index, expected_indices) in true_branches {
+        let header_block = cfg.get_basic_block(*header_index).unwrap();
+        let true_branch = cfg.get_true_branch(header_block);
+        let true_indices = true_branch
+            .iter()
+            .map(|basic_block| basic_block.index())
+            .collect::<HashSet<_>>();
+        assert_eq!(&true_indices, expected_indices);
+    }
+
+    // 3. Validate the set of false branches.
+    for (header_index, expected_indices) in false_branches {
+        let header_block = cfg.get_basic_block(*header_index).unwrap();
+        let false_branch = cfg.get_false_branch(header_block);
+        let false_indices = false_branch
+            .iter()
+            .map(|basic_block| basic_block.index())
+            .collect::<HashSet<_>>();
+        assert_eq!(&false_indices, expected_indices);
     }
 }
