@@ -46,18 +46,18 @@ impl TypeKnowledge {
     /// Returns true if the node is a local variable.
     #[must_use]
     pub fn is_local(&self) -> bool {
-        matches!(self.var_type, Some(VariableType::Local { .. }))
+        matches!(self.var_type, Some(VariableType::Local))
     }
 
     /// Returns true if the node is a signal.
     #[must_use]
     pub fn is_signal(&self) -> bool {
-        matches!(self.var_type, Some(VariableType::Signal { .. }))
+        matches!(self.var_type, Some(VariableType::Signal(_)))
     }
 
     /// Returns true if the node is a component.
     #[must_use]
     pub fn is_component(&self) -> bool {
-        matches!(self.var_type, Some(VariableType::Component { .. }))
+        matches!(self.var_type, Some(VariableType::Component))
     }
 }

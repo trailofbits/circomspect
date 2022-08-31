@@ -1,9 +1,10 @@
 use log::{debug, error, trace};
 use std::collections::HashSet;
+use std::convert::TryInto;
 use std::ops::Range;
 
 use crate::environment::VarEnvironment;
-use crate::ir::declarations::Declarations;
+use crate::ir::declarations::{Declaration, Declarations};
 use crate::ir::variable_meta::VariableMeta;
 use crate::ir::*;
 use crate::ssa::errors::*;
@@ -84,10 +85,7 @@ impl Environment {
 
     /// Returns true if the given name is a local variable.
     fn is_local(&self, name: &VariableName) -> bool {
-        matches!(
-            self.declarations.get_type(name),
-            Some(VariableType::Local { .. })
-        )
+        matches!(self.declarations.get_type(name), Some(VariableType::Local))
     }
 }
 
@@ -210,6 +208,14 @@ impl SSAStatement<Config> for Statement {
         debug!("converting `{self}` to SSA");
         use Statement::*;
         let result = match self {
+            Declaration { dimensions, .. } => {
+                // Since at this point we still don't know the version range for
+                // the declared variable we treat declarations in a later pass.
+                for size in dimensions {
+                    visit_expression(size, env)?;
+                }
+                Ok(())
+            }
             Substitution { var, rhe, .. } => {
                 assert!(var.version().is_none());
                 visit_expression(rhe, env)?;
@@ -374,4 +380,81 @@ fn visit_expression(expr: &mut Expression, env: &mut Environment) -> SSAResult<(
         // phi expression arguments are updated in a later pass.
         Phi { .. } | Number(_, _) => Ok(()),
     }
+}
+
+/// Add each version of each variable to the corresponding declaration statement.
+/// Returns a `Declarations` structure containing all declared variables in the
+/// CFG.
+#[must_use]
+pub fn update_declarations(
+    basic_blocks: &mut Vec<BasicBlock>,
+    parameters: &Parameters,
+    env: &Environment,
+) -> Declarations {
+    let mut versioned_declarations = Declarations::new();
+    for name in parameters.iter() {
+        // Since parameters are not considered immutable we must assume that
+        // they may be updated (and hence occur as different versions)
+        // throughout the function/template.
+        for version in env
+            .get_version_range(name)
+            .expect("variable in environment")
+        {
+            trace!(
+                "adding declaration for variable `{}`",
+                name.with_version(version)
+            );
+            versioned_declarations.add_declaration(&Declaration::new(
+                &name.with_version(version),
+                &VariableType::Local,
+                &parameters.file_id(),
+                &parameters.file_location(),
+            ));
+        }
+    }
+    for basic_block in basic_blocks {
+        for stmt in basic_block.iter_mut() {
+            if let Statement::Declaration {
+                meta,
+                names,
+                var_type,
+                ..
+            } = stmt
+            {
+                assert!(names.len() == 1 && names.first().version().is_none());
+                if matches!(var_type, VariableType::Local) {
+                    // Add a new declaration for each version of the local variable.
+                    let mut versioned_names = Vec::new();
+                    for version in env
+                        .get_version_range(names.first())
+                        .expect("variable in environment")
+                    {
+                        trace!(
+                            "adding declaration for variable `{}`",
+                            names.first().with_version(version)
+                        );
+                        versioned_names.push(names.first().with_version(version));
+                        versioned_declarations.add_declaration(&Declaration::new(
+                            &names.first().with_version(version),
+                            var_type,
+                            &meta.file_id(),
+                            &meta.file_location(),
+                        ));
+                    }
+                    // Update declaration statement with versioned variable names.
+                    *names = versioned_names.try_into().expect("variable in environment");
+                } else {
+                    // Declarations of signals and components are just copied over.
+                    trace!("adding declaration for variable `{}`", names.first());
+                    versioned_declarations.add_declaration(&Declaration::new(
+                        &names.first(),
+                        var_type,
+                        &meta.file_id(),
+                        &meta.file_location(),
+                    ));
+                }
+            }
+        }
+    }
+    versioned_declarations
 }

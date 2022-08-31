@@ -322,10 +322,17 @@ impl Display for AssignOp {
 
 impl Display for VariableType {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        use SignalType::*;
         use VariableType::*;
         match self {
             Var => write!(f, "var"),
-            Signal(signal_type, _) => write!(f, "signal {signal_type}"),
+            Signal(signal_type, _) => {
+                if matches!(signal_type, Intermediate) {
+                    write!(f, "signal")
+                } else {
+                    write!(f, "signal {signal_type}")
+                }
+            }
             Component => write!(f, "component"),
         }
     }

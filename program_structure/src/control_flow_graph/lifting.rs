@@ -46,9 +46,7 @@ impl From<&Parameters> for LiftingEnvironment {
         for name in params.iter() {
             let declaration = Declaration::new(
                 name,
-                &VariableType::Local {
-                    dimensions: Vec::new(),
-                },
+                &VariableType::Local,
                 params.file_id(),
                 params.file_location(),
             );
@@ -223,8 +221,8 @@ fn visit_statement(
                 .append_statement(ir::Statement::IfThenElse {
                     meta: meta.try_lift((), reports)?,
                     cond: cond.try_lift((), reports)?,
-                    if_true: current_index + 2,
-                    if_false: None, // May be updated later.
+                    true_index: current_index + 2,
+                    false_index: None, // May be updated later.
                 });
             let header_index = current_index + 1;
 
@@ -268,8 +266,8 @@ fn visit_statement(
                 .append_statement(ir::Statement::IfThenElse {
                     meta: meta.try_lift((), reports)?,
                     cond: cond.try_lift((), reports)?,
-                    if_true: current_index + 1,
-                    if_false: None, // May be updated later.
+                    true_index: current_index + 1,
+                    false_index: None, // May be updated later.
                 });
 
             // Visit the if-case body.
@@ -307,19 +305,19 @@ fn visit_statement(
             }
         }
         ast::Statement::Declaration {
-            meta,
-            name,
-            xtype,
-            dimensions,
-            ..
+            meta, name, xtype, ..
         } => {
-            // Declarations are tracked by the CFG header, so we simply add new declarations to the environment.
+            // Declarations are also tracked by the CFG header.
+            trace!("appending `{stmt}` to basic block {current_index}");
             env.add_declaration(&Declaration::new(
                 &name.try_lift(meta, reports)?,
-                &xtype.try_lift(dimensions, reports)?,
+                &xtype.try_lift((), reports)?,
                 &meta.file_id,
                 &meta.location,
             ));
+            basic_blocks
+                .last_mut()
+                .append_statement(stmt.try_lift((), reports)?);
             Ok(HashSet::new())
         }
         _ => {
@@ -353,14 +351,14 @@ fn complete_basic_block(basic_blocks: &mut BasicBlockVec, pred_set: &IndexSet, m
         // to `j`.
         if let Some(IfThenElse {
             cond,
-            if_true,
-            if_false,
+            true_index,
+            false_index,
             ..
         }) = basic_blocks[i].statements_mut().last_mut()
         {
-            if j != *if_true && if_false.is_none() {
+            if j != *true_index && false_index.is_none() {
                 trace!("updating false branch target of `if {cond}`");
-                *if_false = Some(j)
+                *false_index = Some(j)
             }
         }
     }

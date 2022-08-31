@@ -4,6 +4,7 @@ use crate::error_definition::ReportCollection;
 use crate::ir;
 use crate::ir::declarations::{Declaration, Declarations};
 use crate::ir::errors::{IRError, IRResult};
+use crate::nonempty_vec::NonEmptyVec;
 
 /// The `TryLift` trait is used to lift an AST node to an IR node. This may fail
 /// and produce an error. Even if the operation succeeds it may produce warnings
@@ -101,10 +102,24 @@ impl TryLift<()> for ast::Statement {
                 meta: meta.try_lift((), reports)?,
                 arg: arg.try_lift((), reports)?,
             }),
+            ast::Statement::Declaration {
+                meta,
+                xtype,
+                name,
+                dimensions,
+                ..
+            } => Ok(ir::Statement::Declaration {
+                meta: meta.try_lift((), reports)?,
+                names: NonEmptyVec::new(name.try_lift(meta, reports)?),
+                var_type: xtype.try_lift((), reports)?,
+                dimensions: dimensions
+                    .iter()
+                    .map(|size| size.try_lift((), reports))
+                    .collect::<IRResult<Vec<_>>>()?,
+            }),
             ast::Statement::Block { .. }
             | ast::Statement::While { .. }
             | ast::Statement::IfThenElse { .. }
-            | ast::Statement::Declaration { .. }
             | ast::Statement::InitializationBlock { .. } => {
                 // These need to be handled by the caller.
                 panic!("failed to convert AST statement to IR")
@@ -202,26 +217,17 @@ impl TryLift<()> for ast::Meta {
 }
 
 // Convert an AST variable type to an IR type. (This will always succeed.)
-impl TryLift<&Vec<ast::Expression>> for ast::VariableType {
+impl TryLift<()> for ast::VariableType {
     type IR = ir::VariableType;
     type Error = IRError;
 
-    fn try_lift(
-        &self,
-        dimensions: &Vec<ast::Expression>,
-        reports: &mut ReportCollection,
-    ) -> IRResult<Self::IR> {
-        let dimensions = dimensions
-            .iter()
-            .map(|dim| dim.try_lift((), reports))
-            .collect::<IRResult<Vec<ir::Expression>>>()?;
+    fn try_lift(&self, _: (), reports: &mut ReportCollection) -> IRResult<Self::IR> {
         match self {
-            ast::VariableType::Component => Ok(ir::VariableType::Component { dimensions }),
-            ast::VariableType::Var => Ok(ir::VariableType::Local { dimensions }),
-            ast::VariableType::Signal(signal_type, _) => Ok(ir::VariableType::Signal {
-                dimensions,
-                signal_type: signal_type.try_lift((), reports)?,
-            }),
+            ast::VariableType::Component => Ok(ir::VariableType::Component),
+            ast::VariableType::Var => Ok(ir::VariableType::Local),
+            ast::VariableType::Signal(signal_type, _) => {
+                Ok(ir::VariableType::Signal(signal_type.try_lift((), reports)?))
+            }
         }
     }
 }

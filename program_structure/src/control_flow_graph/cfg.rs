@@ -1,6 +1,8 @@
 use log::{debug, trace};
+use std::collections::HashSet;
 use std::fmt;
 
+use crate::cfg::ssa_impl;
 use crate::file_definition::FileID;
 use crate::ir::declarations::{Declaration, Declarations};
 use crate::ir::value_meta::ValueEnvironment;
@@ -72,35 +74,16 @@ impl Cfg {
             *name = name.with_version(0);
         }
 
-        // Propagate metadata to all child nodes. Since determining variable use
-        // requires that variable types are available, type propagation must run
-        // before caching variable use.
+        // 3. Update declarations to track SSA variables.
+        self.declarations =
+            ssa_impl::update_declarations(&mut self.basic_blocks, &self.parameters, &env);
+
+        // 4. Propagate metadata to all child nodes. Since determining variable
+        // use requires that variable types are available, type propagation must
+        // run before caching variable use.
         self.propagate_types();
         self.propagate_values();
         self.cache_variable_use();
-
-        // 4. Update declaration map to track SSA variables.
-        let mut versioned_declarations = Declarations::new();
-        for (name, declaration) in self.declarations.iter() {
-            if matches!(declaration.variable_type(), VariableType::Local { .. }) {
-                // Add a new declaration for each version of the local variable.
-                for version in env
-                    .get_version_range(name)
-                    .expect("variable in environment")
-                {
-                    versioned_declarations.add_declaration(&Declaration::new(
-                        &declaration.variable_name().with_version(version),
-                        declaration.variable_type(),
-                        &declaration.file_id(),
-                        &declaration.file_location(),
-                    ));
-                }
-            } else {
-                // Declarations of signals and components are just copied over.
-                versioned_declarations.add_declaration(declaration);
-            }
-        }
-        self.declarations = versioned_declarations;
 
         // 5. Print trace output of CFG.
         for basic_block in self.basic_blocks.iter() {
@@ -150,6 +133,12 @@ impl Cfg {
     #[must_use]
     pub fn get_declaration(&self, name: &VariableName) -> Option<&Declaration> {
         self.declarations.get_declaration(name)
+    }
+
+    /// Returns the type of the given variable.
+    #[must_use]
+    pub fn get_type(&self, name: &VariableName) -> Option<&VariableType> {
+        self.declarations.get_type(name)
     }
 
     /// Returns an iterator over the basic blocks in the CFG.

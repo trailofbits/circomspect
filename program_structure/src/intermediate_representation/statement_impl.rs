@@ -12,7 +12,8 @@ impl Statement {
     pub fn meta(&self) -> &Meta {
         use Statement::*;
         match self {
-            IfThenElse { meta, .. }
+            Declaration { meta, .. }
+            | IfThenElse { meta, .. }
             | Return { meta, .. }
             | Substitution { meta, .. }
             | LogCall { meta, .. }
@@ -25,7 +26,8 @@ impl Statement {
     pub fn meta_mut(&mut self) -> &mut Meta {
         use Statement::*;
         match self {
-            IfThenElse { meta, .. }
+            Declaration { meta, .. }
+            | IfThenElse { meta, .. }
             | Return { meta, .. }
             | Substitution { meta, .. }
             | LogCall { meta, .. }
@@ -38,6 +40,13 @@ impl Statement {
     pub fn propagate_values(&mut self, env: &mut ValueEnvironment) -> bool {
         use Statement::*;
         match self {
+            Declaration { dimensions, .. } => {
+                let mut result = false;
+                for size in dimensions {
+                    result = result || size.propagate_values(env);
+                }
+                result
+            }
             Substitution { meta, var, rhe, .. } => {
                 // TODO: Handle array values.
                 let mut result = rhe.propagate_values(env);
@@ -60,7 +69,20 @@ impl Statement {
     pub fn propagate_types(&mut self, vars: &Declarations) {
         use Statement::*;
         match self {
+            Declaration {
+                meta,
+                var_type,
+                dimensions,
+                ..
+            } => {
+                // The metadata tracks the type of the declared variable.
+                meta.type_knowledge_mut().set_variable_type(var_type);
+                for size in dimensions {
+                    size.propagate_types(vars);
+                }
+            }
             Substitution { meta, var, rhe, .. } => {
+                // The metadata tracks the type of the assigned variable.
                 rhe.propagate_types(vars);
                 if let Some(var_type) = vars.get_type(var) {
                     meta.type_knowledge_mut().set_variable_type(var_type);
@@ -90,6 +112,27 @@ impl<'a> fmt::Debug for Statement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         use Statement::*;
         match self {
+            Declaration {
+                names,
+                var_type,
+                dimensions,
+                ..
+            } => {
+                write!(f, "{var_type} ")?;
+                let mut first = true;
+                for name in names {
+                    if first {
+                        first = false;
+                    } else {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{name:?}")?;
+                    for size in dimensions {
+                        write!(f, "[{size:?}]")?;
+                    }
+                }
+                Ok(())
+            }
             Substitution { var, op, rhe, .. } => write!(f, "{var:?} {op} {rhe:?}"),
             ConstraintEquality { lhe, rhe, .. } => write!(f, "{lhe:?} === {rhe:?}"),
             IfThenElse { cond, .. } => write!(f, "if {cond:?}"),
@@ -104,6 +147,20 @@ impl<'a> fmt::Display for Statement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         use Statement::*;
         match self {
+            Declaration {
+                names,
+                var_type,
+                dimensions,
+                ..
+            } => {
+                // We rewrite declarations of multiple SSA variables as a single
+                // declaration of the original variable.
+                write!(f, "{var_type} {}", names.first())?;
+                for size in dimensions {
+                    write!(f, "[{size}]")?;
+                }
+                Ok(())
+            }
             Substitution { var, op, rhe, .. } => {
                 match rhe {
                     // We rewrite `Update` expressions of arrays/component signals.
@@ -149,21 +206,29 @@ impl VariableMeta for Statement {
 
         use Statement::*;
         match self {
+            Declaration { dimensions, .. } => {
+                for size in dimensions {
+                    size.cache_variable_use();
+                    locals_read.extend(size.locals_read().clone());
+                    signals_read.extend(size.signals_read().clone());
+                    components_read.extend(size.components_read().clone());
+                }
+            }
             Substitution { meta, var, rhe, .. } => {
                 rhe.cache_variable_use();
                 locals_read.extend(rhe.locals_read().clone());
                 signals_read.extend(rhe.signals_read().clone());
                 components_read.extend(rhe.components_read().clone());
                 match meta.type_knowledge().variable_type() {
-                    Some(VariableType::Local { .. }) => {
+                    Some(VariableType::Local) => {
                         trace!("adding `{var}` to local variables written");
                         locals_written.insert(VariableUse::new(meta, var, &Vec::new()));
                     }
-                    Some(VariableType::Signal { .. }) => {
+                    Some(VariableType::Signal(_)) => {
                         trace!("adding `{var}` to signals written");
                         signals_written.insert(VariableUse::new(meta, var, &Vec::new()));
                     }
-                    Some(VariableType::Component { .. }) => {
+                    Some(VariableType::Component) => {
                         trace!("adding `{var}` to components written");
                         components_written.insert(VariableUse::new(meta, var, &Vec::new()));
                     }

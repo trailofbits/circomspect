@@ -297,31 +297,31 @@ impl VariableMeta for Expression {
             }
             Variable { meta, name } => {
                 match meta.type_knowledge().variable_type() {
-                    Some(VariableType::Local { .. }) => {
-                        trace!("adding `{name}` to local variables read");
+                    Some(VariableType::Local) => {
+                        trace!("adding `{name:?}` to local variables read");
                         locals_read.insert(VariableUse::new(meta, name, &Vec::new()));
                     }
-                    Some(VariableType::Component { .. }) => {
-                        trace!("adding `{name}` to components read");
+                    Some(VariableType::Component) => {
+                        trace!("adding `{name:?}` to components read");
                         components_read.insert(VariableUse::new(meta, name, &Vec::new()));
                     }
-                    Some(VariableType::Signal { .. }) => {
-                        trace!("adding `{name}` to signals read");
+                    Some(VariableType::Signal(_)) => {
+                        trace!("adding `{name:?}` to signals read");
                         signals_read.insert(VariableUse::new(meta, name, &Vec::new()));
                     }
                     None => {
                         // If the variable type is unknown we ignore it.
-                        trace!("variable `{name}` of unknown type read");
+                        trace!("variable `{name:?}` of unknown type read");
                     }
                 }
             }
             Call { args, .. } => {
-                args.iter_mut().for_each(|arg| {
+                for arg in args {
                     arg.cache_variable_use();
                     locals_read.extend(arg.locals_read().clone());
                     signals_read.extend(arg.signals_read().clone());
                     components_read.extend(arg.components_read().clone());
-                });
+                }
             }
             Phi { meta, args, .. } => {
                 locals_read.extend(
@@ -330,12 +330,12 @@ impl VariableMeta for Expression {
                 );
             }
             Array { values, .. } => {
-                values.iter_mut().for_each(|value| {
+                for value in values {
                     value.cache_variable_use();
                     locals_read.extend(value.locals_read().clone());
                     signals_read.extend(value.signals_read().clone());
                     components_read.extend(value.components_read().clone());
-                });
+                }
             }
             Access { meta, var, access } => {
                 // Cache array index variable use.
@@ -349,21 +349,21 @@ impl VariableMeta for Expression {
                 }
                 // Match against the type of `var`.
                 match meta.type_knowledge().variable_type() {
-                    Some(VariableType::Local { .. }) => {
-                        trace!("adding `{var}` to local variables read");
+                    Some(VariableType::Local) => {
+                        trace!("adding `{var:?}` to local variables read");
                         locals_read.insert(VariableUse::new(meta, var, access));
                     }
-                    Some(VariableType::Component { .. }) => {
-                        trace!("adding `{var}` to components read");
+                    Some(VariableType::Component) => {
+                        trace!("adding `{var:?}` to components read");
                         components_read.insert(VariableUse::new(meta, var, access));
                     }
-                    Some(VariableType::Signal { .. }) => {
-                        trace!("adding `{var}` to signals read");
+                    Some(VariableType::Signal(_)) => {
+                        trace!("adding `{var:?}` to signals read");
                         signals_read.insert(VariableUse::new(meta, var, access));
                     }
                     None => {
                         // If the variable type is unknown we ignore it.
-                        trace!("variable `{var}` of unknown type read");
+                        trace!("variable `{var:?}` of unknown type read");
                     }
                 }
             }
@@ -391,21 +391,21 @@ impl VariableMeta for Expression {
                 }
                 // Match against the type of `var`.
                 match meta.type_knowledge().variable_type() {
-                    Some(VariableType::Local { .. }) => {
-                        trace!("adding `{var}` to local variables read");
+                    Some(VariableType::Local) => {
+                        trace!("adding `{var:?}` to local variables read");
                         locals_read.insert(VariableUse::new(meta, var, &Vec::new()));
                     }
-                    Some(VariableType::Component { .. }) => {
-                        trace!("adding `{var}` to components read");
+                    Some(VariableType::Component) => {
+                        trace!("adding `{var:?}` to components read");
                         components_read.insert(VariableUse::new(meta, var, &Vec::new()));
                     }
-                    Some(VariableType::Signal { .. }) => {
-                        trace!("adding `{var}` to signals read");
+                    Some(VariableType::Signal(_)) => {
+                        trace!("adding `{var:?}` to signals read");
                         signals_read.insert(VariableUse::new(meta, var, &Vec::new()));
                     }
                     None => {
                         // If the variable type is unknown we ignore it.
-                        trace!("variable `{var}` of unknown type read");
+                        trace!("variable `{var:?}` of unknown type read");
                     }
                 }
             }

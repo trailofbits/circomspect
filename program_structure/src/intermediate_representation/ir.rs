@@ -2,6 +2,7 @@ use num_bigint::BigInt;
 use std::fmt;
 
 use crate::file_definition::{FileID, FileLocation};
+use crate::nonempty_vec::NonEmptyVec;
 
 use super::type_meta::TypeKnowledge;
 use super::value_meta::ValueKnowledge;
@@ -101,13 +102,22 @@ impl PartialEq for Meta {
 
 impl Eq for Meta {}
 
+// TODO: Implement a custom `PartialEq` for `Statement`.
 #[derive(Clone)]
 pub enum Statement {
+    // We allow for declarations of multiple variables of the same type to avoid
+    // having to insert new declarations when converting the CFG to SSA.
+    Declaration {
+        meta: Meta,
+        names: NonEmptyVec<VariableName>,
+        var_type: VariableType,
+        dimensions: Vec<Expression>,
+    },
     IfThenElse {
         meta: Meta,
         cond: Expression,
-        if_true: Index,
-        if_false: Option<Index>,
+        true_index: Index,
+        false_index: Option<Index>,
     },
     Return {
         meta: Meta,
@@ -198,32 +208,32 @@ pub enum Expression {
     Phi { meta: Meta, args: Vec<VariableName> },
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub enum VariableType {
-    Local {
-        dimensions: Vec<Expression>,
-    },
-    Component {
-        dimensions: Vec<Expression>,
-    },
-    Signal {
-        signal_type: SignalType,
-        dimensions: Vec<Expression>,
-    },
+    Local,
+    Component,
+    Signal(SignalType),
 }
 
 impl fmt::Display for VariableType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        use SignalType::*;
         use VariableType::*;
         match self {
-            Local { .. } => write!(f, "var"),
-            Component { .. } => write!(f, "component"),
-            Signal { signal_type, .. } => write!(f, "signal {signal_type}"),
+            Local => write!(f, "var"),
+            Component => write!(f, "component"),
+            Signal(signal_type) => {
+                if matches!(signal_type, Intermediate) {
+                    write!(f, "signal")
+                } else {
+                    write!(f, "signal {signal_type}")
+                }
+            }
         }
     }
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub enum SignalType {
     Input,
     Output,
