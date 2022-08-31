@@ -46,6 +46,11 @@ pub fn find_bitwise_complement(cfg: &Cfg) -> ReportCollection {
 fn visit_statement(stmt: &Statement, reports: &mut ReportCollection) {
     use Statement::*;
     match stmt {
+        Declaration { dimensions, .. } => {
+            for size in dimensions {
+                visit_expression(size, reports);
+            }
+        }
         IfThenElse { cond, .. } => visit_expression(cond, reports),
         Substitution { rhe, .. } => visit_expression(rhe, reports),
         Return { value, .. } => visit_expression(value, reports),
