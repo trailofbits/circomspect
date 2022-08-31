@@ -86,7 +86,7 @@ pub struct CompilerVersionError {
 impl CompilerVersionError {
     pub fn produce_report(error: Self) -> Report {
         let message = format!(
-            "File `{}` requires version {}, which is not supported by circomspect (version {}).",
+            "The file `{}` requires version {}, which is not supported by circomspect (version {}).",
             error.path,
             version_string(&error.required_version),
             version_string(&error.version),
@@ -103,7 +103,7 @@ impl NoCompilerVersionWarning {
     pub fn produce_report(error: Self) -> Report {
         Report::warning(
             format!(
-                "File `{}` does not include a version pragma. Assuming version {}.",
+                "The file `{}` does not include a version pragma. Assuming version {}.",
                 error.path,
                 version_string(&error.version)
             ),

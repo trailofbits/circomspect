@@ -43,9 +43,12 @@ impl FileStack {
                     match fs::canonicalize(path) {
                         Ok(path) => self.stack.push(path),
                         Err(_) => {
-                            reports.push(FileOsError {
-                                path: path.display().to_string()
-                            }.into_report());
+                            reports.push(
+                                FileOsError {
+                                    path: path.display().to_string(),
+                                }
+                                .into_report(),
+                            );
                         }
                     }
                 }
