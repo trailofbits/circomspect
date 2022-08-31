@@ -3,7 +3,8 @@ use program_structure::error_definition::ReportCollection;
 
 extern crate num_bigint_dig as num_bigint;
 
-mod taint_analysis;
+pub mod constraint_analysis;
+pub mod taint_analysis;
 
 // Analysis passes.
 mod bitwise_complement;
