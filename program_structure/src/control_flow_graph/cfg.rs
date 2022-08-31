@@ -272,7 +272,6 @@ impl Cfg {
                 )
                 .collect();
         }
-        println!("successors of {}: {:?}", start_block.index(), successors);
 
         // Compute the strict predecessors of the end block.
         let mut predecessors = HashSet::new();
@@ -291,7 +290,6 @@ impl Cfg {
                 .collect();
         }
         predecessors.remove(&end_block.index());
-        println!("predecessors of {}: {:?}", end_block.index(), predecessors);
 
         // Return the basic blocks corresponding to the intersection of the two
         // sets.
@@ -346,7 +344,6 @@ impl Cfg {
         use crate::ir::Statement::*;
         if let Some(IfThenElse { true_index, false_index, .. }) = header_block.statements().last() {
             if let Some(false_index) = false_index {
-                println!("computing false branch at {false_index} for if-statement at {}", header_block.index());
                 if self.dominator_tree.get_dominance_frontier(*true_index).contains(false_index) {
                     // The false branch is empty.
                     return Vec::new()
