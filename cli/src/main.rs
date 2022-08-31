@@ -1,3 +1,4 @@
+use atty;
 use anyhow::{anyhow, Result};
 use clap::{CommandFactory, Parser};
 use log::{error, info};
@@ -9,6 +10,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::str::FromStr;
+use termcolor::{ColorSpec, WriteColor, Color, ColorChoice, StandardStream};
 
 use program_analysis::get_analysis_passes;
 use program_structure::cfg::{Cfg, IntoCfg};
@@ -90,7 +92,7 @@ fn analyze_definitions(
 
     // Analyze all functions.
     for (name, function) in functions {
-        info!("analyzing function '{name}'");
+        log_message(&format!("analyzing function '{name}'"));
         let mut new_reports = ReportCollection::new();
         analyze_ast(function, &mut new_reports);
         filter_reports(&mut new_reports, output_level);
@@ -99,7 +101,7 @@ fn analyze_definitions(
     }
     // Analyze all templates.
     for (name, template) in templates {
-        info!("analyzing template '{name}'");
+        log_message(&format!("analyzing template '{name}'"));
         let mut new_reports = ReportCollection::new();
         analyze_ast(template, &mut new_reports);
         filter_reports(&mut new_reports, output_level);
@@ -136,6 +138,19 @@ fn serialize_reports(
     let mut sarif_file = File::create(sarif_path)?;
     writeln!(sarif_file, "{}", &json)?;
     Ok(())
+}
+
+fn log_message(message: &str) {
+    let mut writer = if atty::is(atty::Stream::Stdout) {
+        StandardStream::stdout(ColorChoice::Always)
+    } else {
+        StandardStream::stdout(ColorChoice::Never)
+    };
+    // We ignore logging failures.
+    let _ = writer.set_color(ColorSpec::new().set_fg(Some(Color::Green)));
+    let _ = write!(&mut writer, "circomspect");
+    let _ = writer.reset();
+    let _ = writeln!(&mut writer, ": {message}");
 }
 
 fn main() -> ExitCode {
@@ -184,13 +199,13 @@ fn main() -> ExitCode {
     }
     // Use the exit code to indicate if any issues were found.
     if reports.is_empty() {
-        println!("No issues found.");
+        log_message(&format!("No issues found."));
         ExitCode::SUCCESS
     } else {
         if reports.len() == 1 {
-            println!("{} issue found.", reports.len());
+            log_message(&format!("{} issue found.", reports.len()));
         } else {
-            println!("{} issues found.", reports.len());
+            log_message(&format!("{} issues found.", reports.len()));
         }
         ExitCode::FAILURE
     }
