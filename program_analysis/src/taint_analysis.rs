@@ -1,5 +1,6 @@
 use log::{debug, trace};
 use program_structure::cfg::parameters::Parameters;
+use program_structure::intermediate_representation::value_meta::ValueMeta;
 use program_structure::intermediate_representation::Meta;
 use std::collections::{HashMap, HashSet};
 
@@ -42,7 +43,7 @@ impl TaintAnalysis {
     }
 
     /// Get the variable use corresponding to the definition of the variable.
-    pub fn definition(&self, var: &VariableName) -> Option<VariableUse> {
+    pub fn get_definition(&self, var: &VariableName) -> Option<VariableUse> {
         self.definitions.get(var).cloned()
     }
 
@@ -64,7 +65,7 @@ impl TaintAnalysis {
     /// Returns variables tainted in zero or more steps by `source`.
     pub fn multi_step_taint(&self, source: &VariableName) -> HashSet<VariableUse> {
         let mut result = HashSet::new();
-        let mut update = match self.definition(source) {
+        let mut update = match self.get_definition(source) {
             Some(var) => HashSet::from([var]),
             None => HashSet::default(),
         };
@@ -94,25 +95,146 @@ pub fn run_taint_analysis(cfg: &Cfg) -> TaintAnalysis {
     for basic_block in cfg.iter() {
         for stmt in basic_block.iter() {
             trace!("visiting statement `{stmt:?}`");
-            // The first iterator will be non-empty for assignments only.
-            for sink in stmt.variables_written() {
-                if !matches!(
-                    stmt,
-                    Substitution {
-                        rhe: Phi { .. },
-                        ..
+            match stmt {
+                Substitution { .. } => {
+                    // Variables read taint variables written by the statement.
+                    for sink in stmt.variables_written() {
+                        if !matches!(
+                            stmt,
+                            Substitution {
+                                rhe: Phi { .. },
+                                ..
+                            }
+                        ) {
+                            // Add the definition to the result.
+                            trace!("adding variable assignment for `{:?}`", sink.name());
+                            result.add_definition(sink);
+                        }
+                        for source in stmt.variables_read() {
+                            // Add each taint step to the result.
+                            trace!(
+                                "adding taint step with source `{:?}` and sink `{:?}`",
+                                source.name(),
+                                sink.name()
+                            );
+                            result.add_taint_step(source.name(), &sink);
+                        }
                     }
-                ) {
-                    // Add the definition to the result.
-                    trace!("adding variable assignment for `{:?}`", sink.name());
-                    result.add_definition(sink);
                 }
-                for source in stmt.variables_read() {
-                    // Add each taint step to the result.
-                    result.add_taint_step(source.name(), &sink);
+                Declaration { meta, names, dimensions, .. } => {
+                    // Variables occurring in declarations taint the declared variable.
+                    for name in names {
+                        for size in dimensions {
+                            for source in size.variables_read() {
+                                let sink = VariableUse::new(meta, name, &Vec::new());
+                                result.add_taint_step(source.name(), &sink)
+                            }
+                        }
+                    }
                 }
+                IfThenElse { cond, .. } => {
+                    // A variable which occurs in a non-constant condition taints all
+                    // variables assigned in the if-statement body.
+                    if cond.value().is_some() {
+                        continue;
+                    }
+                    let true_branch = cfg.get_true_branch(basic_block);
+                    let false_branch = cfg.get_false_branch(basic_block);
+                    for body in true_branch.iter().chain(false_branch.iter()) {
+                        for sink in body.variables_written() {
+                            for source in cond.variables_read() {
+                                // Add each taint step to the result.
+                                trace!(
+                                    "adding taint step with source `{:?}` and sink `{:?}`",
+                                    source.name(),
+                                    sink.name()
+                                );
+                                result.add_taint_step(source.name(), sink);
+                            }
+                        }
+                    }
+                }
+                // The following statement types do not propagate taint.
+                Assert { .. } | LogCall { .. } | Return { .. } | ConstraintEquality { .. } => { }
             }
         }
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use parser::parse_definition;
+    use program_structure::cfg::IntoCfg;
+    use program_structure::error_definition::ReportCollection;
+
+    use super::*;
+
+    #[test]
+    fn test_taint_analysis() {
+        let src = r#"
+            template PointOnLine(k, n) {
+                signal input in[2];
+
+                var LOGK = log2(k);
+                var LOGK2 = log2(3 * k * k);
+                assert(3 * n + LOGK2 < 251);
+
+                component left = BigTemplate(n, k, 2 * n + LOGK + 1);
+                left.a <== in[0];
+                left.b <== in[1];
+
+                component right[n];
+                for (var i = 0; i < n; i++) {
+                    right[0] = SmallTemplate(k);
+                }
+            }
+        "#;
+
+        let mut taint_map = HashMap::new();
+        taint_map.insert("k", HashSet::from([
+            "k".to_string(),
+            "LOGK".to_string(),
+            "LOGK2".to_string(),
+            "left".to_string(),
+            "right".to_string()
+        ]));
+        taint_map.insert("n", HashSet::from([
+            "i".to_string(),
+            "n".to_string(),
+            "left".to_string(),
+            "right".to_string()
+        ]));
+        taint_map.insert("i", HashSet::from([
+            "i".to_string(),
+            "right".to_string()
+        ]));
+
+        validate_taint(&src, &taint_map);
+    }
+
+    fn validate_taint(src: &str, taint_map: &HashMap<&str, HashSet<String>>) {
+        // Build CFG.
+        let mut reports = ReportCollection::new();
+        let cfg = parse_definition(src)
+            .unwrap()
+            .into_cfg(&mut reports)
+            .unwrap()
+            .into_ssa()
+            .unwrap();
+        assert!(reports.is_empty());
+
+        let taint_analysis = run_taint_analysis(&cfg);
+        for (source, expected_sinks) in taint_map {
+            let source = VariableName::from_name(source).with_version(0);
+            let sinks = taint_analysis
+                .multi_step_taint(&source)
+                .iter()
+                .map(|var| var.name().to_string())
+                .collect::<HashSet<_>>();
+            assert_eq!(&sinks, expected_sinks);
+        }
+    }
 }
