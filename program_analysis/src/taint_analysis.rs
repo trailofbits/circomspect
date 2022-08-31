@@ -175,7 +175,7 @@ mod tests {
     #[test]
     fn test_taint_analysis() {
         let src = r#"
-            template PointOnLine(k, n) {
+            template PointOnLine(k, m, n) {
                 signal input in[2];
 
                 var LOGK = log2(k);
@@ -186,7 +186,7 @@ mod tests {
                 left.a <== in[0];
                 left.b <== in[1];
 
-                component right[n];
+                component right[m];
                 for (var i = 0; i < n; i++) {
                     right[0] = SmallTemplate(k);
                 }
@@ -201,9 +201,13 @@ mod tests {
             "left".to_string(),
             "right".to_string()
         ]));
+        taint_map.insert("m", HashSet::from([
+            "m".to_string(),
+            "right".to_string()  // Since `right` is declared as an `m` dimensional array.
+        ]));
         taint_map.insert("n", HashSet::from([
-            "i".to_string(),
             "n".to_string(),
+            "i".to_string(),  // Since the update `i++` depends on the condition `i < n`.
             "left".to_string(),
             "right".to_string()
         ]));
