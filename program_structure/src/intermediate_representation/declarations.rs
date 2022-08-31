@@ -36,6 +36,16 @@ impl Declarations {
     pub fn iter(&self) -> impl Iterator<Item = (&VariableName, &Declaration)> {
         self.0.iter()
     }
+
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 }
 
 /// To avoid having to add a new declaration for each new version of a variable
