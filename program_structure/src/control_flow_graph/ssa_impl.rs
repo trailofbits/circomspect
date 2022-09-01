@@ -1,4 +1,4 @@
-use log::{debug, error, trace};
+use log::{debug, trace, warn};
 use std::collections::HashSet;
 use std::convert::TryInto;
 use std::ops::Range;
@@ -56,13 +56,15 @@ impl Environment {
 
     /// Gets the current (scoped) version of the variable.
     pub fn get_current_version(&self, name: &VariableName) -> Option<Version> {
-        let name = name.without_version().to_string();
+        // Need to use format to include the suffix.
+        let name = format!("{:?}", name.without_version());
         self.scoped_versions.get_variable(&name).cloned()
     }
 
     /// Gets the range of versions seen for the variable.
     pub fn get_version_range(&self, name: &VariableName) -> Option<Range<Version>> {
-        let name = name.without_version().to_string();
+        // Need to use format to include the suffix.
+        let name = format!("{:?}", name.without_version());
         self.global_versions
             .get_variable(&name)
             .map(|max| 0..(max + 1))
@@ -70,8 +72,8 @@ impl Environment {
 
     /// Gets the version to apply for a newly assigned variable.
     fn get_next_version(&mut self, name: &VariableName) -> Version {
-        // Update the global version.
-        let name = name.without_version().to_string();
+        // Need to use format to include the suffix.
+        let name = format!("{:?}", name.without_version());
         let version = match self.global_versions.get_variable(&name) {
             // The variable has not been seen before. This is version 0 of the variable.
             None => 0,
@@ -275,7 +277,7 @@ fn visit_expression(expr: &mut Expression, env: &mut Environment) -> SSAResult<(
                 }
                 None => {
                     // TODO: Handle undeclared variables more gracefully.
-                    error!("failed to convert undeclared variable `{name}` to SSA");
+                    warn!("failed to convert undeclared variable `{name}` to SSA");
                     Err(SSAError::UndefinedVariableError {
                         name: name.to_string(),
                         file_id: meta.file_id(),
@@ -307,7 +309,7 @@ fn visit_expression(expr: &mut Expression, env: &mut Environment) -> SSAResult<(
                 }
                 None => {
                     // TODO: Handle undeclared variables more gracefully.
-                    error!("failed to convert undeclared variable `{var}` to SSA");
+                    warn!("failed to convert undeclared variable `{var}` to SSA");
                     Err(SSAError::UndefinedVariableError {
                         name: var.to_string(),
                         file_id: meta.file_id(),
@@ -421,21 +423,29 @@ pub fn update_declarations(
                 ..
             } = stmt
             {
-                assert!(names.len() == 1 && names.first().version().is_none());
+                let name = names.first();
+                assert!(names.len() == 1 && name.version().is_none());
+
                 if matches!(var_type, VariableType::Local) {
+                    if env.get_version_range(name).is_none() {
+                        println!("unknown variable `{name}`");
+                    }
+                    let mut versions = env
+                        .get_version_range(name)
+                        .unwrap_or_else(|| 0..1)  // This will happen if the variable is not assigned to.
+                        .collect::<Vec<_>>();
+                    versions.sort();
+
                     // Add a new declaration for each version of the local variable.
                     let mut versioned_names = Vec::new();
-                    for version in env
-                        .get_version_range(names.first())
-                        .expect("variable in environment")
-                    {
+                    for version in versions {
                         trace!(
                             "adding declaration for variable `{}`",
-                            names.first().with_version(version)
+                            name.with_version(version)
                         );
-                        versioned_names.push(names.first().with_version(version));
+                        versioned_names.push(name.with_version(version));
                         versioned_declarations.add_declaration(&Declaration::new(
-                            &names.first().with_version(version),
+                            &name.with_version(version),
                             var_type,
                             &meta.file_id(),
                             &meta.file_location(),
@@ -447,7 +457,7 @@ pub fn update_declarations(
                     // Declarations of signals and components are just copied over.
                     trace!("adding declaration for variable `{}`", names.first());
                     versioned_declarations.add_declaration(&Declaration::new(
-                        &names.first(),
+                        name,
                         var_type,
                         &meta.file_id(),
                         &meta.file_location(),
