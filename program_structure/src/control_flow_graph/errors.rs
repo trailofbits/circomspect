@@ -20,7 +20,7 @@ pub enum CFGError {
         file_id: Option<FileID>,
         file_location: FileLocation,
     },
-    #[error("The declaration or the variable `{name}` shadows a previous declaration.")]
+    #[error("The declaration of the variable `{name}` shadows a previous declaration.")]
     ShadowingVariableWarning {
         name: String,
         primary_file_id: Option<FileID>,
@@ -48,14 +48,14 @@ impl CFGError {
                 file_location,
             } => {
                 let mut report = Report::error(
-                    format!("Variable `{name}` is used before it is defined."),
+                    format!("The variable `{name}` is used before it is defined."),
                     ReportCode::UninitializedSymbolInExpression,
                 );
                 if let Some(file_id) = file_id {
                     report.add_primary(
                         file_location,
                         file_id,
-                        "Variable is first seen here.".to_string(),
+                        format!("The variable `{name}` is first seen here."),
                     );
                 }
                 report

@@ -25,14 +25,14 @@ impl SSAError {
                 location,
             } => {
                 let mut report = Report::error(
-                    format!("variable `{name}` is used before it is defined"),
+                    format!("The variable `{name}` is used before it is defined."),
                     ReportCode::UninitializedSymbolInExpression,
                 );
                 if let Some(file_id) = file_id {
                     report.add_primary(
                         location,
                         file_id,
-                        "variable is first seen here".to_string(),
+                        format!("The variable `{name}` is first seen here."),
                     );
                 }
                 report

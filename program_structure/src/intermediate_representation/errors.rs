@@ -33,14 +33,14 @@ impl IRError {
                 file_location,
             } => {
                 let mut report = Report::error(
-                    format!("Variable '{name}' is used before it is defined."),
+                    format!("The variable '{name}' is used before it is defined."),
                     ReportCode::UninitializedSymbolInExpression,
                 );
                 if let Some(file_id) = file_id {
                     report.add_primary(
                         file_location,
                         file_id,
-                        "Variable is first seen here.".to_string(),
+                        format!("The variable `{name}` is first seen here."),
                     );
                 }
                 report
