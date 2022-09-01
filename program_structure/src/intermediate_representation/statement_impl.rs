@@ -135,7 +135,12 @@ impl<'a> fmt::Debug for Statement {
             }
             Substitution { var, op, rhe, .. } => write!(f, "{var:?} {op} {rhe:?}"),
             ConstraintEquality { lhe, rhe, .. } => write!(f, "{lhe:?} === {rhe:?}"),
-            IfThenElse { cond, .. } => write!(f, "if {cond:?}"),
+            IfThenElse { cond, true_index, false_index, .. } => {
+                match false_index {
+                    Some(false_index) => write!(f, "if {cond:?} then {true_index} else {false_index}"),
+                    None => write!(f, "if {cond:?} then {true_index}"),
+                }
+            }
             Return { value, .. } => write!(f, "return {value:?}"),
             Assert { arg, .. } => write!(f, "assert({arg:?})"),
             LogCall { arg, .. } => write!(f, "log({arg:?})"),
@@ -221,11 +226,11 @@ impl VariableMeta for Statement {
                 components_read.extend(rhe.components_read().clone());
                 match meta.type_knowledge().variable_type() {
                     Some(VariableType::Local) => {
-                        trace!("adding `{var}` to local variables written");
+                        trace!("adding `{var:?}` to local variables written");
                         locals_written.insert(VariableUse::new(meta, var, &Vec::new()));
                     }
                     Some(VariableType::Signal(_)) => {
-                        trace!("adding `{var}` to signals written");
+                        trace!("adding `{var:?}` to signals written");
                         signals_written.insert(VariableUse::new(meta, var, &Vec::new()));
                         if matches!(op, AssignOp::AssignConstraintSignal) {
                             // If this is a signal constraint assignment, we
@@ -235,11 +240,11 @@ impl VariableMeta for Statement {
                         }
                     }
                     Some(VariableType::Component) => {
-                        trace!("adding `{var}` to components written");
+                        trace!("adding `{var:?}` to components written");
                         components_written.insert(VariableUse::new(meta, var, &Vec::new()));
                     }
                     None => {
-                        trace!("variable `{var}` of unknown type written");
+                        trace!("variable `{var:?}` of unknown type written");
                     }
                 }
             }
