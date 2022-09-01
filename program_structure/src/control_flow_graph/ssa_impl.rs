@@ -427,9 +427,6 @@ pub fn update_declarations(
                 assert!(names.len() == 1 && name.version().is_none());
 
                 if matches!(var_type, VariableType::Local) {
-                    if env.get_version_range(name).is_none() {
-                        println!("unknown variable `{name}`");
-                    }
                     let mut versions = env
                         .get_version_range(name)
                         .unwrap_or(0..1) // This will happen if the variable is not assigned to.
