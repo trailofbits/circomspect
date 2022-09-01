@@ -10,7 +10,8 @@ use program_structure::ir::{Expression, Statement, VariableName};
 
 #[derive(Clone, Default)]
 pub struct TaintAnalysis {
-    taint_map: HashMap<VariableName, HashSet<VariableUse>>,
+    taint_map: HashMap<VariableName, HashSet<VariableName>>,
+    declarations: HashMap<VariableName, VariableUse>,
     definitions: HashMap<VariableName, VariableUse>,
 }
 
@@ -51,38 +52,50 @@ impl TaintAnalysis {
         self.definitions.values()
     }
 
+    /// Add the variable use corresponding to the declaration of the variable.
+    fn add_declaration(&mut self, var: &VariableUse) {
+        self.declarations.insert(var.name().clone(), var.clone());
+    }
+
+    /// Get the variable use corresponding to the declaration of the variable.
+    pub fn get_declaration(&self, var: &VariableName) -> Option<VariableUse> {
+        self.declarations.get(var).cloned()
+    }
+
+    pub fn declarations(&self) -> impl Iterator<Item = &VariableUse> {
+        self.declarations.values()
+    }
+
     /// Add a single step taint from source to sink.
-    fn add_taint_step(&mut self, source: &VariableName, sink: &VariableUse) {
+    fn add_taint_step(&mut self, source: &VariableName, sink: &VariableName) {
         let sinks = self.taint_map.entry(source.clone()).or_default();
         sinks.insert(sink.clone());
     }
 
     /// Returns variables tainted in a single step by `source`.
-    pub fn single_step_taint(&self, source: &VariableName) -> HashSet<VariableUse> {
+    pub fn single_step_taint(&self, source: &VariableName) -> HashSet<VariableName> {
         self.taint_map.get(source).cloned().unwrap_or_default()
     }
 
     /// Returns variables tainted in zero or more steps by `source`.
-    pub fn multi_step_taint(&self, source: &VariableName) -> HashSet<VariableUse> {
+    pub fn multi_step_taint(&self, source: &VariableName) -> HashSet<VariableName> {
         let mut result = HashSet::new();
-        let mut update = match self.get_definition(source) {
-            Some(var) => HashSet::from([var]),
-            None => HashSet::default(),
-        };
+        let mut update = HashSet::from([source.clone()]);
         while !update.is_subset(&result) {
             result.extend(update.iter().cloned());
             update = update
                 .iter()
-                .flat_map(|source| self.single_step_taint(source.name()))
+                .flat_map(|source| self.single_step_taint(source))
                 .collect();
         }
         result
     }
 
+    /// Returns true if the source taints any of the sinks.
     pub fn taints_any(&self, source: &VariableName, sinks: &HashSet<VariableName>) -> bool {
         self.multi_step_taint(source)
             .iter()
-            .any(|sink| sinks.contains(sink.name()))
+            .any(|sink| sinks.contains(sink))
     }
 }
 
@@ -117,17 +130,17 @@ pub fn run_taint_analysis(cfg: &Cfg) -> TaintAnalysis {
                                 source.name(),
                                 sink.name()
                             );
-                            result.add_taint_step(source.name(), &sink);
+                            result.add_taint_step(source.name(), sink.name());
                         }
                     }
                 }
                 Declaration { meta, names, dimensions, .. } => {
                     // Variables occurring in declarations taint the declared variable.
-                    for name in names {
+                    for sink in names {
+                        result.add_declaration(&VariableUse::new(meta, sink, &Vec::new()));
                         for size in dimensions {
                             for source in size.variables_read() {
-                                let sink = VariableUse::new(meta, name, &Vec::new());
-                                result.add_taint_step(source.name(), &sink)
+                                result.add_taint_step(source.name(), sink)
                             }
                         }
                     }
@@ -141,6 +154,7 @@ pub fn run_taint_analysis(cfg: &Cfg) -> TaintAnalysis {
                     let true_branch = cfg.get_true_branch(basic_block);
                     let false_branch = cfg.get_false_branch(basic_block);
                     for body in true_branch.iter().chain(false_branch.iter()) {
+                        // Add taint for assigned variables.
                         for sink in body.variables_written() {
                             for source in cond.variables_read() {
                                 // Add each taint step to the result.
@@ -149,7 +163,7 @@ pub fn run_taint_analysis(cfg: &Cfg) -> TaintAnalysis {
                                     source.name(),
                                     sink.name()
                                 );
-                                result.add_taint_step(source.name(), sink);
+                                result.add_taint_step(source.name(), sink.name());
                             }
                         }
                     }

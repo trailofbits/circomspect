@@ -77,6 +77,7 @@ pub enum ReportCode {
     UnusedVariableValue,
     UnusedParameterValue,
     NoSideEffectFromAssignment,
+    VariableWithoutSideEffect,
     ConstantBranchCondition,
     NonStrictBinaryConversion,
 }
@@ -158,6 +159,7 @@ impl fmt::Display for ReportCode {
             UnusedVariableValue => "CS0006",
             UnusedParameterValue => "CS0007",
             NoSideEffectFromAssignment => "CS0008",
+            VariableWithoutSideEffect => "CS0008",
             ConstantBranchCondition => "CS0009",
             NonStrictBinaryConversion => "CS0010",
         };
