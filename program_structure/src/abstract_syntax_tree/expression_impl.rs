@@ -29,65 +29,37 @@ impl Expression {
 
     pub fn is_array(&self) -> bool {
         use Expression::*;
-        if let ArrayInLine { .. } = self {
-            true
-        } else {
-            false
-        }
+        matches!(self, ArrayInLine { .. })
     }
 
     pub fn is_infix(&self) -> bool {
         use Expression::*;
-        if let InfixOp { .. } = self {
-            true
-        } else {
-            false
-        }
+        matches!(self, InfixOp { .. })
     }
 
     pub fn is_prefix(&self) -> bool {
         use Expression::*;
-        if let PrefixOp { .. } = self {
-            true
-        } else {
-            false
-        }
+        matches!(self, PrefixOp { .. })
     }
 
     pub fn is_switch(&self) -> bool {
         use Expression::*;
-        if let InlineSwitchOp { .. } = self {
-            true
-        } else {
-            false
-        }
+        matches!(self, InlineSwitchOp { .. })
     }
 
     pub fn is_variable(&self) -> bool {
         use Expression::*;
-        if let Variable { .. } = self {
-            true
-        } else {
-            false
-        }
+        matches!(self, Variable { .. })
     }
 
     pub fn is_number(&self) -> bool {
         use Expression::*;
-        if let Number(..) = self {
-            true
-        } else {
-            false
-        }
+        matches!(self, Number(..))
     }
 
     pub fn is_call(&self) -> bool {
         use Expression::*;
-        if let Call { .. } = self {
-            true
-        } else {
-            false
-        }
+        matches!(self, Call { .. })
     }
 }
 
@@ -262,7 +234,7 @@ impl Display for Access {
     }
 }
 
-fn vec_to_string(elems: &Vec<Expression>) -> String {
+fn vec_to_string(elems: &[Expression]) -> String {
     elems
         .iter()
         .map(|arg| arg.to_string())

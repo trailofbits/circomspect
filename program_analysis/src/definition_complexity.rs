@@ -11,7 +11,7 @@ pub struct TooManyArgumentsWarning {
 }
 
 impl TooManyArgumentsWarning {
-    pub fn into_report(&self) -> Report {
+    pub fn into_report(self) -> Report {
         let mut report = Report::warning(
             format!(
                 "`{}` takes too many parameters. This increases coupling and decreases readability.",
@@ -21,7 +21,7 @@ impl TooManyArgumentsWarning {
         );
         if let Some(file_id) = self.file_id {
             report.add_primary(
-                self.file_location.clone(),
+                self.file_location,
                 file_id,
                 format!("This {} takes too many parameters.", self.definition_type),
             );
@@ -36,7 +36,7 @@ pub struct CyclomaticComplexityWarning {
 }
 
 impl CyclomaticComplexityWarning {
-    pub fn into_report(&self) -> Report {
+    pub fn into_report(self) -> Report {
         Report::warning(
             format!(
                 "The {} `{}` is too complex and would benefit from being refactored into smaller components.",
@@ -66,19 +66,25 @@ pub fn run_complexity_analysis(cfg: &Cfg) -> ReportCollection {
     let mut reports = ReportCollection::new();
     // Generate a report if the cyclomatic complexity is high.
     if complexity > MAX_CYCLOMATIC_COMPLEXITY {
-        reports.push(CyclomaticComplexityWarning {
-            definition_name: cfg.name().to_string(),
-            definition_type: cfg.definition_type().clone(),
-        }.into_report());
+        reports.push(
+            CyclomaticComplexityWarning {
+                definition_name: cfg.name().to_string(),
+                definition_type: cfg.definition_type().clone(),
+            }
+            .into_report(),
+        );
     }
     // Generate a report if the number of arguments is high.
     if cfg.parameters().len() > MAX_NOF_PARAMETERS {
-        reports.push(TooManyArgumentsWarning {
-            definition_name: cfg.name().to_string(),
-            definition_type: cfg.definition_type().clone(),
-            file_id: cfg.parameters().file_id().clone(),
-            file_location: cfg.parameters().file_location().clone(),
-        }.into_report());
+        reports.push(
+            TooManyArgumentsWarning {
+                definition_name: cfg.name().to_string(),
+                definition_type: cfg.definition_type().clone(),
+                file_id: *cfg.parameters().file_id(),
+                file_location: cfg.parameters().file_location().clone(),
+            }
+            .into_report(),
+        );
     }
     reports
 }

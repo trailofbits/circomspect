@@ -103,22 +103,22 @@ where
         let mut act = variables.len();
         while act > 0 {
             if VariableBlock::contains_variable(&variables[act - 1], symbol) {
-                return Option::Some(&variables[act - 1]);
+                return Some(&variables[act - 1]);
             }
             act -= 1;
         }
-        Option::None
+        None
     }
     fn mut_block_with_variable_symbol(&mut self, symbol: &str) -> Option<&mut VariableBlock<VC>> {
         let variables = &mut self.variables;
         let mut act = variables.len();
         while act > 0 {
             if VariableBlock::contains_variable(&variables[act - 1], symbol) {
-                return Option::Some(&mut variables[act - 1]);
+                return Some(&mut variables[act - 1]);
             }
             act -= 1;
         }
-        Option::None
+        None
     }
     pub fn new() -> RawEnvironment<T, CC, SC, VC> {
         RawEnvironment::default()
@@ -141,31 +141,31 @@ where
 
     pub fn get_variable(&self, symbol: &str) -> Option<&VC> {
         let possible_block = self.block_with_variable_symbol(symbol);
-        if let Option::Some(block) = possible_block {
-            Option::Some(block.get_variable(symbol))
+        if let Some(block) = possible_block {
+            Some(block.get_variable(symbol))
         } else {
-            Option::None
+            None
         }
     }
     pub fn get_mut_variable(&mut self, symbol: &str) -> Option<&mut VC> {
         let possible_block = self.mut_block_with_variable_symbol(symbol);
-        if let Option::Some(block) = possible_block {
-            Option::Some(block.get_mut_variable(symbol))
+        if let Some(block) = possible_block {
+            Some(block.get_mut_variable(symbol))
         } else {
-            Option::None
+            None
         }
     }
     pub fn get_variable_res(&self, symbol: &str) -> Result<&VC, CircomEnvironmentError> {
         let possible_block = self.block_with_variable_symbol(symbol);
-        if let Option::Some(block) = possible_block {
-            Result::Ok(block.get_variable(symbol))
+        if let Some(block) = possible_block {
+            Ok(block.get_variable(symbol))
         } else {
-            Result::Err(CircomEnvironmentError::NonExistentSymbol)
+            Err(CircomEnvironmentError::NonExistentSymbol)
         }
     }
     pub fn remove_variable(&mut self, symbol: &str) {
         let possible_block = self.mut_block_with_variable_symbol(symbol);
-        if let Option::Some(block) = possible_block {
+        if let Some(block) = possible_block {
             block.remove_variable(symbol)
         }
     }
@@ -176,7 +176,7 @@ where
             file,
             line
         );
-        if let Result::Ok(v) = self.get_variable_res(symbol) {
+        if let Ok(v) = self.get_variable_res(symbol) {
             v
         } else {
             unreachable!();
@@ -187,10 +187,10 @@ where
         symbol: &str,
     ) -> Result<&mut VC, CircomEnvironmentError> {
         let possible_block = self.mut_block_with_variable_symbol(symbol);
-        if let Option::Some(block) = possible_block {
-            Result::Ok(block.get_mut_variable(symbol))
+        if let Some(block) = possible_block {
+            Ok(block.get_mut_variable(symbol))
         } else {
-            Result::Err(CircomEnvironmentError::NonExistentSymbol)
+            Err(CircomEnvironmentError::NonExistentSymbol)
         }
     }
     pub fn get_mut_variable_or_break(&mut self, symbol: &str, file: &str, line: u32) -> &mut VC {
@@ -200,7 +200,7 @@ where
             file,
             line
         );
-        if let Result::Ok(v) = self.get_mut_variable_mut(symbol) {
+        if let Ok(v) = self.get_mut_variable_mut(symbol) {
             v
         } else {
             unreachable!();
@@ -233,7 +233,7 @@ where
     pub fn get_component_res(&self, symbol: &str) -> Result<&CC, CircomEnvironmentError> {
         self.components
             .get(symbol)
-            .ok_or_else(|| CircomEnvironmentError::NonExistentSymbol)
+            .ok_or(CircomEnvironmentError::NonExistentSymbol)
     }
     pub fn get_component_or_break(&self, symbol: &str, file: &str, line: u32) -> &CC {
         assert!(
@@ -250,7 +250,7 @@ where
     ) -> Result<&mut CC, CircomEnvironmentError> {
         self.components
             .get_mut(symbol)
-            .ok_or_else(|| CircomEnvironmentError::NonExistentSymbol)
+            .ok_or(CircomEnvironmentError::NonExistentSymbol)
     }
     pub fn get_mut_component_or_break(&mut self, symbol: &str, file: &str, line: u32) -> &mut CC {
         assert!(
@@ -307,7 +307,7 @@ where
     pub fn get_input_res(&self, symbol: &str) -> Result<&SC, CircomEnvironmentError> {
         self.inputs
             .get(symbol)
-            .ok_or_else(|| CircomEnvironmentError::NonExistentSymbol)
+            .ok_or(CircomEnvironmentError::NonExistentSymbol)
     }
     pub fn get_input_or_break(&self, symbol: &str, file: &str, line: u32) -> &SC {
         assert!(
@@ -321,7 +321,7 @@ where
     pub fn get_mut_input_res(&mut self, symbol: &str) -> Result<&mut SC, CircomEnvironmentError> {
         self.inputs
             .get_mut(symbol)
-            .ok_or_else(|| CircomEnvironmentError::NonExistentSymbol)
+            .ok_or(CircomEnvironmentError::NonExistentSymbol)
     }
     pub fn get_mut_input_or_break(&mut self, symbol: &str, file: &str, line: u32) -> &mut SC {
         assert!(
@@ -342,7 +342,7 @@ where
     pub fn get_output_res(&self, symbol: &str) -> Result<&SC, CircomEnvironmentError> {
         self.outputs
             .get(symbol)
-            .ok_or_else(|| CircomEnvironmentError::NonExistentSymbol)
+            .ok_or(CircomEnvironmentError::NonExistentSymbol)
     }
     pub fn get_output_or_break(&self, symbol: &str, file: &str, line: u32) -> &SC {
         assert!(
@@ -356,7 +356,7 @@ where
     pub fn get_mut_output_res(&mut self, symbol: &str) -> Result<&mut SC, CircomEnvironmentError> {
         self.outputs
             .get_mut(symbol)
-            .ok_or_else(|| CircomEnvironmentError::NonExistentSymbol)
+            .ok_or(CircomEnvironmentError::NonExistentSymbol)
     }
     pub fn get_mut_output_or_break(&mut self, symbol: &str, file: &str, line: u32) -> &mut SC {
         assert!(
@@ -377,7 +377,7 @@ where
     pub fn get_intermediate_res(&self, symbol: &str) -> Result<&SC, CircomEnvironmentError> {
         self.intermediates
             .get(symbol)
-            .ok_or_else(|| CircomEnvironmentError::NonExistentSymbol)
+            .ok_or(CircomEnvironmentError::NonExistentSymbol)
     }
     pub fn get_intermediate_or_break(&self, symbol: &str, file: &str, line: u32) -> &SC {
         assert!(
@@ -394,7 +394,7 @@ where
     ) -> Result<&mut SC, CircomEnvironmentError> {
         self.intermediates
             .get_mut(symbol)
-            .ok_or_else(|| CircomEnvironmentError::NonExistentSymbol)
+            .ok_or(CircomEnvironmentError::NonExistentSymbol)
     }
     pub fn get_mut_intermediate_or_break(
         &mut self,
@@ -419,7 +419,7 @@ where
         } else if self.has_intermediate(symbol) {
             self.get_intermediate(symbol)
         } else {
-            Option::None
+            None
         }
     }
     pub fn get_mut_signal(&mut self, symbol: &str) -> Option<&mut SC> {
@@ -430,7 +430,7 @@ where
         } else if self.has_intermediate(symbol) {
             self.get_mut_intermediate(symbol)
         } else {
-            Option::None
+            None
         }
     }
     pub fn get_signal_res(&self, symbol: &str) -> Result<&SC, CircomEnvironmentError> {
@@ -441,7 +441,7 @@ where
         } else if self.has_intermediate(symbol) {
             self.get_intermediate_res(symbol)
         } else {
-            Result::Err(CircomEnvironmentError::NonExistentSymbol)
+            Err(CircomEnvironmentError::NonExistentSymbol)
         }
     }
     pub fn get_signal_or_break(&self, symbol: &str, file: &str, line: u32) -> &SC {
@@ -451,7 +451,7 @@ where
             file,
             line
         );
-        if let Result::Ok(v) = self.get_signal_res(symbol) {
+        if let Ok(v) = self.get_signal_res(symbol) {
             v
         } else {
             unreachable!();
@@ -465,7 +465,7 @@ where
         } else if self.has_intermediate(symbol) {
             self.get_mut_intermediate_res(symbol)
         } else {
-            Result::Err(CircomEnvironmentError::NonExistentSymbol)
+            Err(CircomEnvironmentError::NonExistentSymbol)
         }
     }
     pub fn get_mut_signal_or_break(&mut self, symbol: &str, file: &str, line: u32) -> &mut SC {
@@ -475,7 +475,7 @@ where
             file,
             line
         );
-        if let Result::Ok(v) = self.get_mut_signal_res(symbol) {
+        if let Ok(v) = self.get_mut_signal_res(symbol) {
             v
         } else {
             unreachable!();
@@ -542,7 +542,7 @@ where
 {
     let mut result = HashMap::new();
     for (k, v) in l {
-        if let Option::Some(r_v) = r.remove(&k) {
+        if let Some(r_v) = r.remove(&k) {
             result.insert(k, merge_function(v, r_v));
         } else {
             result.insert(k, v);

@@ -30,10 +30,8 @@ impl FileStack {
                 // Handle directories on a best effort basis only.
                 let mut paths = Vec::new();
                 if let Ok(entries) = fs::read_dir(path) {
-                    for entry in entries {
-                        if let Ok(entry) = entry {
-                            paths.push(entry.path())
-                        }
+                    for entry in entries.flatten() {
+                        paths.push(entry.path())
                     }
                 }
                 self.add_files(&paths, reports);

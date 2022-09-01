@@ -114,17 +114,11 @@ impl ToSarif for ReportLabel {
         let start = files
             .to_storage()
             .location(self.file_id, self.range.start)
-            .ok_or(SarifError::UnknownLocation(
-                self.file_id,
-                self.range.clone(),
-            ))?;
+            .ok_or_else(|| SarifError::UnknownLocation(self.file_id, self.range.clone()))?;
         let end = files
             .to_storage()
             .location(self.file_id, self.range.end)
-            .ok_or(SarifError::UnknownLocation(
-                self.file_id,
-                self.range.clone(),
-            ))?;
+            .ok_or_else(|| SarifError::UnknownLocation(self.file_id, self.range.clone()))?;
         let region = sarif::RegionBuilder::default()
             .start_line(start.line_number as i64)
             .start_column(start.column_number as i64)

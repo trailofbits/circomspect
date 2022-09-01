@@ -122,7 +122,7 @@ impl TryFrom<&Parameters> for DeclarationEnvironment {
     fn try_from(params: &Parameters) -> CFGResult<Self> {
         let mut env = DeclarationEnvironment::new();
         for name in params.iter() {
-            let file_id = params.file_id().clone();
+            let file_id = *params.file_id();
             let file_location = params.file_location().clone();
             if env
                 .add_declaration(&name.to_string(), file_id, file_location)
@@ -130,7 +130,7 @@ impl TryFrom<&Parameters> for DeclarationEnvironment {
             {
                 return Err(CFGError::ParameterNameCollisionError {
                     name: name.to_string(),
-                    file_id: params.file_id().clone(),
+                    file_id: *params.file_id(),
                     file_location: params.file_location().clone(),
                 });
             }

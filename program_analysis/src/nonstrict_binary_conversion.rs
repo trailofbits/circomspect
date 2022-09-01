@@ -83,47 +83,45 @@ fn visit_statement(stmt: &Statement, reports: &mut ReportCollection) {
     use Expression::*;
     use Statement::*;
     use ValueReduction::*;
-    match stmt {
-        // A component initialization on the form `var = component_name(args, ...)`.
-        Substitution {
-            meta: var_meta,
-            op: AssignLocalOrComponent,
-            rhe:
-                Call {
-                    meta: component_meta,
-                    name: component_name,
-                    args,
-                },
-            ..
-        } => {
-            // If the variable `var` is declared as a local variable or signal, we exit early.
-            if var_meta.type_knowledge().is_local() || var_meta.type_knowledge().is_signal() {
-                return;
-            }
-            // We assume this is the `Num2Bits` circuit from Circomlib.
-            if component_name == "Num2Bits" && args.len() == 1 {
-                let arg = &args[0];
-                // If the input size is known to be < 254, this initialization is safe.
-                if let Some(FieldElement { value }) = arg.value() {
-                    if value < &BigInt::from(254u8) {
-                        return;
-                    }
-                }
-                reports.push(build_num2bits(component_meta));
-            }
-            // We assume this is the `Bits2Num` circuit from Circomlib.
-            if component_name == "Bits2Num" && args.len() == 1 {
-                let arg = &args[0];
-                // If the input size is known to be < 254, this initialization is safe.
-                if let Some(FieldElement { value }) = arg.value() {
-                    if value < &BigInt::from(254u8) {
-                        return;
-                    }
-                }
-                reports.push(build_bits2num(component_meta));
-            }
+    // A component initialization on the form `var = component_name(args, ...)`.
+    if let Substitution {
+        meta: var_meta,
+        op: AssignLocalOrComponent,
+        rhe:
+            Call {
+                meta: component_meta,
+                name: component_name,
+                args,
+            },
+        ..
+    } = stmt
+    {
+        // If the variable `var` is declared as a local variable or signal, we exit early.
+        if var_meta.type_knowledge().is_local() || var_meta.type_knowledge().is_signal() {
+            return;
         }
-        _ => {}
+        // We assume this is the `Num2Bits` circuit from Circomlib.
+        if component_name == "Num2Bits" && args.len() == 1 {
+            let arg = &args[0];
+            // If the input size is known to be < 254, this initialization is safe.
+            if let Some(FieldElement { value }) = arg.value() {
+                if value < &BigInt::from(254u8) {
+                    return;
+                }
+            }
+            reports.push(build_num2bits(component_meta));
+        }
+        // We assume this is the `Bits2Num` circuit from Circomlib.
+        if component_name == "Bits2Num" && args.len() == 1 {
+            let arg = &args[0];
+            // If the input size is known to be < 254, this initialization is safe.
+            if let Some(FieldElement { value }) = arg.value() {
+                if value < &BigInt::from(254u8) {
+                    return;
+                }
+            }
+            reports.push(build_bits2num(component_meta));
+        }
     }
 }
 

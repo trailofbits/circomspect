@@ -39,7 +39,7 @@ impl<C: Default + Clone + Display + Eq> Display for MemorySlice<C> {
             for i in 1..self.values.len() {
                 msg.push_str(&format!(",{}", self.values[i]));
             }
-            msg.push_str("]");
+            msg.push(']');
             f.write_str(&msg)
         }
     }

@@ -1,5 +1,5 @@
 use log::debug;
-use std::collections::{HashSet, HashMap};
+use std::collections::{HashMap, HashSet};
 
 use program_structure::cfg::Cfg;
 use program_structure::error_code::ReportCode;
@@ -205,9 +205,12 @@ pub fn run_side_effect_analysis(cfg: &Cfg) -> ReportCollection {
     let exported_signals = cfg
         .declarations()
         .iter()
-        .filter(|(_, declaration)|
-            matches!(declaration.variable_type(), VariableType::Signal(SignalType::Input | SignalType::Output))
-        )
+        .filter(|(_, declaration)| {
+            matches!(
+                declaration.variable_type(),
+                VariableType::Signal(SignalType::Input | SignalType::Output)
+            )
+        })
         .collect::<HashMap<_, _>>();
     // println!("exported signals: {:?}", exported_signals.keys().collect::<HashSet<_>>());
 
@@ -239,9 +242,9 @@ pub fn run_side_effect_analysis(cfg: &Cfg) -> ReportCollection {
         for stmt in basic_block.iter() {
             match stmt {
                 Declaration { .. } | Return { .. } | Assert { .. } | IfThenElse { .. } => {
-                   // If a variable used in a dimension expression is side-effect free,
-                   // the declared variable must also be side-effect free.
-                   sinks.extend(stmt.variables_read().map(|var| var.name().clone()));
+                    // If a variable used in a dimension expression is side-effect free,
+                    // the declared variable must also be side-effect free.
+                    sinks.extend(stmt.variables_read().map(|var| var.name().clone()));
                 }
                 _ => {}
             }

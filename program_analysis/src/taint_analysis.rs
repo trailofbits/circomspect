@@ -134,7 +134,12 @@ pub fn run_taint_analysis(cfg: &Cfg) -> TaintAnalysis {
                         }
                     }
                 }
-                Declaration { meta, names, dimensions, .. } => {
+                Declaration {
+                    meta,
+                    names,
+                    dimensions,
+                    ..
+                } => {
                     // Variables occurring in declarations taint the declared variable.
                     for sink in names {
                         result.add_declaration(&VariableUse::new(meta, sink, &Vec::new()));
@@ -169,7 +174,7 @@ pub fn run_taint_analysis(cfg: &Cfg) -> TaintAnalysis {
                     }
                 }
                 // The following statement types do not propagate taint.
-                Assert { .. } | LogCall { .. } | Return { .. } | ConstraintEquality { .. } => { }
+                Assert { .. } | LogCall { .. } | Return { .. } | ConstraintEquality { .. } => {}
             }
         }
     }
@@ -208,27 +213,33 @@ mod tests {
         "#;
 
         let mut taint_map = HashMap::new();
-        taint_map.insert("k", HashSet::from([
-            "k".to_string(),
-            "LOGK".to_string(),
-            "LOGK2".to_string(),
-            "left".to_string(),
-            "right".to_string()
-        ]));
-        taint_map.insert("m", HashSet::from([
-            "m".to_string(),
-            "right".to_string()  // Since `right` is declared as an `m` dimensional array.
-        ]));
-        taint_map.insert("n", HashSet::from([
-            "n".to_string(),
-            "i".to_string(),  // Since the update `i++` depends on the condition `i < n`.
-            "left".to_string(),
-            "right".to_string()
-        ]));
-        taint_map.insert("i", HashSet::from([
-            "i".to_string(),
-            "right".to_string()
-        ]));
+        taint_map.insert(
+            "k",
+            HashSet::from([
+                "k".to_string(),
+                "LOGK".to_string(),
+                "LOGK2".to_string(),
+                "left".to_string(),
+                "right".to_string(),
+            ]),
+        );
+        taint_map.insert(
+            "m",
+            HashSet::from([
+                "m".to_string(),
+                "right".to_string(), // Since `right` is declared as an `m` dimensional array.
+            ]),
+        );
+        taint_map.insert(
+            "n",
+            HashSet::from([
+                "n".to_string(),
+                "i".to_string(), // Since the update `i++` depends on the condition `i < n`.
+                "left".to_string(),
+                "right".to_string(),
+            ]),
+        );
+        taint_map.insert("i", HashSet::from(["i".to_string(), "right".to_string()]));
 
         validate_taint(&src, &taint_map);
     }

@@ -5,7 +5,8 @@ extern crate serde_derive;
 #[macro_use]
 extern crate lalrpop_util;
 
-lalrpop_mod!(pub lang);
+// Silence clippy warnings for generated code.
+lalrpop_mod!(#[allow(clippy::all)] pub lang);
 
 use log::debug;
 
@@ -19,14 +20,14 @@ use program_structure::file_definition::{FileID, FileLibrary};
 use program_structure::program_archive::ProgramArchive;
 use program_structure::template_library::TemplateLibrary;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 pub enum ParseResult {
     // The program was successfully parsed without issues.
-    Program(ProgramArchive, ReportCollection),
+    Program(Box<ProgramArchive>, ReportCollection),
     // The parser failed to parse a complete program.
-    Library(TemplateLibrary, ReportCollection),
+    Library(Box<TemplateLibrary>, ReportCollection),
 }
 
 pub fn parse_files(file_paths: &Vec<PathBuf>, compiler_version: &str) -> ParseResult {
@@ -60,23 +61,23 @@ pub fn parse_files(file_paths: &Vec<PathBuf>, compiler_version: &str) -> ParseRe
         [(main_id, main_component)] => {
             // TODO: This calls FillMeta::fill a second time.
             match ProgramArchive::new(file_library, *main_id, main_component, &definitions) {
-                Ok(program_archive) => ParseResult::Program(program_archive, reports),
+                Ok(program_archive) => ParseResult::Program(Box::new(program_archive), reports),
                 Err((file_library, mut errors)) => {
                     reports.append(&mut errors);
                     let template_library = TemplateLibrary::new(definitions, file_library);
-                    ParseResult::Library(template_library, reports)
+                    ParseResult::Library(Box::new(template_library), reports)
                 }
             }
         }
         [] => {
             // TODO: Maybe use a flag to ensure that a main component must be present.
             let template_library = TemplateLibrary::new(definitions, file_library);
-            ParseResult::Library(template_library, reports)
+            ParseResult::Library(Box::new(template_library), reports)
         }
         _ => {
             reports.push(errors::MultipleMainError::produce_report());
             let template_library = TemplateLibrary::new(definitions, file_library);
-            ParseResult::Library(template_library, reports)
+            ParseResult::Library(Box::new(template_library), reports)
         }
     }
 }
@@ -120,7 +121,7 @@ fn open_file(file_path: &PathBuf) -> Result<(String, String), Report> /* path, s
 }
 
 fn parse_version_string(version: &str) -> Version {
-    let split_version: Vec<&str> = version.split(".").collect();
+    let split_version: Vec<&str> = version.split('.').collect();
     // This is only called on the internally defined version, so it is ok to
     // call `unwrap` here.
     (
@@ -131,7 +132,7 @@ fn parse_version_string(version: &str) -> Version {
 }
 
 fn check_compiler_version(
-    file_path: &PathBuf,
+    file_path: &Path,
     required_version: Option<Version>,
     compiler_version: &Version,
 ) -> Result<ReportCollection, Report> {
@@ -145,15 +146,15 @@ fn check_compiler_version(
         } else {
             let report = CompilerVersionError::produce_report(CompilerVersionError {
                 path: format!("{}", file_path.display()),
-                required_version: required_version,
-                version: compiler_version.clone(),
+                required_version,
+                version: *compiler_version,
             });
             Err(report)
         }
     } else {
         let report = NoCompilerVersionWarning::produce_report(NoCompilerVersionWarning {
             path: format!("{}", file_path.display()),
-            version: compiler_version.clone(),
+            version: *compiler_version,
         });
         Ok(vec![report])
     }

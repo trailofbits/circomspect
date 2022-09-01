@@ -118,7 +118,11 @@ pub fn run_constraint_analysis(cfg: &Cfg) -> ConstraintAnalysis {
                         result.add_declaration(&VariableUse::new(meta, sink, &Vec::new()));
                     }
                 }
-                ConstraintEquality { .. } | Substitution { op: AssignConstraintSignal, ..  } => {
+                ConstraintEquality { .. }
+                | Substitution {
+                    op: AssignConstraintSignal,
+                    ..
+                } => {
                     for source in stmt.variables_used() {
                         for sink in stmt.variables_used() {
                             if source.name() != sink.name() {
@@ -132,7 +136,7 @@ pub fn run_constraint_analysis(cfg: &Cfg) -> ConstraintAnalysis {
                         }
                     }
                 }
-                _ => { }
+                _ => {}
             }
         }
     }

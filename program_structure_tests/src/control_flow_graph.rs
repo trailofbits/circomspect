@@ -1,4 +1,4 @@
-use std::collections::{HashSet, HashMap};
+use std::collections::{HashMap, HashSet};
 
 use parser::parse_definition;
 use program_structure::cfg::*;
@@ -447,7 +447,7 @@ fn validate_dominance(
 fn validate_branches(
     src: &str,
     true_branches: &HashMap<usize, HashSet<usize>>,
-    false_branches: &HashMap<usize, HashSet<usize>>
+    false_branches: &HashMap<usize, HashSet<usize>>,
 ) {
     // 1. Generate CFG from source.
     let mut reports = ReportCollection::new();

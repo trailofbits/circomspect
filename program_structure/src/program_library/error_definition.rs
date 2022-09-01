@@ -67,7 +67,7 @@ impl Report {
         config.styles.header_error.set_intense(false);
         config.styles.header_warning.set_intense(false);
         for diagnostic in diagnostics.iter() {
-            let print_result = term::emit(&mut writer.lock(), &config, files, &diagnostic);
+            let print_result = term::emit(&mut writer.lock(), &config, files, diagnostic);
             if print_result.is_err() {
                 panic!("error printing reports")
             }

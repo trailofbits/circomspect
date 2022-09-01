@@ -170,7 +170,7 @@ impl TryLift<()> for ast::Expression {
                 if access.is_empty() {
                     Ok(ir::Expression::Variable {
                         meta: meta.try_lift((), reports)?,
-                        name: name.try_lift(&meta, reports)?,
+                        name: name.try_lift(meta, reports)?,
                     })
                 } else {
                     Ok(ir::Expression::Access {
@@ -276,9 +276,9 @@ impl TryLift<()> for ast::Access {
 
     fn try_lift(&self, _: (), reports: &mut ReportCollection) -> IRResult<Self::IR> {
         match self {
-            ast::Access::ArrayAccess(e) => {
-                Ok(ir::AccessType::ArrayAccess(e.try_lift((), reports)?))
-            }
+            ast::Access::ArrayAccess(expr) => Ok(ir::AccessType::ArrayAccess(Box::new(
+                expr.try_lift((), reports)?,
+            ))),
             ast::Access::ComponentAccess(s) => Ok(ir::AccessType::ComponentAccess(s.clone())),
         }
     }

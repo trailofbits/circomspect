@@ -11,11 +11,11 @@ pub struct VariableUse {
 }
 
 impl VariableUse {
-    pub fn new(meta: &Meta, name: &VariableName, access: &Vec<AccessType>) -> VariableUse {
+    pub fn new(meta: &Meta, name: &VariableName, access: &[AccessType]) -> VariableUse {
         VariableUse {
             meta: meta.clone(),
             name: name.clone(),
-            access: access.clone(),
+            access: access.to_owned(),
         }
     }
 

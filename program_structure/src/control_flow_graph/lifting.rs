@@ -29,14 +29,14 @@ type BasicBlockVec = NonEmptyVec<BasicBlock>;
 
 /// This is a high level trait which simply wraps the implementation provided by `TryLift`.
 pub trait IntoCfg {
-    fn into_cfg(&self, reports: &mut ReportCollection) -> CFGResult<Cfg>;
+    fn into_cfg(self, reports: &mut ReportCollection) -> CFGResult<Cfg>;
 }
 
 impl<T> IntoCfg for T
 where
     T: TryLift<(), IR = Cfg, Error = CFGError>,
 {
-    fn into_cfg(&self, reports: &mut ReportCollection) -> CFGResult<Cfg> {
+    fn into_cfg(self, reports: &mut ReportCollection) -> CFGResult<Cfg> {
         self.try_lift((), reports)
     }
 }
@@ -93,11 +93,23 @@ impl TryLift<()> for Definition {
         match self {
             Definition::Template { name, body, .. } => {
                 debug!("building CFG for template `{name}`");
-                try_lift_impl(name.clone(), DefinitionType::Template, self.into(), body.clone(), reports)
+                try_lift_impl(
+                    name.clone(),
+                    DefinitionType::Template,
+                    self.into(),
+                    body.clone(),
+                    reports,
+                )
             }
             Definition::Function { name, body, .. } => {
                 debug!("building CFG for function `{name}`");
-                try_lift_impl(name.clone(), DefinitionType::Function, self.into(), body.clone(), reports)
+                try_lift_impl(
+                    name.clone(),
+                    DefinitionType::Function,
+                    self.into(),
+                    body.clone(),
+                    reports,
+                )
             }
         }
     }
@@ -118,7 +130,14 @@ fn try_lift_impl(
     let basic_blocks = build_basic_blocks(&body, &mut env, reports)?;
     let dominator_tree = DominatorTree::new(&basic_blocks);
     let declarations = Declarations::from(env);
-    let mut cfg = Cfg::new(name, definition_type, parameters, declarations, basic_blocks, dominator_tree);
+    let mut cfg = Cfg::new(
+        name,
+        definition_type,
+        parameters,
+        declarations,
+        basic_blocks,
+        dominator_tree,
+    );
 
     // 3. Propagate metadata to all child nodes. Since determining variable use
     // requires that variable types are available, type propagation must run

@@ -10,7 +10,7 @@ pub fn build_conditional_block(
     IfThenElse {
         meta,
         cond,
-        else_case: else_case.map(|s| Box::new(s)),
+        else_case: else_case.map(Box::new),
         if_case: Box::new(if_case),
     }
 }

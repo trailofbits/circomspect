@@ -16,9 +16,9 @@ pub enum SSAError {
 pub type SSAResult<T> = Result<T, SSAError>;
 
 impl SSAError {
-    pub fn produce_report(error: Self) -> Report {
+    pub fn into_report(&self) -> Report {
         use SSAError::*;
-        match error {
+        match self {
             UndefinedVariableError {
                 name,
                 file_id,
@@ -30,8 +30,8 @@ impl SSAError {
                 );
                 if let Some(file_id) = file_id {
                     report.add_primary(
-                        location,
-                        file_id,
+                        location.clone(),
+                        *file_id,
                         format!("The variable `{name}` is first seen here."),
                     );
                 }
@@ -41,8 +41,8 @@ impl SSAError {
     }
 }
 
-impl Into<Report> for SSAError {
-    fn into(self) -> Report {
-        SSAError::produce_report(self)
+impl From<SSAError> for Report {
+    fn from(error: SSAError) -> Report {
+        error.into_report()
     }
 }

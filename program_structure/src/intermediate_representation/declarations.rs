@@ -68,7 +68,7 @@ impl Declaration {
         Declaration {
             name: name.clone(),
             var_type: var_type.clone(),
-            file_id: file_id.clone(),
+            file_id: *file_id,
             file_location: file_location.clone(),
         }
     }
@@ -90,6 +90,6 @@ impl Declaration {
 
     #[must_use]
     pub fn variable_type(&self) -> &VariableType {
-        &&self.var_type
+        &self.var_type
     }
 }

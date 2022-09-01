@@ -1,4 +1,3 @@
-use atty;
 use anyhow::{anyhow, Result};
 use clap::{CommandFactory, Parser};
 use log::{error, info};
@@ -10,7 +9,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::str::FromStr;
-use termcolor::{ColorSpec, WriteColor, Color, ColorChoice, StandardStream};
+use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 
 use program_analysis::get_analysis_passes;
 use program_structure::cfg::{Cfg, IntoCfg};
@@ -60,9 +59,9 @@ struct Cli {
 
 fn generate_cfg<Ast: IntoCfg>(ast: Ast, reports: &mut ReportCollection) -> Result<Cfg, Report> {
     ast.into_cfg(reports)
-        .map_err(Into::<Report>::into)?
+        .map_err(Report::from)?
         .into_ssa()
-        .map_err(Into::<Report>::into)
+        .map_err(Report::from)
 }
 
 fn analyze_cfg(cfg: &Cfg, reports: &mut ReportCollection) {
@@ -199,7 +198,7 @@ fn main() -> ExitCode {
     }
     // Use the exit code to indicate if any issues were found.
     if reports.is_empty() {
-        log_message(&format!("No issues found."));
+        log_message("No issues found.");
         ExitCode::SUCCESS
     } else {
         if reports.len() == 1 {

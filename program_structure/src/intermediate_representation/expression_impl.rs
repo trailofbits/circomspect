@@ -3,6 +3,7 @@ use log::trace;
 use num_traits::Zero;
 use std::collections::HashSet;
 use std::fmt;
+use std::hash::{Hash, Hasher};
 
 use crate::constants::UsefulConstants;
 
@@ -165,6 +166,57 @@ impl PartialEq for Expression {
 
 impl Eq for Expression {}
 
+impl Hash for Expression {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        use Expression::*;
+        match self {
+            InfixOp { lhe, rhe, .. } => {
+                lhe.hash(state);
+                rhe.hash(state);
+            }
+            PrefixOp { rhe, .. } => {
+                rhe.hash(state);
+            }
+            SwitchOp {
+                cond,
+                if_true,
+                if_false,
+                ..
+            } => {
+                cond.hash(state);
+                if_true.hash(state);
+                if_false.hash(state);
+            }
+            Variable { name, .. } => {
+                name.hash(state);
+            }
+            Call { args, .. } => {
+                args.hash(state);
+            }
+            Array { values, .. } => {
+                values.hash(state);
+            }
+            Access { var, access, .. } => {
+                var.hash(state);
+                access.hash(state);
+            }
+            Update {
+                var, access, rhe, ..
+            } => {
+                var.hash(state);
+                access.hash(state);
+                rhe.hash(state);
+            }
+            Phi { args, .. } => {
+                args.hash(state);
+            }
+            Number(_, value) => {
+                value.hash(state);
+            }
+        }
+    }
+}
+
 impl TypeMeta for Expression {
     fn propagate_types(&mut self, vars: &Declarations) {
         use Expression::*;
@@ -323,7 +375,7 @@ impl VariableMeta for Expression {
                     components_read.extend(arg.components_read().clone());
                 }
             }
-            Phi { meta, args, .. } => {
+            Phi { meta, args } => {
                 locals_read.extend(
                     args.iter()
                         .map(|name| VariableUse::new(meta, name, &Vec::new())),

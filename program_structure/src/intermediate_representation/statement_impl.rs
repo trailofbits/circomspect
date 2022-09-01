@@ -135,12 +135,15 @@ impl<'a> fmt::Debug for Statement {
             }
             Substitution { var, op, rhe, .. } => write!(f, "{var:?} {op} {rhe:?}"),
             ConstraintEquality { lhe, rhe, .. } => write!(f, "{lhe:?} === {rhe:?}"),
-            IfThenElse { cond, true_index, false_index, .. } => {
-                match false_index {
-                    Some(false_index) => write!(f, "if {cond:?} then {true_index} else {false_index}"),
-                    None => write!(f, "if {cond:?} then {true_index}"),
-                }
-            }
+            IfThenElse {
+                cond,
+                true_index,
+                false_index,
+                ..
+            } => match false_index {
+                Some(false_index) => write!(f, "if {cond:?} then {true_index} else {false_index}"),
+                None => write!(f, "if {cond:?} then {true_index}"),
+            },
             Return { value, .. } => write!(f, "return {value:?}"),
             Assert { arg, .. } => write!(f, "assert({arg:?})"),
             LogCall { arg, .. } => write!(f, "log({arg:?})"),

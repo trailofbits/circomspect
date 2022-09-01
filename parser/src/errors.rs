@@ -10,11 +10,11 @@ pub struct UnclosedCommentError {
 
 impl UnclosedCommentError {
     pub fn produce_report(error: Self) -> Report {
-        let mut report = Report::error(format!("unterminated /* */"), ReportCode::ParseFail);
+        let mut report = Report::error("Unterminated /* */.".to_string(), ReportCode::ParseFail);
         report.add_primary(
             error.location,
             error.file_id,
-            format!("Comment starts here."),
+            "Comment starts here.".to_string(),
         );
         report
     }
@@ -29,7 +29,7 @@ pub struct ParsingError {
 impl ParsingError {
     pub fn produce_report(error: Self) -> Report {
         let mut report = Report::error(error.msg, ReportCode::ParseFail);
-        report.add_primary(error.location, error.file_id, format!("Invalid syntax"));
+        report.add_primary(error.location, error.file_id, "Invalid syntax".to_string());
         report
     }
 }
@@ -72,7 +72,7 @@ pub struct MultipleMainError;
 impl MultipleMainError {
     pub fn produce_report() -> Report {
         Report::error(
-            format!("Multiple main components found in the project structure."),
+            "Multiple main components found in the project structure.".to_string(),
             ReportCode::MultipleMainInComponent,
         )
     }

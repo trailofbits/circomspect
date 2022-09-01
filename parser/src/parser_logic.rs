@@ -109,7 +109,7 @@ pub fn parse_file(src: &str, file_id: FileID) -> Result<AST, Report> {
                 location: 0..0,
             },
         })
-        .map_err(|parsing_error| ParsingError::produce_report(parsing_error))
+        .map_err(ParsingError::produce_report)
 }
 
 pub fn parse_string(src: &str) -> Option<AST> {

@@ -68,11 +68,11 @@ struct Assignment {
 }
 
 impl Assignment {
-    fn new(meta: &Meta, signal: &VariableName, access: &Vec<AccessType>) -> Assignment {
+    fn new(meta: &Meta, signal: &VariableName, access: &[AccessType]) -> Assignment {
         Assignment {
             meta: meta.clone(),
             signal: signal.clone(),
-            access: access.clone(),
+            access: access.to_owned(),
         }
     }
 }
@@ -111,7 +111,7 @@ impl SignalData {
     }
 
     /// Add an assignment `var[access] <-- expr`.
-    fn add_assignment(&mut self, var: &VariableName, access: &Vec<AccessType>, meta: &Meta) {
+    fn add_assignment(&mut self, var: &VariableName, access: &[AccessType], meta: &Meta) {
         trace!("adding signal assignment for `{var}` access");
         self.assignments.insert(Assignment::new(meta, var, access));
     }
@@ -234,15 +234,15 @@ fn visit_statement(stmt: &Statement, signal_data: &mut SignalData) {
 
 fn build_report(
     signal: &VariableName,
-    access: &Vec<AccessType>,
+    access: &[AccessType],
     assignment_meta: &Meta,
-    constraint_metas: &Vec<Meta>,
+    constraint_metas: &[Meta],
 ) -> Report {
     SignalAssignmentWarning {
         signal: signal.clone(),
-        access: access.clone(),
+        access: access.to_owned(),
         assignment_meta: assignment_meta.clone(),
-        constraint_metas: constraint_metas.clone(),
+        constraint_metas: constraint_metas.to_owned(),
     }
     .into_report()
 }

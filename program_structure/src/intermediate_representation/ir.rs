@@ -25,7 +25,7 @@ impl Meta {
     pub fn new(location: &FileLocation, file_id: &Option<FileID>) -> Meta {
         Meta {
             location: location.clone(),
-            file_id: file_id.clone(),
+            file_id: *file_id,
             type_knowledge: TypeKnowledge::default(),
             value_knowledge: ValueKnowledge::default(),
             variable_knowledge: VariableKnowledge::default(),
@@ -104,6 +104,7 @@ impl Eq for Meta {}
 
 // TODO: Implement a custom `PartialEq` for `Statement`.
 #[derive(Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum Statement {
     // We allow for declarations of multiple variables of the same type to avoid
     // having to insert new declarations when converting the CFG to SSA.
@@ -149,7 +150,7 @@ pub enum Statement {
     },
 }
 
-#[derive(Clone, Hash)]
+#[derive(Clone)]
 pub enum Expression {
     /// An infix operation of the form `lhe * rhe`.
     InfixOp {
@@ -352,7 +353,7 @@ impl fmt::Debug for VariableName {
 
 #[derive(Clone, Hash, Eq, PartialEq)]
 pub enum AccessType {
-    ArrayAccess(Expression),
+    ArrayAccess(Box<Expression>),
     ComponentAccess(String),
 }
 

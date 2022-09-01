@@ -78,6 +78,12 @@ impl Cfg {
         self.basic_blocks.len()
     }
 
+    /// Returns true if the CFG is empty.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.basic_blocks.is_empty()
+    }
+
     /// Convert the CFG into SSA form.
     pub fn into_ssa(mut self) -> SSAResult<Cfg> {
         debug!("converting `{}` CFG to SSA", self.name());
@@ -127,7 +133,7 @@ impl Cfg {
     /// Get the file ID for the corresponding function or template.
     #[must_use]
     pub fn file_id(&self) -> &Option<FileID> {
-        &self.parameters.file_id()
+        self.parameters.file_id()
     }
 
     #[must_use]
@@ -227,23 +233,20 @@ impl Cfg {
             predecessors.extend(update.iter().cloned());
             update = update
                 .iter()
-                .flat_map(|index| self
-                    .get_basic_block(*index)
-                    .expect("in control-flow graph")
-                    .predecessors()
-                    .iter()
-                    .cloned()
-                )
+                .flat_map(|index| {
+                    self.get_basic_block(*index)
+                        .expect("in control-flow graph")
+                        .predecessors()
+                        .iter()
+                        .cloned()
+                })
                 .collect();
         }
         // Remove the initial block.
         predecessors.remove(&basic_block.index());
         predecessors
             .iter()
-            .map(|index| self
-                .get_basic_block(*index)
-                .expect("in control-flow graph")
-            )
+            .map(|index| self.get_basic_block(*index).expect("in control-flow graph"))
             .collect::<Vec<_>>()
     }
 
@@ -255,30 +258,31 @@ impl Cfg {
             successors.extend(update.iter().cloned());
             update = update
                 .iter()
-                .flat_map(|index| self
-                    .get_basic_block(*index)
-                    .expect("in control-flow graph")
-                    .successors()
-                    .iter()
-                    .cloned()
-                )
+                .flat_map(|index| {
+                    self.get_basic_block(*index)
+                        .expect("in control-flow graph")
+                        .successors()
+                        .iter()
+                        .cloned()
+                })
                 .collect();
         }
         // Remove the initial block.
         successors.remove(&basic_block.index());
         successors
             .iter()
-            .map(|index| self
-                .get_basic_block(*index)
-                .expect("in control-flow graph")
-            )
+            .map(|index| self.get_basic_block(*index).expect("in control-flow graph"))
             .collect::<Vec<_>>()
     }
 
     /// Returns all block in the interval [start_block, end_block). That is, all
     /// successors of the starting block (including the starting block) which
     /// are also predecessors of the end block.
-    pub fn get_interval(&self, start_block: &BasicBlock, end_block: &BasicBlock) -> Vec<&BasicBlock> {
+    pub fn get_interval(
+        &self,
+        start_block: &BasicBlock,
+        end_block: &BasicBlock,
+    ) -> Vec<&BasicBlock> {
         // Compute the successors of the start block (including the start block).
         let mut successors = HashSet::new();
         let mut update = HashSet::from([start_block.index()]);
@@ -286,13 +290,13 @@ impl Cfg {
             successors.extend(update.iter().cloned());
             update = update
                 .iter()
-                .flat_map(|index| self
-                    .get_basic_block(*index)
-                    .expect("in control-flow graph")
-                    .successors()
-                    .iter()
-                    .cloned()
-                )
+                .flat_map(|index| {
+                    self.get_basic_block(*index)
+                        .expect("in control-flow graph")
+                        .successors()
+                        .iter()
+                        .cloned()
+                })
                 .collect();
         }
 
@@ -303,13 +307,13 @@ impl Cfg {
             predecessors.extend(update.iter().cloned());
             update = update
                 .iter()
-                .flat_map(|index| self
-                    .get_basic_block(*index)
-                    .expect("in control-flow graph")
-                    .predecessors()
-                    .iter()
-                    .cloned()
-                )
+                .flat_map(|index| {
+                    self.get_basic_block(*index)
+                        .expect("in control-flow graph")
+                        .predecessors()
+                        .iter()
+                        .cloned()
+                })
                 .collect();
         }
         predecessors.remove(&end_block.index());
@@ -318,10 +322,7 @@ impl Cfg {
         // sets.
         successors
             .intersection(&predecessors)
-            .map(|index| self
-                .get_basic_block(*index)
-                .expect("in control-flow graph")
-            )
+            .map(|index| self.get_basic_block(*index).expect("in control-flow graph"))
             .collect::<Vec<_>>()
     }
 
@@ -365,11 +366,20 @@ impl Cfg {
     /// This method panics if the given block does not end with an if-statement node.
     pub fn get_false_branch(&self, header_block: &BasicBlock) -> Vec<&BasicBlock> {
         use crate::ir::Statement::*;
-        if let Some(IfThenElse { true_index, false_index, .. }) = header_block.statements().last() {
+        if let Some(IfThenElse {
+            true_index,
+            false_index,
+            ..
+        }) = header_block.statements().last()
+        {
             if let Some(false_index) = false_index {
-                if self.dominator_tree.get_dominance_frontier(*true_index).contains(false_index) {
+                if self
+                    .dominator_tree
+                    .get_dominance_frontier(*true_index)
+                    .contains(false_index)
+                {
                     // The false branch is empty.
-                    return Vec::new()
+                    return Vec::new();
                 }
                 let start_block = self
                     .get_basic_block(*false_index)

@@ -409,8 +409,8 @@ pub fn update_declarations(
             versioned_declarations.add_declaration(&Declaration::new(
                 &name.with_version(version),
                 &VariableType::Local,
-                &parameters.file_id(),
-                &parameters.file_location(),
+                parameters.file_id(),
+                parameters.file_location(),
             ));
         }
     }
@@ -432,9 +432,9 @@ pub fn update_declarations(
                     }
                     let mut versions = env
                         .get_version_range(name)
-                        .unwrap_or_else(|| 0..1)  // This will happen if the variable is not assigned to.
+                        .unwrap_or(0..1) // This will happen if the variable is not assigned to.
                         .collect::<Vec<_>>();
-                    versions.sort();
+                    versions.sort_unstable();
 
                     // Add a new declaration for each version of the local variable.
                     let mut versioned_names = Vec::new();

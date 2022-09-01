@@ -8,5 +8,5 @@ mod ssa_impl;
 mod unique_vars;
 
 pub use basic_block::BasicBlock;
-pub use cfg::{Cfg, Index, DefinitionType};
+pub use cfg::{Cfg, DefinitionType, Index};
 pub use lifting::IntoCfg;
