@@ -178,14 +178,14 @@ impl VariableMeta for BasicBlock {
         }
 
         // Cache variables read.
-        let variables_read = self
+        let locals_read = self
             .iter()
             .flat_map(|stmt| stmt.locals_read())
             .cloned()
             .collect();
 
         // Cache variables written.
-        let variables_written = self
+        let locals_written = self
             .iter()
             .flat_map(|stmt| stmt.locals_written())
             .cloned()
@@ -221,8 +221,8 @@ impl VariableMeta for BasicBlock {
 
         self.meta_mut()
             .variable_knowledge_mut()
-            .set_locals_read(&variables_read)
-            .set_locals_written(&variables_written)
+            .set_locals_read(&locals_read)
+            .set_locals_written(&locals_written)
             .set_signals_read(&signals_read)
             .set_signals_written(&signals_written)
             .set_components_read(&components_read)
