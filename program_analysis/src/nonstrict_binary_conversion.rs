@@ -24,7 +24,7 @@ impl NonStrictBinaryConversionWarning {
         match self {
             NonStrictBinaryConversionWarning::Num2Bits { file_id, location } => {
                 let mut report = Report::warning(
-                    "Using `Num2Bits` to convert field elements to bits may lead to aliasing issues".to_string(),
+                    "Using `Num2Bits` to convert field elements to bits may lead to aliasing issues.".to_string(),
                     ReportCode::NonStrictBinaryConversion,
                 );
                 if let Some(file_id) = file_id {
@@ -35,7 +35,7 @@ impl NonStrictBinaryConversionWarning {
                     );
                 }
                 report.add_note(
-                    "Consider using `Num2Bits_strict` if the input may be 254 bits or larger"
+                    "Consider using `Num2Bits_strict` if the input may be 254 bits or larger."
                         .to_string(),
                 );
                 report
