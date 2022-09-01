@@ -19,17 +19,34 @@ use super::ssa_impl::{Config, Environment};
 /// Basic block index type.
 pub type Index = usize;
 
+#[derive(Clone)]
+pub enum DefinitionType {
+    Function,
+    Template,
+}
+
+impl fmt::Display for DefinitionType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        match self {
+            DefinitionType::Function => write!(f, "function"),
+            DefinitionType::Template => write!(f, "template"),
+        }
+    }
+}
+
 pub struct Cfg {
     name: String,
     parameters: Parameters,
     declarations: Declarations,
     basic_blocks: Vec<BasicBlock>,
+    definition_type: DefinitionType,
     dominator_tree: DominatorTree<BasicBlock>,
 }
 
 impl Cfg {
     pub(crate) fn new(
         name: String,
+        definition_type: DefinitionType,
         parameters: Parameters,
         declarations: Declarations,
         basic_blocks: Vec<BasicBlock>,
@@ -40,6 +57,7 @@ impl Cfg {
             parameters,
             declarations,
             basic_blocks,
+            definition_type,
             dominator_tree,
         }
     }
@@ -110,6 +128,11 @@ impl Cfg {
     #[must_use]
     pub fn file_id(&self) -> &Option<FileID> {
         &self.parameters.file_id()
+    }
+
+    #[must_use]
+    pub fn definition_type(&self) -> &DefinitionType {
+        &self.definition_type
     }
 
     /// Returns the parameter data for the corresponding function or template.

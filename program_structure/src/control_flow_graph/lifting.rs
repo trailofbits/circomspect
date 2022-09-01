@@ -17,6 +17,7 @@ use crate::ssa::dominator_tree::DominatorTree;
 use crate::template_data::TemplateData;
 
 use super::basic_block::BasicBlock;
+use super::cfg::DefinitionType;
 use super::errors::{CFGError, CFGResult};
 use super::parameters::Parameters;
 use super::unique_vars::ensure_unique_variables;
@@ -66,7 +67,7 @@ impl TryLift<()> for &TemplateData {
         let body = self.get_body().clone();
 
         debug!("building CFG for template `{name}`");
-        try_lift_impl(name, parameters, body, reports)
+        try_lift_impl(name, DefinitionType::Template, parameters, body, reports)
     }
 }
 
@@ -80,7 +81,7 @@ impl TryLift<()> for &FunctionData {
         let body = self.get_body().clone();
 
         debug!("building CFG for function `{name}`");
-        try_lift_impl(name, parameters, body, reports)
+        try_lift_impl(name, DefinitionType::Function, parameters, body, reports)
     }
 }
 
@@ -92,11 +93,11 @@ impl TryLift<()> for Definition {
         match self {
             Definition::Template { name, body, .. } => {
                 debug!("building CFG for template `{name}`");
-                try_lift_impl(name.clone(), self.into(), body.clone(), reports)
+                try_lift_impl(name.clone(), DefinitionType::Template, self.into(), body.clone(), reports)
             }
             Definition::Function { name, body, .. } => {
                 debug!("building CFG for function `{name}`");
-                try_lift_impl(name.clone(), self.into(), body.clone(), reports)
+                try_lift_impl(name.clone(), DefinitionType::Function, self.into(), body.clone(), reports)
             }
         }
     }
@@ -104,6 +105,7 @@ impl TryLift<()> for Definition {
 
 fn try_lift_impl(
     name: String,
+    definition_type: DefinitionType,
     parameters: Parameters,
     mut body: ast::Statement,
     reports: &mut ReportCollection,
@@ -116,7 +118,7 @@ fn try_lift_impl(
     let basic_blocks = build_basic_blocks(&body, &mut env, reports)?;
     let dominator_tree = DominatorTree::new(&basic_blocks);
     let declarations = Declarations::from(env);
-    let mut cfg = Cfg::new(name, parameters, declarations, basic_blocks, dominator_tree);
+    let mut cfg = Cfg::new(name, definition_type, parameters, declarations, basic_blocks, dominator_tree);
 
     // 3. Propagate metadata to all child nodes. Since determining variable use
     // requires that variable types are available, type propagation must run
