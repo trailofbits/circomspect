@@ -103,8 +103,8 @@ pub trait VariableMeta {
 
 #[derive(Default, Clone)]
 pub struct VariableKnowledge {
-    variables_read: Option<VariableUses>,
-    variables_written: Option<VariableUses>,
+    locals_read: Option<VariableUses>,
+    locals_written: Option<VariableUses>,
     signals_read: Option<VariableUses>,
     signals_written: Option<VariableUses>,
     components_read: Option<VariableUses>,
@@ -118,12 +118,12 @@ impl VariableKnowledge {
     }
 
     pub fn set_locals_read(&mut self, uses: &VariableUses) -> &mut VariableKnowledge {
-        self.variables_read = Some(uses.clone());
+        self.locals_read = Some(uses.clone());
         self
     }
 
     pub fn set_locals_written(&mut self, uses: &VariableUses) -> &mut VariableKnowledge {
-        self.variables_written = Some(uses.clone());
+        self.locals_written = Some(uses.clone());
         self
     }
 
@@ -149,14 +149,14 @@ impl VariableKnowledge {
 
     #[must_use]
     pub fn locals_read(&self) -> &VariableUses {
-        self.variables_read
+        self.locals_read
             .as_ref()
             .expect("variable knowledge must be initialized before it is read")
     }
 
     #[must_use]
     pub fn locals_written(&self) -> &VariableUses {
-        self.variables_written
+        self.locals_written
             .as_ref()
             .expect("variable knowledge must be initialized before it is read")
     }
@@ -207,5 +207,12 @@ impl VariableKnowledge {
                 .chain(signals_written)
                 .chain(components_written),
         )
+    }
+
+    #[must_use]
+    pub fn variables_used<'a>(&'a self) -> Box<dyn Iterator<Item = &'a VariableUse> + 'a> {
+        let variables_read = self.variables_read();
+        let variables_written = self.variables_written();
+        Box::new(variables_read.chain(variables_written))
     }
 }
