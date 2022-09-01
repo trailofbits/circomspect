@@ -76,11 +76,13 @@ pub enum ReportCode {
     AssignSignalStatement,
     UnusedVariableValue,
     UnusedParameterValue,
-    NoSideEffectFromAssignment,
     VariableWithoutSideEffect,
     ConstantBranchCondition,
     NonStrictBinaryConversion,
+    CyclomaticComplexity,
+    TooManyArguments,
 }
+
 impl fmt::Display for ReportCode {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         use self::ReportCode::*;
@@ -158,10 +160,11 @@ impl fmt::Display for ReportCode {
             AssignSignalStatement => "CS0005",
             UnusedVariableValue => "CS0006",
             UnusedParameterValue => "CS0007",
-            NoSideEffectFromAssignment => "CS0008",
             VariableWithoutSideEffect => "CS0008",
             ConstantBranchCondition => "CS0009",
             NonStrictBinaryConversion => "CS0010",
+            CyclomaticComplexity => "CS0011",
+            TooManyArguments => "CS0012",
         };
         f.write_str(string_format)
     }
