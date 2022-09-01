@@ -50,7 +50,7 @@ impl Declarations {
 
 /// To avoid having to add a new declaration for each new version of a variable
 /// we track all declarations as part of the CFG header.
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Declaration {
     name: VariableName,
     var_type: VariableType,
