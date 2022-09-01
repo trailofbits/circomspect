@@ -214,7 +214,7 @@ impl VariableMeta for Statement {
                     components_read.extend(size.components_read().clone());
                 }
             }
-            Substitution { meta, var, rhe, .. } => {
+            Substitution { meta, var, op, rhe } => {
                 rhe.cache_variable_use();
                 locals_read.extend(rhe.locals_read().clone());
                 signals_read.extend(rhe.signals_read().clone());
@@ -227,6 +227,12 @@ impl VariableMeta for Statement {
                     Some(VariableType::Signal(_)) => {
                         trace!("adding `{var}` to signals written");
                         signals_written.insert(VariableUse::new(meta, var, &Vec::new()));
+                        if matches!(op, AssignOp::AssignConstraintSignal) {
+                            // If this is a signal constraint assignment, we
+                            // consider the assigned signal to be read as well.
+                            trace!("adding `{var:?}` to signals read");
+                            signals_read.insert(VariableUse::new(meta, var, &Vec::new()));
+                        }
                     }
                     Some(VariableType::Component) => {
                         trace!("adding `{var}` to components written");
