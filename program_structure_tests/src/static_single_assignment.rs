@@ -144,7 +144,7 @@ fn test_ssa_with_non_unique_variables() {
 
     validate_ssa(
         src,
-        &["n.0", "in", "out", "comp", "i.0", "i.1", "i.2", "i_0.0", "i_0.1", "i_0.2"]
+        &["n.0", "in", "out", "comp", "i.0", "i.1", "i.2", "i_0.0", "i_0.1", "i_0.2"],
     );
 }
 fn validate_ssa(src: &str, variables: &[&str]) {

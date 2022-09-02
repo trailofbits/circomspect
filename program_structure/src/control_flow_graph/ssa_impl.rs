@@ -277,7 +277,9 @@ fn visit_expression(expr: &mut Expression, env: &mut Environment) -> SSAResult<(
             assert!(var.version().is_none(), "variable already converted to SSA form");
             match env.get_current_version(var) {
                 Some(version) => {
-                    trace!("replacing (read) variable `{var:?}` with SSA variable `{var:?}.{version}`");
+                    trace!(
+                        "replacing (read) variable `{var:?}` with SSA variable `{var:?}.{version}`"
+                    );
                     *var = var.with_version(version);
                     Ok(())
                 }
@@ -306,7 +308,9 @@ fn visit_expression(expr: &mut Expression, env: &mut Environment) -> SSAResult<(
             assert!(var.version().is_none(), "variable already converted to SSA form");
             match env.get_current_version(var) {
                 Some(version) => {
-                    trace!("replacing (read) variable `{var:?}` with SSA variable `{var:?}.{version}`");
+                    trace!(
+                        "replacing (read) variable `{var:?}` with SSA variable `{var:?}.{version}`"
+                    );
                     *var = var.with_version(version);
                     Ok(())
                 }
@@ -314,7 +318,9 @@ fn visit_expression(expr: &mut Expression, env: &mut Environment) -> SSAResult<(
                     // This is the first assignment to an array. Add the
                     // variable to the environment and get the first version.
                     let version = env.get_next_version(var);
-                    trace!("replacing (read) variable `{var:?}` with SSA variable `{var:?}.{version}`");
+                    trace!(
+                        "replacing (read) variable `{var:?}` with SSA variable `{var:?}.{version}`"
+                    );
                     *var = var.with_version(version);
                     Ok(())
                 }

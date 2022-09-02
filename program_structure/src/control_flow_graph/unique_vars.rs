@@ -278,9 +278,7 @@ fn visit_expression(expr: &mut Expression, env: &DeclarationEnvironment) {
             trace!("visiting variable '{name}'");
             *name = match env.get_current_version(name) {
                 Some(version) => {
-                    trace!(
-                        "renaming occurrence of variable `{name}` to `{name}.{version}`"
-                    );
+                    trace!("renaming occurrence of variable `{name}` to `{name}.{version}`");
                     format!("{name}.{version}")
                 }
                 None => name.clone(),

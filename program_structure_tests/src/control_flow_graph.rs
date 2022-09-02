@@ -517,6 +517,6 @@ fn lift(name: &str) -> VariableName {
     match tokens.len() {
         1 => VariableName::from_name(tokens[0]),
         2 => VariableName::from_name(tokens[0]).with_suffix(tokens[1]),
-        _ => panic!("invalid variable name")
+        _ => panic!("invalid variable name"),
     }
 }
