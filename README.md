@@ -36,7 +36,7 @@ To get more (or less) verbose output you can set the output level using the `--o
 
 The project currently implements analysis passes for the following types of issues.
 
-#### 1. Side-effect free assignments (Warning)
+#### Side-effect free assignments (Warning)
 
 An assigned value which does not contribute either directly or indirectly to a constraint, or a function return value, typically indicates a mistake in the implementation of the circuit. For example, consider the following `BinSum` template from circomlib where we've changed the final constraint to introduce a bug.
 
@@ -73,7 +73,7 @@ An assigned value which does not contribute either directly or indirectly to a c
 Here, `lout` no longer influences the generated circuit, which is detected by Circomspect.
 
 
-#### 2. Shadowing variable declarations (Warning)
+#### Shadowing variable declarations (Warning)
 
 A shadowing variable declaration is a declaration of a variable with the same name as a previously declared variable. This does not have to be a problem, but if a variable declared in an outer scope is shadowed by mistake, this could change the semantics of the program which would be an issue.
 
@@ -94,7 +94,7 @@ For example, consider this function which is supposed to compute the number of b
 Since a new variable `r` is declared in the while-statement body, the outer variable is never updated and the return value is always 0.
 
 
-#### 3. Signal assignments using the signal assignment operator (Warning)
+#### Signal assignments using the signal assignment operator (Warning)
 
 Signals should typically be assigned using the constraint assignment operator `<==`. This ensures that the circuit and witness generation stay in sync. If `<--` is used it is up to the developer to ensure that the signal is properly constrained.
 
@@ -103,11 +103,11 @@ Sometimes more than one constraint is required to ensure that the assigned signa
 The Tornado Cash codebase was originally affected by an issue of this type. For details see the Tornado Cash disclosure [here](https://tornado-cash.medium.com/tornado-cash-got-hacked-by-us-b1e012a3c9a8).
 
 
-#### 4. Branching statement conditions that evaluate to a constant value (Warning)
+#### Branching statement conditions that evaluate to a constant value (Warning)
 
 If a branching statement condition always evaluates to either `true` or `false`, this means that the branch is either always taken, or never taken. This typically indicates a mistake in the code which should be fixed.
 
-#### 5. Use of the non-strict versions of `Num2Bits` and `Bits2Num` from circomlib (Warning)
+#### Use of the non-strict versions of `Num2Bits` and `Bits2Num` from circomlib (Warning)
 
 Using `Num2Bits` and `Bits2Num` from circomlib to convert a field element to and
 from binary form is only safe if the input size is smaller than the size of the
@@ -120,16 +120,25 @@ For example, Suppose that we create a component `n2b` given by `Num2Bits(254)` a
 Circomspect will generate a warning if it cannot prove that the input size passed to `Num2Bits` or `Bits2Num` is less than 254 bits.
 
 
-#### 6. Bitwise complement of field elements (Informational)
+#### Overly complex functions or templates (Warning)
+
+As functions and templates grow in complexity they become more difficult to review and maintain. This typically indicates that the code should be refactored into smaller, more easily understandable, components.
+
+Circomspect uses cyclomatic complexity to estimate the complexity of each function and template, and will generate a warning if the code is considered too complex.
+
+Circomspect will also generate a warning if a function or template takes too many arguments, as this also impacts the readability of the code.
+
+
+#### Bitwise complement of field elements (Informational)
 
 Circom supports taking the 256-bit complement `~x` of a field element `x`. Since the result is reduced modulo `p`, it will typically not satisfy the expected relations `(~x)ᵢ == ~(xᵢ)` for each bit `i`, which could lead to surprising results.
 
 
-#### 7. Field element arithmetic (Informational)
+#### Field element arithmetic (Informational)
 
 Circom supports a large number of arithmetic expressions. Since arithmetic expressions can overflow or underflow in Circom it is worth paying extra attention to field arithmetic to ensure that elements are constrained to the correct range.
 
 
-#### 8. Field element comparisons (Informational)
+#### Field element comparisons (Informational)
 
 Field elements are normalized to the interval `(-p/2, p/2]` before they are compared, by first reducing them modulo `p` and then mapping them to the correct interval by subtracting `p` from the value `x`, if `x` is greater than `p/2`. In particular, this means that `p/2 + 1 < 0 < p/2 - 1`. This can be surprising if you are used to thinking of elements in `GF(p)` as unsigned integers.
