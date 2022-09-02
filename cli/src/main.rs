@@ -196,9 +196,9 @@ fn main() -> ExitCode {
         ExitCode::SUCCESS
     } else {
         if reports.len() == 1 {
-            log_message(&format!("{} issue found.", reports.len()));
+            log_message(&format!("{} potential issue found.", reports.len()));
         } else {
-            log_message(&format!("{} issues found.", reports.len()));
+            log_message(&format!("{} potential issues found.", reports.len()));
         }
         ExitCode::FAILURE
     }
