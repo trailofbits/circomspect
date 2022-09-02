@@ -162,6 +162,63 @@ fn test_cfg_from_nested_while() {
 }
 
 #[test]
+fn test_cfg_with_non_unique_variables() {
+    let src = r#"
+        template T(n){
+            signal input in;
+            signal output out[2];
+
+            component comp[2];
+            if ((n % 2) == 0) {
+                for(var i = 0; i < 2; i++) {
+                    comp[i].in <== in;
+                }
+            } else {
+                for(var i = 0; i < 2; i++) {
+                    out[i] <== comp[i].out;
+                }
+            }
+        }
+    "#;
+
+    validate_cfg(
+        src,
+        &["n", "in", "out", "comp", "i", "i.0"],
+        &[4, 2, 1, 2, 2, 1, 2],
+        &[
+            (vec![], vec![1, 4]),
+            // 0:
+            // signal input in;
+            // signal output out[2];
+            // component comp[2];
+            // if ((n % 2) == 0)
+            (vec![0], vec![2]),
+            //   1:
+            //   var i;
+            //   i = 0;
+            (vec![1, 3], vec![3]),
+            //   2:
+            //   if (i < 2)
+            (vec![2], vec![2]),
+            //     3:
+            //     comp[i].in = in;
+            //     i++;
+            (vec![0], vec![5]),
+            //   4:
+            //   var i_0;
+            //   i_0 = 0;
+            (vec![4, 6], vec![6]),
+            //   5:
+            //   if (i_0 < 2)
+            (vec![5], vec![5]),
+            //     6:
+            //     out[i] <== comp[i_0].out;
+            //     i_0++;
+        ],
+    );
+}
+
+#[test]
 fn test_dominance_from_nested_if() {
     // 0:
     // var y;
@@ -352,7 +409,7 @@ fn validate_cfg(
     // 2. Verify declared variables.
     assert_eq!(
         cfg.variables().cloned().collect::<HashSet<_>>(),
-        variables.iter().map(|name| VariableName::from_name(name)).collect::<HashSet<_>>()
+        variables.iter().map(|name| lift(name)).collect::<HashSet<_>>()
     );
 
     // 3. Validate block lengths.
@@ -451,5 +508,15 @@ fn validate_branches(
         let false_indices =
             false_branch.iter().map(|basic_block| basic_block.index()).collect::<HashSet<_>>();
         assert_eq!(&false_indices, expected_indices);
+    }
+}
+
+fn lift(name: &str) -> VariableName {
+    // We assume that the input string uses '.' to separate the name from the suffix.
+    let tokens: Vec<_> = name.split('.').collect();
+    match tokens.len() {
+        1 => VariableName::from_name(tokens[0]),
+        2 => VariableName::from_name(tokens[0]).with_suffix(tokens[1]),
+        _ => panic!("invalid variable name")
     }
 }

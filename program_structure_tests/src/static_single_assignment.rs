@@ -122,10 +122,36 @@ fn test_ssa_from_nested_while() {
     validate_ssa(&src, &["x.0", "y.0", "y.1", "y.2", "y.3", "y.4"]);
 }
 
+#[test]
+fn test_ssa_with_non_unique_variables() {
+    let src = r#"
+        template T(n){
+            signal input in;
+            signal output out[2];
+
+            component comp[2];
+            if ((n % 2) == 0) {
+                for(var i = 0; i < 2; i++) {
+                    comp[i].in <== in;
+                }
+            } else {
+                for(var i = 0; i < 2; i++) {
+                    out[i] <== comp[i].out;
+                }
+            }
+        }
+    "#;
+
+    validate_ssa(
+        src,
+        &["n.0", "in", "out", "comp", "i.0", "i.1", "i.2", "i_0.0", "i_0.1", "i_0.2"]
+    );
+}
 fn validate_ssa(src: &str, variables: &[&str]) {
     // 1. Generate CFG and convert to SSA.
     let mut reports = ReportCollection::new();
     let cfg = parse_definition(src).unwrap().into_cfg(&mut reports).unwrap().into_ssa().unwrap();
+    assert!(reports.is_empty());
 
     // 2. Check that each variable is assigned at most once.
     use AssignOp::*;
@@ -148,7 +174,7 @@ fn validate_ssa(src: &str, variables: &[&str]) {
     // 4. Verify declared variables.
     assert_eq!(
         cfg.variables()
-            .map(|name| format!("{:?}", name)) // Must use debug formatting here to include version.
+            .map(|name| format!("{:?}", name)) // Must use debug formatting here to include suffix and version.
             .collect::<HashSet<_>>(),
         variables.iter().map(|name| name.to_string()).collect::<HashSet<_>>()
     );

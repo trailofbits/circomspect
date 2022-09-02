@@ -271,19 +271,25 @@ fn visit_statement(
 }
 
 fn visit_expression(expr: &mut Expression, env: &DeclarationEnvironment) {
+    use Access::*;
     use Expression::*;
     match expr {
-        Variable { name, .. } => {
+        Variable { name, access, .. } => {
             trace!("visiting variable '{name}'");
             *name = match env.get_current_version(name) {
                 Some(version) => {
                     trace!(
-                        "renaming occurrence of shadowing variable `{name}` to `{name}.{version}`"
+                        "renaming occurrence of variable `{name}` to `{name}.{version}`"
                     );
                     format!("{name}.{version}")
                 }
                 None => name.clone(),
             };
+            for access in access {
+                if let ArrayAccess(index) = access {
+                    visit_expression(index, env);
+                }
+            }
         }
         InfixOp { lhe, rhe, .. } => {
             visit_expression(lhe, env);

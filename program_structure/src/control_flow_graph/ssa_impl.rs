@@ -187,7 +187,7 @@ impl SSAStatement<Config> for Statement {
     }
 
     fn insert_ssa_variables(&mut self, env: &mut Environment) -> SSAResult<()> {
-        debug!("converting `{self}` to SSA");
+        debug!("converting `{self:?}` to SSA");
         use Statement::*;
         let result = match self {
             Declaration { dimensions, .. } => {
@@ -208,7 +208,7 @@ impl SSAStatement<Config> for Statement {
                     // otherwise we increase the version by one.
                     let version = env.get_next_version(var);
                     trace!(
-                        "replacing (written) variable `{var}` with SSA variable `{var}.{version}`"
+                        "replacing (written) variable `{var:?}` with SSA variable `{var:?}.{version}`"
                     );
                     *var = var.with_version(version);
                 }
@@ -247,14 +247,14 @@ fn visit_expression(expr: &mut Expression, env: &mut Environment) -> SSAResult<(
             match env.get_current_version(name) {
                 Some(version) => {
                     trace!(
-                        "replacing (read) variable `{name}` with SSA variable `{name}.{version}`"
+                        "replacing (read) variable `{name:?}` with SSA variable `{name:?}.{version}`"
                     );
                     *name = name.with_version(version);
                     Ok(())
                 }
                 None => {
                     // TODO: Handle undeclared variables more gracefully.
-                    warn!("failed to convert undeclared variable `{name}` to SSA");
+                    warn!("failed to convert undeclared variable `{name:?}` to SSA");
                     Err(SSAError::UndefinedVariableError {
                         name: name.to_string(),
                         file_id: meta.file_id(),
@@ -277,13 +277,13 @@ fn visit_expression(expr: &mut Expression, env: &mut Environment) -> SSAResult<(
             assert!(var.version().is_none(), "variable already converted to SSA form");
             match env.get_current_version(var) {
                 Some(version) => {
-                    trace!("replacing (read) variable `{var}` with SSA variable `{var}.{version}`");
+                    trace!("replacing (read) variable `{var:?}` with SSA variable `{var:?}.{version}`");
                     *var = var.with_version(version);
                     Ok(())
                 }
                 None => {
                     // TODO: Handle undeclared variables more gracefully.
-                    warn!("failed to convert undeclared variable `{var}` to SSA");
+                    warn!("failed to convert undeclared variable `{var:?}` to SSA");
                     Err(SSAError::UndefinedVariableError {
                         name: var.to_string(),
                         file_id: meta.file_id(),
@@ -306,7 +306,7 @@ fn visit_expression(expr: &mut Expression, env: &mut Environment) -> SSAResult<(
             assert!(var.version().is_none(), "variable already converted to SSA form");
             match env.get_current_version(var) {
                 Some(version) => {
-                    trace!("replacing (read) variable `{var}` with SSA variable `{var}.{version}`");
+                    trace!("replacing (read) variable `{var:?}` with SSA variable `{var:?}.{version}`");
                     *var = var.with_version(version);
                     Ok(())
                 }
@@ -314,7 +314,7 @@ fn visit_expression(expr: &mut Expression, env: &mut Environment) -> SSAResult<(
                     // This is the first assignment to an array. Add the
                     // variable to the environment and get the first version.
                     let version = env.get_next_version(var);
-                    trace!("replacing (read) variable `{var}` with SSA variable `{var}.{version}`");
+                    trace!("replacing (read) variable `{var:?}` with SSA variable `{var:?}.{version}`");
                     *var = var.with_version(version);
                     Ok(())
                 }
