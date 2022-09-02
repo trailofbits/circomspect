@@ -14,19 +14,7 @@ impl AST {
     }
     pub fn decompose(
         self,
-    ) -> (
-        Meta,
-        Option<Version>,
-        Vec<Include>,
-        Vec<Definition>,
-        Option<MainComponent>,
-    ) {
-        (
-            self.meta,
-            self.compiler_version,
-            self.includes,
-            self.definitions,
-            self.main_component,
-        )
+    ) -> (Meta, Option<Version>, Vec<Include>, Vec<Definition>, Option<MainComponent>) {
+        (self.meta, self.compiler_version, self.includes, self.definitions, self.main_component)
     }
 }

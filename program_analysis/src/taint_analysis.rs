@@ -83,19 +83,14 @@ impl TaintAnalysis {
         let mut update = HashSet::from([source.clone()]);
         while !update.is_subset(&result) {
             result.extend(update.iter().cloned());
-            update = update
-                .iter()
-                .flat_map(|source| self.single_step_taint(source))
-                .collect();
+            update = update.iter().flat_map(|source| self.single_step_taint(source)).collect();
         }
         result
     }
 
     /// Returns true if the source taints any of the sinks.
     pub fn taints_any(&self, source: &VariableName, sinks: &HashSet<VariableName>) -> bool {
-        self.multi_step_taint(source)
-            .iter()
-            .any(|sink| sinks.contains(sink))
+        self.multi_step_taint(source).iter().any(|sink| sinks.contains(sink))
     }
 }
 
@@ -112,13 +107,7 @@ pub fn run_taint_analysis(cfg: &Cfg) -> TaintAnalysis {
                 Substitution { .. } => {
                     // Variables read taint variables written by the statement.
                     for sink in stmt.variables_written() {
-                        if !matches!(
-                            stmt,
-                            Substitution {
-                                rhe: Phi { .. },
-                                ..
-                            }
-                        ) {
+                        if !matches!(stmt, Substitution { rhe: Phi { .. }, .. }) {
                             // Add the definition to the result.
                             trace!("adding variable assignment for `{:?}`", sink.name());
                             result.add_definition(sink);
@@ -134,12 +123,7 @@ pub fn run_taint_analysis(cfg: &Cfg) -> TaintAnalysis {
                         }
                     }
                 }
-                Declaration {
-                    meta,
-                    names,
-                    dimensions,
-                    ..
-                } => {
+                Declaration { meta, names, dimensions, .. } => {
                     // Variables occurring in declarations taint the declared variable.
                     for sink in names {
                         result.add_declaration(&VariableUse::new(meta, sink, &Vec::new()));
@@ -247,12 +231,8 @@ mod tests {
     fn validate_taint(src: &str, taint_map: &HashMap<&str, HashSet<String>>) {
         // Build CFG.
         let mut reports = ReportCollection::new();
-        let cfg = parse_definition(src)
-            .unwrap()
-            .into_cfg(&mut reports)
-            .unwrap()
-            .into_ssa()
-            .unwrap();
+        let cfg =
+            parse_definition(src).unwrap().into_cfg(&mut reports).unwrap().into_ssa().unwrap();
         assert!(reports.is_empty());
 
         let taint_analysis = run_taint_analysis(&cfg);

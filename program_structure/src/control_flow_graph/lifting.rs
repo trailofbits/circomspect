@@ -130,14 +130,8 @@ fn try_lift_impl(
     let basic_blocks = build_basic_blocks(&body, &mut env, reports)?;
     let dominator_tree = DominatorTree::new(&basic_blocks);
     let declarations = Declarations::from(env);
-    let mut cfg = Cfg::new(
-        name,
-        definition_type,
-        parameters,
-        declarations,
-        basic_blocks,
-        dominator_tree,
-    );
+    let mut cfg =
+        Cfg::new(name, definition_type, parameters, declarations, basic_blocks, dominator_tree);
 
     // 3. Propagate metadata to all child nodes. Since determining variable use
     // requires that variable types are available, type propagation must run
@@ -188,10 +182,7 @@ fn visit_statement(
     let current_index = basic_blocks.last().index();
 
     match stmt {
-        ast::Statement::InitializationBlock {
-            initializations: stmts,
-            ..
-        } => {
+        ast::Statement::InitializationBlock { initializations: stmts, .. } => {
             // Add each statement in the initialization block to the current
             // block. Since initialization blocks only contain declarations and
             // substitutions, we do not need to track predecessors here.
@@ -223,12 +214,7 @@ fn visit_statement(
             // `pred_set` will be non-empty. Otherwise it will be empty.
             Ok(pred_set)
         }
-        ast::Statement::While {
-            meta,
-            cond,
-            stmt: while_body,
-            ..
-        } => {
+        ast::Statement::While { meta, cond, stmt: while_body, .. } => {
             let pred_set = HashSet::from([current_index]);
             complete_basic_block(basic_blocks, &pred_set, meta.try_lift((), reports)?);
 
@@ -237,14 +223,12 @@ fn visit_statement(
             // body. The index of the loop header will be `current_index + 1`,
             // and the index of the loop body will be `current_index + 2`.
             trace!("appending statement `if {cond}` to basic block {current_index}");
-            basic_blocks
-                .last_mut()
-                .append_statement(ir::Statement::IfThenElse {
-                    meta: meta.try_lift((), reports)?,
-                    cond: cond.try_lift((), reports)?,
-                    true_index: current_index + 2,
-                    false_index: None, // May be updated later.
-                });
+            basic_blocks.last_mut().append_statement(ir::Statement::IfThenElse {
+                meta: meta.try_lift((), reports)?,
+                cond: cond.try_lift((), reports)?,
+                true_index: current_index + 2,
+                false_index: None, // May be updated later.
+            });
             let header_index = current_index + 1;
 
             // Visit the while-statement body.
@@ -261,10 +245,7 @@ fn visit_statement(
                 pred_set.insert(basic_blocks.last().index());
             }
             // The loop header is the successor of all blocks in `pred_set`.
-            trace!(
-                "adding predecessors {:?} to loop header {header_index}",
-                pred_set
-            );
+            trace!("adding predecessors {:?} to loop header {header_index}", pred_set);
             for i in pred_set {
                 basic_blocks[i].add_successor(header_index);
                 basic_blocks[header_index].add_predecessor(i);
@@ -274,22 +255,14 @@ fn visit_statement(
             // of the loop header.
             Ok(HashSet::from([header_index]))
         }
-        ast::Statement::IfThenElse {
-            meta,
-            cond,
-            if_case,
-            else_case,
-            ..
-        } => {
+        ast::Statement::IfThenElse { meta, cond, if_case, else_case, .. } => {
             trace!("appending statement `if {cond}` to basic block {current_index}");
-            basic_blocks
-                .last_mut()
-                .append_statement(ir::Statement::IfThenElse {
-                    meta: meta.try_lift((), reports)?,
-                    cond: cond.try_lift((), reports)?,
-                    true_index: current_index + 1,
-                    false_index: None, // May be updated later.
-                });
+            basic_blocks.last_mut().append_statement(ir::Statement::IfThenElse {
+                meta: meta.try_lift((), reports)?,
+                cond: cond.try_lift((), reports)?,
+                true_index: current_index + 1,
+                false_index: None, // May be updated later.
+            });
 
             // Visit the if-case body.
             let meta = if_case.get_meta().try_lift((), reports)?;
@@ -325,9 +298,7 @@ fn visit_statement(
                 Ok(if_pred_set)
             }
         }
-        ast::Statement::Declaration {
-            meta, name, xtype, ..
-        } => {
+        ast::Statement::Declaration { meta, name, xtype, .. } => {
             // Declarations are also tracked by the CFG header.
             trace!("appending `{stmt}` to basic block {current_index}");
             env.add_declaration(&Declaration::new(
@@ -336,16 +307,12 @@ fn visit_statement(
                 &meta.file_id,
                 &meta.location,
             ));
-            basic_blocks
-                .last_mut()
-                .append_statement(stmt.try_lift((), reports)?);
+            basic_blocks.last_mut().append_statement(stmt.try_lift((), reports)?);
             Ok(HashSet::new())
         }
         _ => {
             trace!("appending `{stmt}` to basic block {current_index}");
-            basic_blocks
-                .last_mut()
-                .append_statement(stmt.try_lift((), reports)?);
+            basic_blocks.last_mut().append_statement(stmt.try_lift((), reports)?);
             Ok(HashSet::new())
         }
     }
@@ -370,12 +337,8 @@ fn complete_basic_block(basic_blocks: &mut BasicBlockVec, pred_set: &IndexSet, m
         // If the final statement `S` of block `i` is a control flow statement,
         // and `j` is not the true branch of `S`, update the false branch of `S`
         // to `j`.
-        if let Some(IfThenElse {
-            cond,
-            true_index,
-            false_index,
-            ..
-        }) = basic_blocks[i].statements_mut().last_mut()
+        if let Some(IfThenElse { cond, true_index, false_index, .. }) =
+            basic_blocks[i].statements_mut().last_mut()
         {
             if j != *true_index && false_index.is_none() {
                 trace!("updating false branch target of `if {cond}`");

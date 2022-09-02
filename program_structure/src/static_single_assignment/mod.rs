@@ -69,9 +69,8 @@ fn insert_ssa_variables_impl<Cfg: SSAConfig>(
 ) -> SSAResult<()> {
     // 1. Update variables in current block.
     let successors = {
-        let current_block = basic_blocks
-            .get_mut(current_index)
-            .expect("invalid block index during SSA generation");
+        let current_block =
+            basic_blocks.get_mut(current_index).expect("invalid block index during SSA generation");
         current_block.insert_ssa_variables(env)?;
         current_block.successors().clone()
     };

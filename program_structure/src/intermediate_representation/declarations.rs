@@ -15,9 +15,7 @@ impl Declarations {
 
     pub fn add_declaration(&mut self, declaration: &Declaration) {
         assert!(
-            self.0
-                .insert(declaration.variable_name().clone(), declaration.clone())
-                .is_none(),
+            self.0.insert(declaration.variable_name().clone(), declaration.clone()).is_none(),
             "variable `{}` already tracked by declaration map",
             declaration.variable_name()
         );

@@ -9,14 +9,8 @@ use program_structure::ir::value_meta::{ValueMeta, ValueReduction};
 use program_structure::ir::*;
 
 pub enum NonStrictBinaryConversionWarning {
-    Num2Bits {
-        file_id: Option<FileID>,
-        location: FileLocation,
-    },
-    Bits2Num {
-        file_id: Option<FileID>,
-        location: FileLocation,
-    },
+    Num2Bits { file_id: Option<FileID>, location: FileLocation },
+    Bits2Num { file_id: Option<FileID>, location: FileLocation },
 }
 
 impl NonStrictBinaryConversionWarning {
@@ -87,12 +81,7 @@ fn visit_statement(stmt: &Statement, reports: &mut ReportCollection) {
     if let Substitution {
         meta: var_meta,
         op: AssignLocalOrComponent,
-        rhe:
-            Call {
-                meta: component_meta,
-                name: component_name,
-                args,
-            },
+        rhe: Call { meta: component_meta, name: component_name, args },
         ..
     } = stmt
     {
@@ -168,12 +157,8 @@ mod tests {
     fn validate_reports(src: &str, expected_len: usize) {
         // Build CFG.
         let mut reports = ReportCollection::new();
-        let cfg = parse_definition(src)
-            .unwrap()
-            .into_cfg(&mut reports)
-            .unwrap()
-            .into_ssa()
-            .unwrap();
+        let cfg =
+            parse_definition(src).unwrap().into_cfg(&mut reports).unwrap().into_ssa().unwrap();
         assert!(reports.is_empty());
 
         // Generate report collection.

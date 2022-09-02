@@ -8,20 +8,11 @@ pub fn build_infix(
     infix_op: ExpressionInfixOpcode,
     rhe: Expression,
 ) -> Expression {
-    InfixOp {
-        meta,
-        infix_op,
-        lhe: Box::new(lhe),
-        rhe: Box::new(rhe),
-    }
+    InfixOp { meta, infix_op, lhe: Box::new(lhe), rhe: Box::new(rhe) }
 }
 
 pub fn build_prefix(meta: Meta, prefix_op: ExpressionPrefixOpcode, rhe: Expression) -> Expression {
-    PrefixOp {
-        meta,
-        prefix_op,
-        rhe: Box::new(rhe),
-    }
+    PrefixOp { meta, prefix_op, rhe: Box::new(rhe) }
 }
 
 pub fn build_inline_switch_op(

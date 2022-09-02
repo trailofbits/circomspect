@@ -19,10 +19,7 @@ struct Declaration {
 
 impl Declaration {
     fn new(file_id: Option<FileID>, file_location: FileLocation) -> Declaration {
-        Declaration {
-            file_id,
-            file_location,
-        }
+        Declaration { file_id, file_location }
     }
 
     fn file_id(&self) -> Option<FileID> {
@@ -69,8 +66,7 @@ impl DeclarationEnvironment {
         file_id: Option<FileID>,
         file_location: FileLocation,
     ) -> Option<Version> {
-        self.declarations
-            .add_variable(name, Declaration::new(file_id, file_location));
+        self.declarations.add_variable(name, Declaration::new(file_id, file_location));
         self.get_next_version(name)
     }
 
@@ -124,10 +120,7 @@ impl TryFrom<&Parameters> for DeclarationEnvironment {
         for name in params.iter() {
             let file_id = *params.file_id();
             let file_location = params.file_location().clone();
-            if env
-                .add_declaration(&name.to_string(), file_id, file_location)
-                .is_some()
-            {
+            if env.add_declaration(&name.to_string(), file_id, file_location).is_some() {
                 return Err(CFGError::ParameterNameCollisionError {
                     name: name.to_string(),
                     file_id: *params.file_id(),
@@ -200,12 +193,7 @@ fn visit_statement(
 ) {
     use Statement::*;
     match stmt {
-        Declaration {
-            meta,
-            name,
-            dimensions,
-            ..
-        } => {
+        Declaration { meta, name, dimensions, .. } => {
             trace!("visiting declared variable `{name}`");
             for size in dimensions {
                 visit_expression(size, env);
@@ -227,9 +215,7 @@ fn visit_statement(
                 }
             }
         }
-        Substitution {
-            var, rhe, access, ..
-        } => {
+        Substitution { var, rhe, access, .. } => {
             trace!("visiting assigned variable '{var}'");
             *var = match env.get_current_version(var) {
                 Some(version) => {
@@ -258,9 +244,7 @@ fn visit_statement(
         Assert { arg, .. } => {
             visit_expression(arg, env);
         }
-        InitializationBlock {
-            initializations, ..
-        } => {
+        InitializationBlock { initializations, .. } => {
             for init in initializations {
                 visit_statement(init, env, reports);
             }
@@ -276,12 +260,7 @@ fn visit_statement(
             }
             env.remove_variable_block();
         }
-        IfThenElse {
-            cond,
-            if_case,
-            else_case,
-            ..
-        } => {
+        IfThenElse { cond, if_case, else_case, .. } => {
             visit_expression(cond, env);
             visit_statement(if_case, env, reports);
             if let Some(else_case) = else_case {
@@ -313,12 +292,7 @@ fn visit_expression(expr: &mut Expression, env: &DeclarationEnvironment) {
         PrefixOp { rhe, .. } => {
             visit_expression(rhe, env);
         }
-        InlineSwitchOp {
-            cond,
-            if_true,
-            if_false,
-            ..
-        } => {
+        InlineSwitchOp { cond, if_true, if_false, .. } => {
             visit_expression(cond, env);
             visit_expression(if_true, env);
             visit_expression(if_false, env);

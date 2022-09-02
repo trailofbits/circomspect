@@ -36,10 +36,7 @@ pub struct NonEmptyVec<T> {
 
 impl<T> NonEmptyVec<T> {
     pub fn new(x: T) -> NonEmptyVec<T> {
-        NonEmptyVec {
-            head: x,
-            tail: Vec::new(),
-        }
+        NonEmptyVec { head: x, tail: Vec::new() }
     }
 
     pub fn first(&self) -> &T {
@@ -224,9 +221,7 @@ impl<T> TryFrom<Vec<T>> for NonEmptyVec<T> {
         if let Some(x) = xs.pop() {
             Ok(NonEmptyVec { head: x, tail: xs })
         } else {
-            Err(anyhow!(
-                "cannot create a non-empty vector from an empty vector"
-            ))
+            Err(anyhow!("cannot create a non-empty vector from an empty vector"))
         }
     }
 }
@@ -236,14 +231,9 @@ impl<T: Clone> TryFrom<&Vec<T>> for NonEmptyVec<T> {
 
     fn try_from(xs: &Vec<T>) -> Result<NonEmptyVec<T>, Error> {
         if let Some(x) = xs.first() {
-            Ok(NonEmptyVec {
-                head: x.clone(),
-                tail: xs[1..].to_vec(),
-            })
+            Ok(NonEmptyVec { head: x.clone(), tail: xs[1..].to_vec() })
         } else {
-            Err(anyhow!(
-                "cannot create a non-empty vector from an empty vector"
-            ))
+            Err(anyhow!("cannot create a non-empty vector from an empty vector"))
         }
     }
 }
@@ -253,14 +243,9 @@ impl<T: Clone> TryFrom<&[T]> for NonEmptyVec<T> {
 
     fn try_from(xs: &[T]) -> Result<NonEmptyVec<T>, Error> {
         if let Some(x) = xs.first() {
-            Ok(NonEmptyVec {
-                head: x.clone(),
-                tail: xs[1..].to_vec(),
-            })
+            Ok(NonEmptyVec { head: x.clone(), tail: xs[1..].to_vec() })
         } else {
-            Err(anyhow!(
-                "cannot create a non-empty vector from an empty vector"
-            ))
+            Err(anyhow!("cannot create a non-empty vector from an empty vector"))
         }
     }
 }
@@ -270,14 +255,9 @@ impl<T: Clone, const N: usize> TryFrom<&[T; N]> for NonEmptyVec<T> {
 
     fn try_from(xs: &[T; N]) -> Result<NonEmptyVec<T>, Error> {
         if let Some(x) = xs.first() {
-            Ok(NonEmptyVec {
-                head: x.clone(),
-                tail: xs[1..].to_vec(),
-            })
+            Ok(NonEmptyVec { head: x.clone(), tail: xs[1..].to_vec() })
         } else {
-            Err(anyhow!(
-                "cannot create a non-empty vector from an empty vector"
-            ))
+            Err(anyhow!("cannot create a non-empty vector from an empty vector"))
         }
     }
 }

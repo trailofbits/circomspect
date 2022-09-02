@@ -6,11 +6,7 @@ use crate::file_definition::{FileID, FileLocation};
 #[derive(Debug)]
 pub enum SSAError {
     /// The variable is read before it is declared/written.
-    UndefinedVariableError {
-        name: String,
-        file_id: Option<FileID>,
-        location: FileLocation,
-    },
+    UndefinedVariableError { name: String, file_id: Option<FileID>, location: FileLocation },
 }
 
 pub type SSAResult<T> = Result<T, SSAError>;
@@ -19,11 +15,7 @@ impl SSAError {
     pub fn into_report(&self) -> Report {
         use SSAError::*;
         match self {
-            UndefinedVariableError {
-                name,
-                file_id,
-                location,
-            } => {
+            UndefinedVariableError { name, file_id, location } => {
                 let mut report = Report::error(
                     format!("The variable `{name}` is used before it is defined."),
                     ReportCode::UninitializedSymbolInExpression,

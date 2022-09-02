@@ -82,26 +82,20 @@ impl FillMeta for Statement {
         self.get_mut_meta().elem_id = *element_id;
         *element_id += 1;
         match self {
-            IfThenElse {
-                meta,
-                cond,
-                if_case,
-                else_case,
-                ..
-            } => fill_conditional(meta, cond, if_case, else_case, file_id, element_id),
+            IfThenElse { meta, cond, if_case, else_case, .. } => {
+                fill_conditional(meta, cond, if_case, else_case, file_id, element_id)
+            }
             While { meta, cond, stmt } => fill_while(meta, cond, stmt, file_id, element_id),
             Return { meta, value } => fill_return(meta, value, file_id, element_id),
-            InitializationBlock {
-                meta,
-                initializations,
-                ..
-            } => fill_initialization(meta, initializations, file_id, element_id),
-            Declaration {
-                meta, dimensions, ..
-            } => fill_declaration(meta, dimensions, file_id, element_id),
-            Substitution {
-                meta, access, rhe, ..
-            } => fill_substitution(meta, access, rhe, file_id, element_id),
+            InitializationBlock { meta, initializations, .. } => {
+                fill_initialization(meta, initializations, file_id, element_id)
+            }
+            Declaration { meta, dimensions, .. } => {
+                fill_declaration(meta, dimensions, file_id, element_id)
+            }
+            Substitution { meta, access, rhe, .. } => {
+                fill_substitution(meta, access, rhe, file_id, element_id)
+            }
             ConstraintEquality { meta, lhe, rhe } => {
                 fill_constraint_equality(meta, lhe, rhe, file_id, element_id)
             }
@@ -236,22 +230,14 @@ impl<'a> Display for Statement {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         use Statement::*;
         match self {
-            IfThenElse {
-                cond, else_case, ..
-            } => match else_case {
+            IfThenElse { cond, else_case, .. } => match else_case {
                 Some(_) => write!(f, "if-else {cond}"),
                 None => write!(f, "if {cond}"),
             },
             While { cond, .. } => write!(f, "while {cond}"),
             Return { value, .. } => write!(f, "return {value}"),
             Declaration { name, xtype, .. } => write!(f, "{xtype} {name}"),
-            Substitution {
-                var,
-                access,
-                op,
-                rhe,
-                ..
-            } => {
+            Substitution { var, access, op, rhe, .. } => {
                 write!(f, "{var}")?;
                 for access in access {
                     write!(f, "{access}")?;

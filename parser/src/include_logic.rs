@@ -15,11 +15,8 @@ pub struct FileStack {
 
 impl FileStack {
     pub fn new(paths: &Vec<PathBuf>, reports: &mut ReportCollection) -> FileStack {
-        let mut result = FileStack {
-            current_location: None,
-            black_paths: HashSet::new(),
-            stack: Vec::new(),
-        };
+        let mut result =
+            FileStack { current_location: None, black_paths: HashSet::new(), stack: Vec::new() };
         result.add_files(paths, reports);
         result
     }
@@ -42,10 +39,7 @@ impl FileStack {
                         Ok(path) => self.stack.push(path),
                         Err(_) => {
                             reports.push(
-                                FileOsError {
-                                    path: path.display().to_string(),
-                                }
-                                .into_report(),
+                                FileOsError { path: path.display().to_string() }.into_report(),
                             );
                         }
                     }

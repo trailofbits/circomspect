@@ -69,12 +69,7 @@ impl Statement {
     pub fn propagate_types(&mut self, vars: &Declarations) {
         use Statement::*;
         match self {
-            Declaration {
-                meta,
-                var_type,
-                dimensions,
-                ..
-            } => {
+            Declaration { meta, var_type, dimensions, .. } => {
                 // The metadata tracks the type of the declared variable.
                 meta.type_knowledge_mut().set_variable_type(var_type);
                 for size in dimensions {
@@ -112,12 +107,7 @@ impl<'a> fmt::Debug for Statement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         use Statement::*;
         match self {
-            Declaration {
-                names,
-                var_type,
-                dimensions,
-                ..
-            } => {
+            Declaration { names, var_type, dimensions, .. } => {
                 write!(f, "{var_type} ")?;
                 let mut first = true;
                 for name in names {
@@ -135,12 +125,7 @@ impl<'a> fmt::Debug for Statement {
             }
             Substitution { var, op, rhe, .. } => write!(f, "{var:?} {op} {rhe:?}"),
             ConstraintEquality { lhe, rhe, .. } => write!(f, "{lhe:?} === {rhe:?}"),
-            IfThenElse {
-                cond,
-                true_index,
-                false_index,
-                ..
-            } => match false_index {
+            IfThenElse { cond, true_index, false_index, .. } => match false_index {
                 Some(false_index) => write!(f, "if {cond:?} then {true_index} else {false_index}"),
                 None => write!(f, "if {cond:?} then {true_index}"),
             },
@@ -155,12 +140,7 @@ impl<'a> fmt::Display for Statement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         use Statement::*;
         match self {
-            Declaration {
-                names,
-                var_type,
-                dimensions,
-                ..
-            } => {
+            Declaration { names, var_type, dimensions, .. } => {
                 // We rewrite declarations of multiple SSA variables as a single
                 // declaration of the original variable.
                 write!(f, "{var_type} {}", names.first())?;

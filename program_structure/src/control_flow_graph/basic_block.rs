@@ -42,13 +42,7 @@ impl BasicBlock {
         predecessors: IndexSet,
         successors: IndexSet,
     ) -> BasicBlock {
-        BasicBlock {
-            index,
-            meta,
-            stmts,
-            predecessors,
-            successors,
-        }
+        BasicBlock { index, meta, stmts, predecessors, successors }
     }
 
     #[must_use]
@@ -112,20 +106,12 @@ impl BasicBlock {
     }
 
     pub(crate) fn add_predecessor(&mut self, predecessor: Index) {
-        trace!(
-            "adding predecessor {} to basic block {}",
-            predecessor,
-            self.index
-        );
+        trace!("adding predecessor {} to basic block {}", predecessor, self.index);
         self.predecessors.insert(predecessor);
     }
 
     pub(crate) fn add_successor(&mut self, successor: Index) {
-        trace!(
-            "adding successor {} to basic block {}",
-            successor,
-            self.index
-        );
+        trace!("adding successor {} to basic block {}", successor, self.index);
         self.successors.insert(successor);
     }
 
@@ -146,10 +132,7 @@ impl BasicBlock {
     }
 
     pub fn propagate_types(&mut self, vars: &Declarations) {
-        trace!(
-            "propagating variable types for basic block {}",
-            self.index()
-        );
+        trace!("propagating variable types for basic block {}", self.index());
         for stmt in self.iter_mut() {
             stmt.propagate_types(vars);
         }
@@ -178,46 +161,25 @@ impl VariableMeta for BasicBlock {
         }
 
         // Cache variables read.
-        let locals_read = self
-            .iter()
-            .flat_map(|stmt| stmt.locals_read())
-            .cloned()
-            .collect();
+        let locals_read = self.iter().flat_map(|stmt| stmt.locals_read()).cloned().collect();
 
         // Cache variables written.
-        let locals_written = self
-            .iter()
-            .flat_map(|stmt| stmt.locals_written())
-            .cloned()
-            .collect();
+        let locals_written = self.iter().flat_map(|stmt| stmt.locals_written()).cloned().collect();
 
         // Cache signals read.
-        let signals_read = self
-            .iter()
-            .flat_map(|stmt| stmt.signals_read())
-            .cloned()
-            .collect();
+        let signals_read = self.iter().flat_map(|stmt| stmt.signals_read()).cloned().collect();
 
         // Cache signals written.
-        let signals_written = self
-            .iter()
-            .flat_map(|stmt| stmt.signals_written())
-            .cloned()
-            .collect();
+        let signals_written =
+            self.iter().flat_map(|stmt| stmt.signals_written()).cloned().collect();
 
         // Cache components read.
-        let components_read = self
-            .iter()
-            .flat_map(|stmt| stmt.components_read())
-            .cloned()
-            .collect();
+        let components_read =
+            self.iter().flat_map(|stmt| stmt.components_read()).cloned().collect();
 
         // Cache components written.
-        let components_written = self
-            .iter()
-            .flat_map(|stmt| stmt.components_written())
-            .cloned()
-            .collect();
+        let components_written =
+            self.iter().flat_map(|stmt| stmt.components_written()).cloned().collect();
 
         self.meta_mut()
             .variable_knowledge_mut()
@@ -256,15 +218,8 @@ impl VariableMeta for BasicBlock {
 
 impl fmt::Debug for BasicBlock {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let lines = self
-            .iter()
-            .map(|stmt| format!("{:?}", stmt))
-            .collect::<Vec<_>>();
-        let width = lines
-            .iter()
-            .map(|line| line.len())
-            .max()
-            .unwrap_or_default();
+        let lines = self.iter().map(|stmt| format!("{:?}", stmt)).collect::<Vec<_>>();
+        let width = lines.iter().map(|line| line.len()).max().unwrap_or_default();
         let border = format!("+{}+", (0..width + 2).map(|_| '-').collect::<String>());
 
         writeln!(f, "{}", &border)?;

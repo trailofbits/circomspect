@@ -55,110 +55,37 @@ impl PartialEq for Expression {
         use Expression::*;
         match (self, other) {
             (
-                InfixOp {
-                    lhe: self_lhe,
-                    infix_op: self_op,
-                    rhe: self_rhe,
-                    ..
-                },
-                InfixOp {
-                    lhe: other_lhe,
-                    infix_op: other_op,
-                    rhe: other_rhe,
-                    ..
-                },
+                InfixOp { lhe: self_lhe, infix_op: self_op, rhe: self_rhe, .. },
+                InfixOp { lhe: other_lhe, infix_op: other_op, rhe: other_rhe, .. },
             ) => self_op == other_op && self_lhe == other_lhe && self_rhe == other_rhe,
             (
-                PrefixOp {
-                    prefix_op: self_op,
-                    rhe: self_rhe,
-                    ..
-                },
-                PrefixOp {
-                    prefix_op: other_op,
-                    rhe: other_rhe,
-                    ..
-                },
+                PrefixOp { prefix_op: self_op, rhe: self_rhe, .. },
+                PrefixOp { prefix_op: other_op, rhe: other_rhe, .. },
             ) => self_op == other_op && self_rhe == other_rhe,
             (
-                SwitchOp {
-                    cond: self_cond,
-                    if_true: self_true,
-                    if_false: self_false,
-                    ..
-                },
-                SwitchOp {
-                    cond: other_cond,
-                    if_true: other_true,
-                    if_false: other_false,
-                    ..
-                },
+                SwitchOp { cond: self_cond, if_true: self_true, if_false: self_false, .. },
+                SwitchOp { cond: other_cond, if_true: other_true, if_false: other_false, .. },
             ) => self_cond == other_cond && self_true == other_true && self_false == other_false,
-            (
-                Variable {
-                    name: self_name, ..
-                },
-                Variable {
-                    name: other_name, ..
-                },
-            ) => self_name == other_name,
+            (Variable { name: self_name, .. }, Variable { name: other_name, .. }) => {
+                self_name == other_name
+            }
             (Number(_, self_value), Number(_, other_value)) => self_value == other_value,
             (
-                Call {
-                    name: self_id,
-                    args: self_args,
-                    ..
-                },
-                Call {
-                    name: other_id,
-                    args: other_args,
-                    ..
-                },
+                Call { name: self_id, args: self_args, .. },
+                Call { name: other_id, args: other_args, .. },
             ) => self_id == other_id && self_args == other_args,
+            (Array { values: self_values, .. }, Array { values: other_values, .. }) => {
+                self_values == other_values
+            }
             (
-                Array {
-                    values: self_values,
-                    ..
-                },
-                Array {
-                    values: other_values,
-                    ..
-                },
-            ) => self_values == other_values,
-            (
-                Update {
-                    var: self_var,
-                    access: self_access,
-                    rhe: self_rhe,
-                    ..
-                },
-                Update {
-                    var: other_var,
-                    access: other_access,
-                    rhe: other_rhe,
-                    ..
-                },
+                Update { var: self_var, access: self_access, rhe: self_rhe, .. },
+                Update { var: other_var, access: other_access, rhe: other_rhe, .. },
             ) => self_var == other_var && self_access == other_access && self_rhe == other_rhe,
             (
-                Access {
-                    var: self_var,
-                    access: self_access,
-                    ..
-                },
-                Access {
-                    var: other_var,
-                    access: other_access,
-                    ..
-                },
+                Access { var: self_var, access: self_access, .. },
+                Access { var: other_var, access: other_access, .. },
             ) => self_var == other_var && self_access == other_access,
-            (
-                Phi {
-                    args: self_args, ..
-                },
-                Phi {
-                    args: other_args, ..
-                },
-            ) => self_args == other_args,
+            (Phi { args: self_args, .. }, Phi { args: other_args, .. }) => self_args == other_args,
             _ => false,
         }
     }
@@ -177,12 +104,7 @@ impl Hash for Expression {
             PrefixOp { rhe, .. } => {
                 rhe.hash(state);
             }
-            SwitchOp {
-                cond,
-                if_true,
-                if_false,
-                ..
-            } => {
+            SwitchOp { cond, if_true, if_false, .. } => {
                 cond.hash(state);
                 if_true.hash(state);
                 if_false.hash(state);
@@ -200,9 +122,7 @@ impl Hash for Expression {
                 var.hash(state);
                 access.hash(state);
             }
-            Update {
-                var, access, rhe, ..
-            } => {
+            Update { var, access, rhe, .. } => {
                 var.hash(state);
                 access.hash(state);
                 rhe.hash(state);
@@ -228,12 +148,7 @@ impl TypeMeta for Expression {
             PrefixOp { rhe, .. } => {
                 rhe.propagate_types(vars);
             }
-            SwitchOp {
-                cond,
-                if_true,
-                if_false,
-                ..
-            } => {
+            SwitchOp { cond, if_true, if_false, .. } => {
                 cond.propagate_types(vars);
                 if_true.propagate_types(vars);
                 if_false.propagate_types(vars);
@@ -263,13 +178,7 @@ impl TypeMeta for Expression {
                     meta.type_knowledge_mut().set_variable_type(var_type);
                 }
             }
-            Update {
-                meta,
-                var,
-                access,
-                rhe,
-                ..
-            } => {
+            Update { meta, var, access, rhe, .. } => {
                 rhe.propagate_types(vars);
                 for access in access.iter_mut() {
                     if let AccessType::ArrayAccess(index) = access {
@@ -328,12 +237,7 @@ impl VariableMeta for Expression {
                 signals_read.extend(rhe.signals_read().iter().cloned());
                 components_read.extend(rhe.components_read().iter().cloned());
             }
-            SwitchOp {
-                cond,
-                if_true,
-                if_false,
-                ..
-            } => {
+            SwitchOp { cond, if_true, if_false, .. } => {
                 cond.cache_variable_use();
                 if_true.cache_variable_use();
                 if_false.cache_variable_use();
@@ -376,10 +280,8 @@ impl VariableMeta for Expression {
                 }
             }
             Phi { meta, args } => {
-                locals_read.extend(
-                    args.iter()
-                        .map(|name| VariableUse::new(meta, name, &Vec::new())),
-                );
+                locals_read
+                    .extend(args.iter().map(|name| VariableUse::new(meta, name, &Vec::new())));
             }
             Array { values, .. } => {
                 for value in values {
@@ -419,13 +321,7 @@ impl VariableMeta for Expression {
                     }
                 }
             }
-            Update {
-                meta,
-                var,
-                access,
-                rhe,
-                ..
-            } => {
+            Update { meta, var, access, rhe, .. } => {
                 // Cache RHS variable use.
                 rhe.cache_variable_use();
                 locals_read.extend(rhe.locals_read().iter().cloned());
@@ -503,13 +399,7 @@ impl ValueMeta for Expression {
         use Expression::*;
         use ValueReduction::*;
         match self {
-            InfixOp {
-                meta,
-                lhe,
-                infix_op,
-                rhe,
-                ..
-            } => {
+            InfixOp { meta, lhe, infix_op, rhe, .. } => {
                 let mut result = lhe.propagate_values(env) || rhe.propagate_values(env);
                 match infix_op.propagate_values(lhe.value(), rhe.value()) {
                     Some(value) => {
@@ -519,11 +409,7 @@ impl ValueMeta for Expression {
                 }
                 result
             }
-            PrefixOp {
-                meta,
-                prefix_op,
-                rhe,
-            } => {
+            PrefixOp { meta, prefix_op, rhe } => {
                 let mut result = rhe.propagate_values(env);
                 match prefix_op.propagate_values(rhe.value()) {
                     Some(value) => {
@@ -533,12 +419,7 @@ impl ValueMeta for Expression {
                 }
                 result
             }
-            SwitchOp {
-                meta,
-                cond,
-                if_true,
-                if_false,
-            } => {
+            SwitchOp { meta, cond, if_true, if_false } => {
                 let mut result = cond.propagate_values(env)
                     | if_true.propagate_values(env)
                     | if_false.propagate_values(env);
@@ -584,9 +465,7 @@ impl ValueMeta for Expression {
                 None => false,
             },
             Number(meta, value) => {
-                let value = FieldElement {
-                    value: value.clone(),
-                };
+                let value = FieldElement { value: value.clone() };
                 meta.value_knowledge_mut().set_reduces_to(value)
             }
             Call { args, .. } => {
@@ -627,10 +506,8 @@ impl ValueMeta for Expression {
             }
             Phi { meta, args, .. } => {
                 // Only set the value of the phi expression if all arguments agree on the value.
-                let values = args
-                    .iter()
-                    .map(|name| env.get_variable(name))
-                    .collect::<Option<HashSet<_>>>();
+                let values =
+                    args.iter().map(|name| env.get_variable(name)).collect::<Option<HashSet<_>>>();
                 match values {
                     Some(values) if values.len() == 1 => {
                         // This unwrap is safe since the size is non-zero.
@@ -708,39 +585,27 @@ impl ExpressionInfixOpcode {
                         .map(|value| FieldElement { value }),
                     LesserEq => {
                         let value = modular_arithmetic::lesser_eq(lhv, rhv, p);
-                        Some(Boolean {
-                            value: modular_arithmetic::as_bool(&value, p),
-                        })
+                        Some(Boolean { value: modular_arithmetic::as_bool(&value, p) })
                     }
                     GreaterEq => {
                         let value = modular_arithmetic::greater_eq(lhv, rhv, p);
-                        Some(Boolean {
-                            value: modular_arithmetic::as_bool(&value, p),
-                        })
+                        Some(Boolean { value: modular_arithmetic::as_bool(&value, p) })
                     }
                     Lesser => {
                         let value = modular_arithmetic::lesser(lhv, rhv, p);
-                        Some(Boolean {
-                            value: modular_arithmetic::as_bool(&value, p),
-                        })
+                        Some(Boolean { value: modular_arithmetic::as_bool(&value, p) })
                     }
                     Greater => {
                         let value = modular_arithmetic::greater(lhv, rhv, p);
-                        Some(Boolean {
-                            value: modular_arithmetic::as_bool(&value, p),
-                        })
+                        Some(Boolean { value: modular_arithmetic::as_bool(&value, p) })
                     }
                     Eq => {
                         let value = modular_arithmetic::eq(lhv, rhv, p);
-                        Some(Boolean {
-                            value: modular_arithmetic::as_bool(&value, p),
-                        })
+                        Some(Boolean { value: modular_arithmetic::as_bool(&value, p) })
                     }
                     NotEq => {
                         let value = modular_arithmetic::not_eq(lhv, rhv, p);
-                        Some(Boolean {
-                            value: modular_arithmetic::as_bool(&value, p),
-                        })
+                        Some(Boolean { value: modular_arithmetic::as_bool(&value, p) })
                     }
                     BitOr => {
                         let value = modular_arithmetic::bit_or(lhv, rhv, p);
@@ -763,12 +628,8 @@ impl ExpressionInfixOpcode {
             (Some(Boolean { value: lhv }), Some(Boolean { value: rhv })) => {
                 use ExpressionInfixOpcode::*;
                 match self {
-                    BoolAnd => Some(Boolean {
-                        value: *lhv && *rhv,
-                    }),
-                    BoolOr => Some(Boolean {
-                        value: *lhv || *rhv,
-                    }),
+                    BoolAnd => Some(Boolean { value: *lhv && *rhv }),
+                    BoolOr => Some(Boolean { value: *lhv || *rhv }),
                     // Remaining operations do not make sense.
                     // TODO: Add report propagation here as well.
                     _ => None,
@@ -826,16 +687,11 @@ impl fmt::Debug for Expression {
             Variable { name, .. } => {
                 write!(f, "{name:?}")
             }
-            InfixOp {
-                lhe, infix_op, rhe, ..
-            } => write!(f, "({lhe:?} {infix_op} {rhe:?})"),
+            InfixOp { lhe, infix_op, rhe, .. } => write!(f, "({lhe:?} {infix_op} {rhe:?})"),
             PrefixOp { prefix_op, rhe, .. } => write!(f, "({prefix_op}{rhe:?})"),
-            SwitchOp {
-                cond,
-                if_true,
-                if_false,
-                ..
-            } => write!(f, "({cond:?}? {if_true:?} : {if_false:?})"),
+            SwitchOp { cond, if_true, if_false, .. } => {
+                write!(f, "({cond:?}? {if_true:?} : {if_false:?})")
+            }
             Call { name: id, args, .. } => write!(f, "{}({})", id, vec_to_debug(args, ", ")),
             Array { values, .. } => write!(f, "[{}]", vec_to_debug(values, ", ")),
             Access { var, access, .. } => {
@@ -849,9 +705,7 @@ impl fmt::Debug for Expression {
                     .join(", ");
                 write!(f, "access({var:?}, [{access}])")
             }
-            Update {
-                var, access, rhe, ..
-            } => {
+            Update { var, access, rhe, .. } => {
                 let access = access
                     .iter()
                     .map(|access| match access {
@@ -875,16 +729,11 @@ impl fmt::Display for Expression {
             Variable { name, .. } => {
                 write!(f, "{name}")
             }
-            InfixOp {
-                lhe, infix_op, rhe, ..
-            } => write!(f, "({lhe} {infix_op} {rhe})"),
+            InfixOp { lhe, infix_op, rhe, .. } => write!(f, "({lhe} {infix_op} {rhe})"),
             PrefixOp { prefix_op, rhe, .. } => write!(f, "{}({})", prefix_op, rhe),
-            SwitchOp {
-                cond,
-                if_true,
-                if_false,
-                ..
-            } => write!(f, "({cond}? {if_true} : {if_false})"),
+            SwitchOp { cond, if_true, if_false, .. } => {
+                write!(f, "({cond}? {if_true} : {if_false})")
+            }
             Call { name: id, args, .. } => write!(f, "{}({})", id, vec_to_display(args, ", ")),
             Array { values, .. } => write!(f, "[{}]", vec_to_display(values, ", ")),
             Access { var, access, .. } => {
@@ -956,20 +805,12 @@ impl fmt::Display for AccessType {
 
 #[must_use]
 fn vec_to_debug<T: fmt::Debug>(elems: &[T], sep: &str) -> String {
-    elems
-        .iter()
-        .map(|elem| format!("{elem:?}"))
-        .collect::<Vec<String>>()
-        .join(sep)
+    elems.iter().map(|elem| format!("{elem:?}")).collect::<Vec<String>>().join(sep)
 }
 
 #[must_use]
 fn vec_to_display<T: fmt::Display>(elems: &[T], sep: &str) -> String {
-    elems
-        .iter()
-        .map(|elem| format!("{elem}"))
-        .collect::<Vec<String>>()
-        .join(sep)
+    elems.iter().map(|elem| format!("{elem}")).collect::<Vec<String>>().join(sep)
 }
 
 #[cfg(test)]
@@ -982,15 +823,9 @@ mod tests {
         use ExpressionInfixOpcode::*;
         use ValueReduction::*;
         let mut lhe = Number(Meta::default(), 7u64.into());
-        let mut rhe = Variable {
-            meta: Meta::default(),
-            name: VariableName::from_name("v"),
-        };
+        let mut rhe = Variable { meta: Meta::default(), name: VariableName::from_name("v") };
         let mut env = ValueEnvironment::new();
-        env.add_variable(
-            &VariableName::from_name("v"),
-            &FieldElement { value: 3u64.into() },
-        );
+        env.add_variable(&VariableName::from_name("v"), &FieldElement { value: 3u64.into() });
         lhe.propagate_values(&mut env);
         rhe.propagate_values(&mut env);
 
@@ -1002,12 +837,7 @@ mod tests {
             rhe: Box::new(rhe.clone()),
         };
         expr.propagate_values(&mut env.clone());
-        assert_eq!(
-            expr.value(),
-            Some(&FieldElement {
-                value: 21u64.into()
-            })
-        );
+        assert_eq!(expr.value(), Some(&FieldElement { value: 21u64.into() }));
 
         // Infix addition.
         let mut expr = InfixOp {
@@ -1017,12 +847,7 @@ mod tests {
             rhe: Box::new(rhe.clone()),
         };
         expr.propagate_values(&mut env.clone());
-        assert_eq!(
-            expr.value(),
-            Some(&FieldElement {
-                value: 10u64.into()
-            })
-        );
+        assert_eq!(expr.value(), Some(&FieldElement { value: 10u64.into() }));
 
         // Infix integer division.
         let mut expr = InfixOp {

@@ -9,17 +9,9 @@ use crate::ir::errors::IRError;
 #[derive(Debug, Error)]
 pub enum CFGError {
     #[error("The variable `{name}` is read before it is declared/written.")]
-    UndefinedVariableError {
-        name: String,
-        file_id: Option<FileID>,
-        file_location: FileLocation,
-    },
+    UndefinedVariableError { name: String, file_id: Option<FileID>, file_location: FileLocation },
     #[error("The variable name `{name}` contains invalid characters.")]
-    InvalidVariableNameError {
-        name: String,
-        file_id: Option<FileID>,
-        file_location: FileLocation,
-    },
+    InvalidVariableNameError { name: String, file_id: Option<FileID>, file_location: FileLocation },
     #[error("The declaration of the variable `{name}` shadows a previous declaration.")]
     ShadowingVariableWarning {
         name: String,
@@ -42,11 +34,7 @@ impl CFGError {
     pub fn produce_report(error: Self) -> Report {
         use CFGError::*;
         match error {
-            UndefinedVariableError {
-                name,
-                file_id,
-                file_location,
-            } => {
+            UndefinedVariableError { name, file_id, file_location } => {
                 let mut report = Report::error(
                     format!("The variable `{name}` is used before it is defined."),
                     ReportCode::UninitializedSymbolInExpression,
@@ -60,11 +48,7 @@ impl CFGError {
                 }
                 report
             }
-            InvalidVariableNameError {
-                name,
-                file_id,
-                file_location,
-            } => {
+            InvalidVariableNameError { name, file_id, file_location } => {
                 let mut report = Report::error(
                     format!("Invalid variable name `{name}`."),
                     ReportCode::ParseFail,
@@ -103,16 +87,10 @@ impl CFGError {
                         Some("Shadowed variable is declared here.".to_string()),
                     );
                 }
-                report.add_note(format!(
-                    "Consider renaming the second occurrence of `{name}`."
-                ));
+                report.add_note(format!("Consider renaming the second occurrence of `{name}`."));
                 report
             }
-            ParameterNameCollisionError {
-                name,
-                file_id,
-                file_location,
-            } => {
+            ParameterNameCollisionError { name, file_id, file_location } => {
                 let mut report = Report::warning(
                     format!("Parameter `{name}` declared multiple times."),
                     ReportCode::ParameterNameCollision,
@@ -134,24 +112,12 @@ impl CFGError {
 impl From<IRError> for CFGError {
     fn from(error: IRError) -> CFGError {
         match error {
-            IRError::UndefinedVariableError {
-                name,
-                file_id,
-                file_location,
-            } => CFGError::UndefinedVariableError {
-                name,
-                file_id,
-                file_location,
-            },
-            IRError::InvalidVariableNameError {
-                name,
-                file_id,
-                file_location,
-            } => CFGError::InvalidVariableNameError {
-                name,
-                file_id,
-                file_location,
-            },
+            IRError::UndefinedVariableError { name, file_id, file_location } => {
+                CFGError::UndefinedVariableError { name, file_id, file_location }
+            }
+            IRError::InvalidVariableNameError { name, file_id, file_location } => {
+                CFGError::InvalidVariableNameError { name, file_id, file_location }
+            }
         }
     }
 }

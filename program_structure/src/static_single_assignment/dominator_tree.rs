@@ -70,10 +70,7 @@ fn compute_dominators<T: DirectedGraphNode>(basic_blocks: &[T]) -> DominatorInfo
         for i in 1..nof_blocks {
             let mut new_dominators: HashSet<usize> = (0..nof_blocks).collect();
             for &j in basic_blocks[i].predecessors() {
-                new_dominators = new_dominators
-                    .intersection(&dominators[j])
-                    .copied()
-                    .collect();
+                new_dominators = new_dominators.intersection(&dominators[j]).copied().collect();
             }
             new_dominators.insert(i);
             if new_dominators != dominators[i] {

@@ -39,12 +39,7 @@ pub fn parse_files(file_paths: &Vec<PathBuf>, compiler_version: &str) -> ParseRe
     let mut definitions = HashMap::new();
     let mut main_components = Vec::new();
     while let Some(file_path) = FileStack::take_next(&mut file_stack) {
-        match parse_file(
-            &file_path,
-            &mut file_stack,
-            &mut file_library,
-            &compiler_version,
-        ) {
+        match parse_file(&file_path, &mut file_stack, &mut file_library, &compiler_version) {
             Ok((file_id, program, mut warnings)) => {
                 if let Some(main_component) = program.main_component {
                     main_components.push((file_id, main_component));
@@ -114,9 +109,7 @@ fn open_file(file_path: &PathBuf) -> Result<(String, String), Report> /* path, s
     let path_str = format!("{}", file_path.display());
     read_to_string(file_path)
         .map(|contents| (path_str.clone(), contents))
-        .map_err(|_| FileOsError {
-            path: path_str.clone(),
-        })
+        .map_err(|_| FileOsError { path: path_str.clone() })
         .map_err(|error| error.into_report())
 }
 
@@ -165,9 +158,7 @@ use program_structure::ast::Definition;
 
 pub fn parse_definition(src: &str) -> Option<Definition> {
     match parser_logic::parse_string(src) {
-        Some(AST {
-            mut definitions, ..
-        }) if definitions.len() == 1 => definitions.pop(),
+        Some(AST { mut definitions, .. }) if definitions.len() == 1 => definitions.pop(),
         _ => None,
     }
 }

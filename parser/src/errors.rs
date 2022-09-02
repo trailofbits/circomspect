@@ -11,11 +11,7 @@ pub struct UnclosedCommentError {
 impl UnclosedCommentError {
     pub fn produce_report(error: Self) -> Report {
         let mut report = Report::error("Unterminated /* */.".to_string(), ReportCode::ParseFail);
-        report.add_primary(
-            error.location,
-            error.file_id,
-            "Comment starts here.".to_string(),
-        );
+        report.add_primary(error.location, error.file_id, "Comment starts here.".to_string());
         report
     }
 }
@@ -39,10 +35,7 @@ pub struct FileOsError {
 }
 impl FileOsError {
     pub fn into_report(self) -> Report {
-        Report::error(
-            format!("Failed to open file `{}`.", self.path),
-            ReportCode::ParseFail,
-        )
+        Report::error(format!("Failed to open file `{}`.", self.path), ReportCode::ParseFail)
     }
 }
 
@@ -53,16 +46,10 @@ pub struct IncludeError {
 }
 impl IncludeError {
     pub fn into_report(self) -> Report {
-        let mut report = Report::error(
-            format!("Failed to open file `{}`.", self.path),
-            ReportCode::ParseFail,
-        );
+        let mut report =
+            Report::error(format!("Failed to open file `{}`.", self.path), ReportCode::ParseFail);
         if let Some(file_id) = self.file_id {
-            report.add_primary(
-                self.file_location,
-                file_id,
-                "File included here.".to_string(),
-            );
+            report.add_primary(self.file_location, file_id, "File included here.".to_string());
         }
         report
     }

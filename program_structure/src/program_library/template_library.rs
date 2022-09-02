@@ -22,13 +22,7 @@ impl TemplateLibrary {
         for (file_id, file_contents) in library_contents {
             for definition in file_contents {
                 match definition {
-                    Definition::Function {
-                        name,
-                        args,
-                        arg_location,
-                        body,
-                        ..
-                    } => {
+                    Definition::Function { name, args, arg_location, body, .. } => {
                         functions.insert(
                             name.clone(),
                             FunctionData::new(
@@ -42,14 +36,7 @@ impl TemplateLibrary {
                             ),
                         );
                     }
-                    Definition::Template {
-                        name,
-                        args,
-                        arg_location,
-                        body,
-                        parallel,
-                        ..
-                    } => {
+                    Definition::Template { name, args, arg_location, body, parallel, .. } => {
                         templates.insert(
                             name.clone(),
                             TemplateData::new(
@@ -67,11 +54,7 @@ impl TemplateLibrary {
                 }
             }
         }
-        TemplateLibrary {
-            functions,
-            templates,
-            file_library,
-        }
+        TemplateLibrary { functions, templates, file_library }
     }
     // Template methods.
     pub fn contains_template(&self, template_name: &str) -> bool {

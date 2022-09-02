@@ -73,13 +73,9 @@ impl FillMeta for Expression {
             Variable { meta, access, .. } => fill_variable(meta, access, file_id, element_id),
             InfixOp { meta, lhe, rhe, .. } => fill_infix(meta, lhe, rhe, file_id, element_id),
             PrefixOp { meta, rhe, .. } => fill_prefix(meta, rhe, file_id, element_id),
-            InlineSwitchOp {
-                meta,
-                cond,
-                if_false,
-                if_true,
-                ..
-            } => fill_inline_switch_op(meta, cond, if_true, if_false, file_id, element_id),
+            InlineSwitchOp { meta, cond, if_false, if_true, .. } => {
+                fill_inline_switch_op(meta, cond, if_true, if_false, file_id, element_id)
+            }
             Call { meta, args, .. } => fill_call(meta, args, file_id, element_id),
             ArrayInLine { meta, values, .. } => {
                 fill_array_inline(meta, values, file_id, element_id)
@@ -169,16 +165,11 @@ impl Display for Expression {
                 }
                 Ok(())
             }
-            InfixOp {
-                lhe, infix_op, rhe, ..
-            } => write!(f, "({} {} {})", lhe, infix_op, rhe),
+            InfixOp { lhe, infix_op, rhe, .. } => write!(f, "({} {} {})", lhe, infix_op, rhe),
             PrefixOp { prefix_op, rhe, .. } => write!(f, "{}({})", prefix_op, rhe),
-            InlineSwitchOp {
-                cond,
-                if_true,
-                if_false,
-                ..
-            } => write!(f, "({}? {} : {})", cond, if_true, if_false),
+            InlineSwitchOp { cond, if_true, if_false, .. } => {
+                write!(f, "({}? {} : {})", cond, if_true, if_false)
+            }
             Call { id, args, .. } => write!(f, "{}({})", id, vec_to_string(args)),
             ArrayInLine { values, .. } => write!(f, "[{}]", vec_to_string(values)),
         }
@@ -235,9 +226,5 @@ impl Display for Access {
 }
 
 fn vec_to_string(elems: &[Expression]) -> String {
-    elems
-        .iter()
-        .map(|arg| arg.to_string())
-        .collect::<Vec<String>>()
-        .join(", ")
+    elems.iter().map(|arg| arg.to_string()).collect::<Vec<String>>().join(", ")
 }

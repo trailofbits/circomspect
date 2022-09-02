@@ -104,9 +104,7 @@ fn fill_inputs_and_outputs(
     output_signals: &mut SignalInfo,
 ) {
     match template_statement {
-        Statement::IfThenElse {
-            if_case, else_case, ..
-        } => {
+        Statement::IfThenElse { if_case, else_case, .. } => {
             fill_inputs_and_outputs(if_case, input_signals, output_signals);
             if let Option::Some(else_value) = else_case {
                 fill_inputs_and_outputs(else_value, input_signals, output_signals);
@@ -120,9 +118,7 @@ fn fill_inputs_and_outputs(
         Statement::While { stmt, .. } => {
             fill_inputs_and_outputs(stmt, input_signals, output_signals);
         }
-        Statement::InitializationBlock {
-            initializations, ..
-        } => {
+        Statement::InitializationBlock { initializations, .. } => {
             for initialization in initializations.iter() {
                 fill_inputs_and_outputs(initialization, input_signals, output_signals);
             }

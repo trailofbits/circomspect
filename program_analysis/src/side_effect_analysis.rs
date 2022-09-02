@@ -46,10 +46,7 @@ pub struct UnconstrainedSignalWarning {
 impl UnconstrainedSignalWarning {
     pub fn into_report(self) -> Report {
         let mut report = Report::warning(
-            format!(
-                "The signal `{}` is not constrained by the template.",
-                self.name
-            ),
+            format!("The signal `{}` is not constrained by the template.", self.name),
             ReportCode::UnusedVariableValue,
         );
         if let Some(file_id) = self.file_id {
@@ -72,10 +69,7 @@ pub struct UnusedSignalWarning {
 impl UnusedSignalWarning {
     pub fn into_report(self) -> Report {
         let mut report = Report::warning(
-            format!(
-                "The signal `{}` is not constrained by the template.",
-                self.name
-            ),
+            format!("The signal `{}` is not constrained by the template.", self.name),
             ReportCode::UnusedVariableValue,
         );
         if let Some(file_id) = self.file_id {
@@ -418,12 +412,8 @@ mod tests {
     fn validate_reports(src: &str, expected_len: usize) {
         // Build CFG.
         let mut reports = ReportCollection::new();
-        let cfg = parse_definition(src)
-            .unwrap()
-            .into_cfg(&mut reports)
-            .unwrap()
-            .into_ssa()
-            .unwrap();
+        let cfg =
+            parse_definition(src).unwrap().into_cfg(&mut reports).unwrap().into_ssa().unwrap();
         assert!(reports.is_empty());
 
         // Generate report collection.

@@ -52,14 +52,7 @@ impl Cfg {
         basic_blocks: Vec<BasicBlock>,
         dominator_tree: DominatorTree<BasicBlock>,
     ) -> Cfg {
-        Cfg {
-            name,
-            parameters,
-            declarations,
-            basic_blocks,
-            definition_type,
-            dominator_tree,
-        }
+        Cfg { name, parameters, declarations, basic_blocks, definition_type, dominator_tree }
     }
     /// Returns the entry (first) block of the CFG.
     #[must_use]
@@ -335,9 +328,7 @@ impl Cfg {
     pub fn get_true_branch(&self, header_block: &BasicBlock) -> Vec<&BasicBlock> {
         use crate::ir::Statement::*;
         if let Some(IfThenElse { true_index, .. }) = header_block.statements().last() {
-            let start_block = self
-                .get_basic_block(*true_index)
-                .expect("in control-flow graph");
+            let start_block = self.get_basic_block(*true_index).expect("in control-flow graph");
             let end_blocks = self.get_dominance_frontier(start_block);
 
             if end_blocks.is_empty() {
@@ -366,24 +357,14 @@ impl Cfg {
     /// This method panics if the given block does not end with an if-statement node.
     pub fn get_false_branch(&self, header_block: &BasicBlock) -> Vec<&BasicBlock> {
         use crate::ir::Statement::*;
-        if let Some(IfThenElse {
-            true_index,
-            false_index,
-            ..
-        }) = header_block.statements().last()
-        {
+        if let Some(IfThenElse { true_index, false_index, .. }) = header_block.statements().last() {
             if let Some(false_index) = false_index {
-                if self
-                    .dominator_tree
-                    .get_dominance_frontier(*true_index)
-                    .contains(false_index)
-                {
+                if self.dominator_tree.get_dominance_frontier(*true_index).contains(false_index) {
                     // The false branch is empty.
                     return Vec::new();
                 }
-                let start_block = self
-                    .get_basic_block(*false_index)
-                    .expect("in control-flow graph");
+                let start_block =
+                    self.get_basic_block(*false_index).expect("in control-flow graph");
                 let end_blocks = self.get_dominance_frontier(start_block);
 
                 if end_blocks.is_empty() {

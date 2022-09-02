@@ -58,10 +58,7 @@ struct Cli {
 }
 
 fn generate_cfg<Ast: IntoCfg>(ast: Ast, reports: &mut ReportCollection) -> Result<Cfg, Report> {
-    ast.into_cfg(reports)
-        .map_err(Report::from)?
-        .into_ssa()
-        .map_err(Report::from)
+    ast.into_cfg(reports).map_err(Report::from)?.into_ssa().map_err(Report::from)
 }
 
 fn analyze_cfg(cfg: &Cfg, reports: &mut ReportCollection) {
@@ -111,11 +108,8 @@ fn analyze_definitions(
 }
 
 fn filter_reports(reports: &mut ReportCollection, output_level: &Level) {
-    *reports = reports
-        .iter()
-        .filter(|report| filter_by_level(report, output_level))
-        .cloned()
-        .collect();
+    *reports =
+        reports.iter().filter(|report| filter_by_level(report, output_level)).cloned().collect();
 }
 
 fn filter_by_level(report: &Report, output_level: &Level) -> bool {

@@ -101,13 +101,7 @@ impl AST {
         definitions: Vec<Definition>,
         main_component: Option<MainComponent>,
     ) -> AST {
-        AST {
-            meta,
-            compiler_version,
-            includes,
-            definitions,
-            main_component,
-        }
+        AST { meta, compiler_version, includes, definitions, main_component }
     }
 }
 
@@ -137,14 +131,7 @@ pub fn build_template(
     body: Statement,
     parallel: bool,
 ) -> Definition {
-    Definition::Template {
-        meta,
-        name,
-        args,
-        arg_location,
-        body,
-        parallel,
-    }
+    Definition::Template { meta, name, args, arg_location, body, parallel }
 }
 
 pub fn build_function(
@@ -154,13 +141,7 @@ pub fn build_function(
     arg_location: FileLocation,
     body: Statement,
 ) -> Definition {
-    Definition::Function {
-        meta,
-        name,
-        args,
-        arg_location,
-        body,
-    }
+    Definition::Function { meta, name, args, arg_location, body }
 }
 
 #[derive(Clone)]

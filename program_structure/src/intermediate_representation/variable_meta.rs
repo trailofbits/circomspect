@@ -12,11 +12,7 @@ pub struct VariableUse {
 
 impl VariableUse {
     pub fn new(meta: &Meta, name: &VariableName, access: &[AccessType]) -> VariableUse {
-        VariableUse {
-            meta: meta.clone(),
-            name: name.clone(),
-            access: access.to_owned(),
-        }
+        VariableUse { meta: meta.clone(), name: name.clone(), access: access.to_owned() }
     }
 
     pub fn meta(&self) -> &Meta {
@@ -87,11 +83,7 @@ pub trait VariableMeta {
         let locals_written = self.locals_written().iter();
         let signals_written = self.signals_written().iter();
         let components_written = self.components_written().iter();
-        Box::new(
-            locals_written
-                .chain(signals_written)
-                .chain(components_written),
-        )
+        Box::new(locals_written.chain(signals_written).chain(components_written))
     }
 
     /// Get the set of variables either read or written by the IR node.
@@ -149,9 +141,7 @@ impl VariableKnowledge {
 
     #[must_use]
     pub fn locals_read(&self) -> &VariableUses {
-        self.locals_read
-            .as_ref()
-            .expect("variable knowledge must be initialized before it is read")
+        self.locals_read.as_ref().expect("variable knowledge must be initialized before it is read")
     }
 
     #[must_use]
@@ -202,11 +192,7 @@ impl VariableKnowledge {
         let locals_written = self.locals_written().iter();
         let signals_written = self.signals_written().iter();
         let components_written = self.components_written().iter();
-        Box::new(
-            locals_written
-                .chain(signals_written)
-                .chain(components_written),
-        )
+        Box::new(locals_written.chain(signals_written).chain(components_written))
     }
 
     #[must_use]

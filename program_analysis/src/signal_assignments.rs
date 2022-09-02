@@ -69,11 +69,7 @@ struct Assignment {
 
 impl Assignment {
     fn new(meta: &Meta, signal: &VariableName, access: &[AccessType]) -> Assignment {
-        Assignment {
-            meta: meta.clone(),
-            signal: signal.clone(),
-            access: access.to_owned(),
-        }
+        Assignment { meta: meta.clone(), signal: signal.clone(), access: access.to_owned() }
     }
 }
 
@@ -88,11 +84,7 @@ struct Constraint {
 
 impl Constraint {
     fn new(meta: &Meta, lhe: &Expression, rhe: &Expression) -> Constraint {
-        Constraint {
-            meta: meta.clone(),
-            lhe: lhe.clone(),
-            rhe: rhe.clone(),
-        }
+        Constraint { meta: meta.clone(), lhe: lhe.clone(), rhe: rhe.clone() }
     }
 }
 
@@ -182,12 +174,7 @@ fn visit_statement(stmt: &Statement, signal_data: &mut SignalData) {
     use Expression::*;
     use Statement::*;
     match stmt {
-        Substitution {
-            meta,
-            var,
-            op,
-            rhe: Update { access, rhe, .. },
-        } => {
+        Substitution { meta, var, op, rhe: Update { access, rhe, .. } } => {
             match op {
                 AssignOp::AssignSignal => {
                     signal_data.add_assignment(var, access, meta);
@@ -197,10 +184,7 @@ fn visit_statement(stmt: &Statement, signal_data: &mut SignalData) {
                 // record the constraint added for each constraint assignment
                 // found.
                 AssignOp::AssignConstraintSignal => {
-                    let lhe = Expression::Variable {
-                        meta: meta.clone(),
-                        name: var.clone(),
-                    };
+                    let lhe = Expression::Variable { meta: meta.clone(), name: var.clone() };
                     signal_data.add_constraint(&lhe, rhe, meta)
                 }
                 AssignOp::AssignLocalOrComponent => {}
@@ -216,10 +200,7 @@ fn visit_statement(stmt: &Statement, signal_data: &mut SignalData) {
                 // record the constraint added for each constraint assignment
                 // found.
                 AssignOp::AssignConstraintSignal => {
-                    let lhe = Expression::Variable {
-                        meta: meta.clone(),
-                        name: var.clone(),
-                    };
+                    let lhe = Expression::Variable { meta: meta.clone(), name: var.clone() };
                     signal_data.add_constraint(&lhe, rhe, meta)
                 }
                 AssignOp::AssignLocalOrComponent => {}
@@ -249,11 +230,7 @@ fn build_report(
 
 #[must_use]
 fn access_to_string(access: &[AccessType]) -> String {
-    access
-        .iter()
-        .map(|access| access.to_string())
-        .collect::<Vec<String>>()
-        .join("")
+    access.iter().map(|access| access.to_string()).collect::<Vec<String>>().join("")
 }
 
 #[cfg(test)]
@@ -301,12 +278,8 @@ mod tests {
     fn validate_reports(src: &str, expected_len: usize) {
         // Build CFG.
         let mut reports = ReportCollection::new();
-        let cfg = parse_definition(src)
-            .unwrap()
-            .into_cfg(&mut reports)
-            .unwrap()
-            .into_ssa()
-            .unwrap();
+        let cfg =
+            parse_definition(src).unwrap().into_cfg(&mut reports).unwrap().into_ssa().unwrap();
         assert!(reports.is_empty());
 
         // Generate report collection.

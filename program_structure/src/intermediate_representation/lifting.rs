@@ -58,13 +58,7 @@ impl TryLift<()> for ast::Statement {
                 meta: meta.try_lift((), reports)?,
                 value: value.try_lift((), reports)?,
             }),
-            ast::Statement::Substitution {
-                meta,
-                var,
-                op,
-                rhe,
-                access,
-            } => {
+            ast::Statement::Substitution { meta, var, op, rhe, access } => {
                 // If this is an array or component signal assignment (i.e. when access
                 // is non-empty), the RHS is lifted to an `Update` expression.
                 let rhe = if access.is_empty() {
@@ -102,21 +96,17 @@ impl TryLift<()> for ast::Statement {
                 meta: meta.try_lift((), reports)?,
                 arg: arg.try_lift((), reports)?,
             }),
-            ast::Statement::Declaration {
-                meta,
-                xtype,
-                name,
-                dimensions,
-                ..
-            } => Ok(ir::Statement::Declaration {
-                meta: meta.try_lift((), reports)?,
-                names: NonEmptyVec::new(name.try_lift(meta, reports)?),
-                var_type: xtype.try_lift((), reports)?,
-                dimensions: dimensions
-                    .iter()
-                    .map(|size| size.try_lift((), reports))
-                    .collect::<IRResult<Vec<_>>>()?,
-            }),
+            ast::Statement::Declaration { meta, xtype, name, dimensions, .. } => {
+                Ok(ir::Statement::Declaration {
+                    meta: meta.try_lift((), reports)?,
+                    names: NonEmptyVec::new(name.try_lift(meta, reports)?),
+                    var_type: xtype.try_lift((), reports)?,
+                    dimensions: dimensions
+                        .iter()
+                        .map(|size| size.try_lift((), reports))
+                        .collect::<IRResult<Vec<_>>>()?,
+                })
+            }
             ast::Statement::Block { .. }
             | ast::Statement::While { .. }
             | ast::Statement::IfThenElse { .. }
@@ -135,37 +125,25 @@ impl TryLift<()> for ast::Expression {
 
     fn try_lift(&self, _: (), reports: &mut ReportCollection) -> IRResult<Self::IR> {
         match self {
-            ast::Expression::InfixOp {
-                meta,
-                lhe,
-                infix_op,
-                rhe,
-            } => Ok(ir::Expression::InfixOp {
+            ast::Expression::InfixOp { meta, lhe, infix_op, rhe } => Ok(ir::Expression::InfixOp {
                 meta: meta.try_lift((), reports)?,
                 lhe: Box::new(lhe.try_lift((), reports)?),
                 infix_op: infix_op.try_lift((), reports)?,
                 rhe: Box::new(rhe.try_lift((), reports)?),
             }),
-            ast::Expression::PrefixOp {
-                meta,
-                prefix_op,
-                rhe,
-            } => Ok(ir::Expression::PrefixOp {
+            ast::Expression::PrefixOp { meta, prefix_op, rhe } => Ok(ir::Expression::PrefixOp {
                 meta: meta.try_lift((), reports)?,
                 prefix_op: prefix_op.try_lift((), reports)?,
                 rhe: Box::new(rhe.try_lift((), reports)?),
             }),
-            ast::Expression::InlineSwitchOp {
-                meta,
-                cond,
-                if_true,
-                if_false,
-            } => Ok(ir::Expression::SwitchOp {
-                meta: meta.try_lift((), reports)?,
-                cond: Box::new(cond.try_lift((), reports)?),
-                if_true: Box::new(if_true.try_lift((), reports)?),
-                if_false: Box::new(if_false.try_lift((), reports)?),
-            }),
+            ast::Expression::InlineSwitchOp { meta, cond, if_true, if_false } => {
+                Ok(ir::Expression::SwitchOp {
+                    meta: meta.try_lift((), reports)?,
+                    cond: Box::new(cond.try_lift((), reports)?),
+                    if_true: Box::new(if_true.try_lift((), reports)?),
+                    if_false: Box::new(if_false.try_lift((), reports)?),
+                })
+            }
             ast::Expression::Variable { meta, name, access } => {
                 if access.is_empty() {
                     Ok(ir::Expression::Variable {
@@ -183,10 +161,9 @@ impl TryLift<()> for ast::Expression {
                     })
                 }
             }
-            ast::Expression::Number(meta, value) => Ok(ir::Expression::Number(
-                meta.try_lift((), reports)?,
-                value.clone(),
-            )),
+            ast::Expression::Number(meta, value) => {
+                Ok(ir::Expression::Number(meta.try_lift((), reports)?, value.clone()))
+            }
             ast::Expression::Call { meta, id, args } => Ok(ir::Expression::Call {
                 meta: meta.try_lift((), reports)?,
                 name: id.clone(),
@@ -276,9 +253,9 @@ impl TryLift<()> for ast::Access {
 
     fn try_lift(&self, _: (), reports: &mut ReportCollection) -> IRResult<Self::IR> {
         match self {
-            ast::Access::ArrayAccess(expr) => Ok(ir::AccessType::ArrayAccess(Box::new(
-                expr.try_lift((), reports)?,
-            ))),
+            ast::Access::ArrayAccess(expr) => {
+                Ok(ir::AccessType::ArrayAccess(Box::new(expr.try_lift((), reports)?)))
+            }
             ast::Access::ComponentAccess(s) => Ok(ir::AccessType::ComponentAccess(s.clone())),
         }
     }

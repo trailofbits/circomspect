@@ -86,12 +86,7 @@ fn visit_expression(expr: &Expression, reports: &mut ReportCollection) {
         PrefixOp { rhe, .. } => {
             visit_expression(rhe, reports);
         }
-        SwitchOp {
-            cond,
-            if_true,
-            if_false,
-            ..
-        } => {
+        SwitchOp { cond, if_true, if_false, .. } => {
             visit_expression(cond, reports);
             visit_expression(if_true, reports);
             visit_expression(if_false, reports);
@@ -131,11 +126,8 @@ fn is_comparison_op(op: &ExpressionInfixOpcode) -> bool {
 }
 
 fn build_report(meta: &Meta) -> Report {
-    FieldElementComparisonWarning {
-        file_id: meta.file_id(),
-        file_location: meta.file_location(),
-    }
-    .into_report()
+    FieldElementComparisonWarning { file_id: meta.file_id(), file_location: meta.file_location() }
+        .into_report()
 }
 
 #[cfg(test)]
@@ -166,12 +158,8 @@ mod tests {
     fn validate_reports(src: &str, expected_len: usize) {
         // Build CFG.
         let mut reports = ReportCollection::new();
-        let cfg = parse_definition(src)
-            .unwrap()
-            .into_cfg(&mut reports)
-            .unwrap()
-            .into_ssa()
-            .unwrap();
+        let cfg =
+            parse_definition(src).unwrap().into_cfg(&mut reports).unwrap().into_ssa().unwrap();
         assert!(reports.is_empty());
 
         // Generate report collection.

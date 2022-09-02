@@ -71,10 +71,7 @@ fn test_ssa_from_if_then_else() {
             return y + x;
         }
     "#;
-    validate_ssa(
-        src,
-        &["x.0", "x.1", "x.2", "x.3", "y.0", "y.1", "y.2", "y.3"],
-    );
+    validate_ssa(src, &["x.0", "x.1", "x.2", "x.3", "y.0", "y.1", "y.2", "y.3"]);
 }
 
 #[test]
@@ -128,12 +125,7 @@ fn test_ssa_from_nested_while() {
 fn validate_ssa(src: &str, variables: &[&str]) {
     // 1. Generate CFG and convert to SSA.
     let mut reports = ReportCollection::new();
-    let cfg = parse_definition(src)
-        .unwrap()
-        .into_cfg(&mut reports)
-        .unwrap()
-        .into_ssa()
-        .unwrap();
+    let cfg = parse_definition(src).unwrap().into_cfg(&mut reports).unwrap().into_ssa().unwrap();
 
     // 2. Check that each variable is assigned at most once.
     use AssignOp::*;
@@ -143,11 +135,7 @@ fn validate_ssa(src: &str, variables: &[&str]) {
         .iter()
         .flat_map(|basic_block| basic_block.iter())
         .filter_map(|stmt| match stmt {
-            Substitution {
-                var,
-                op: AssignLocalOrComponent,
-                ..
-            } => Some(var),
+            Substitution { var, op: AssignLocalOrComponent, .. } => Some(var),
             _ => None,
         })
         .all(|name| assignments.insert(name));
@@ -162,10 +150,7 @@ fn validate_ssa(src: &str, variables: &[&str]) {
         cfg.variables()
             .map(|name| format!("{:?}", name)) // Must use debug formatting here to include version.
             .collect::<HashSet<_>>(),
-        variables
-            .iter()
-            .map(|name| name.to_string())
-            .collect::<HashSet<_>>()
+        variables.iter().map(|name| name.to_string()).collect::<HashSet<_>>()
     );
 }
 

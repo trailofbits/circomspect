@@ -73,10 +73,7 @@ pub trait SSABasicBlock<Cfg: SSAConfig>: DirectedGraphNode {
     /// Updates the RHS of each phi statement in the basic block with the SSA
     /// variable versions from the given environment.
     fn update_phi_statements(&mut self, env: &Cfg::Environment) {
-        trace!(
-            "updating phi expression arguments in block {}",
-            self.index()
-        );
+        trace!("updating phi expression arguments in block {}", self.index());
         for stmt in self.statements_mut() {
             if stmt.is_phi_statement() {
                 stmt.ensure_phi_argument(env);

@@ -81,18 +81,10 @@ impl From<&TemplateData> for Parameters {
 impl From<&Definition> for Parameters {
     fn from(definition: &Definition) -> Parameters {
         match definition {
-            Definition::Function {
-                meta,
-                args,
-                arg_location,
-                ..
+            Definition::Function { meta, args, arg_location, .. }
+            | Definition::Template { meta, args, arg_location, .. } => {
+                Parameters::new(args, meta.file_id, arg_location.clone())
             }
-            | Definition::Template {
-                meta,
-                args,
-                arg_location,
-                ..
-            } => Parameters::new(args, meta.file_id, arg_location.clone()),
         }
     }
 }

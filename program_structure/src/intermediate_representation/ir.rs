@@ -160,11 +160,7 @@ pub enum Expression {
         rhe: Box<Expression>,
     },
     /// A prefix operation of the form `* rhe`.
-    PrefixOp {
-        meta: Meta,
-        prefix_op: ExpressionPrefixOpcode,
-        rhe: Box<Expression>,
-    },
+    PrefixOp { meta: Meta, prefix_op: ExpressionPrefixOpcode, rhe: Box<Expression> },
     /// An inline switch operation (or inline if-then-else) of the form `cond?
     /// if_true: if_false`.
     SwitchOp {
@@ -178,19 +174,11 @@ pub enum Expression {
     /// A constant field element.
     Number(Meta, BigInt),
     /// A function call node.
-    Call {
-        meta: Meta,
-        name: String,
-        args: Vec<Expression>,
-    },
+    Call { meta: Meta, name: String, args: Vec<Expression> },
     /// An inline array on the form `[value, ...]`.
     Array { meta: Meta, values: Vec<Expression> },
     /// An `Access` node represents an array access of the form `a[i]...[k]`.
-    Access {
-        meta: Meta,
-        var: VariableName,
-        access: Vec<AccessType>,
-    },
+    Access { meta: Meta, var: VariableName, access: Vec<AccessType> },
     /// Updates of the form `var[i]...[k] = rhe` lift to IR statements of the
     /// form `var = update(var, (i, ..., k), rhe)`. This is needed when we
     /// convert the CFG to SSA. Since arrays are versioned atomically, we need
@@ -199,12 +187,7 @@ pub enum Expression {
     /// data flow.)
     ///
     /// Note: The type metadata in `meta` tracks the type of the variable `var`.
-    Update {
-        meta: Meta,
-        var: VariableName,
-        access: Vec<AccessType>,
-        rhe: Box<Expression>,
-    },
+    Update { meta: Meta, var: VariableName, access: Vec<AccessType>, rhe: Box<Expression> },
     /// An SSA phi-expression.
     Phi { meta: Meta, args: Vec<VariableName> },
 }
@@ -275,11 +258,7 @@ impl VariableName {
     /// Returns a new variable name with the given name (without suffix or version).
     #[must_use]
     pub fn from_name<N: ToString>(name: N) -> VariableName {
-        VariableName {
-            name: name.to_string(),
-            suffix: None,
-            version: None,
-        }
+        VariableName { name: name.to_string(), suffix: None, version: None }
     }
 
     #[must_use]

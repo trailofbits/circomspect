@@ -65,9 +65,7 @@ impl Environment {
     pub fn get_version_range(&self, name: &VariableName) -> Option<Range<Version>> {
         // Need to use format to include the suffix.
         let name = format!("{:?}", name.without_version());
-        self.global_versions
-            .get_variable(&name)
-            .map(|max| 0..(max + 1))
+        self.global_versions.get_variable(&name).map(|max| 0..(max + 1))
     }
 
     /// Gets the version to apply for a newly assigned variable.
@@ -119,11 +117,7 @@ impl SSABasicBlock<Config> for BasicBlock {
 
 impl SSAStatement<Config> for Statement {
     fn variables_written(&self) -> HashSet<VariableName> {
-        VariableMeta::locals_written(self)
-            .iter()
-            .map(|var_use| var_use.name())
-            .cloned()
-            .collect()
+        VariableMeta::locals_written(self).iter().map(|var_use| var_use.name()).cloned().collect()
     }
 
     fn new_phi_statement(name: &VariableName, env: &Environment) -> Self {
@@ -153,24 +147,14 @@ impl SSAStatement<Config> for Statement {
     fn is_phi_statement(&self) -> bool {
         use Expression::*;
         use Statement::*;
-        matches!(
-            self,
-            Substitution {
-                rhe: Phi { .. },
-                ..
-            }
-        )
+        matches!(self, Substitution { rhe: Phi { .. }, .. })
     }
 
     fn is_phi_statement_for(&self, name: &VariableName) -> bool {
         use Expression::*;
         use Statement::*;
         match self {
-            Substitution {
-                var,
-                rhe: Phi { .. },
-                ..
-            } => var == name,
+            Substitution { var, rhe: Phi { .. }, .. } => var == name,
             _ => false,
         }
     }
@@ -181,11 +165,7 @@ impl SSAStatement<Config> for Statement {
         match self {
             // If this is a phi statement we ensure that the RHS contains the
             // variable version from the given SSA environment.
-            Substitution {
-                var: name,
-                rhe: Phi { args, .. },
-                ..
-            } => {
+            Substitution { var: name, rhe: Phi { args, .. }, .. } => {
                 trace!("phi statement for variable `{name}` found");
                 // If the environment knows about the variable, we ensure that
                 // the versioned variable occurs as an argument to the RHS.
@@ -258,10 +238,7 @@ fn visit_expression(expr: &mut Expression, env: &mut Environment) -> SSAResult<(
     match expr {
         // Variables are updated with the corresponding SSA version.
         Variable { meta, name, .. } => {
-            assert!(
-                name.version().is_none(),
-                "variable already converted to SSA form"
-            );
+            assert!(name.version().is_none(), "variable already converted to SSA form");
             // Ignore declared signals and components, and undeclared variables.
             // TODO: We should maybe treat undeclared variables as local variables.
             if !env.is_local(name) {
@@ -297,10 +274,7 @@ fn visit_expression(expr: &mut Expression, env: &mut Environment) -> SSAResult<(
             if !env.is_local(var) {
                 return Ok(());
             }
-            assert!(
-                var.version().is_none(),
-                "variable already converted to SSA form"
-            );
+            assert!(var.version().is_none(), "variable already converted to SSA form");
             match env.get_current_version(var) {
                 Some(version) => {
                     trace!("replacing (read) variable `{var}` with SSA variable `{var}.{version}`");
@@ -318,9 +292,7 @@ fn visit_expression(expr: &mut Expression, env: &mut Environment) -> SSAResult<(
                 }
             }
         }
-        Update {
-            var, access, rhe, ..
-        } => {
+        Update { var, access, rhe, .. } => {
             visit_expression(rhe, env)?;
             for access in access {
                 if let AccessType::ArrayAccess(index) = access {
@@ -331,10 +303,7 @@ fn visit_expression(expr: &mut Expression, env: &mut Environment) -> SSAResult<(
             if !env.is_local(var) {
                 return Ok(());
             }
-            assert!(
-                var.version().is_none(),
-                "variable already converted to SSA form"
-            );
+            assert!(var.version().is_none(), "variable already converted to SSA form");
             match env.get_current_version(var) {
                 Some(version) => {
                     trace!("replacing (read) variable `{var}` with SSA variable `{var}.{version}`");
@@ -357,12 +326,7 @@ fn visit_expression(expr: &mut Expression, env: &mut Environment) -> SSAResult<(
             visit_expression(lhe, env)?;
             visit_expression(rhe, env)
         }
-        SwitchOp {
-            cond,
-            if_true,
-            if_false,
-            ..
-        } => {
+        SwitchOp { cond, if_true, if_false, .. } => {
             visit_expression(cond, env)?;
             visit_expression(if_true, env)?;
             visit_expression(if_false, env)
@@ -398,14 +362,8 @@ pub fn update_declarations(
         // Since parameters are not considered immutable we must assume that
         // they may be updated (and hence occur as different versions)
         // throughout the function/template.
-        for version in env
-            .get_version_range(name)
-            .expect("variable in environment")
-        {
-            trace!(
-                "adding declaration for variable `{}`",
-                name.with_version(version)
-            );
+        for version in env.get_version_range(name).expect("variable in environment") {
+            trace!("adding declaration for variable `{}`", name.with_version(version));
             versioned_declarations.add_declaration(&Declaration::new(
                 &name.with_version(version),
                 &VariableType::Local,
@@ -416,13 +374,7 @@ pub fn update_declarations(
     }
     for basic_block in basic_blocks {
         for stmt in basic_block.iter_mut() {
-            if let Statement::Declaration {
-                meta,
-                names,
-                var_type,
-                ..
-            } = stmt
-            {
+            if let Statement::Declaration { meta, names, var_type, .. } = stmt {
                 let name = names.first();
                 assert!(names.len() == 1 && name.version().is_none());
 
@@ -436,10 +388,7 @@ pub fn update_declarations(
                     // Add a new declaration for each version of the local variable.
                     let mut versioned_names = Vec::new();
                     for version in versions {
-                        trace!(
-                            "adding declaration for variable `{}`",
-                            name.with_version(version)
-                        );
+                        trace!("adding declaration for variable `{}`", name.with_version(version));
                         versioned_names.push(name.with_version(version));
                         versioned_declarations.add_declaration(&Declaration::new(
                             &name.with_version(version),

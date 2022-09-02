@@ -25,14 +25,7 @@ impl Merger {
         let mut reports = vec![];
         for definition in definitions {
             let (name, meta) = match definition {
-                Definition::Template {
-                    name,
-                    args,
-                    arg_location,
-                    body,
-                    meta,
-                    parallel,
-                } => {
+                Definition::Template { name, args, arg_location, body, meta, parallel } => {
                     if self.contains_function(name) || self.contains_template(name) {
                         (Option::Some(name), meta)
                     } else {
@@ -50,13 +43,7 @@ impl Merger {
                         (Option::None, meta)
                     }
                 }
-                Definition::Function {
-                    name,
-                    body,
-                    args,
-                    arg_location,
-                    meta,
-                } => {
+                Definition::Function { name, body, args, arg_location, meta } => {
                     if self.contains_function(name) || self.contains_template(name) {
                         (Option::Some(name), meta)
                     } else {

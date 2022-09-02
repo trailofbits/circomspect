@@ -13,9 +13,7 @@ impl Clone for UsefulConstants {
 }
 impl Default for UsefulConstants {
     fn default() -> Self {
-        UsefulConstants {
-            p: BigInt::parse_bytes(P_STR.as_bytes(), 10).expect("can not parse p"),
-        }
+        UsefulConstants { p: BigInt::parse_bytes(P_STR.as_bytes(), 10).expect("can not parse p") }
     }
 }
 

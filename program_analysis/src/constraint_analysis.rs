@@ -76,19 +76,14 @@ impl ConstraintAnalysis {
         let mut update = self.single_step_constraint(source);
         while !update.is_subset(&result) {
             result.extend(update.iter().cloned());
-            update = update
-                .iter()
-                .flat_map(|source| self.single_step_constraint(source))
-                .collect();
+            update = update.iter().flat_map(|source| self.single_step_constraint(source)).collect();
         }
         result
     }
 
     /// Returns true if the source constrains any of the sinks.
     pub fn constrains_any(&self, source: &VariableName, sinks: &HashSet<VariableName>) -> bool {
-        self.multi_step_constraint(source)
-            .iter()
-            .any(|sink| sinks.contains(sink))
+        self.multi_step_constraint(source).iter().any(|sink| sinks.contains(sink))
     }
 
     /// Returns the set of variables occurring in a constraint together with at
@@ -118,11 +113,7 @@ pub fn run_constraint_analysis(cfg: &Cfg) -> ConstraintAnalysis {
                         result.add_declaration(&VariableUse::new(meta, sink, &Vec::new()));
                     }
                 }
-                ConstraintEquality { .. }
-                | Substitution {
-                    op: AssignConstraintSignal,
-                    ..
-                } => {
+                ConstraintEquality { .. } | Substitution { op: AssignConstraintSignal, .. } => {
                     for source in stmt.variables_used() {
                         for sink in stmt.variables_used() {
                             if source.name() != sink.name() {

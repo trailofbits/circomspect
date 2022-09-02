@@ -21,11 +21,7 @@ fn test_cfg_from_if() {
         src,
         &["x", "y"],
         &[3, 2, 1],
-        &[
-            (vec![], vec![1, 2]),
-            (vec![0], vec![2]),
-            (vec![0, 1], vec![]),
-        ],
+        &[(vec![], vec![1, 2]), (vec![0], vec![2]), (vec![0, 1], vec![])],
     );
 }
 
@@ -48,12 +44,7 @@ fn test_cfg_from_if_then_else() {
         src,
         &["x", "y"],
         &[3, 2, 2, 1],
-        &[
-            (vec![], vec![1, 2]),
-            (vec![0], vec![3]),
-            (vec![0], vec![3]),
-            (vec![1, 2], vec![]),
-        ],
+        &[(vec![], vec![1, 2]), (vec![0], vec![3]), (vec![0], vec![3]), (vec![1, 2], vec![])],
     );
 }
 
@@ -355,19 +346,13 @@ fn validate_cfg(
 ) {
     // 1. Generate CFG from source.
     let mut reports = ReportCollection::new();
-    let cfg = parse_definition(src)
-        .unwrap()
-        .into_cfg(&mut reports)
-        .unwrap();
+    let cfg = parse_definition(src).unwrap().into_cfg(&mut reports).unwrap();
     assert!(reports.is_empty());
 
     // 2. Verify declared variables.
     assert_eq!(
         cfg.variables().cloned().collect::<HashSet<_>>(),
-        variables
-            .iter()
-            .map(|name| VariableName::from_name(name))
-            .collect::<HashSet<_>>()
+        variables.iter().map(|name| VariableName::from_name(name)).collect::<HashSet<_>>()
     );
 
     // 3. Validate block lengths.
@@ -417,18 +402,14 @@ fn validate_dominance(
 ) {
     // 1. Generate CFG from source.
     let mut reports = ReportCollection::new();
-    let cfg = parse_definition(src)
-        .unwrap()
-        .into_cfg(&mut reports)
-        .unwrap();
+    let cfg = parse_definition(src).unwrap().into_cfg(&mut reports).unwrap();
     assert!(reports.is_empty());
 
     // 2. Validate immediate dominators.
     for (index, expected_dominator) in immediate_dominators {
         let basic_block = cfg.get_basic_block(*index).unwrap();
-        let immediate_dominator = cfg
-            .get_immediate_dominator(basic_block)
-            .map(|dominator_block| dominator_block.index());
+        let immediate_dominator =
+            cfg.get_immediate_dominator(basic_block).map(|dominator_block| dominator_block.index());
         assert_eq!(&immediate_dominator, expected_dominator);
     }
 
@@ -451,20 +432,15 @@ fn validate_branches(
 ) {
     // 1. Generate CFG from source.
     let mut reports = ReportCollection::new();
-    let cfg = parse_definition(src)
-        .unwrap()
-        .into_cfg(&mut reports)
-        .unwrap();
+    let cfg = parse_definition(src).unwrap().into_cfg(&mut reports).unwrap();
     assert!(reports.is_empty());
 
     // 2. Validate the set of true branches.
     for (header_index, expected_indices) in true_branches {
         let header_block = cfg.get_basic_block(*header_index).unwrap();
         let true_branch = cfg.get_true_branch(header_block);
-        let true_indices = true_branch
-            .iter()
-            .map(|basic_block| basic_block.index())
-            .collect::<HashSet<_>>();
+        let true_indices =
+            true_branch.iter().map(|basic_block| basic_block.index()).collect::<HashSet<_>>();
         assert_eq!(&true_indices, expected_indices);
     }
 
@@ -472,10 +448,8 @@ fn validate_branches(
     for (header_index, expected_indices) in false_branches {
         let header_block = cfg.get_basic_block(*header_index).unwrap();
         let false_branch = cfg.get_false_branch(header_block);
-        let false_indices = false_branch
-            .iter()
-            .map(|basic_block| basic_block.index())
-            .collect::<HashSet<_>>();
+        let false_indices =
+            false_branch.iter().map(|basic_block| basic_block.index()).collect::<HashSet<_>>();
         assert_eq!(&false_indices, expected_indices);
     }
 }

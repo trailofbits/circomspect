@@ -41,9 +41,7 @@ pub fn sub(left: &BigInt, right: &BigInt, field: &BigInt) -> BigInt {
 pub fn div(left: &BigInt, right: &BigInt, field: &BigInt) -> Result<BigInt, ArithmeticError> {
     let right_inverse = right
         .mod_inverse(field)
-        .map_or(Result::Err(ArithmeticError::DivisionByZero), |a| {
-            Result::Ok(a)
-        })?;
+        .map_or(Result::Err(ArithmeticError::DivisionByZero), |a| Result::Ok(a))?;
     let res = mul(left, &right_inverse, field);
     Result::Ok(res)
 }
@@ -94,13 +92,8 @@ pub fn shift_l(left: &BigInt, right: &BigInt, field: &BigInt) -> Result<BigInt, 
     if right <= &top {
         let usize_repr = right
             .to_usize()
-            .map_or(Result::Err(ArithmeticError::DivisionByZero), |a| {
-                Result::Ok(a)
-            })?;
-        let value = modulus(
-            &((left * &num_traits::pow(two, usize_repr)) & &mask(field)),
-            field,
-        );
+            .map_or(Result::Err(ArithmeticError::DivisionByZero), |a| Result::Ok(a))?;
+        let value = modulus(&((left * &num_traits::pow(two, usize_repr)) & &mask(field)), field);
         Result::Ok(value)
     } else {
         shift_r(left, &(field - right), field)
@@ -112,9 +105,7 @@ pub fn shift_r(left: &BigInt, right: &BigInt, field: &BigInt) -> Result<BigInt, 
     if right <= &top {
         let usize_repr = right
             .to_usize()
-            .map_or(Result::Err(ArithmeticError::DivisionByZero), |a| {
-                Result::Ok(a)
-            })?;
+            .map_or(Result::Err(ArithmeticError::DivisionByZero), |a| Result::Ok(a))?;
         let value = left / &num_traits::pow(two, usize_repr);
         Result::Ok(value)
     } else {

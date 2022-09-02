@@ -8,17 +8,9 @@ use crate::file_definition::{FileID, FileLocation};
 #[derive(Debug, Error)]
 pub enum IRError {
     #[error("The variable `{name}` is read before it is declared/written.")]
-    UndefinedVariableError {
-        name: String,
-        file_id: Option<FileID>,
-        file_location: FileLocation,
-    },
+    UndefinedVariableError { name: String, file_id: Option<FileID>, file_location: FileLocation },
     #[error("The variable name `{name}` contains invalid characters.")]
-    InvalidVariableNameError {
-        name: String,
-        file_id: Option<FileID>,
-        file_location: FileLocation,
-    },
+    InvalidVariableNameError { name: String, file_id: Option<FileID>, file_location: FileLocation },
 }
 
 pub type IRResult<T> = Result<T, IRError>;
@@ -27,11 +19,7 @@ impl IRError {
     pub fn produce_report(error: Self) -> Report {
         use IRError::*;
         match error {
-            UndefinedVariableError {
-                name,
-                file_id,
-                file_location,
-            } => {
+            UndefinedVariableError { name, file_id, file_location } => {
                 let mut report = Report::error(
                     format!("The variable '{name}' is used before it is defined."),
                     ReportCode::UninitializedSymbolInExpression,
@@ -45,11 +33,7 @@ impl IRError {
                 }
                 report
             }
-            InvalidVariableNameError {
-                name,
-                file_id,
-                file_location,
-            } => {
+            InvalidVariableNameError { name, file_id, file_location } => {
                 let mut report = Report::error(
                     format!("Invalid variable name `{name}`."),
                     ReportCode::ParseFail,

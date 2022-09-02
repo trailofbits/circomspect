@@ -27,26 +27,16 @@ impl ToSarif for ReportCollection {
         debug!("converting report collection to sarif-format");
         // Build tool.
         trace!("building tool");
-        let driver = sarif::ToolComponentBuilder::default()
-            .name(DRIVER_NAME)
-            .build()?;
+        let driver = sarif::ToolComponentBuilder::default().name(DRIVER_NAME).build()?;
         let tool = sarif::ToolBuilder::default().driver(driver).build()?;
         // Build run.
         trace!("building run");
-        let results = self
-            .iter()
-            .map(|report| report.to_sarif(files))
-            .collect::<SarifResult<Vec<_>>>()?;
-        let run = sarif::RunBuilder::default()
-            .tool(tool)
-            .results(results)
-            .build()?;
+        let results =
+            self.iter().map(|report| report.to_sarif(files)).collect::<SarifResult<Vec<_>>>()?;
+        let run = sarif::RunBuilder::default().tool(tool).results(results).build()?;
         // Build main object.
         trace!("building main sarif object");
-        let sarif = sarif::SarifBuilder::default()
-            .runs(vec![run])
-            .version(SARIF_VERSION)
-            .build();
+        let sarif = sarif::SarifBuilder::default().runs(vec![run]).version(SARIF_VERSION).build();
         sarif.map_err(SarifError::from)
     }
 }
@@ -60,9 +50,7 @@ impl ToSarif for Report {
         let rule_id = self.get_code().to_string();
         // Build message.
         trace!("building message");
-        let message = sarif::MessageBuilder::default()
-            .text(self.get_message())
-            .build()?;
+        let message = sarif::MessageBuilder::default().text(self.get_message()).build()?;
         // Build locations from first primary label (or first secondary label if
         // there are no primary labels).
         //
@@ -105,9 +93,7 @@ impl ToSarif for ReportLabel {
         // Build artifact location.
         trace!("building artifact location");
         let file_uri = self.file_id.to_uri(files)?;
-        let artifact_location = sarif::ArtifactLocationBuilder::default()
-            .uri(file_uri)
-            .build()?;
+        let artifact_location = sarif::ArtifactLocationBuilder::default().uri(file_uri).build()?;
         // Build region.
         trace!("building region");
         assert!(self.range.start <= self.range.end);
@@ -133,9 +119,7 @@ impl ToSarif for ReportLabel {
             .build()?;
         // Build message.
         trace!("building message");
-        let message = sarif::MessageBuilder::default()
-            .text(self.message.clone())
-            .build()?;
+        let message = sarif::MessageBuilder::default().text(self.message.clone()).build()?;
         // Build location.
         trace!("building location");
         sarif::LocationBuilder::default()
