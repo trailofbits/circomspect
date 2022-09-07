@@ -31,8 +31,6 @@ impl ConstraintAnalysis {
         //   c[0].in[0] <== 0;
         //   c[1].in[1] <== 1;
         //
-        // As long as the initialized component flows to a constraint it will
-        // not be flagged during side-effect analysis.
         self.definitions.insert(var.name().clone(), var.clone());
     }
 

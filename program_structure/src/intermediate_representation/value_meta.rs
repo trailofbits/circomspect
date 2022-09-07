@@ -16,7 +16,7 @@ impl ValueEnvironment {
 
     /// Set the value of the given variable. Returns `true` on first update.
     ///
-    /// Panics
+    /// # Panics
     ///
     /// This function panics if the caller attempts to set two different values
     /// for the same variable.
@@ -29,6 +29,7 @@ impl ValueEnvironment {
         }
     }
 
+    #[must_use]
     pub fn get_variable(&self, name: &VariableName) -> Option<&ValueReduction> {
         self.reduces_to.get(name)
     }
