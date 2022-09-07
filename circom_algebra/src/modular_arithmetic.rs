@@ -39,26 +39,25 @@ pub fn sub(left: &BigInt, right: &BigInt, field: &BigInt) -> BigInt {
     modulus(&(left - right), field)
 }
 pub fn div(left: &BigInt, right: &BigInt, field: &BigInt) -> Result<BigInt, ArithmeticError> {
-    let right_inverse = right
-        .mod_inverse(field)
-        .map_or(Result::Err(ArithmeticError::DivisionByZero), |a| Result::Ok(a))?;
+    let right_inverse =
+        right.mod_inverse(field).map_or(Err(ArithmeticError::DivisionByZero), Ok)?;
     let res = mul(left, &right_inverse, field);
-    Result::Ok(res)
+    Ok(res)
 }
 pub fn idiv(left: &BigInt, right: &BigInt, field: &BigInt) -> Result<BigInt, ArithmeticError> {
     let zero = BigInt::from(0);
     let left = modulus(left, field);
     let right = modulus(right, field);
     if right == zero {
-        Result::Err(ArithmeticError::DivisionByZero)
+        Err(ArithmeticError::DivisionByZero)
     } else {
-        Result::Ok(left / right)
+        Ok(left / right)
     }
 }
 pub fn mod_op(left: &BigInt, right: &BigInt, field: &BigInt) -> Result<BigInt, ArithmeticError> {
     let left = modulus(left, field);
     let right = modulus(right, field);
-    Result::Ok(modulus(&left, &right))
+    Ok(modulus(&left, &right))
 }
 pub fn pow(base: &BigInt, exp: &BigInt, field: &BigInt) -> BigInt {
     base.modpow(exp, field)
@@ -90,11 +89,9 @@ pub fn shift_l(left: &BigInt, right: &BigInt, field: &BigInt) -> Result<BigInt, 
     let two = BigInt::from(2);
     let top = field / &two;
     if right <= &top {
-        let usize_repr = right
-            .to_usize()
-            .map_or(Result::Err(ArithmeticError::DivisionByZero), |a| Result::Ok(a))?;
+        let usize_repr = right.to_usize().map_or(Err(ArithmeticError::DivisionByZero), Ok)?;
         let value = modulus(&((left * &num_traits::pow(two, usize_repr)) & &mask(field)), field);
-        Result::Ok(value)
+        Ok(value)
     } else {
         shift_r(left, &(field - right), field)
     }
@@ -103,11 +100,9 @@ pub fn shift_r(left: &BigInt, right: &BigInt, field: &BigInt) -> Result<BigInt, 
     let two = BigInt::from(2);
     let top = field / &two;
     if right <= &top {
-        let usize_repr = right
-            .to_usize()
-            .map_or(Result::Err(ArithmeticError::DivisionByZero), |a| Result::Ok(a))?;
+        let usize_repr = right.to_usize().map_or(Err(ArithmeticError::DivisionByZero), Ok)?;
         let value = left / &num_traits::pow(two, usize_repr);
-        Result::Ok(value)
+        Ok(value)
     } else {
         shift_l(left, &(field - right), field)
     }
@@ -218,7 +213,7 @@ mod tests {
             .expect("generating the big int was not possible");
         let a = BigInt::from(17);
         let b = BigInt::from(32);
-        if let Result::Ok(res) = mod_op(&a, &b, &field) {
+        if let Ok(res) = mod_op(&a, &b, &field) {
             assert_eq!(a, res)
         } else {
             unreachable!();
