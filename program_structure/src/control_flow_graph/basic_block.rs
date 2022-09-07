@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use std::fmt;
 
 use crate::ir::declarations::Declarations;
+use crate::ir::degree_meta::DegreeEnvironment;
 use crate::ir::value_meta::ValueEnvironment;
 use crate::ssa::traits::DirectedGraphNode;
 
@@ -113,6 +114,13 @@ impl BasicBlock {
     pub(crate) fn add_successor(&mut self, successor: Index) {
         trace!("adding successor {} to basic block {}", successor, self.index);
         self.successors.insert(successor);
+    }
+
+    pub fn propagate_degrees(&mut self, env: &mut DegreeEnvironment) {
+        trace!("propagating degree ranges for basic block {}", self.index());
+        for stmt in self.iter_mut() {
+            stmt.propagate_degrees(env);
+        }
     }
 
     pub fn propagate_values(&mut self, env: &mut ValueEnvironment) -> bool {

@@ -4,6 +4,7 @@ use std::fmt;
 use crate::file_definition::{FileID, FileLocation};
 use crate::nonempty_vec::NonEmptyVec;
 
+use super::degree_meta::DegreeKnowledge;
 use super::type_meta::TypeKnowledge;
 use super::value_meta::ValueKnowledge;
 use super::variable_meta::VariableKnowledge;
@@ -15,6 +16,7 @@ type Version = usize;
 pub struct Meta {
     pub location: FileLocation,
     pub file_id: Option<FileID>,
+    degree_knowledge: DegreeKnowledge,
     type_knowledge: TypeKnowledge,
     value_knowledge: ValueKnowledge,
     variable_knowledge: VariableKnowledge,
@@ -26,6 +28,7 @@ impl Meta {
         Meta {
             location: location.clone(),
             file_id: *file_id,
+            degree_knowledge: DegreeKnowledge::default(),
             type_knowledge: TypeKnowledge::default(),
             value_knowledge: ValueKnowledge::default(),
             variable_knowledge: VariableKnowledge::default(),
@@ -53,6 +56,11 @@ impl Meta {
     }
 
     #[must_use]
+    pub fn degree_knowledge(&self) -> &DegreeKnowledge {
+        &self.degree_knowledge
+    }
+
+    #[must_use]
     pub fn type_knowledge(&self) -> &TypeKnowledge {
         &self.type_knowledge
     }
@@ -65,6 +73,11 @@ impl Meta {
     #[must_use]
     pub fn variable_knowledge(&self) -> &VariableKnowledge {
         &self.variable_knowledge
+    }
+
+    #[must_use]
+    pub fn degree_knowledge_mut(&mut self) -> &mut DegreeKnowledge {
+        &mut self.degree_knowledge
     }
 
     #[must_use]

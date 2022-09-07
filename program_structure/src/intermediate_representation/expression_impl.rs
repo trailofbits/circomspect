@@ -8,6 +8,7 @@ use std::hash::{Hash, Hasher};
 use crate::constants::UsefulConstants;
 
 use super::declarations::Declarations;
+use super::degree_meta::{Degree, DegreeEnvironment, DegreeMeta, DegreeRange};
 use super::ir::*;
 use super::type_meta::TypeMeta;
 use super::value_meta::{ValueEnvironment, ValueMeta, ValueReduction};
@@ -134,6 +135,111 @@ impl Hash for Expression {
                 value.hash(state);
             }
         }
+    }
+}
+
+impl DegreeMeta for Expression {
+    fn propagate_degrees(&mut self, env: &DegreeEnvironment) {
+        use Degree::*;
+        use Expression::*;
+        match self {
+            InfixOp { meta, lhe, rhe, infix_op } => {
+                lhe.propagate_degrees(env);
+                rhe.propagate_degrees(env);
+                let range = infix_op.propagate_degrees(lhe.degree(), rhe.degree());
+                if let Some(range) = range {
+                    meta.degree_knowledge_mut().set_degree(&range);
+                }
+            }
+            PrefixOp { meta, rhe, prefix_op, .. } => {
+                rhe.propagate_degrees(env);
+                let range = prefix_op.propagate_degrees(rhe.degree());
+                if let Some(range) = range {
+                    meta.degree_knowledge_mut().set_degree(&range);
+                }
+            }
+            SwitchOp { meta, cond, if_true, if_false, .. } => {
+                // The degree of a switch operation is the infimum of the true and false cases.
+                cond.propagate_degrees(env);
+                if_true.propagate_degrees(env);
+                if_false.propagate_degrees(env);
+                let range = DegreeRange::iter_opt([if_true.degree(), if_false.degree()]);
+                if let Some(range) = range {
+                    meta.degree_knowledge_mut().set_degree(&range);
+                }
+            }
+            Variable { meta, name } => {
+                if let Some(range) = env.degree(name) {
+                    meta.degree_knowledge_mut().set_degree(range);
+                }
+            }
+            Call { meta, args, .. } => {
+                for arg in args.iter_mut() {
+                    arg.propagate_degrees(env);
+                }
+                // If one or more non-constant arguments is passed to the function we cannot
+                // say anything about the degree of the output. If the function only takes
+                // constant arguments the output must also be constant.
+                if args.iter().all(|arg| {
+                    if let Some(range) = arg.degree() {
+                        matches!(range.end(), Constant)
+                    } else {
+                        false
+                    }
+                }) {
+                    meta.degree_knowledge_mut().set_degree(&Constant.into())
+                }
+            }
+            Array { meta, values } => {
+                // The degree range of an array is the infimum of the ranges of all elements.
+                for value in values.iter_mut() {
+                    value.propagate_degrees(env);
+                }
+                let range = DegreeRange::iter_opt(values.iter().map(|value| value.degree()));
+                if let Some(range) = range {
+                    meta.degree_knowledge_mut().set_degree(&range);
+                }
+            }
+            Access { meta, var, access } => {
+                // Accesses are ignored when determining the degree of a variable.
+                for access in access.iter_mut() {
+                    if let AccessType::ArrayAccess(index) = access {
+                        index.propagate_degrees(env);
+                    }
+                }
+                if let Some(range) = env.degree(var) {
+                    meta.degree_knowledge_mut().set_degree(range);
+                }
+            }
+            Update { meta, var, access, rhe, .. } => {
+                // Accesses are ignored when determining the degree of a variable.
+                rhe.propagate_degrees(env);
+                for access in access.iter_mut() {
+                    if let AccessType::ArrayAccess(index) = access {
+                        index.propagate_degrees(env);
+                    }
+                }
+                let range = DegreeRange::iter_opt([env.degree(var), rhe.degree()]);
+                if let Some(range) = range {
+                    meta.degree_knowledge_mut().set_degree(&range);
+                }
+            }
+            Phi { meta, args } => {
+                // The degree range of a phi expression is the infimum of the ranges of all the arguments.
+                let range = DegreeRange::iter_opt(args.iter().map(|arg| env.degree(arg)));
+                if let Some(range) = range {
+                    meta.degree_knowledge_mut().set_degree(&range);
+                }
+            }
+            Number(meta, _) => {
+                // Constants have constant degree.
+                meta.degree_knowledge_mut().set_degree(&Constant.into())
+            }
+        }
+    }
+
+    fn degree(&self) -> Option<&DegreeRange> {
+        self.meta().degree_knowledge().degree_range()
     }
 }
 
@@ -538,6 +644,40 @@ impl ValueMeta for Expression {
 }
 
 impl ExpressionInfixOpcode {
+    fn propagate_degrees(
+        &self,
+        lhr: Option<&DegreeRange>,
+        rhr: Option<&DegreeRange>,
+    ) -> Option<DegreeRange> {
+        if let (Some(lhr), Some(rhr)) = (lhr, rhr) {
+            use ExpressionInfixOpcode::*;
+            match self {
+                Add => Some(lhr.add(rhr)),
+                Sub => Some(lhr.infix_sub(rhr)),
+                Mul => Some(lhr.mul(rhr)),
+                Pow => Some(lhr.pow(rhr)),
+                Div => Some(lhr.div(rhr)),
+                IntDiv => Some(lhr.int_div(rhr)),
+                Mod => Some(lhr.modulo(rhr)),
+                ShiftL => Some(lhr.shift_left(rhr)),
+                ShiftR => Some(lhr.shift_right(rhr)),
+                Lesser => Some(lhr.lesser(rhr)),
+                Greater => Some(lhr.greater(rhr)),
+                LesserEq => Some(lhr.lesser_eq(rhr)),
+                GreaterEq => Some(lhr.greater_eq(rhr)),
+                Eq => Some(lhr.equal(rhr)),
+                NotEq => Some(lhr.not_equal(rhr)),
+                BitOr => Some(lhr.bit_or(rhr)),
+                BitXor => Some(lhr.bit_xor(rhr)),
+                BitAnd => Some(lhr.bit_and(rhr)),
+                BoolOr => Some(lhr.bool_or(rhr)),
+                BoolAnd => Some(lhr.bool_and(rhr)),
+            }
+        } else {
+            None
+        }
+    }
+
     fn propagate_values(
         &self,
         lhv: Option<&ValueReduction>,
@@ -641,6 +781,19 @@ impl ExpressionInfixOpcode {
 }
 
 impl ExpressionPrefixOpcode {
+    fn propagate_degrees(&self, range: Option<&DegreeRange>) -> Option<DegreeRange> {
+        if let Some(range) = range {
+            use ExpressionPrefixOpcode::*;
+            match self {
+                Sub => Some(range.prefix_sub()),
+                Complement => Some(range.complement()),
+                BoolNot => Some(range.bool_not()),
+            }
+        } else {
+            None
+        }
+    }
+
     fn propagate_values(&self, rhe: Option<&ValueReduction>) -> Option<ValueReduction> {
         let constants = UsefulConstants::default();
         let p = constants.get_p();

@@ -3,6 +3,7 @@ use std::fmt;
 
 use super::declarations::Declarations;
 use super::ir::*;
+use super::degree_meta::{Degree, DegreeEnvironment, DegreeMeta};
 use super::type_meta::TypeMeta;
 use super::value_meta::{ValueEnvironment, ValueMeta};
 use super::variable_meta::{VariableMeta, VariableUse, VariableUses};
@@ -33,6 +34,39 @@ impl Statement {
             | LogCall { meta, .. }
             | Assert { meta, .. }
             | ConstraintEquality { meta, .. } => meta,
+        }
+    }
+
+    pub fn propagate_degrees(&mut self, env: &mut DegreeEnvironment) {
+        use Degree::*;
+        use Statement::*;
+        use VariableType::*;
+        match self {
+            Declaration { names, var_type, .. } => {
+                for name in names.iter() {
+                    // Since we disregard accesses, components are treated as signals.
+                    if matches!(var_type, Signal(_) | Component) {
+                        env.set_degree(name, &Linear.into());
+                    }
+                    env.set_type(name, var_type);
+                }
+            }
+            Substitution { var, rhe, .. } => {
+                rhe.propagate_degrees(env);
+                if env.is_local(var) {
+                    if let Some(range) = rhe.degree() {
+                        env.set_degree(var, range);
+                    }
+                }
+            }
+            IfThenElse { cond, .. } => cond.propagate_degrees(env),
+            Return { value, .. } => value.propagate_degrees(env),
+            LogCall { arg, .. } => arg.propagate_degrees(env),
+            Assert { arg, .. } => arg.propagate_degrees(env),
+            ConstraintEquality { lhe, rhe, .. } => {
+                lhe.propagate_degrees(env);
+                rhe.propagate_degrees(env);
+            }
         }
     }
 

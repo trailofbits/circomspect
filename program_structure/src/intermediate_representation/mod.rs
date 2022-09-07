@@ -1,4 +1,5 @@
 pub mod declarations;
+pub mod degree_meta;
 pub mod errors;
 pub mod type_meta;
 pub mod value_meta;

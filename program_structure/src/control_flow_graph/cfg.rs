@@ -2,9 +2,9 @@ use log::{debug, trace};
 use std::collections::HashSet;
 use std::fmt;
 
-use crate::cfg::ssa_impl;
 use crate::file_definition::FileID;
 use crate::ir::declarations::{Declaration, Declarations};
+use crate::ir::degree_meta::{DegreeEnvironment, Degree};
 use crate::ir::value_meta::ValueEnvironment;
 use crate::ir::variable_meta::VariableMeta;
 use crate::ir::{VariableName, VariableType};
@@ -14,6 +14,7 @@ use crate::ssa::{insert_phi_statements, insert_ssa_variables};
 
 use super::basic_block::BasicBlock;
 use super::parameters::Parameters;
+use super::ssa_impl;
 use super::ssa_impl::{Config, Environment};
 
 /// Basic block index type.
@@ -100,6 +101,7 @@ impl Cfg {
         // run before caching variable use.
         self.propagate_types();
         self.propagate_values();
+        self.propagate_degrees();
         self.cache_variable_use();
 
         // 5. Print trace output of CFG.
@@ -163,7 +165,8 @@ impl Cfg {
         self.declarations.get_type(name)
     }
 
-    /// Returns an iterator over the basic blocks in the CFG.
+    /// Returns an iterator over the basic blocks in the CFG. This iterator
+    /// guarantees that if `i` dominates `j`, then `i` comes before `j`.
     pub fn iter(&self) -> impl Iterator<Item = &BasicBlock> {
         self.basic_blocks.iter()
     }
@@ -393,6 +396,19 @@ impl Cfg {
         debug!("computing variable use for `{}`", self.name());
         for basic_block in self.iter_mut() {
             basic_block.cache_variable_use();
+        }
+    }
+
+    /// Propagate expression degrees along the CFG.
+    pub(crate) fn propagate_degrees(&mut self) {
+        debug!("propagating expression degrees for `{}`", self.name());
+        let mut env = DegreeEnvironment::new();
+        for param in self.parameters().iter() {
+            env.set_type(param, &VariableType::Local);
+            env.set_degree(param, &Degree::Constant.into())
+        }
+        for basic_block in self.iter_mut() {
+            basic_block.propagate_degrees(&mut env);
         }
     }
 
