@@ -7,7 +7,7 @@ use program_structure::error_definition::{Report, ReportCollection};
 use program_structure::file_definition::{FileID, FileLocation};
 use program_structure::ir::declarations::Declaration;
 use program_structure::ir::variable_meta::{VariableMeta, VariableUse};
-use program_structure::ir::{SignalType, Statement, VariableType};
+use program_structure::ir::{Expression, SignalType, Statement, VariableType};
 
 use crate::constraint_analysis::run_constraint_analysis;
 use crate::taint_analysis::run_taint_analysis;
@@ -39,47 +39,87 @@ impl UnusedVariableWarning {
 }
 pub struct UnconstrainedSignalWarning {
     name: String,
+    dimensions: Vec<Expression>,
     file_id: Option<FileID>,
     file_location: FileLocation,
 }
 
 impl UnconstrainedSignalWarning {
     pub fn into_report(self) -> Report {
-        let mut report = Report::warning(
-            format!("The signal `{}` is not constrained by the template.", self.name),
-            ReportCode::UnusedVariableValue,
-        );
-        if let Some(file_id) = self.file_id {
-            report.add_primary(
-                self.file_location,
-                file_id,
-                "This signal does not occur in a constraint.".to_string(),
+        if self.dimensions.is_empty() {
+            let mut report = Report::warning(
+                format!("The signal `{}` is not constrained by the template.", self.name),
+                ReportCode::UnconstrainedSignal,
             );
+            if let Some(file_id) = self.file_id {
+                report.add_primary(
+                    self.file_location,
+                    file_id,
+                    "This signal does not occur in a constraint.".to_string(),
+                );
+            }
+            report
+        } else {
+            let mut report = Report::warning(
+                format!(
+                    "The signals `{}{}` are not constrained by the template.",
+                    self.name,
+                    dimensions_to_string(&self.dimensions)
+                ),
+                ReportCode::UnconstrainedSignal,
+            );
+            if let Some(file_id) = self.file_id {
+                report.add_primary(
+                    self.file_location,
+                    file_id,
+                    "These signals do not occur in a constraint.".to_string(),
+                );
+            }
+            report
         }
-        report
     }
 }
 
 pub struct UnusedSignalWarning {
     name: String,
+    dimensions: Vec<Expression>,
     file_id: Option<FileID>,
     file_location: FileLocation,
 }
 
 impl UnusedSignalWarning {
     pub fn into_report(self) -> Report {
-        let mut report = Report::warning(
-            format!("The signal `{}` is not constrained by the template.", self.name),
-            ReportCode::UnusedVariableValue,
-        );
-        if let Some(file_id) = self.file_id {
-            report.add_primary(
-                self.file_location,
-                file_id,
-                "This signal is unused and could be removed.".to_string(),
+        if self.dimensions.is_empty() {
+            let mut report = Report::warning(
+                format!("The signal `{}` is not used by the template.", self.name),
+                ReportCode::UnusedVariableValue,
             );
+            if let Some(file_id) = self.file_id {
+                report.add_primary(
+                    self.file_location,
+                    file_id,
+                    "This signal is unused and could be removed.".to_string(),
+                );
+            }
+            report
+        } else {
+            let mut report = Report::warning(
+                format!(
+                    "The signals `{}{}` are not used by the template.",
+                    self.name,
+                    dimensions_to_string(&self.dimensions)
+                ),
+                ReportCode::UnusedVariableValue,
+            );
+            if let Some(file_id) = self.file_id {
+                report.add_primary(
+                    self.file_location,
+                    file_id,
+                    "These signals are unused and could be removed.".to_string(),
+                );
+            }
+            report
         }
-        report
     }
 }
 
@@ -193,24 +233,39 @@ pub fn run_side_effect_analysis(cfg: &Cfg) -> ReportCollection {
     //      a dimension expression in a declaration, in a
     //      return value, or in an asserted value.
     //
-    // The set of sinks is the union of C and D.
+    // The set of sinks is the union of A, C and D.
 
     // Compute the set of input and output signals.
-    let exported_signals = cfg
+    let signal_decls = cfg
         .declarations()
         .iter()
-        .filter(|(_, declaration)| {
-            matches!(
-                declaration.variable_type(),
-                VariableType::Signal(SignalType::Input | SignalType::Output)
-            )
+        .filter_map(|(name, declaration)| {
+            if matches!(declaration.variable_type(), VariableType::Signal(_)) {
+                Some((name, declaration))
+            } else {
+                None
+            }
         })
         .collect::<HashMap<_, _>>();
+    let exported_signals = signal_decls
+        .iter()
+        .filter_map(|(name, declaration)| {
+            if matches!(
+                declaration.variable_type(),
+                VariableType::Signal(SignalType::Input | SignalType::Output)
+            ) {
+                Some(*name)
+            } else {
+                None
+            }
+        })
+        .cloned()
+        .collect::<HashSet<_>>();
     // println!("exported signals: {:?}", exported_signals.keys().collect::<HashSet<_>>());
 
     // Compute the set of variables tainted by input and output signals.
     let exported_sinks = exported_signals
-        .keys()
+        .iter()
         .flat_map(|source| taint_analysis.multi_step_taint(source))
         .collect::<HashSet<_>>();
     // println!("exported sinks: {:?}", exported_sinks);
@@ -227,6 +282,10 @@ pub fn run_side_effect_analysis(cfg: &Cfg) -> ReportCollection {
             result
         })
         .collect::<HashSet<_>>();
+
+    // Add input and output signals to this set.
+    sinks.extend(exported_signals.into_iter());
+
     // println!("constraint sinks: {:?}", sinks);
 
     // Add variables occurring in declarations, return values, asserts, and
@@ -248,17 +307,8 @@ pub fn run_side_effect_analysis(cfg: &Cfg) -> ReportCollection {
     // println!("variables read: {:?}", variables_read);
 
     let mut reports = ReportCollection::new();
+    let mut reported_vars = HashSet::new();
 
-    // Generate reports for unused or unconstrained signals.
-    for (source, declaration) in exported_signals {
-        if !variables_read.contains(source) {
-            // If the variable is unread, it must be unconstrained.
-            reports.push(build_unused_signal(declaration));
-        } else if !taint_analysis.taints_any(source, &constraint_analysis.constrained_variables()) {
-            // If the signal does not flow to a constraint, it is unconstrained.
-            reports.push(build_unconstrained_signal(declaration));
-        }
-    }
     // Generate a report for any variable that does not taint a sink.
     for source in taint_analysis.definitions() {
         if !variables_read.contains(source.name()) {
@@ -268,6 +318,7 @@ pub fn run_side_effect_analysis(cfg: &Cfg) -> ReportCollection {
             } else {
                 reports.push(build_unused_variable(source));
             }
+            reported_vars.insert(source.name());
         } else if !taint_analysis.taints_any(source.name(), &sinks) {
             // If the variable does not flow into any of the sinks, it is side-effect free.
             if cfg.parameters().contains(source.name()) {
@@ -275,6 +326,21 @@ pub fn run_side_effect_analysis(cfg: &Cfg) -> ReportCollection {
             } else {
                 reports.push(build_variable_without_side_effect(source));
             }
+            reported_vars.insert(source.name());
+        }
+    }
+    // Generate reports for unused or unconstrained signals.
+    for (source, declaration) in signal_decls {
+        // Don't report on variables twice.
+        if reported_vars.contains(source) {
+            continue;
+        }
+        if !variables_read.contains(source) {
+            // If the variable is unread, it must be unconstrained.
+            reports.push(build_unused_signal(declaration));
+        } else if !taint_analysis.taints_any(source, &constraint_analysis.constrained_variables()) {
+            // If the signal does not flow to a constraint, it is unconstrained.
+            reports.push(build_unconstrained_signal(declaration));
         }
     }
     reports
@@ -302,6 +368,7 @@ fn build_unused_param(function_name: &str, definition: &VariableUse) -> Report {
 fn build_unused_signal(declaration: &Declaration) -> Report {
     UnusedSignalWarning {
         name: declaration.variable_name().to_string(),
+        dimensions: declaration.dimensions().clone(),
         file_id: declaration.file_id(),
         file_location: declaration.file_location(),
     }
@@ -311,6 +378,7 @@ fn build_unused_signal(declaration: &Declaration) -> Report {
 fn build_unconstrained_signal(declaration: &Declaration) -> Report {
     UnconstrainedSignalWarning {
         name: declaration.variable_name().to_string(),
+        dimensions: declaration.dimensions().clone(),
         file_id: declaration.file_id(),
         file_location: declaration.file_location(),
     }
@@ -333,6 +401,14 @@ fn build_param_without_side_effect(definition: &VariableUse) -> Report {
         file_location: definition.meta().file_location(),
     }
     .into_report()
+}
+
+fn dimensions_to_string(dimensions: &[Expression]) -> String {
+    let mut result = String::new();
+    for size in dimensions {
+        result += &format!("[{}]", size);
+    }
+    result
 }
 
 #[cfg(test)]
@@ -407,6 +483,15 @@ mod tests {
             }
         "#;
         validate_reports(src, 0);
+
+        let src = r#"
+            template T(n) {
+                signal tmp[n];
+
+                tmp[0] <-- 0;
+            }
+        "#;
+        validate_reports(src, 1);
     }
 
     fn validate_reports(src: &str, expected_len: usize) {
