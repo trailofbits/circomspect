@@ -373,6 +373,7 @@ pub fn update_declarations(
             versioned_declarations.add_declaration(&Declaration::new(
                 &name.with_version(version),
                 &VariableType::Local,
+                &Vec::new(),
                 parameters.file_id(),
                 parameters.file_location(),
             ));
@@ -380,7 +381,7 @@ pub fn update_declarations(
     }
     for basic_block in basic_blocks {
         for stmt in basic_block.iter_mut() {
-            if let Statement::Declaration { meta, names, var_type, .. } = stmt {
+            if let Statement::Declaration { meta, names, var_type, dimensions } = stmt {
                 let name = names.first();
                 assert!(names.len() == 1 && name.version().is_none());
 
@@ -399,6 +400,7 @@ pub fn update_declarations(
                         versioned_declarations.add_declaration(&Declaration::new(
                             &name.with_version(version),
                             var_type,
+                            dimensions,
                             &meta.file_id(),
                             &meta.file_location(),
                         ));
@@ -411,6 +413,7 @@ pub fn update_declarations(
                     versioned_declarations.add_declaration(&Declaration::new(
                         name,
                         var_type,
+                        dimensions,
                         &meta.file_id(),
                         &meta.file_location(),
                     ));

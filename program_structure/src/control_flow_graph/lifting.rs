@@ -48,6 +48,7 @@ impl From<&Parameters> for LiftingEnvironment {
             let declaration = Declaration::new(
                 name,
                 &VariableType::Local,
+                &Vec::new(),
                 params.file_id(),
                 params.file_location(),
             );
@@ -298,12 +299,16 @@ fn visit_statement(
                 Ok(if_pred_set)
             }
         }
-        ast::Statement::Declaration { meta, name, xtype, .. } => {
+        ast::Statement::Declaration { meta, name, xtype, dimensions, .. } => {
             // Declarations are also tracked by the CFG header.
             trace!("appending `{stmt}` to basic block {current_index}");
             env.add_declaration(&Declaration::new(
                 &name.try_lift(meta, reports)?,
                 &xtype.try_lift((), reports)?,
+                &dimensions
+                    .iter()
+                    .map(|size| size.try_lift((), reports))
+                    .collect::<IRResult<Vec<_>>>()?,
                 &meta.file_id,
                 &meta.location,
             ));

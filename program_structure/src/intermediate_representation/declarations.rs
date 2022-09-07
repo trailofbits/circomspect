@@ -52,6 +52,7 @@ impl Declarations {
 pub struct Declaration {
     name: VariableName,
     var_type: VariableType,
+    dimensions: Vec<Expression>,
     file_id: Option<FileID>,
     file_location: FileLocation,
 }
@@ -60,12 +61,14 @@ impl Declaration {
     pub fn new(
         name: &VariableName,
         var_type: &VariableType,
+        dimensions: &[Expression],
         file_id: &Option<FileID>,
         file_location: &FileLocation,
     ) -> Declaration {
         Declaration {
             name: name.clone(),
             var_type: var_type.clone(),
+            dimensions: dimensions.to_vec(),
             file_id: *file_id,
             file_location: file_location.clone(),
         }
@@ -89,5 +92,10 @@ impl Declaration {
     #[must_use]
     pub fn variable_type(&self) -> &VariableType {
         &self.var_type
+    }
+
+    #[must_use]
+    pub fn dimensions(&self) -> &Vec<Expression> {
+        &self.dimensions
     }
 }
