@@ -1,12 +1,14 @@
 use log::{debug, trace};
-use program_structure::ir::AccessType;
+use program_structure::intermediate_representation::degree_meta::{DegreeRange, DegreeMeta};
 use std::collections::HashSet;
 
-use program_structure::cfg::Cfg;
+use program_structure::cfg::{Cfg, DefinitionType};
 use program_structure::error_code::ReportCode;
 use program_structure::error_definition::{Report, ReportCollection};
-use program_structure::ir::variable_meta::VariableMeta;
 use program_structure::ir::*;
+use program_structure::ir::AccessType;
+use program_structure::ir::degree_meta::Degree;
+use program_structure::ir::variable_meta::VariableMeta;
 
 pub struct SignalAssignmentWarning {
     signal: VariableName,
@@ -20,7 +22,7 @@ impl SignalAssignmentWarning {
         let mut report = Report::warning(
             "Using the signal assignment operator `<--` does not constrain the assigned signal."
                 .to_string(),
-            ReportCode::FieldElementComparison,
+            ReportCode::SignalAssignmentStatement,
         );
         // Add signal assignment warning.
         if let Some(file_id) = self.assignment_meta.file_id {
@@ -51,7 +53,43 @@ impl SignalAssignmentWarning {
         // If no constraints are identified, suggest using `<==` instead.
         if report.get_secondary().is_empty() {
             report.add_note(
-                "Consider using the constraint assignment operator `<==` instead.".to_string(),
+                "Consider if it is possible to rewrite the statement using `<==` instead."
+                    .to_string(),
+            );
+        }
+        report
+    }
+}
+
+pub struct UnecessarySignalAssignmentWarning {
+    signal: VariableName,
+    access: Vec<AccessType>,
+    assignment_meta: Meta,
+}
+
+impl UnecessarySignalAssignmentWarning {
+    pub fn into_report(self) -> Report {
+        let mut report = Report::warning(
+            "Using the signal assignment operator `<--` is not necessary here.".to_string(),
+            ReportCode::UnecessarySignalAssignment,
+        );
+        // Add signal assignment warning.
+        if let Some(file_id) = self.assignment_meta.file_id {
+            report.add_primary(
+                self.assignment_meta.location,
+                file_id,
+                format!(
+                    "The expression assigned to `{}{}` is quadratic.",
+                    self.signal,
+                    access_to_string(&self.access)
+                ),
+            );
+        }
+        // If no constraints are identified, suggest using `<==` instead.
+        if report.get_secondary().is_empty() {
+            report.add_note(
+                "Consider rewriting the statement using the constraint assignment operator `<==`."
+                    .to_string(),
             );
         }
         report
@@ -65,11 +103,30 @@ struct Assignment {
     pub meta: Meta,
     pub signal: VariableName,
     pub access: Vec<AccessType>,
+    pub degree: Option<DegreeRange>,
 }
 
 impl Assignment {
-    fn new(meta: &Meta, signal: &VariableName, access: &[AccessType]) -> Assignment {
-        Assignment { meta: meta.clone(), signal: signal.clone(), access: access.to_owned() }
+    fn new(
+        meta: &Meta,
+        signal: &VariableName,
+        access: &[AccessType],
+        degree: Option<&DegreeRange>,
+    ) -> Assignment {
+        Assignment {
+            meta: meta.clone(),
+            signal: signal.clone(),
+            access: access.to_owned(),
+            degree: degree.cloned(),
+        }
+    }
+
+    fn is_quadratic(&self) -> bool {
+        if let Some(range) = &self.degree {
+            range.end() <= Degree::Quadratic
+        } else {
+            false
+        }
     }
 }
 
@@ -91,26 +148,32 @@ impl Constraint {
 /// This structure tracks signal assignments and constraints in a single
 /// template.
 #[derive(Clone, Default)]
-struct SignalData {
+struct SignalUse {
     assignments: AssignmentSet,
     constraints: ConstraintSet,
 }
 
-impl SignalData {
+impl SignalUse {
     /// Create a new `ConstraintInfo` instance.
-    fn new() -> SignalData {
-        SignalData::default()
+    fn new() -> SignalUse {
+        SignalUse::default()
     }
 
-    /// Add an assignment `var[access] <-- expr`.
-    fn add_assignment(&mut self, var: &VariableName, access: &[AccessType], meta: &Meta) {
-        trace!("adding signal assignment for `{var}` access");
-        self.assignments.insert(Assignment::new(meta, var, access));
+    /// Add a signal assignment `var[access] <-- expr`.
+    fn add_assignment(
+        &mut self,
+        var: &VariableName,
+        access: &[AccessType],
+        meta: &Meta,
+        degree: Option<&DegreeRange>,
+    ) {
+        trace!("adding signal assignment for `{var:?}` access");
+        self.assignments.insert(Assignment::new(meta, var, access, degree));
     }
 
     /// Add a constraint `lhe === rhe`.
     fn add_constraint(&mut self, lhe: &Expression, rhe: &Expression, meta: &Meta) {
-        trace!("adding constraint `{lhe} === {rhe}`");
+        trace!("adding constraint `{lhe:?} === {rhe:?}`");
         self.constraints.insert(Constraint::new(meta, lhe, rhe));
     }
 
@@ -146,54 +209,50 @@ impl SignalData {
 /// If the developer meant to use the constraint assignment operator `<==` this
 /// could lead to unexpected results.
 pub fn find_signal_assignments(cfg: &Cfg) -> ReportCollection {
+    if matches!(cfg.definition_type(), DefinitionType::Function) {
+        // Exit early if this is a function.
+        return ReportCollection::new();
+    }
     debug!("running signal assignment analysis pass");
-
-    let mut signal_data = SignalData::new();
+    let mut signal_use = SignalUse::new();
     for basic_block in cfg.iter() {
         for stmt in basic_block.iter() {
-            visit_statement(stmt, &mut signal_data);
+            visit_statement(stmt, &mut signal_use);
         }
     }
     let mut reports = ReportCollection::new();
-    for assignment in signal_data.get_assignments() {
-        let constraint_meta =
-            signal_data.get_constraint_metas(&assignment.signal, &assignment.access);
-        reports.push(build_report(
-            &assignment.signal,
-            &assignment.access,
-            &assignment.meta,
-            &constraint_meta,
-        ));
+    for assignment in signal_use.get_assignments() {
+        if assignment.is_quadratic() {
+            reports.push(build_unecessary_assignment_report(
+                &assignment.signal,
+                &assignment.access,
+                &assignment.meta,
+            ))
+        } else {
+            let constraint_metas =
+                signal_use.get_constraint_metas(&assignment.signal, &assignment.access);
+            reports.push(build_assignment_report(
+                &assignment.signal,
+                &assignment.access,
+                &assignment.meta,
+                &constraint_metas,
+            ));
+        }
     }
 
     debug!("{} new reports generated", reports.len());
     reports
 }
 
-fn visit_statement(stmt: &Statement, signal_data: &mut SignalData) {
+fn visit_statement(stmt: &Statement, signal_use: &mut SignalUse) {
     use Expression::*;
     use Statement::*;
     match stmt {
-        Substitution { meta, var, op, rhe: Update { access, rhe, .. } } => {
-            match op {
-                AssignOp::AssignSignal => {
-                    signal_data.add_assignment(var, access, meta);
-                }
-                // A signal cannot occur as the LHS of both a signal assignment
-                // and a signal constraint assignment. However, we still need to
-                // record the constraint added for each constraint assignment
-                // found.
-                AssignOp::AssignConstraintSignal => {
-                    let lhe = Expression::Variable { meta: meta.clone(), name: var.clone() };
-                    signal_data.add_constraint(&lhe, rhe, meta)
-                }
-                AssignOp::AssignLocalOrComponent => {}
-            }
-        }
         Substitution { meta, var, op, rhe } => {
+            let access = if let Update { access, .. } = rhe { access.clone() } else { Vec::new() };
             match op {
                 AssignOp::AssignSignal => {
-                    signal_data.add_assignment(var, &Vec::new(), meta);
+                    signal_use.add_assignment(var, &access, meta, rhe.degree());
                 }
                 // A signal cannot occur as the LHS of both a signal assignment
                 // and a signal constraint assignment. However, we still need to
@@ -201,19 +260,32 @@ fn visit_statement(stmt: &Statement, signal_data: &mut SignalData) {
                 // found.
                 AssignOp::AssignConstraintSignal => {
                     let lhe = Expression::Variable { meta: meta.clone(), name: var.clone() };
-                    signal_data.add_constraint(&lhe, rhe, meta)
+                    signal_use.add_constraint(&lhe, rhe, meta)
                 }
                 AssignOp::AssignLocalOrComponent => {}
             }
         }
         ConstraintEquality { meta, lhe, rhe } => {
-            signal_data.add_constraint(lhe, rhe, meta);
+            signal_use.add_constraint(lhe, rhe, meta);
         }
         _ => {}
     }
 }
 
-fn build_report(
+fn build_unecessary_assignment_report(
+    signal: &VariableName,
+    access: &[AccessType],
+    assignment_meta: &Meta,
+) -> Report {
+    UnecessarySignalAssignmentWarning {
+        signal: signal.clone(),
+        access: access.to_owned(),
+        assignment_meta: assignment_meta.clone(),
+    }
+    .into_report()
+}
+
+fn build_assignment_report(
     signal: &VariableName,
     access: &[AccessType],
     assignment_meta: &Meta,
@@ -241,9 +313,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_field_comparisons() {
+    fn test_signal_assignments() {
         let src = r#"
-            template t(a) {
+            template T(a) {
                 signal input in;
                 signal output out;
 
@@ -253,7 +325,7 @@ mod tests {
         validate_reports(src, 1);
 
         let src = r#"
-            template t(a) {
+            template T(a) {
                 signal input in;
                 signal output out;
 
@@ -264,7 +336,7 @@ mod tests {
         validate_reports(src, 1);
 
         let src = r#"
-            template t(n) {
+            template T(n) {
                 signal input in;
                 signal output out[n];
 
@@ -273,10 +345,21 @@ mod tests {
             }
         "#;
         validate_reports(src, 1);
+
+        let src = r#"
+            template T(n) {
+                signal output out[n];
+
+                in + 1 === out[0];
+                out[0] <-- in * in;
+            }
+        "#;
+        validate_reports(src, 1);
     }
 
     fn validate_reports(src: &str, expected_len: usize) {
         // Build CFG.
+        println!("{}", src);
         let mut reports = ReportCollection::new();
         let cfg =
             parse_definition(src).unwrap().into_cfg(&mut reports).unwrap().into_ssa().unwrap();
@@ -284,6 +367,9 @@ mod tests {
 
         // Generate report collection.
         let reports = find_signal_assignments(&cfg);
+        for report in &reports {
+            println!("{}", report.get_message())
+        }
 
         assert_eq!(reports.len(), expected_len);
     }

@@ -73,7 +73,8 @@ pub enum ReportCode {
     ParameterNameCollision,
     FieldElementComparison,
     FieldElementArithmetic,
-    AssignSignalStatement,
+    SignalAssignmentStatement,
+    UnecessarySignalAssignment,
     UnusedVariableValue,
     UnusedParameterValue,
     VariableWithoutSideEffect,
@@ -157,7 +158,7 @@ impl fmt::Display for ReportCode {
             ParameterNameCollision => "CS0002",
             FieldElementComparison => "CS0003",
             FieldElementArithmetic => "CS0004",
-            AssignSignalStatement => "CS0005",
+            SignalAssignmentStatement => "CS0005",
             UnusedVariableValue => "CS0006",
             UnusedParameterValue => "CS0007",
             VariableWithoutSideEffect => "CS0008",
@@ -165,6 +166,7 @@ impl fmt::Display for ReportCode {
             NonStrictBinaryConversion => "CS0010",
             CyclomaticComplexity => "CS0011",
             TooManyArguments => "CS0012",
+            UnecessarySignalAssignment => "CS0013",
         };
         f.write_str(string_format)
     }
