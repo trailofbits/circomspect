@@ -1,7 +1,7 @@
 use log::debug;
 use num_bigint::BigInt;
 
-use program_structure::cfg::Cfg;
+use program_structure::cfg::{Cfg, DefinitionType};
 use program_structure::error_code::ReportCode;
 use program_structure::error_definition::{Report, ReportCollection};
 use program_structure::file_definition::{FileID, FileLocation};
@@ -61,6 +61,10 @@ impl NonStrictBinaryConversionWarning {
 /// of `x` and one of `p + x`. This is typically not expected by developers and
 /// may lead to issues.
 pub fn find_nonstrict_binary_conversion(cfg: &Cfg) -> ReportCollection {
+    if matches!(cfg.definition_type(), DefinitionType::Function) {
+        // Exit early if this is a function.
+        return ReportCollection::new();
+    }
     debug!("running non-strict `Num2Bits` analysis pass");
     let mut reports = ReportCollection::new();
     for basic_block in cfg.iter() {
