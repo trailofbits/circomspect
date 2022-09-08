@@ -265,6 +265,11 @@ impl DegreeRange {
         self.1
     }
 
+    #[must_use]
+    pub fn contains(&self, degree: Degree) -> bool {
+        self.start() <= degree && degree <= self.end()
+    }
+
     /// Computes the infimum (under inverse inclusion) of `self` and `other`.
     /// Note, if the two ranges overlap this will simply be the union of `self`
     /// and `other`.
@@ -435,11 +440,6 @@ impl DegreeEnvironment {
     }
 
     /// Sets the degree range of the given variable.
-    ///
-    /// Panics
-    ///
-    /// This function panics if the caller attempts to set the range for the
-    /// same variable multiple times.
     pub fn set_degree(&mut self, var: &VariableName, range: &DegreeRange) {
         trace!("setting degree range of `{var:?}` to {range:?}");
         if self.degree_ranges.insert(var.clone(), range.clone()).is_some() {
@@ -448,11 +448,6 @@ impl DegreeEnvironment {
     }
 
     /// Sets the type of the given variable.
-    ///
-    /// Panics
-    ///
-    /// This function panics if the caller attempts to set the type for the
-    /// same variable multiple times.
     pub fn set_type(&mut self, var: &VariableName, var_type: &VariableType) {
         if self.var_types.insert(var.clone(), var_type.clone()).is_some() {
             warn!("attempting to assign multiple types to `{:?}`", var);
@@ -498,7 +493,7 @@ impl DegreeKnowledge {
     }
 
     #[must_use]
-    pub fn degree_range(&self) -> Option<&DegreeRange> {
+    pub fn degree(&self) -> Option<&DegreeRange> {
         self.degree_range.as_ref()
     }
 }

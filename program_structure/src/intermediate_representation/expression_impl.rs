@@ -239,7 +239,7 @@ impl DegreeMeta for Expression {
     }
 
     fn degree(&self) -> Option<&DegreeRange> {
-        self.meta().degree_knowledge().degree_range()
+        self.meta().degree_knowledge().degree()
     }
 }
 
