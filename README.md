@@ -96,9 +96,9 @@ Since a new variable `r` is declared in the while-statement body, the outer vari
 
 #### Signal assignments using the signal assignment operator (Warning)
 
-Signals should typically be assigned using the constraint assignment operator `<==`. This ensures that the circuit and witness generation stay in sync. If `<--` is used it is up to the developer to ensure that the signal is properly constrained.
+Signals should typically be assigned using the constraint assignment operator `<==`. This ensures that the circuit and witness generation stay in sync. If `<--` is used it is up to the developer to ensure that the signal is properly constrained. Circomspect will try to detect if the right-hand side of the assignment is a quadratic expression. If it is, the signal assignment can be rewritten using the constraint assignment operator `<==`.
 
-Sometimes more than one constraint is required to ensure that the assigned signal has the correct value. Circomspect will try to list all constraints containing the assigned signal to make it easier for the developer (or reviewer) to ensure that the variable is properly constrained.
+However, sometimes it is not possible to express the assignment using a quadratic expression. In this case Circomspect will try to list all constraints containing the assigned signal to make it easier for the developer (or reviewer) to ensure that the variable is properly constrained.
 
 The Tornado Cash codebase was originally affected by an issue of this type. For details see the Tornado Cash disclosure [here](https://tornado-cash.medium.com/tornado-cash-got-hacked-by-us-b1e012a3c9a8).
 
@@ -107,17 +107,16 @@ The Tornado Cash codebase was originally affected by an issue of this type. For 
 
 If a branching statement condition always evaluates to either `true` or `false`, this means that the branch is either always taken, or never taken. This typically indicates a mistake in the code which should be fixed.
 
-#### Use of the non-strict versions of `Num2Bits` and `Bits2Num` from circomlib (Warning)
+#### Use of the non-strict versions of `Num2Bits` and `Bits2Num` from Circomlib (Warning)
 
-Using `Num2Bits` and `Bits2Num` from circomlib to convert a field element to and
-from binary form is only safe if the input size is smaller than the size of the
-prime. If not, there may be multiple correct representations of the input which
-could cause issues, since we typically expect the circuit output to be uniquely
-determined by the input.
+Using `Num2Bits` and `Bits2Num` from
+[Circomlib](https://github.com/iden3/circomlib) to convert a field element to
+and from binary form is only safe if the input size is smaller than the size of
+the prime. If not, there may be multiple correct representations of the input
+which could cause issues, since we typically expect the circuit output to be
+uniquely determined by the input.
 
-For example, Suppose that we create a component `n2b` given by `Num2Bits(254)` and set the input to `1`. Now, both the binary representation of `1` _and_ the representation of `p + 1` will satisfy the circuit, since both are 254-bit numbers. If you cannot restrict the input size below 254 bits you should use the strict versions `Num2Bits_strict` and `Bits2Num_strict` to convert to and from binary.
-
-Circomspect will generate a warning if it cannot prove that the input size passed to `Num2Bits` or `Bits2Num` is less than 254 bits.
+For example, Suppose that we create a component `n2b` given by `Num2Bits(254)` and set the input to `1`. Now, both the binary representation of `1` _and_ the representation of `p + 1` will satisfy the circuit, since both are 254-bit numbers. If you cannot restrict the input size below 254 bits you should use the strict versions `Num2Bits_strict` and `Bits2Num_strict` to convert to and from binary representation. Circomspect will generate a warning if it cannot prove (using constant propagation) that the input size passed to `Num2Bits` or `Bits2Num` is less than 254 bits.
 
 
 #### Overly complex functions or templates (Warning)
