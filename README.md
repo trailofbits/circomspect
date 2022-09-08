@@ -121,11 +121,7 @@ For example, Suppose that we create a component `n2b` given by `Num2Bits(254)` a
 
 #### Overly complex functions or templates (Warning)
 
-As functions and templates grow in complexity they become more difficult to review and maintain. This typically indicates that the code should be refactored into smaller, more easily understandable, components.
-
-Circomspect uses cyclomatic complexity to estimate the complexity of each function and template, and will generate a warning if the code is considered too complex.
-
-Circomspect will also generate a warning if a function or template takes too many arguments, as this also impacts the readability of the code.
+As functions and templates grow in complexity they become more difficult to review and maintain. This typically indicates that the code should be refactored into smaller, more easily understandable, components. Circomspect uses cyclomatic complexity to estimate the complexity of each function and template, and will generate a warning if the code is considered too complex. Circomspect will also generate a warning if a function or template takes too many arguments, as this also impacts the readability of the code.
 
 
 #### Bitwise complement of field elements (Informational)
