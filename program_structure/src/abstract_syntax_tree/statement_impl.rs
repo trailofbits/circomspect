@@ -226,8 +226,8 @@ impl Debug for Statement {
     }
 }
 
-impl<'a> Display for Statement {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+impl Display for Statement {
+    fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
         use Statement::*;
         match self {
             IfThenElse { cond, else_case, .. } => match else_case {

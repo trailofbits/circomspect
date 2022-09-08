@@ -148,7 +148,7 @@ impl ToUri for FileID {
             .replace('"', "")
             .into();
         // This path already comes from an UTF-8 string so it is ok to unwrap here.
-        return Ok(format!("file://{}", path.to_str().unwrap()));
+        Ok(format!("file://{}", path.to_str().unwrap()))
     }
 }
 

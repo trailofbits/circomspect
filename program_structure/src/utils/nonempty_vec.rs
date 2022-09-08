@@ -28,7 +28,7 @@ use std::ops::{Index, IndexMut};
 /// assert_eq!(v.pop(), Some(2));
 /// assert_eq!(v.pop(), None);
 /// ```
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct NonEmptyVec<T> {
     head: T,
     tail: Vec<T>,

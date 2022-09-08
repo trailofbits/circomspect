@@ -28,16 +28,15 @@ impl<C: Clone> Clone for MemorySlice<C> {
 impl<C: Default + Clone + Display + Eq> Display for MemorySlice<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if self.values.is_empty() {
-            f.write_str("[]")
+            write!(f, "[]")
         } else if self.values.len() == 1 {
-            f.write_str(&format!("{}", self.values[0]))
+            write!(f, "{}", self.values[0])
         } else {
-            let mut msg = format!("[{}", self.values[0]);
+            write!(f, "[{}", self.values[0])?;
             for i in 1..self.values.len() {
-                msg.push_str(&format!(",{}", self.values[i]));
+                write!(f, ", {}", self.values[i])?;
             }
-            msg.push(']');
-            f.write_str(&msg)
+            write!(f, "]")
         }
     }
 }

@@ -137,8 +137,8 @@ impl Statement {
     }
 }
 
-impl<'a> fmt::Debug for Statement {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+impl fmt::Debug for Statement {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         use Statement::*;
         match self {
             Declaration { names, var_type, dimensions, .. } => {
@@ -170,8 +170,8 @@ impl<'a> fmt::Debug for Statement {
     }
 }
 
-impl<'a> fmt::Display for Statement {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+impl fmt::Display for Statement {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         use Statement::*;
         match self {
             Declaration { names, var_type, dimensions, .. } => {

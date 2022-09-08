@@ -1,4 +1,5 @@
 use log::debug;
+use std::fmt::Write;
 use std::collections::{HashMap, HashSet};
 
 use program_structure::cfg::Cfg;
@@ -406,7 +407,8 @@ fn build_param_without_side_effect(definition: &VariableUse) -> Report {
 fn dimensions_to_string(dimensions: &[Expression]) -> String {
     let mut result = String::new();
     for size in dimensions {
-        result += &format!("[{}]", size);
+        // We ignore errors here.
+        let _ = write!(result, "[{}]", size);
     }
     result
 }
