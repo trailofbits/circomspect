@@ -1,0 +1,9 @@
+repos:
+  - repo: local
+    hooks:
+      - id: rustfmt
+        name: rustfmt
+        description: Check Rust source code formatting using cargo fmt
+        entry: cargo fmt --all -- --check --color always
+        language: system
+        pass_filenames: false
