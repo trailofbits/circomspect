@@ -10,3 +10,7 @@ num-bigint-dig = "0.6.0"
 num-traits = "0.2.6"
 parser = { package = "circomspect-parser", version = "2.0.1", path = "../parser" }
 program_structure = { package = "circomspect-program-structure", version = "2.0.1", path = "../program_structure" }
+
+[dev-dependencies]
+parser = { package = "circomspect-parser", version = "2.0.1", path = "../parser" }
+program_structure = { package = "circomspect-program-structure", version = "2.0.1", path = "../program_structure" }

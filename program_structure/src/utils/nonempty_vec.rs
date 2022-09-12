@@ -9,7 +9,7 @@ use std::ops::{Index, IndexMut};
 /// produce an element of type `T`.
 ///
 /// ```
-/// # use program_structure::nonempty_vec::NonEmptyVec;
+/// # use circomspect_program_structure::nonempty_vec::NonEmptyVec;
 ///
 /// let v = NonEmptyVec::new(1);
 /// assert_eq!(*v.first(), 1);
@@ -21,7 +21,7 @@ use std::ops::{Index, IndexMut};
 /// nonempty.
 ///
 /// ```
-/// # use program_structure::nonempty_vec::NonEmptyVec;
+/// # use circomspect_program_structure::nonempty_vec::NonEmptyVec;
 ///
 /// let mut v = NonEmptyVec::new(1);
 /// v.push(2);
@@ -74,7 +74,7 @@ impl<T> NonEmptyVec<T> {
     /// vector to ensure that the vector remains non-empty.
     ///
     /// ```
-    /// # use program_structure::nonempty_vec::NonEmptyVec;
+    /// # use circomspect_program_structure::nonempty_vec::NonEmptyVec;
     ///
     /// let mut v = NonEmptyVec::new(1);
     /// v.push(2);
@@ -88,7 +88,7 @@ impl<T> NonEmptyVec<T> {
     /// Returns the length of the vector.
     ///
     /// ```
-    /// # use program_structure::nonempty_vec::NonEmptyVec;
+    /// # use circomspect_program_structure::nonempty_vec::NonEmptyVec;
     ///
     /// let mut v = NonEmptyVec::new(1);
     /// v.push(2);
@@ -123,7 +123,7 @@ impl<'a, T> IntoIterator for &'a NonEmptyVec<T> {
 /// An iterator over a non-empty vector.
 ///
 /// ```
-/// # use program_structure::nonempty_vec::NonEmptyVec;
+/// # use circomspect_program_structure::nonempty_vec::NonEmptyVec;
 /// # use std::convert::TryFrom;
 /// let v = NonEmptyVec::try_from(&[1, 2, 3]).unwrap();
 ///
