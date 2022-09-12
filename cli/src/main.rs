@@ -1,60 +1,45 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use clap::{CommandFactory, Parser};
-use log::{error, info};
 use parser::ParseResult;
-use program_structure::function_data::FunctionInfo;
-use program_structure::template_data::TemplateInfo;
-use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
-use std::str::FromStr;
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 
 use program_analysis::get_analysis_passes;
 use program_structure::cfg::{Cfg, IntoCfg};
-use program_structure::error_definition::MessageCategory;
-use program_structure::error_definition::{Report, ReportCollection};
+use program_structure::report::MessageCategory;
+use program_structure::report::{Report, ReportCollection};
 use program_structure::file_definition::FileLibrary;
-use program_structure::sarif_conversion::ToSarif;
-
-#[derive(Debug)]
-pub enum Level {
-    Info,
-    Warning,
-    Error,
-}
-
-impl FromStr for Level {
-    type Err = anyhow::Error;
-
-    fn from_str(level: &str) -> Result<Level, Self::Err> {
-        match level.to_lowercase().as_str() {
-            "warn" | "warning" => Ok(Level::Warning),
-            "info" => Ok(Level::Info),
-            "error" => Ok(Level::Error),
-            _ => Err(anyhow!("failed to parse level '{level}'")),
-        }
-    }
-}
+use program_structure::function_data::FunctionInfo;
+use program_structure::report_writer::{StdoutWriter, ReportWriter, SarifWriter};
+use program_structure::template_data::TemplateInfo;
 
 const COMPILER_VERSION: &str = "2.0.3";
 const DEFAULT_LEVEL: &str = "WARNING";
 
 #[derive(Parser, Debug)]
-/// A static analyzer for Circom programs.
+/// A static analyzer and linter for Circom programs.
 struct Cli {
     /// Initial input file(s)
     #[clap(name = "INPUT")]
     input_files: Vec<PathBuf>,
 
     /// Output level (INFO, WARNING, or ERROR)
-    #[clap(short = 'l', long, name = "LEVEL", default_value = DEFAULT_LEVEL)]
-    output_level: Level,
+    #[clap(short = 'l', long = "level", name = "LEVEL", default_value = DEFAULT_LEVEL)]
+    output_level: MessageCategory,
 
     /// Output analysis results to a Sarif file
     #[clap(short, long, name = "OUTPUT")]
     sarif_file: Option<PathBuf>,
+
+    /// Ignore results from given analysis passes
+    #[clap(short = 'a', long = "allow", name = "ID")]
+    allow_list: Vec<String>,
+
+    /// Enable verbose output
+    #[clap(short = 'v', long = "verbose")]
+    verbose: bool,
 }
 
 fn generate_cfg<Ast: IntoCfg>(ast: Ast, reports: &mut ReportCollection) -> Result<Cfg, Report> {
@@ -82,7 +67,7 @@ fn analyze_definitions(
     functions: &FunctionInfo,
     templates: &TemplateInfo,
     file_library: &FileLibrary,
-    output_level: &Level,
+    writer: &mut StdoutWriter,
 ) -> ReportCollection {
     let mut all_reports = ReportCollection::new();
 
@@ -91,8 +76,7 @@ fn analyze_definitions(
         log_message(&format!("analyzing function '{name}'"));
         let mut new_reports = ReportCollection::new();
         analyze_ast(function, &mut new_reports);
-        filter_reports(&mut new_reports, output_level);
-        Report::print_reports(&new_reports, file_library);
+        writer.write(&new_reports, file_library);
         all_reports.extend(new_reports);
     }
     // Analyze all templates.
@@ -100,37 +84,21 @@ fn analyze_definitions(
         log_message(&format!("analyzing template '{name}'"));
         let mut new_reports = ReportCollection::new();
         analyze_ast(template, &mut new_reports);
-        filter_reports(&mut new_reports, output_level);
-        Report::print_reports(&new_reports, file_library);
+        writer.write(&new_reports, file_library);
         all_reports.extend(new_reports);
     }
     all_reports
 }
 
-fn filter_reports(reports: &mut ReportCollection, output_level: &Level) {
-    *reports =
-        reports.iter().filter(|report| filter_by_level(report, output_level)).cloned().collect();
+/// Returns true if the report level is greater than or equal to the given
+/// level.
+fn filter_by_level(report: &Report, output_level: &MessageCategory) -> bool {
+    report.category() >= output_level
 }
 
-fn filter_by_level(report: &Report, output_level: &Level) -> bool {
-    use MessageCategory::*;
-    match output_level {
-        Level::Info => matches!(report.get_category(), Info | Warning | Error),
-        Level::Warning => matches!(report.get_category(), Warning | Error),
-        Level::Error => matches!(report.get_category(), Error),
-    }
-}
-
-fn serialize_reports(
-    sarif_path: &PathBuf,
-    reports: &ReportCollection,
-    file_library: &FileLibrary,
-) -> Result<()> {
-    let sarif = reports.to_sarif(file_library)?;
-    let json = serde_json::to_string_pretty(&sarif)?;
-    let mut sarif_file = File::create(sarif_path)?;
-    writeln!(sarif_file, "{}", &json)?;
-    Ok(())
+/// Returns true if the report ID is not in the given list.
+fn filter_by_id(report: &Report, allow_list: &[String]) -> bool {
+    !allow_list.contains(&report.id())
 }
 
 fn log_message(message: &str) {
@@ -155,51 +123,61 @@ fn main() -> ExitCode {
             Err(_) => return ExitCode::FAILURE,
         }
     }
-
     let mut reports = ReportCollection::new();
+    let allow_list = options.allow_list.clone();
+    let output_level = options.output_level;
+    let mut writer = StdoutWriter::new(options.verbose)
+        .add_filter(move |report: &Report| filter_by_id(report, &allow_list))
+        .add_filter(move |report: &Report| filter_by_level(report, &output_level));
+
     let file_library = match parser::parse_files(&options.input_files, COMPILER_VERSION) {
         // Analyze a complete Circom program.
         ParseResult::Program(program, mut warnings) => {
-            Report::print_reports(&warnings, &program.file_library);
+            writer.write(&warnings, &program.file_library);
             reports.append(&mut warnings);
             reports.append(&mut analyze_definitions(
                 &program.functions,
                 &program.templates,
                 &program.file_library,
-                &options.output_level,
+                &mut writer,
             ));
             program.file_library
         }
         // Analyze a set of Circom template files.
         ParseResult::Library(library, mut warnings) => {
-            Report::print_reports(&warnings, &library.file_library);
+            writer.write(&warnings, &library.file_library);
             reports.append(&mut warnings);
             reports.append(&mut analyze_definitions(
                 &library.functions,
                 &library.templates,
                 &library.file_library,
-                &options.output_level,
+                &mut writer,
             ));
             library.file_library
         }
     };
     // If a Sarif file is passed to the program we write the reports to it.
-    if let Some(sarif_path) = options.sarif_file {
-        match serialize_reports(&sarif_path, &reports, &file_library) {
-            Ok(()) => info!("reports written to `{}`", sarif_path.display()),
-            Err(_) => error!("failed to write reports to `{}`", sarif_path.display()),
-        }
+    if let Some(sarif_file) = options.sarif_file {
+        let allow_list = options.allow_list.clone();
+        let output_level = options.output_level;
+        let mut writer = SarifWriter::new(&sarif_file)
+            .add_filter(move |report: &Report| filter_by_id(report, &allow_list))
+            .add_filter(move |report: &Report| filter_by_level(report, &output_level));
+        writer.write(&reports, &file_library);
     }
     // Use the exit code to indicate if any issues were found.
-    if reports.is_empty() {
-        log_message("No issues found.");
-        ExitCode::SUCCESS
-    } else {
-        if reports.len() == 1 {
-            log_message(&format!("{} issue found.", reports.len()));
-        } else {
-            log_message(&format!("{} issues found.", reports.len()));
+    match writer.written() {
+        0 => {
+            log_message("No issues found.");
+            ExitCode::SUCCESS
         }
-        ExitCode::FAILURE
+        1 => {
+            log_message("1 issue found.");
+            ExitCode::FAILURE
+        }
+        n => {
+            log_message(&format!("{n} issues found."));
+            ExitCode::FAILURE
+        }
     }
 }

@@ -2,8 +2,8 @@ use log::debug;
 use num_bigint::BigInt;
 
 use program_structure::cfg::{Cfg, DefinitionType};
-use program_structure::error_code::ReportCode;
-use program_structure::error_definition::{Report, ReportCollection};
+use program_structure::report_code::ReportCode;
+use program_structure::report::{Report, ReportCollection};
 use program_structure::file_definition::{FileID, FileLocation};
 use program_structure::ir::value_meta::{ValueMeta, ValueReduction};
 use program_structure::ir::*;

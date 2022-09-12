@@ -1,5 +1,5 @@
 use program_structure::cfg::Cfg;
-use program_structure::error_definition::ReportCollection;
+use program_structure::report::ReportCollection;
 
 extern crate num_bigint_dig as num_bigint;
 

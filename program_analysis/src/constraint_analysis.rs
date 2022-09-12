@@ -92,7 +92,7 @@ impl ConstraintAnalysis {
 }
 
 pub fn run_constraint_analysis(cfg: &Cfg) -> ConstraintAnalysis {
-    debug!("running taint analysis pass");
+    debug!("running constraint analysis pass");
     let mut result = ConstraintAnalysis::new();
 
     use AssignOp::*;

@@ -1,8 +1,8 @@
 use log::debug;
 
 use program_structure::cfg::Cfg;
-use program_structure::error_code::ReportCode;
-use program_structure::error_definition::{Report, ReportCollection};
+use program_structure::report_code::ReportCode;
+use program_structure::report::{Report, ReportCollection};
 use program_structure::file_definition::{FileID, FileLocation};
 use program_structure::ir::*;
 

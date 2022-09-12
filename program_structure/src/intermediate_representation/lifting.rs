@@ -1,5 +1,5 @@
 use crate::ast;
-use crate::error_definition::ReportCollection;
+use crate::report::ReportCollection;
 
 use crate::ir;
 use crate::ir::declarations::{Declaration, Declarations};
@@ -324,7 +324,7 @@ impl TryLift<()> for ast::ExpressionInfixOpcode {
 mod tests {
     use proptest::prelude::*;
 
-    use crate::error_definition::ReportCollection;
+    use crate::report::ReportCollection;
 
     use super::*;
 

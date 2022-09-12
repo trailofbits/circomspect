@@ -2,7 +2,7 @@ use crate::errors::FileOsError;
 
 use super::errors::IncludeError;
 use program_structure::ast::Include;
-use program_structure::error_definition::{Report, ReportCollection};
+use program_structure::report::{Report, ReportCollection};
 use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;

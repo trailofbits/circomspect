@@ -6,7 +6,7 @@ use std::ops::Range;
 use std::path::PathBuf;
 use thiserror::Error;
 
-use crate::error_definition::{Report, ReportCollection, ReportLabel};
+use crate::report::{Report, ReportCollection, ReportLabel};
 use crate::file_definition::{FileID, FileLibrary};
 
 const SARIF_VERSION: &str = "2.1.0";
@@ -46,11 +46,11 @@ impl ToSarif for Report {
     type Error = SarifError;
 
     fn to_sarif(&self, files: &FileLibrary) -> SarifResult<sarif::Result> {
-        let level = self.get_category().to_string();
-        let rule_id = self.get_code().to_string();
+        let level = self.category().to_string();
+        let rule_id = self.id();
         // Build message.
         trace!("building message");
-        let message = sarif::MessageBuilder::default().text(self.get_message()).build()?;
+        let message = sarif::MessageBuilder::default().text(self.message()).build()?;
         // Build locations from first primary label (or first secondary label if
         // there are no primary labels).
         //
@@ -59,12 +59,12 @@ impl ToSarif for Report {
         // handle reports with multiple locations well.
         trace!("building locations");
         let primary_locations = self
-            .get_primary()
+            .primary()
             .iter()
             .map(|label| label.to_sarif(files))
             .collect::<SarifResult<Vec<_>>>()?;
         let secondary_locations = self
-            .get_secondary()
+            .secondary()
             .iter()
             .map(|label| label.to_sarif(files))
             .collect::<SarifResult<Vec<_>>>()?;

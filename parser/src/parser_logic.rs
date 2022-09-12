@@ -1,7 +1,7 @@
 use super::errors::{ParsingError, UnclosedCommentError};
 use super::lang;
 use program_structure::ast::AST;
-use program_structure::error_definition::Report;
+use program_structure::report::Report;
 use program_structure::file_definition::FileID;
 
 pub fn preprocess(expr: &str, file_id: FileID) -> Result<String, Report> {

@@ -3,8 +3,8 @@ use program_structure::intermediate_representation::degree_meta::{DegreeRange, D
 use std::collections::HashSet;
 
 use program_structure::cfg::{Cfg, DefinitionType};
-use program_structure::error_code::ReportCode;
-use program_structure::error_definition::{Report, ReportCollection};
+use program_structure::report_code::ReportCode;
+use program_structure::report::{Report, ReportCollection};
 use program_structure::ir::*;
 use program_structure::ir::AccessType;
 use program_structure::ir::degree_meta::Degree;
@@ -51,7 +51,7 @@ impl SignalAssignmentWarning {
             }
         }
         // If no constraints are identified, suggest using `<==` instead.
-        if report.get_secondary().is_empty() {
+        if report.secondary().is_empty() {
             report.add_note(
                 "Consider if it is possible to rewrite the statement using `<==` instead."
                     .to_string(),
@@ -86,7 +86,7 @@ impl UnecessarySignalAssignmentWarning {
             );
         }
         // If no constraints are identified, suggest using `<==` instead.
-        if report.get_secondary().is_empty() {
+        if report.secondary().is_empty() {
             report.add_note(
                 "Consider rewriting the statement using the constraint assignment operator `<==`."
                     .to_string(),
@@ -368,7 +368,7 @@ mod tests {
         // Generate report collection.
         let reports = find_signal_assignments(&cfg);
         for report in &reports {
-            println!("{}", report.get_message())
+            println!("{}", report.message())
         }
 
         assert_eq!(reports.len(), expected_len);

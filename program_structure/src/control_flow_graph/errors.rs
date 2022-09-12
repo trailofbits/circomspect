@@ -1,7 +1,7 @@
 use thiserror::Error;
 
-use crate::error_code::ReportCode;
-use crate::error_definition::Report;
+use crate::report_code::ReportCode;
+use crate::report::Report;
 use crate::file_definition::{FileID, FileLocation};
 use crate::ir::errors::IRError;
 

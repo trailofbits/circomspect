@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use parser::parse_definition;
 use program_structure::cfg::{BasicBlock, Cfg, IntoCfg};
-use program_structure::error_definition::ReportCollection;
+use program_structure::report::ReportCollection;
 use program_structure::ir::variable_meta::VariableMeta;
 use program_structure::ir::{AssignOp, Statement, VariableName};
 use program_structure::ssa::traits::SSAStatement;

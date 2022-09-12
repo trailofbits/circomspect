@@ -1,4 +1,4 @@
-use log::{debug, trace};
+use log::debug;
 use std::collections::HashSet;
 use std::fmt;
 
@@ -106,14 +106,14 @@ impl Cfg {
 
         // 5. Print trace output of CFG.
         for basic_block in self.basic_blocks.iter() {
-            trace!(
+            debug!(
                 "basic block {}: (predecessors: {:?}, successors: {:?})",
                 basic_block.index(),
                 basic_block.predecessors(),
                 basic_block.successors(),
             );
             for stmt in basic_block.iter() {
-                trace!("    {stmt:?}")
+                debug!("    {stmt:?}")
             }
         }
         Ok(self)

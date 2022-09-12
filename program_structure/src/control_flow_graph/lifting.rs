@@ -11,7 +11,7 @@ use crate::ir::errors::IRResult;
 use crate::ir::lifting::{LiftingEnvironment, TryLift};
 use crate::ir::VariableType;
 
-use crate::error_definition::ReportCollection;
+use crate::report::ReportCollection;
 use crate::nonempty_vec::NonEmptyVec;
 use crate::ssa::dominator_tree::DominatorTree;
 use crate::template_data::TemplateData;

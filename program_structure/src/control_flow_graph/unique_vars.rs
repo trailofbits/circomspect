@@ -6,7 +6,7 @@ use super::parameters::Parameters;
 
 use crate::ast::{Access, Expression, Meta, Statement};
 use crate::environment::VarEnvironment;
-use crate::error_definition::{Report, ReportCollection};
+use crate::report::{Report, ReportCollection};
 use crate::file_definition::{FileID, FileLocation};
 
 type Version = usize;

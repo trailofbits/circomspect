@@ -15,7 +15,7 @@ mod include_logic;
 mod parser_logic;
 use include_logic::FileStack;
 use program_structure::ast::{Version, AST};
-use program_structure::error_definition::{Report, ReportCollection};
+use program_structure::report::{Report, ReportCollection};
 use program_structure::file_definition::{FileID, FileLibrary};
 use program_structure::program_archive::ProgramArchive;
 use program_structure::template_library::TemplateLibrary;

@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use parser::parse_definition;
 use program_structure::cfg::*;
-use program_structure::error_definition::ReportCollection;
+use program_structure::report::ReportCollection;
 use program_structure::ir::VariableName;
 
 #[test]

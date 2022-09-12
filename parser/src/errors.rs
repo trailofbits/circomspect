@@ -1,6 +1,6 @@
 use program_structure::abstract_syntax_tree::ast::Version;
-use program_structure::error_code::ReportCode;
-use program_structure::error_definition::Report;
+use program_structure::report_code::ReportCode;
+use program_structure::report::Report;
 use program_structure::file_definition::{FileID, FileLocation};
 
 pub struct UnclosedCommentError {

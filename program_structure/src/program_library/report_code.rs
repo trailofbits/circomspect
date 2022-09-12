@@ -1,6 +1,3 @@
-use core::fmt;
-use std::fmt::Formatter;
-
 #[derive(Copy, Clone)]
 pub enum ReportCode {
     AssertWrongType,
@@ -84,10 +81,10 @@ pub enum ReportCode {
     TooManyArguments,
 }
 
-impl fmt::Display for ReportCode {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+impl ReportCode {
+    pub fn id(&self) -> String {
         use self::ReportCode::*;
-        let string_format = match self {
+        match self {
             ParseFail => "P1000",
             NoMainFoundInProject => "P1001",
             MultipleMainInComponent => "P1002",
@@ -167,7 +164,7 @@ impl fmt::Display for ReportCode {
             CyclomaticComplexity => "CS0011",
             TooManyArguments => "CS0012",
             UnecessarySignalAssignment => "CS0013",
-        };
-        f.write_str(string_format)
+        }
+        .to_string()
     }
 }

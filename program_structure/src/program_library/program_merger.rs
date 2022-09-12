@@ -1,6 +1,6 @@
 use super::ast::Definition;
-use super::error_code::ReportCode;
-use super::error_definition::Report;
+use super::report_code::ReportCode;
+use super::report::Report;
 use super::file_definition::FileID;
 use super::function_data::{FunctionData, FunctionInfo};
 use super::template_data::{TemplateData, TemplateInfo};

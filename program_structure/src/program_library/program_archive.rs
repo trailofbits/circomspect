@@ -4,7 +4,7 @@ use super::function_data::{FunctionData, FunctionInfo};
 use super::program_merger::Merger;
 use super::template_data::{TemplateData, TemplateInfo};
 use crate::abstract_syntax_tree::ast::FillMeta;
-use crate::error_definition::Report;
+use crate::report::Report;
 use std::collections::{HashMap, HashSet};
 
 type Contents = HashMap<FileID, Vec<Definition>>;
