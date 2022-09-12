@@ -1,5 +1,5 @@
 [package]
-name = "program_analysis"
+name = "circomspect-program-analysis"
 version = "0.5.1"
 edition = "2021"
 
@@ -8,5 +8,5 @@ anyhow = "1.0"
 log = "0.4"
 num-bigint-dig = "0.6.0"
 num-traits = "0.2.6"
-parser = { version = "2.0.1", path = "../parser" }
-program_structure = { version = "2.0.1", path = "../program_structure" }
+parser = { package = "circomspect-parser", version = "2.0.1", path = "../parser" }
+program_structure = { package = "circomspect-program-structure", version = "2.0.1", path = "../program_structure" }

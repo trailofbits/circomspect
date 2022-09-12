@@ -1,5 +1,5 @@
 [package]
-name = "program_structure"
+name = "circomspect-program-structure"
 version = "2.0.1"
 authors = ["hermeGarcia <hermegarcianavarro@gmail.com>"]
 edition = "2018"
@@ -7,7 +7,7 @@ edition = "2018"
 [dependencies]
 anyhow = "1.0"
 atty = "0.2.14"
-circom_algebra = { version = "2.0.0", path = "../circom_algebra" }
+circom_algebra = { package = "circomspect-circom-algebra", version = "2.0.0", path = "../circom_algebra" }
 codespan = "0.9.0"
 codespan-reporting = "0.9.0"
 log = "0.4"

@@ -152,7 +152,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
-name = "circom_algebra"
+name = "circomspect"
+version = "0.5.1"
+dependencies = [
+ "anyhow",
+ "atty",
+ "circomspect-parser",
+ "circomspect-program-analysis",
+ "circomspect-program-structure",
+ "clap",
+ "log",
+ "pretty_env_logger",
+ "serde_json",
+ "termcolor",
+]
+
+[[package]]
+name = "circomspect-circom-algebra"
 version = "2.0.0"
 dependencies = [
  "num-bigint-dig",
@@ -160,19 +176,61 @@ dependencies = [
 ]
 
 [[package]]
-name = "circomspect"
+name = "circomspect-parser"
+version = "2.0.1"
+dependencies = [
+ "circomspect-program-structure",
+ "lalrpop",
+ "lalrpop-util",
+ "log",
+ "num-bigint-dig",
+ "num-traits",
+ "regex",
+ "rustc-hex",
+ "serde",
+ "serde_derive",
+]
+
+[[package]]
+name = "circomspect-program-analysis"
 version = "0.5.1"
 dependencies = [
  "anyhow",
- "atty",
- "clap",
+ "circomspect-parser",
+ "circomspect-program-structure",
  "log",
- "parser",
- "pretty_env_logger",
- "program_analysis",
- "program_structure",
+ "num-bigint-dig",
+ "num-traits",
+]
+
+[[package]]
+name = "circomspect-program-structure"
+version = "2.0.1"
+dependencies = [
+ "anyhow",
+ "atty",
+ "circomspect-circom-algebra",
+ "codespan",
+ "codespan-reporting",
+ "log",
+ "num-bigint-dig",
+ "num-traits",
+ "proptest",
+ "regex",
+ "rustc-hex",
+ "serde",
+ "serde-sarif",
+ "serde_derive",
  "serde_json",
- "termcolor",
+ "thiserror",
+]
+
+[[package]]
+name = "circomspect-program-structure-tests"
+version = "0.5.1"
+dependencies = [
+ "circomspect-parser",
+ "circomspect-program-structure",
 ]
 
 [[package]]
@@ -673,22 +731,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9ff7415e9ae3fff1225851df9e0d9e4e5479f947619774677a63572e55e80eff"
 
 [[package]]
-name = "parser"
-version = "2.0.1"
-dependencies = [
- "lalrpop",
- "lalrpop-util",
- "log",
- "num-bigint-dig",
- "num-traits",
- "program_structure",
- "regex",
- "rustc-hex",
- "serde",
- "serde_derive",
-]
-
-[[package]]
 name = "petgraph"
 version = "0.4.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -780,48 +822,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0a2ca2c61bc9f3d74d2886294ab7b9853abd9c1ad903a3ac7815c58989bb7bab"
 dependencies = [
  "unicode-ident",
-]
-
-[[package]]
-name = "program_analysis"
-version = "0.5.1"
-dependencies = [
- "anyhow",
- "log",
- "num-bigint-dig",
- "num-traits",
- "parser",
- "program_structure",
-]
-
-[[package]]
-name = "program_structure"
-version = "2.0.1"
-dependencies = [
- "anyhow",
- "atty",
- "circom_algebra",
- "codespan",
- "codespan-reporting",
- "log",
- "num-bigint-dig",
- "num-traits",
- "proptest",
- "regex",
- "rustc-hex",
- "serde",
- "serde-sarif",
- "serde_derive",
- "serde_json",
- "thiserror",
-]
-
-[[package]]
-name = "program_structure_tests"
-version = "0.5.1"
-dependencies = [
- "parser",
- "program_structure",
 ]
 
 [[package]]
