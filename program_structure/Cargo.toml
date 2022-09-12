@@ -1,8 +1,11 @@
 [package]
 name = "circomspect-program-structure"
 version = "2.0.1"
-authors = ["hermeGarcia <hermegarcianavarro@gmail.com>"]
 edition = "2018"
+license = "LGPL-3.0-only"
+description = "Support crate for the Circomspect static analyzer"
+repository = "https://github.com/trailofbits/circomspect"
+authors = ["hermeGarcia <hermegarcianavarro@gmail.com>", "Fredrik Dahlgren <fredrik.dahlgren@trailofbits.com>"]
 
 [dependencies]
 anyhow = "1.0"

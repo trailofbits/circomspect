@@ -2,6 +2,10 @@
 name = "circomspect-program-analysis"
 version = "0.5.1"
 edition = "2021"
+license = "LGPL-3.0-only"
+authors = ["Trail of Bits"]
+description = "Support crate for the Circomspect static analyzer"
+repository = "https://github.com/trailofbits/circomspect"
 
 [dependencies]
 anyhow = "1.0"
