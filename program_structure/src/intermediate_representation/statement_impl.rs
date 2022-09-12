@@ -227,6 +227,7 @@ impl VariableMeta for Statement {
         let mut components_written = VariableUses::new();
 
         use Statement::*;
+        use Expression::*;
         match self {
             Declaration { dimensions, .. } => {
                 for size in dimensions {
@@ -241,24 +242,29 @@ impl VariableMeta for Statement {
                 locals_read.extend(rhe.locals_read().clone());
                 signals_read.extend(rhe.signals_read().clone());
                 components_read.extend(rhe.components_read().clone());
+
+                let access = match rhe {
+                    Update { access, .. } => access.clone(),
+                    _ => Vec::new(),
+                };
                 match meta.type_knowledge().variable_type() {
                     Some(VariableType::Local) => {
                         trace!("adding `{var:?}` to local variables written");
-                        locals_written.insert(VariableUse::new(meta, var, &Vec::new()));
+                        locals_written.insert(VariableUse::new(meta, var, &access));
                     }
                     Some(VariableType::Signal(_)) => {
                         trace!("adding `{var:?}` to signals written");
-                        signals_written.insert(VariableUse::new(meta, var, &Vec::new()));
+                        signals_written.insert(VariableUse::new(meta, var, &access));
                         if matches!(op, AssignOp::AssignConstraintSignal) {
                             // If this is a signal constraint assignment, we
                             // consider the assigned signal to be read as well.
                             trace!("adding `{var:?}` to signals read");
-                            signals_read.insert(VariableUse::new(meta, var, &Vec::new()));
+                            signals_read.insert(VariableUse::new(meta, var, &access));
                         }
                     }
                     Some(VariableType::Component) => {
                         trace!("adding `{var:?}` to components written");
-                        components_written.insert(VariableUse::new(meta, var, &Vec::new()));
+                        components_written.insert(VariableUse::new(meta, var, &access));
                     }
                     None => {
                         trace!("variable `{var:?}` of unknown type written");
