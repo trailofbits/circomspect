@@ -1,6 +1,6 @@
 [package]
 name = "circomspect-program-analysis"
-version = "0.5.1"
+version = "0.5.2"
 edition = "2021"
 license = "LGPL-3.0-only"
 authors = ["Trail of Bits"]
@@ -12,9 +12,9 @@ anyhow = "1.0"
 log = "0.4"
 num-bigint-dig = "0.6.0"
 num-traits = "0.2.6"
-parser = { package = "circomspect-parser", version = "2.0.1", path = "../parser" }
+parser = { package = "circomspect-parser", version = "2.0.2", path = "../parser" }
 program_structure = { package = "circomspect-program-structure", version = "2.0.2", path = "../program_structure" }
 
 [dev-dependencies]
-parser = { package = "circomspect-parser", version = "2.0.1", path = "../parser" }
+parser = { package = "circomspect-parser", version = "2.0.2", path = "../parser" }
 program_structure = { package = "circomspect-program-structure", version = "2.0.2", path = "../program_structure" }
