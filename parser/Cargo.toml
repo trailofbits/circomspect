@@ -1,9 +1,12 @@
 [package]
 name = "circomspect-parser"
 version = "2.0.1"
-authors = ["Hermenegildo <hermegar@ucm.es>"]
 edition = "2018"
 build = "build.rs"
+license = "LGPL-3.0-only"
+description = "Support crate for the Circomspect static analyzer"
+repository = "https://github.com/trailofbits/circomspect"
+authors = ["Hermenegildo <hermegar@ucm.es>", "Fredrik Dahlgren <fredrik.dahlgren@trailofbits.com>"]
 
 [build-dependencies]
 rustc-hex = "2.0.1"
