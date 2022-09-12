@@ -163,7 +163,9 @@ fn main() -> ExitCode {
         let mut writer = SarifWriter::new(&sarif_file)
             .add_filter(move |report: &Report| filter_by_id(report, &allow_list))
             .add_filter(move |report: &Report| filter_by_level(report, &output_level));
-        writer.write(&reports, &file_library);
+        if writer.write(&reports, &file_library) > 0 {
+            log_message(&format!("Result written to `{}`.", sarif_file.display()));
+        }
     }
     // Use the exit code to indicate if any issues were found.
     match writer.written() {

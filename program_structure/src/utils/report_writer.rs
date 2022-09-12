@@ -115,11 +115,16 @@ impl ReportWriter for SarifWriter {
     fn write(&mut self, reports: &ReportCollection, file_library: &FileLibrary) -> usize {
         let reports = self.filter(reports);
         match self.serialize_reports(&reports, file_library) {
-            Ok(()) => info!("reports written to `{}`", self.sarif_file.display()),
-            Err(_) => warn!("failed to write reports to `{}`", self.sarif_file.display()),
+            Ok(()) => {
+                info!("reports written to `{}`", self.sarif_file.display());
+                self.written += reports.len();
+                reports.len()
+            }
+            Err(_) => {
+                warn!("failed to write reports to `{}`", self.sarif_file.display());
+                0
+            }
         }
-        self.written += reports.len();
-        reports.len()
     }
 
     fn written(&self) -> usize {
