@@ -17,6 +17,6 @@ log = "0.4"
 parser = { package = "circomspect-parser", version = "2.0.1", path = "../parser" }
 pretty_env_logger = "0.4"
 program_analysis = { package = "circomspect-program-analysis", version = "0.5.1", path = "../program_analysis" }
-program_structure = { package = "circomspect-program-structure", version = "2.0.1", path = "../program_structure" }
+program_structure = { package = "circomspect-program-structure", version = "2.0.2", path = "../program_structure" }
 serde_json = "1.0.81"
 termcolor = "1.1.3"

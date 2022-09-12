@@ -1,6 +1,6 @@
 [package]
 name = "circomspect-program-structure"
-version = "2.0.1"
+version = "2.0.2"
 edition = "2018"
 license = "LGPL-3.0-only"
 description = "Support crate for the Circomspect static analyzer"

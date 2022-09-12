@@ -15,7 +15,7 @@ num-bigint-dig = "0.6.0"
 num-traits = "0.2.6"
 
 [dependencies]
-program_structure = { package = "circomspect-program-structure", version = "2.0.1", path = "../program_structure" }
+program_structure = { package = "circomspect-program-structure", version = "2.0.2", path = "../program_structure" }
 lalrpop = { version = "0.18.1", features = ["lexer"] }
 lalrpop-util = "0.18.1"
 log = "0.4"
@@ -27,4 +27,4 @@ serde = "1.0.82"
 serde_derive = "1.0.91"
 
 [dev-dependencies]
-program_structure = { package = "circomspect-program-structure", version = "2.0.1", path = "../program_structure" }
+program_structure = { package = "circomspect-program-structure", version = "2.0.2", path = "../program_structure" }
