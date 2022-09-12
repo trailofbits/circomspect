@@ -1,8 +1,8 @@
 [package]
 name = "program_structure_tests"
-version = "0.1.0"
+version = "0.5.1"
 edition = "2021"
 
 [dependencies]
-parser = { path = "../parser" }
-program_structure = { path = "../program_structure"}
+parser = { version = "2.0.1", path = "../parser" }
+program_structure = { version = "2.0.1", path = "../program_structure"}

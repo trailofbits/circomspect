@@ -161,7 +161,7 @@ dependencies = [
 
 [[package]]
 name = "circomspect"
-version = "0.4.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "atty",
@@ -784,7 +784,7 @@ dependencies = [
 
 [[package]]
 name = "program_analysis"
-version = "0.1.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "log",
@@ -818,7 +818,7 @@ dependencies = [
 
 [[package]]
 name = "program_structure_tests"
-version = "0.1.0"
+version = "0.5.1"
 dependencies = [
  "parser",
  "program_structure",
