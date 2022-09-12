@@ -1,9 +1,10 @@
 [package]
 name = "circomspect"
-version = "0.5.1"
+version = "0.5.2"
 edition = "2021"
 license = "LGPL-3.0-only"
 authors = ["Trail of Bits"]
+readme = "../README.md"
 description = "A static analyzer and linter for the Circom zero-knowledge DSL"
 repository = "https://github.com/trailofbits/circomspect"
 keywords = ["cryptography", "static-analysis", "zero-knowledge", "circom"]
