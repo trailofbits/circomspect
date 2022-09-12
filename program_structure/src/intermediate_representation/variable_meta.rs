@@ -1,3 +1,4 @@
+use std::fmt;
 use std::collections::HashSet;
 
 use super::ir::{AccessType, Meta, VariableName};
@@ -25,6 +26,16 @@ impl VariableUse {
 
     pub fn access(&self) -> &Vec<AccessType> {
         &self.access
+    }
+}
+
+impl fmt::Display for VariableUse {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.name)?;
+        for access in &self.access {
+            write!(f, "{}", access)?;
+        }
+        Ok(())
     }
 }
 

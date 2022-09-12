@@ -175,7 +175,7 @@ impl Report {
         let mut notes = self.notes().clone();
         if verbose {
             // Add report code and note on `--allow ID`.
-            notes.push(format!("To ignore this type of result, use `--allow {}`", self.id()));
+            notes.push(format!("To ignore this type of result, use `--allow {}`.", self.id()));
             diagnostic.with_code(self.id()).with_notes(notes)
         } else {
             diagnostic.with_notes(notes)

@@ -2,7 +2,7 @@ use log::debug;
 use std::fmt::Write;
 use std::collections::{HashMap, HashSet};
 
-use program_structure::cfg::Cfg;
+use program_structure::cfg::{Cfg, DefinitionType};
 use program_structure::report_code::ReportCode;
 use program_structure::report::{Report, ReportCollection};
 use program_structure::file_definition::{FileID, FileLocation};
@@ -14,9 +14,7 @@ use crate::constraint_analysis::run_constraint_analysis;
 use crate::taint_analysis::run_taint_analysis;
 
 pub struct UnusedVariableWarning {
-    name: String,
-    file_id: Option<FileID>,
-    file_location: FileLocation,
+    var: VariableUse,
 }
 
 impl UnusedVariableWarning {
@@ -24,22 +22,22 @@ impl UnusedVariableWarning {
         let mut report = Report::warning(
             format!(
                 "The variable `{}` is assigned a value, but this value is never read.",
-                self.name
+                self.var
             ),
             ReportCode::UnusedVariableValue,
         );
-        if let Some(file_id) = self.file_id {
+        if let Some(file_id) = self.var.meta().file_id() {
             report.add_primary(
-                self.file_location,
+                self.var.meta().file_location(),
                 file_id,
-                "The value assigned here is never read.".to_string(),
+                format!("The value assigned to `{}` here is never read.", self.var),
             );
         }
         report
     }
 }
 pub struct UnconstrainedSignalWarning {
-    name: String,
+    signal_name: String,
     dimensions: Vec<Expression>,
     file_id: Option<FileID>,
     file_location: FileLocation,
@@ -49,7 +47,7 @@ impl UnconstrainedSignalWarning {
     pub fn into_report(self) -> Report {
         if self.dimensions.is_empty() {
             let mut report = Report::warning(
-                format!("The signal `{}` is not constrained by the template.", self.name),
+                format!("The signal `{}` is not constrained by the template.", self.signal_name),
                 ReportCode::UnconstrainedSignal,
             );
             if let Some(file_id) = self.file_id {
@@ -64,7 +62,7 @@ impl UnconstrainedSignalWarning {
             let mut report = Report::warning(
                 format!(
                     "The signals `{}{}` are not constrained by the template.",
-                    self.name,
+                    self.signal_name,
                     dimensions_to_string(&self.dimensions)
                 ),
                 ReportCode::UnconstrainedSignal,
@@ -82,7 +80,7 @@ impl UnconstrainedSignalWarning {
 }
 
 pub struct UnusedSignalWarning {
-    name: String,
+    signal_name: String,
     dimensions: Vec<Expression>,
     file_id: Option<FileID>,
     file_location: FileLocation,
@@ -92,7 +90,7 @@ impl UnusedSignalWarning {
     pub fn into_report(self) -> Report {
         if self.dimensions.is_empty() {
             let mut report = Report::warning(
-                format!("The signal `{}` is not used by the template.", self.name),
+                format!("The signal `{}` is not used by the template.", self.signal_name),
                 ReportCode::UnusedVariableValue,
             );
             if let Some(file_id) = self.file_id {
@@ -107,7 +105,7 @@ impl UnusedSignalWarning {
             let mut report = Report::warning(
                 format!(
                     "The signals `{}{}` are not used by the template.",
-                    self.name,
+                    self.signal_name,
                     dimensions_to_string(&self.dimensions)
                 ),
                 ReportCode::UnusedVariableValue,
@@ -125,25 +123,24 @@ impl UnusedSignalWarning {
 }
 
 pub struct UnusedParameterWarning {
-    function_name: String,
-    variable_name: String,
-    file_id: Option<FileID>,
-    file_location: FileLocation,
+    param: VariableUse,
+    cfg_name: String,
 }
 
 impl UnusedParameterWarning {
     pub fn into_report(self) -> Report {
         let mut report = Report::warning(
-            format!("The parameter `{}` is never read.", self.variable_name),
+            format!("The parameter `{}` is never read.", self.param.name()),
             ReportCode::UnusedParameterValue,
         );
-        if let Some(file_id) = self.file_id {
+        if let Some(file_id) = self.param.meta().file_id() {
             report.add_primary(
-                self.file_location,
+                self.param.meta().file_location(),
                 file_id,
                 format!(
                     "The parameter `{}` is never used in `{}`.",
-                    self.variable_name, self.function_name
+                    self.param.name(),
+                    self.cfg_name
                 ),
             );
         }
@@ -152,52 +149,69 @@ impl UnusedParameterWarning {
 }
 
 pub struct VariableWithoutSideEffectsWarning {
-    name: String,
-    file_id: Option<FileID>,
-    file_location: FileLocation,
+    var: VariableUse,
+    cfg_type: DefinitionType,
 }
 
 impl VariableWithoutSideEffectsWarning {
     pub fn into_report(self) -> Report {
-        let mut report = Report::warning(
-            format!(
-                "The value assigned to `{}` is not used in witness or constraint generation.",
-                self.name
-            ),
-            ReportCode::VariableWithoutSideEffect,
-        );
-        if let Some(file_id) = self.file_id {
-            report.add_primary(
-                self.file_location,
-                file_id,
-                format!("The value assigned to `{}` here does not influence witness or constraint generation.", self.name),
+        let (message, primary) = if matches!(self.cfg_type, DefinitionType::Function) {
+            let message = format!(
+                "The value assigned to `{}` is not used to compute the return value.",
+                self.var
             );
+            let primary = format!(
+                "The value assigned to `{}` here does not influence the return value.",
+                self.var
+            );
+            (message, primary)
+        } else {
+            let message = format!(
+                "The value assigned to `{}` is not used in witness or constraint generation.",
+                self.var
+            );
+            let primary = format!("The value assigned to `{}` here does not influence witness or constraint generation.", self.var);
+            (message, primary)
+        };
+        let mut report = Report::warning(message, ReportCode::VariableWithoutSideEffect);
+        if let Some(file_id) = self.var.meta().file_id() {
+            report.add_primary(self.var.meta().file_location(), file_id, primary);
         }
         report
     }
 }
 
 pub struct ParamWithoutSideEffectsWarning {
-    name: String,
-    file_id: Option<FileID>,
-    file_location: FileLocation,
+    param: VariableUse,
+    cfg_type: DefinitionType,
 }
 
 impl ParamWithoutSideEffectsWarning {
     pub fn into_report(self) -> Report {
-        let mut report = Report::warning(
-            format!(
-                "The parameter `{}` is not used in witness or constraint generation.",
-                self.name
-            ),
-            ReportCode::VariableWithoutSideEffect,
-        );
-        if let Some(file_id) = self.file_id {
-            report.add_primary(
-                self.file_location,
-                file_id,
-                format!("The value of the parameter `{}` does not influence witness or constraint generation.", self.name),
+        let (message, primary) = if matches!(self.cfg_type, DefinitionType::Function) {
+            let message = format!(
+                "The parameter `{}` is not used to compute the return value of the function.",
+                self.param
             );
+            let primary = format!(
+                "The parameter `{}` does not influence the return value and could be removed.",
+                self.param
+            );
+            (message, primary)
+        } else {
+            let message = format!(
+                "The parameter `{}` is not used in witness or constraint generation.",
+                self.param
+            );
+            let primary = format!(
+                "The parameter `{}` does not influence witness or constraint generation.",
+                self.param
+            );
+            (message, primary)
+        };
+        let mut report = Report::warning(message, ReportCode::VariableWithoutSideEffect);
+        if let Some(file_id) = self.param.meta().file_id() {
+            report.add_primary(self.param.meta().file_location(), file_id, primary);
         }
         report
     }
@@ -315,7 +329,7 @@ pub fn run_side_effect_analysis(cfg: &Cfg) -> ReportCollection {
         if !variables_read.contains(source.name()) {
             // If the variable is unread, the corresponding value is unused.
             if cfg.parameters().contains(source.name()) {
-                reports.push(build_unused_param(cfg.name(), source))
+                reports.push(build_unused_param(source, cfg.name()))
             } else {
                 reports.push(build_unused_variable(source));
             }
@@ -323,9 +337,9 @@ pub fn run_side_effect_analysis(cfg: &Cfg) -> ReportCollection {
         } else if !taint_analysis.taints_any(source.name(), &sinks) {
             // If the variable does not flow into any of the sinks, it is side-effect free.
             if cfg.parameters().contains(source.name()) {
-                reports.push(build_param_without_side_effect(source));
+                reports.push(build_param_without_side_effect(source, cfg.definition_type()));
             } else {
-                reports.push(build_variable_without_side_effect(source));
+                reports.push(build_variable_without_side_effect(source, cfg.definition_type()));
             }
             reported_vars.insert(source.name().to_string());
         }
@@ -348,27 +362,17 @@ pub fn run_side_effect_analysis(cfg: &Cfg) -> ReportCollection {
 }
 
 fn build_unused_variable(definition: &VariableUse) -> Report {
-    UnusedVariableWarning {
-        name: definition.name().to_string(),
-        file_id: definition.meta().file_id(),
-        file_location: definition.meta().file_location(),
-    }
-    .into_report()
+    UnusedVariableWarning { var: definition.clone() }.into_report()
 }
 
-fn build_unused_param(function_name: &str, definition: &VariableUse) -> Report {
-    UnusedParameterWarning {
-        function_name: function_name.to_string(),
-        variable_name: definition.name().to_string(),
-        file_id: definition.meta().file_id(),
-        file_location: definition.meta().file_location(),
-    }
-    .into_report()
+fn build_unused_param(definition: &VariableUse, cfg_name: &str) -> Report {
+    UnusedParameterWarning { param: definition.clone(), cfg_name: cfg_name.to_string() }
+        .into_report()
 }
 
 fn build_unused_signal(declaration: &Declaration) -> Report {
     UnusedSignalWarning {
-        name: declaration.variable_name().to_string(),
+        signal_name: declaration.variable_name().to_string(),
         dimensions: declaration.dimensions().clone(),
         file_id: declaration.file_id(),
         file_location: declaration.file_location(),
@@ -378,7 +382,7 @@ fn build_unused_signal(declaration: &Declaration) -> Report {
 
 fn build_unconstrained_signal(declaration: &Declaration) -> Report {
     UnconstrainedSignalWarning {
-        name: declaration.variable_name().to_string(),
+        signal_name: declaration.variable_name().to_string(),
         dimensions: declaration.dimensions().clone(),
         file_id: declaration.file_id(),
         file_location: declaration.file_location(),
@@ -386,22 +390,17 @@ fn build_unconstrained_signal(declaration: &Declaration) -> Report {
     .into_report()
 }
 
-fn build_variable_without_side_effect(definition: &VariableUse) -> Report {
-    VariableWithoutSideEffectsWarning {
-        name: definition.name().to_string(),
-        file_id: definition.meta().file_id(),
-        file_location: definition.meta().file_location(),
-    }
-    .into_report()
+fn build_variable_without_side_effect(
+    definition: &VariableUse,
+    cfg_type: &DefinitionType,
+) -> Report {
+    VariableWithoutSideEffectsWarning { var: definition.clone(), cfg_type: cfg_type.clone() }
+        .into_report()
 }
 
-fn build_param_without_side_effect(definition: &VariableUse) -> Report {
-    ParamWithoutSideEffectsWarning {
-        name: definition.name().to_string(),
-        file_id: definition.meta().file_id(),
-        file_location: definition.meta().file_location(),
-    }
-    .into_report()
+fn build_param_without_side_effect(definition: &VariableUse, cfg_type: &DefinitionType) -> Report {
+    ParamWithoutSideEffectsWarning { param: definition.clone(), cfg_type: cfg_type.clone() }
+        .into_report()
 }
 
 fn dimensions_to_string(dimensions: &[Expression]) -> String {
