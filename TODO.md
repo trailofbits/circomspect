@@ -13,8 +13,8 @@
           - [x] Implement/update `is_constant` and `value` on `Expression`.
       - [x] Dead code analysis
       - [ ] Value-range analysis (simple overflow detection)
-      - [ ] Intraprocedural data flow
-      - [ ] Unconstrained signals (simple)
+      - [x] Intraprocedural data flow
+      - [x] Unconstrained signals (simple)
   - [ ] Implement emulation.
       - [ ] Unconstrained signals (specific)
   - [ ] Implement symbolic execution.
