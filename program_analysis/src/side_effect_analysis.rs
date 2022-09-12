@@ -319,7 +319,7 @@ pub fn run_side_effect_analysis(cfg: &Cfg) -> ReportCollection {
             } else {
                 reports.push(build_unused_variable(source));
             }
-            reported_vars.insert(source.name());
+            reported_vars.insert(source.name().to_string());
         } else if !taint_analysis.taints_any(source.name(), &sinks) {
             // If the variable does not flow into any of the sinks, it is side-effect free.
             if cfg.parameters().contains(source.name()) {
@@ -327,13 +327,13 @@ pub fn run_side_effect_analysis(cfg: &Cfg) -> ReportCollection {
             } else {
                 reports.push(build_variable_without_side_effect(source));
             }
-            reported_vars.insert(source.name());
+            reported_vars.insert(source.name().to_string());
         }
     }
     // Generate reports for unused or unconstrained signals.
     for (source, declaration) in signal_decls {
-        // Don't report on variables twice.
-        if reported_vars.contains(source) {
+        // Don't generate multiple reports for the same variable.
+        if reported_vars.contains(&source.to_string()) {
             continue;
         }
         if !variables_read.contains(source) {
