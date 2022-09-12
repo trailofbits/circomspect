@@ -29,14 +29,14 @@ impl NonStrictBinaryConversionWarning {
                     );
                 }
                 report.add_note(
-                    "Consider using `Num2Bits_strict` if the input may be 254 bits or larger."
+                    "Consider using `Num2Bits_strict` if the input size may be >= than the prime size."
                         .to_string(),
                 );
                 report
             }
             NonStrictBinaryConversionWarning::Bits2Num { file_id, location } => {
                 let mut report = Report::warning(
-                    "Using `Bits2Num` to convert arrays to field elements may lead to aliasing issues".to_string(),
+                    "Using `Bits2Num` to convert arrays to field elements may lead to aliasing issues.".to_string(),
                     ReportCode::NonStrictBinaryConversion,
                 );
                 if let Some(file_id) = file_id {
@@ -47,7 +47,7 @@ impl NonStrictBinaryConversionWarning {
                     );
                 }
                 report.add_note(
-                    "Consider using `Bits2Num_strict` if the input may be 254 bits or larger"
+                    "Consider using `Bits2Num_strict` if the input size may be >= than the prime size."
                         .to_string(),
                 );
                 report
