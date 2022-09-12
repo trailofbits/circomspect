@@ -50,12 +50,12 @@ An assigned value which does not contribute either directly or indirectly to a c
 
 ```js
   template BinSum(n, ops) {
-      signal input in[ops][n];
-      signal output out[nout];
-
+      var nout = nbits((2 ** n - 1) * ops);
       var lin = 0;
       var lout = 0;
-      var nout = nbits((2 ** n - 1) * ops);
+
+      signal input in[ops][n];
+      signal output out[nout];
 
       var e2 = 1;
       for (var k = 0; k < n; k++) {
