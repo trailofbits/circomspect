@@ -6,3 +6,6 @@ members = [
   "program_structure",
   "program_structure_tests"
 ]
+default-members = [
+  "cli"
+]
