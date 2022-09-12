@@ -5,16 +5,21 @@ Circomspect is a static analyzer and linter for the [Circom](https://github.com/
 Circomspect currently implements a number of analysis passes which can identify potential issues in Circom circuits. It is our goal to continue to add new analysis passes to be able to detect more issues in the future.
 
 <p align="center">
-  <img src="https://github.com/trailofbits/circomspect/blob/main/doc/circomspect.png" alt="Output example image" width="700"/>
+  <img src="https://github.com/trailofbits/circomspect/blob/main/doc/circomspect.png" alt="Output example image" width="800"/>
 </p>
 
-## Building Circomspect
+## Installing Circomspect
 
-To build Circomspect, simply clone the repository and build the project by invoking `cargo build` in the project root.
+Circomspect is available on [crates.io](https://crates.io/circomspect) and can be installed by invoking
 
 ```sh
-  git clone https://github.com/trailofbits/circomspect
-  cd circomspect
+  cargo install circomspect
+```
+
+To build Circomspect from source, simply clone the repository and build the
+project by running `cargo build` in the project root. To install from source, use
+
+```sh
   cargo install --path cli
 ```
 
@@ -27,8 +32,9 @@ To run Circomspect on a file or directory, simple run
   circomspect path/to/circuit
 ```
 
-To get more (or less) verbose output you can set the output level using the `--output-level` flag. To output the results to a Sarif file (which can be read by the [VSCode Sarif Viewer](https://marketplace.visualstudio.com/items?itemName=MS-SarifVSCode.sarif-viewer)), use the flag `--sarif-file`.
+By default, Circomspect outputs warnings and errors to stdout. To see informational results as well you can set the output level using the `--level` option. To ignore certain types of results, you can use the `--allow` option together with the corresponding result ID. (The result ID can be obtained by passing the `--verbose` flag to Circomspect.)
 
+To output the results to a Sarif file (which can be read by the [VSCode Sarif Viewer](https://marketplace.visualstudio.com/items?itemName=MS-SarifVSCode.sarif-viewer)), use the option `--sarif-file`.
 
 <img src="https://github.com/trailofbits/circomspect/blob/main/doc/vscode.png" alt="VSCode example image" width="1200" />
 
