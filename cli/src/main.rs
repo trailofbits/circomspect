@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::{CommandFactory, Parser};
 use parser::ParseResult;
+use program_structure::constants::Curve;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -15,8 +16,9 @@ use program_structure::function_data::FunctionInfo;
 use program_structure::report_writer::{StdoutWriter, ReportWriter, SarifWriter};
 use program_structure::template_data::TemplateInfo;
 
-const COMPILER_VERSION: &str = "2.0.3";
+const COMPILER_VERSION: &str = "2.0.8";
 const DEFAULT_LEVEL: &str = "WARNING";
+const DEFAULT_CURVE: &str = "BN128";
 
 #[derive(Parser, Debug)]
 /// A static analyzer and linter for Circom programs.
@@ -40,10 +42,18 @@ struct Cli {
     /// Enable verbose output
     #[clap(short = 'v', long = "verbose")]
     verbose: bool,
+
+    /// Set curve (BN128, BLS12_381, or GOLDILOCKS)
+    #[clap(short = 'c', long = "curve", name = "NAME", default_value = DEFAULT_CURVE)]
+    curve: Curve,
 }
 
-fn generate_cfg<Ast: IntoCfg>(ast: Ast, reports: &mut ReportCollection) -> Result<Cfg, Report> {
-    ast.into_cfg(reports).map_err(Report::from)?.into_ssa().map_err(Report::from)
+fn generate_cfg<Ast: IntoCfg>(
+    ast: Ast,
+    curve: &Curve,
+    reports: &mut ReportCollection,
+) -> Result<Cfg, Report> {
+    ast.into_cfg(curve, reports).map_err(Report::from)?.into_ssa().map_err(Report::from)
 }
 
 fn analyze_cfg(cfg: &Cfg, reports: &mut ReportCollection) {
@@ -52,8 +62,8 @@ fn analyze_cfg(cfg: &Cfg, reports: &mut ReportCollection) {
     }
 }
 
-fn analyze_ast<Ast: IntoCfg>(ast: Ast, reports: &mut ReportCollection) {
-    match generate_cfg(ast, reports) {
+fn analyze_ast<Ast: IntoCfg>(ast: Ast, curve: &Curve, reports: &mut ReportCollection) {
+    match generate_cfg(ast, curve, reports) {
         Ok(cfg) => {
             analyze_cfg(&cfg, reports);
         }
@@ -67,6 +77,7 @@ fn analyze_definitions(
     functions: &FunctionInfo,
     templates: &TemplateInfo,
     file_library: &FileLibrary,
+    curve: &Curve,
     writer: &mut StdoutWriter,
 ) -> ReportCollection {
     let mut all_reports = ReportCollection::new();
@@ -75,7 +86,7 @@ fn analyze_definitions(
     for (name, function) in functions {
         log_message(&format!("analyzing function '{name}'"));
         let mut new_reports = ReportCollection::new();
-        analyze_ast(function, &mut new_reports);
+        analyze_ast(function, curve, &mut new_reports);
         writer.write(&new_reports, file_library);
         all_reports.extend(new_reports);
     }
@@ -83,7 +94,7 @@ fn analyze_definitions(
     for (name, template) in templates {
         log_message(&format!("analyzing template '{name}'"));
         let mut new_reports = ReportCollection::new();
-        analyze_ast(template, &mut new_reports);
+        analyze_ast(template, curve, &mut new_reports);
         writer.write(&new_reports, file_library);
         all_reports.extend(new_reports);
     }
@@ -139,6 +150,7 @@ fn main() -> ExitCode {
                 &program.functions,
                 &program.templates,
                 &program.file_library,
+                &options.curve,
                 &mut writer,
             ));
             program.file_library
@@ -151,6 +163,7 @@ fn main() -> ExitCode {
                 &library.functions,
                 &library.templates,
                 &library.file_library,
+                &options.curve,
                 &mut writer,
             ));
             library.file_library

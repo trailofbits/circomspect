@@ -2,6 +2,7 @@ use std::collections::HashSet;
 
 use parser::parse_definition;
 use program_structure::cfg::{BasicBlock, Cfg, IntoCfg};
+use program_structure::constants::Curve;
 use program_structure::report::ReportCollection;
 use program_structure::ir::variable_meta::VariableMeta;
 use program_structure::ir::{AssignOp, Statement, VariableName};
@@ -150,7 +151,12 @@ fn test_ssa_with_non_unique_variables() {
 fn validate_ssa(src: &str, variables: &[&str]) {
     // 1. Generate CFG and convert to SSA.
     let mut reports = ReportCollection::new();
-    let cfg = parse_definition(src).unwrap().into_cfg(&mut reports).unwrap().into_ssa().unwrap();
+    let cfg = parse_definition(src)
+        .unwrap()
+        .into_cfg(&Curve::default(), &mut reports)
+        .unwrap()
+        .into_ssa()
+        .unwrap();
     assert!(reports.is_empty());
 
     // 2. Check that each variable is assigned at most once.

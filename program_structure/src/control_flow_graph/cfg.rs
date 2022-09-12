@@ -2,6 +2,7 @@ use log::debug;
 use std::collections::HashSet;
 use std::fmt;
 
+use crate::constants::UsefulConstants;
 use crate::file_definition::FileID;
 use crate::ir::declarations::{Declaration, Declarations};
 use crate::ir::degree_meta::{DegreeEnvironment, Degree};
@@ -37,6 +38,7 @@ impl fmt::Display for DefinitionType {
 
 pub struct Cfg {
     name: String,
+    constants: UsefulConstants,
     parameters: Parameters,
     declarations: Declarations,
     basic_blocks: Vec<BasicBlock>,
@@ -47,13 +49,22 @@ pub struct Cfg {
 impl Cfg {
     pub(crate) fn new(
         name: String,
+        constants: UsefulConstants,
         definition_type: DefinitionType,
         parameters: Parameters,
         declarations: Declarations,
         basic_blocks: Vec<BasicBlock>,
         dominator_tree: DominatorTree<BasicBlock>,
     ) -> Cfg {
-        Cfg { name, parameters, declarations, basic_blocks, definition_type, dominator_tree }
+        Cfg {
+            name,
+            constants,
+            parameters,
+            declarations,
+            basic_blocks,
+            definition_type,
+            dominator_tree,
+        }
     }
     /// Returns the entry (first) block of the CFG.
     #[must_use]
@@ -134,6 +145,11 @@ impl Cfg {
     #[must_use]
     pub fn definition_type(&self) -> &DefinitionType {
         &self.definition_type
+    }
+
+    #[must_use]
+    pub fn constants(&self) -> &UsefulConstants {
+        &self.constants
     }
 
     /// Returns the parameter data for the corresponding function or template.
@@ -415,7 +431,7 @@ impl Cfg {
     /// Propagate constant values along the CFG.
     pub(crate) fn propagate_values(&mut self) {
         debug!("propagating constant values for `{}`", self.name());
-        let mut env = ValueEnvironment::new();
+        let mut env = ValueEnvironment::new(&self.constants);
         let mut rerun = true;
         while rerun {
             // Rerun value propagation if a single child node was updated.

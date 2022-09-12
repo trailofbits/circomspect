@@ -36,7 +36,15 @@ impl TemplateLibrary {
                             ),
                         );
                     }
-                    Definition::Template { name, args, arg_location, body, parallel, .. } => {
+                    Definition::Template {
+                        name,
+                        args,
+                        arg_location,
+                        body,
+                        parallel,
+                        is_custom_gate,
+                        ..
+                    } => {
                         templates.insert(
                             name.clone(),
                             TemplateData::new(
@@ -48,6 +56,7 @@ impl TemplateLibrary {
                                 arg_location,
                                 &mut elem_id,
                                 parallel,
+                                is_custom_gate,
                             ),
                         );
                     }

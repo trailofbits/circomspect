@@ -9,6 +9,7 @@ impl Expression {
             | PrefixOp { meta, .. }
             | InlineSwitchOp { meta, .. }
             | Variable { meta, .. }
+            | ParallelOp { meta, .. }
             | Number(meta, ..)
             | Call { meta, .. }
             | ArrayInLine { meta, .. } => meta,
@@ -21,6 +22,7 @@ impl Expression {
             | PrefixOp { meta, .. }
             | InlineSwitchOp { meta, .. }
             | Variable { meta, .. }
+            | ParallelOp { meta, .. }
             | Number(meta, ..)
             | Call { meta, .. }
             | ArrayInLine { meta, .. } => meta,
@@ -61,6 +63,11 @@ impl Expression {
         use Expression::*;
         matches!(self, Call { .. })
     }
+
+    pub fn is_parallel(&self) -> bool {
+        use Expression::*;
+        matches!(self, ParallelOp { .. })
+    }
 }
 
 impl FillMeta for Expression {
@@ -73,6 +80,7 @@ impl FillMeta for Expression {
             Variable { meta, access, .. } => fill_variable(meta, access, file_id, element_id),
             InfixOp { meta, lhe, rhe, .. } => fill_infix(meta, lhe, rhe, file_id, element_id),
             PrefixOp { meta, rhe, .. } => fill_prefix(meta, rhe, file_id, element_id),
+            ParallelOp { meta, rhe, .. } => fill_parallel(meta, rhe, file_id, element_id),
             InlineSwitchOp { meta, cond, if_false, if_true, .. } => {
                 fill_inline_switch_op(meta, cond, if_true, if_false, file_id, element_id)
             }
@@ -147,6 +155,11 @@ fn fill_array_inline(
     }
 }
 
+fn fill_parallel(meta: &mut Meta, rhe: &mut Expression, file_id: usize, element_id: &mut usize) {
+    meta.set_file_id(file_id);
+    rhe.fill(file_id, element_id);
+}
+
 impl Debug for Expression {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         write!(f, "{}", self)
@@ -165,10 +178,11 @@ impl Display for Expression {
                 }
                 Ok(())
             }
-            InfixOp { lhe, infix_op, rhe, .. } => write!(f, "({} {} {})", lhe, infix_op, rhe),
-            PrefixOp { prefix_op, rhe, .. } => write!(f, "{}({})", prefix_op, rhe),
+            ParallelOp { rhe, .. } => write!(f, "parallel {rhe}"),
+            InfixOp { lhe, infix_op, rhe, .. } => write!(f, "({lhe} {infix_op} {rhe})"),
+            PrefixOp { prefix_op, rhe, .. } => write!(f, "{prefix_op}({rhe})"),
             InlineSwitchOp { cond, if_true, if_false, .. } => {
-                write!(f, "({}? {} : {})", cond, if_true, if_false)
+                write!(f, "({cond}? {if_true} : {if_false})")
             }
             Call { id, args, .. } => write!(f, "{}({})", id, vec_to_string(args)),
             ArrayInLine { values, .. } => write!(f, "[{}]", vec_to_string(values)),

@@ -1,4 +1,4 @@
-use crate::ast;
+use crate::ast::{self, LogArgument};
 use crate::report::ReportCollection;
 
 use crate::ir;
@@ -88,9 +88,12 @@ impl TryLift<()> for ast::Statement {
                     rhe: rhe.try_lift((), reports)?,
                 })
             }
-            ast::Statement::LogCall { meta, arg } => Ok(ir::Statement::LogCall {
+            ast::Statement::LogCall { meta, args } => Ok(ir::Statement::LogCall {
                 meta: meta.try_lift((), reports)?,
-                arg: arg.try_lift((), reports)?,
+                args: args
+                    .iter()
+                    .map(|arg| arg.try_lift((), reports))
+                    .collect::<IRResult<Vec<_>>>()?,
             }),
             ast::Statement::Assert { meta, arg } => Ok(ir::Statement::Assert {
                 meta: meta.try_lift((), reports)?,
@@ -172,13 +175,16 @@ impl TryLift<()> for ast::Expression {
                     .map(|arg| arg.try_lift((), reports))
                     .collect::<IRResult<Vec<ir::Expression>>>()?,
             }),
-            ast::Expression::ArrayInLine { meta, values } => Ok(ir::Expression::Array {
+            ast::Expression::ArrayInLine { meta, values } => Ok(ir::Expression::InlineArray {
                 meta: meta.try_lift((), reports)?,
                 values: values
                     .iter()
                     .map(|value| value.try_lift((), reports))
                     .collect::<IRResult<Vec<ir::Expression>>>()?,
             }),
+            // TODO: We currently treat `ParallelOp` as transparent and simply
+            // lift the underlying expression. Should this be added to the IR?
+            ast::Expression::ParallelOp { rhe, .. } => rhe.try_lift((), reports),
         }
     }
 }
@@ -316,6 +322,20 @@ impl TryLift<()> for ast::ExpressionInfixOpcode {
             ast::ExpressionInfixOpcode::BitOr => Ok(ir::ExpressionInfixOpcode::BitOr),
             ast::ExpressionInfixOpcode::BitAnd => Ok(ir::ExpressionInfixOpcode::BitAnd),
             ast::ExpressionInfixOpcode::BitXor => Ok(ir::ExpressionInfixOpcode::BitXor),
+        }
+    }
+}
+
+impl TryLift<()> for LogArgument {
+    type IR = ir::LogArgument;
+    type Error = IRError;
+
+    fn try_lift(&self, _: (), reports: &mut ReportCollection) -> IRResult<Self::IR> {
+        match self {
+            ast::LogArgument::LogStr(message) => Ok(ir::LogArgument::String(message.clone())),
+            ast::LogArgument::LogExp(value) => {
+                Ok(ir::LogArgument::Expr(Box::new(value.try_lift((), reports)?)))
+            }
         }
     }
 }

@@ -155,7 +155,7 @@ pub enum Statement {
     },
     LogCall {
         meta: Meta,
-        arg: Expression,
+        args: Vec<LogArgument>,
     },
     Assert {
         meta: Meta,
@@ -189,7 +189,7 @@ pub enum Expression {
     /// A function call node.
     Call { meta: Meta, name: String, args: Vec<Expression> },
     /// An inline array on the form `[value, ...]`.
-    Array { meta: Meta, values: Vec<Expression> },
+    InlineArray { meta: Meta, values: Vec<Expression> },
     /// An `Access` node represents an array access of the form `a[i]...[k]`.
     Access { meta: Meta, var: VariableName, access: Vec<AccessType> },
     /// Updates of the form `var[i]...[k] = rhe` lift to IR statements of the
@@ -388,4 +388,10 @@ pub enum ExpressionPrefixOpcode {
     Sub,
     BoolNot,
     Complement,
+}
+
+#[derive(Clone)]
+pub enum LogArgument {
+    String(String),
+    Expr(Box<Expression>),
 }

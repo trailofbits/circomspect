@@ -171,6 +171,7 @@ mod tests {
 
     use parser::parse_definition;
     use program_structure::cfg::IntoCfg;
+    use program_structure::constants::Curve;
     use program_structure::report::ReportCollection;
 
     use super::*;
@@ -231,8 +232,12 @@ mod tests {
     fn validate_taint(src: &str, taint_map: &HashMap<&str, HashSet<String>>) {
         // Build CFG.
         let mut reports = ReportCollection::new();
-        let cfg =
-            parse_definition(src).unwrap().into_cfg(&mut reports).unwrap().into_ssa().unwrap();
+        let cfg = parse_definition(src)
+            .unwrap()
+            .into_cfg(&Curve::default(), &mut reports)
+            .unwrap()
+            .into_ssa()
+            .unwrap();
         assert!(reports.is_empty());
 
         let taint_analysis = run_taint_analysis(&cfg);

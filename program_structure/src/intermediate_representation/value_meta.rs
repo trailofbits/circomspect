@@ -2,16 +2,19 @@ use num_bigint::BigInt;
 use std::collections::HashMap;
 use std::fmt;
 
+use crate::constants::UsefulConstants;
+
 use super::ir::VariableName;
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct ValueEnvironment {
+    constants: UsefulConstants,
     reduces_to: HashMap<VariableName, ValueReduction>,
 }
 
 impl ValueEnvironment {
-    pub fn new() -> ValueEnvironment {
-        ValueEnvironment::default()
+    pub fn new(constants: &UsefulConstants) -> ValueEnvironment {
+        ValueEnvironment { constants: constants.clone(), reduces_to: HashMap::new() }
     }
 
     /// Set the value of the given variable. Returns `true` on first update.
@@ -32,6 +35,11 @@ impl ValueEnvironment {
     #[must_use]
     pub fn get_variable(&self, name: &VariableName) -> Option<&ValueReduction> {
         self.reduces_to.get(name)
+    }
+
+    /// Returns the prime used.
+    pub fn prime(&self) -> &BigInt {
+        self.constants.prime()
     }
 }
 

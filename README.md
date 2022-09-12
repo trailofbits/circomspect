@@ -36,6 +36,8 @@ To output the results to a Sarif file (which can be read by the [VSCode Sarif Vi
 
 ![VSCode example image](https://github.com/trailofbits/circomspect/raw/main/doc/vscode.png)
 
+Circomspect supports the same curves that Circom does: BN128, BLS12-381, and Ed448-Goldilocks. If you are using a different curve than the default (BN128) you can set the curve using the command line option `--curve`.
+
 ## Analysis Passes
 
 The project currently implements analysis passes for the following types of issues.
@@ -120,7 +122,7 @@ the prime. If not, there may be multiple correct representations of the input
 which could cause issues, since we typically expect the circuit output to be
 uniquely determined by the input.
 
-For example, Suppose that we create a component `n2b` given by `Num2Bits(254)` and set the input to `1`. Now, both the binary representation of `1` _and_ the representation of `p + 1` will satisfy the circuit, since both are 254-bit numbers. If you cannot restrict the input size below 254 bits you should use the strict versions `Num2Bits_strict` and `Bits2Num_strict` to convert to and from binary representation. Circomspect will generate a warning if it cannot prove (using constant propagation) that the input size passed to `Num2Bits` or `Bits2Num` is less than 254 bits.
+For example, Suppose that we create a component `n2b` given by `Num2Bits(254)` and set the input to `1`. Now, both the binary representation of `1` _and_ the representation of `p + 1` will satisfy the circuit over BN128, since both are 254-bit numbers. If you cannot restrict the input size below the prime size you should use the strict versions `Num2Bits_strict` and `Bits2Num_strict` to convert to and from binary representation. Circomspect will generate a warning if it cannot prove (using constant propagation) that the input size passed to `Num2Bits` or `Bits2Num` is less than the size of the prime in bits.
 
 
 #### Overly complex functions or templates (Warning)

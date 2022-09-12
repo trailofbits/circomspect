@@ -415,7 +415,7 @@ fn dimensions_to_string(dimensions: &[Expression]) -> String {
 #[cfg(test)]
 mod tests {
     use parser::parse_definition;
-    use program_structure::cfg::IntoCfg;
+    use program_structure::{cfg::IntoCfg, constants::Curve};
 
     use super::*;
 
@@ -498,8 +498,12 @@ mod tests {
     fn validate_reports(src: &str, expected_len: usize) {
         // Build CFG.
         let mut reports = ReportCollection::new();
-        let cfg =
-            parse_definition(src).unwrap().into_cfg(&mut reports).unwrap().into_ssa().unwrap();
+        let cfg = parse_definition(src)
+            .unwrap()
+            .into_cfg(&Curve::default(), &mut reports)
+            .unwrap()
+            .into_ssa()
+            .unwrap();
         assert!(reports.is_empty());
 
         // Generate report collection.

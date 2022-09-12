@@ -99,7 +99,7 @@ impl FillMeta for Statement {
             ConstraintEquality { meta, lhe, rhe } => {
                 fill_constraint_equality(meta, lhe, rhe, file_id, element_id)
             }
-            LogCall { meta, arg, .. } => fill_log_call(meta, arg, file_id, element_id),
+            LogCall { meta, args, .. } => fill_log_call(meta, args, file_id, element_id),
             Block { meta, stmts, .. } => fill_block(meta, stmts, file_id, element_id),
             Assert { meta, arg, .. } => fill_assert(meta, arg, file_id, element_id),
         }
@@ -191,9 +191,18 @@ fn fill_constraint_equality(
     rhe.fill(file_id, element_id);
 }
 
-fn fill_log_call(meta: &mut Meta, arg: &mut Expression, file_id: usize, element_id: &mut usize) {
+fn fill_log_call(
+    meta: &mut Meta,
+    args: &mut Vec<LogArgument>,
+    file_id: usize,
+    element_id: &mut usize,
+) {
     meta.set_file_id(file_id);
-    arg.fill(file_id, element_id);
+    for arg in args {
+        if let LogArgument::LogExp(e) = arg {
+            e.fill(file_id, element_id);
+        }
+    }
 }
 
 fn fill_block(meta: &mut Meta, stmts: &mut [Statement], file_id: usize, element_id: &mut usize) {
@@ -244,7 +253,16 @@ impl Display for Statement {
                 }
                 write!(f, " {op} {rhe}")
             }
-            LogCall { arg, .. } => write!(f, "log({arg})"),
+            LogCall { args, .. } => {
+                write!(f, "log(")?;
+                for (index, arg) in args.iter().enumerate() {
+                    if index > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{arg}")?;
+                }
+                write!(f, ")")
+            }
             // TODO: Remove this when switching to IR.
             Block { .. } => Ok(()),
             Assert { arg, .. } => write!(f, "assert({arg})"),
@@ -291,6 +309,16 @@ impl Display for SignalType {
             Input => write!(f, "input"),
             Output => write!(f, "output"),
             Intermediate => write!(f, ""),
+        }
+    }
+}
+
+impl Display for LogArgument {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        use LogArgument::*;
+        match self {
+            LogStr(message) => write!(f, "{message}"),
+            LogExp(value) => write!(f, "{value}"),
         }
     }
 }

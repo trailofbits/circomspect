@@ -4,7 +4,7 @@ use std::convert::{TryFrom, TryInto};
 use super::errors::{CFGError, CFGResult};
 use super::parameters::Parameters;
 
-use crate::ast::{Access, Expression, Meta, Statement};
+use crate::ast::{Access, Expression, Meta, Statement, LogArgument};
 use crate::environment::VarEnvironment;
 use crate::report::{Report, ReportCollection};
 use crate::file_definition::{FileID, FileLocation};
@@ -231,15 +231,20 @@ fn visit_statement(
             }
             visit_expression(rhe, env);
         }
+        LogCall { args, .. } => {
+            use LogArgument::*;
+            for arg in args {
+                if let LogExp(value) = arg {
+                    visit_expression(value, env);
+                }
+            }
+        }
         Return { value, .. } => {
             visit_expression(value, env);
         }
         ConstraintEquality { lhe, rhe, .. } => {
             visit_expression(lhe, env);
             visit_expression(rhe, env);
-        }
-        LogCall { arg, .. } => {
-            visit_expression(arg, env);
         }
         Assert { arg, .. } => {
             visit_expression(arg, env);
@@ -311,6 +316,9 @@ fn visit_expression(expr: &mut Expression, env: &DeclarationEnvironment) {
             for value in values {
                 visit_expression(value, env);
             }
+        }
+        ParallelOp { rhe, .. } => {
+            visit_expression(rhe, env);
         }
     }
 }

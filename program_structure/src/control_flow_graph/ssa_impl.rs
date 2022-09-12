@@ -218,9 +218,17 @@ impl SSAStatement<Config> for Statement {
                 visit_expression(lhe, env)?;
                 visit_expression(rhe, env)
             }
+            LogCall { args, .. } => {
+                use LogArgument::*;
+                for arg in args {
+                    if let Expr(value) = arg {
+                        visit_expression(value, env)?;
+                    }
+                }
+                Ok(())
+            }
             IfThenElse { cond, .. } => visit_expression(cond, env),
             Return { value, .. } => visit_expression(value, env),
-            LogCall { arg, .. } => visit_expression(arg, env),
             Assert { arg, .. } => visit_expression(arg, env),
         };
         // We need to update the node metadata to have a current view of
@@ -343,7 +351,7 @@ fn visit_expression(expr: &mut Expression, env: &mut Environment) -> SSAResult<(
             }
             Ok(())
         }
-        Array { values, .. } => {
+        InlineArray { values, .. } => {
             for value in values {
                 visit_expression(value, env)?;
             }

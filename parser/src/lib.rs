@@ -42,7 +42,7 @@ pub fn parse_files(file_paths: &Vec<PathBuf>, compiler_version: &str) -> ParseRe
         match parse_file(&file_path, &mut file_stack, &mut file_library, &compiler_version) {
             Ok((file_id, program, mut warnings)) => {
                 if let Some(main_component) = program.main_component {
-                    main_components.push((file_id, main_component));
+                    main_components.push((file_id, main_component, program.custom_gates));
                 }
                 definitions.insert(file_id, program.definitions);
                 reports.append(&mut warnings);
@@ -53,9 +53,15 @@ pub fn parse_files(file_paths: &Vec<PathBuf>, compiler_version: &str) -> ParseRe
         }
     }
     match &main_components[..] {
-        [(main_id, main_component)] => {
+        [(main_id, main_component, custom_gates)] => {
             // TODO: This calls FillMeta::fill a second time.
-            match ProgramArchive::new(file_library, *main_id, main_component, &definitions) {
+            match ProgramArchive::new(
+                file_library,
+                *main_id,
+                main_component,
+                &definitions,
+                *custom_gates,
+            ) {
                 Ok(program_archive) => ParseResult::Program(Box::new(program_archive), reports),
                 Err((file_library, mut errors)) => {
                     reports.append(&mut errors);

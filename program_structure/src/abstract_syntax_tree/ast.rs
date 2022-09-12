@@ -89,6 +89,8 @@ impl Meta {
 pub struct AST {
     pub meta: Meta,
     pub compiler_version: Option<Version>,
+    pub custom_gates: bool,
+    pub custom_gates_declared: bool,
     pub includes: Vec<Include>,
     pub definitions: Vec<Definition>,
     pub main_component: Option<MainComponent>,
@@ -97,11 +99,23 @@ impl AST {
     pub fn new(
         meta: Meta,
         compiler_version: Option<Version>,
+        custom_gates: bool,
         includes: Vec<Include>,
         definitions: Vec<Definition>,
         main_component: Option<MainComponent>,
     ) -> AST {
-        AST { meta, compiler_version, includes, definitions, main_component }
+        let custom_gates_declared = definitions.iter().any(|definition| {
+            matches!(definition, Definition::Template { is_custom_gate: true, .. })
+        });
+        AST {
+            meta,
+            compiler_version,
+            custom_gates,
+            custom_gates_declared,
+            includes,
+            definitions,
+            main_component,
+        }
     }
 }
 
@@ -114,6 +128,7 @@ pub enum Definition {
         arg_location: FileLocation,
         body: Statement,
         parallel: bool,
+        is_custom_gate: bool,
     },
     Function {
         meta: Meta,
@@ -130,8 +145,9 @@ pub fn build_template(
     arg_location: FileLocation,
     body: Statement,
     parallel: bool,
+    is_custom_gate: bool,
 ) -> Definition {
-    Definition::Template { meta, name, args, arg_location, body, parallel }
+    Definition::Template { meta, name, args, arg_location, body, parallel, is_custom_gate }
 }
 
 pub fn build_function(
@@ -187,7 +203,7 @@ pub enum Statement {
     },
     LogCall {
         meta: Meta,
-        arg: Expression,
+        args: Vec<LogArgument>,
     },
     Block {
         meta: Meta,
@@ -238,6 +254,10 @@ pub enum Expression {
         cond: Box<Expression>,
         if_true: Box<Expression>,
         if_false: Box<Expression>,
+    },
+    ParallelOp {
+        meta: Meta,
+        rhe: Box<Expression>,
     },
     Variable {
         meta: Meta,
@@ -306,8 +326,21 @@ pub enum ExpressionPrefixOpcode {
     Complement,
 }
 
-// Knowledge buckets
+#[derive(Clone)]
+pub enum LogArgument {
+    LogStr(String),
+    LogExp(Expression),
+}
 
+pub fn build_log_string(acc: String) -> LogArgument {
+    LogArgument::LogStr(acc)
+}
+
+pub fn build_log_expression(expr: Expression) -> LogArgument {
+    LogArgument::LogExp(expr)
+}
+
+// Knowledge buckets
 #[derive(Copy, Clone, PartialOrd, PartialEq, Ord, Eq)]
 pub enum TypeReduction {
     Variable,

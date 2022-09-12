@@ -1,9 +1,9 @@
 [package]
 name = "circomspect-circom-algebra"
 version = "2.0.0"
-authors = ["hermeGarcia <hermegarcianavarro@gmail.com>"]
 edition = "2018"
 license = "LGPL-3.0-only"
+authors = ["hermeGarcia <hermegarcianavarro@gmail.com>"]
 description = "Support crate for the Circomspect static analyzer"
 repository = "https://github.com/trailofbits/circomspect"
 

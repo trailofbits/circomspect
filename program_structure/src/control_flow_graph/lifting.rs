@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use crate::ast;
 use crate::ast::Definition;
 
+use crate::constants::{UsefulConstants, Curve};
 use crate::function_data::FunctionData;
 use crate::ir;
 use crate::ir::declarations::{Declaration, Declarations};
@@ -27,17 +28,20 @@ type Index = usize;
 type IndexSet = HashSet<Index>;
 type BasicBlockVec = NonEmptyVec<BasicBlock>;
 
-/// This is a high level trait which simply wraps the implementation provided by `TryLift`.
+/// This is a high level trait which simply wraps the implementation provided by
+/// `TryLift`. We need to pass the prime to the CFG here, to be able to do value
+/// propagation when converting to SSA.
 pub trait IntoCfg {
-    fn into_cfg(self, reports: &mut ReportCollection) -> CFGResult<Cfg>;
+    fn into_cfg(self, curve: &Curve, reports: &mut ReportCollection) -> CFGResult<Cfg>;
 }
 
 impl<T> IntoCfg for T
 where
-    T: TryLift<(), IR = Cfg, Error = CFGError>,
+    T: TryLift<UsefulConstants, IR = Cfg, Error = CFGError>,
 {
-    fn into_cfg(self, reports: &mut ReportCollection) -> CFGResult<Cfg> {
-        self.try_lift((), reports)
+    fn into_cfg(self, curve: &Curve, reports: &mut ReportCollection) -> CFGResult<Cfg> {
+        let constants = UsefulConstants::new(curve);
+        self.try_lift(constants, reports)
     }
 }
 
@@ -58,45 +62,58 @@ impl From<&Parameters> for LiftingEnvironment {
     }
 }
 
-impl TryLift<()> for &TemplateData {
+impl TryLift<UsefulConstants> for &TemplateData {
     type IR = Cfg;
     type Error = CFGError;
 
-    fn try_lift(&self, _: (), reports: &mut ReportCollection) -> CFGResult<Cfg> {
+    fn try_lift(
+        &self,
+        constants: UsefulConstants,
+        reports: &mut ReportCollection,
+    ) -> CFGResult<Cfg> {
         let name = self.get_name().to_string();
         let parameters = Parameters::from(*self);
         let body = self.get_body().clone();
 
         debug!("building CFG for template `{name}`");
-        try_lift_impl(name, DefinitionType::Template, parameters, body, reports)
+        try_lift_impl(name, DefinitionType::Template, constants, parameters, body, reports)
     }
 }
 
-impl TryLift<()> for &FunctionData {
+impl TryLift<UsefulConstants> for &FunctionData {
     type IR = Cfg;
     type Error = CFGError;
 
-    fn try_lift(&self, _: (), reports: &mut ReportCollection) -> CFGResult<Cfg> {
+    fn try_lift(
+        &self,
+        constants: UsefulConstants,
+        reports: &mut ReportCollection,
+    ) -> CFGResult<Cfg> {
         let name = self.get_name().to_string();
         let parameters = Parameters::from(*self);
         let body = self.get_body().clone();
 
         debug!("building CFG for function `{name}`");
-        try_lift_impl(name, DefinitionType::Function, parameters, body, reports)
+        try_lift_impl(name, DefinitionType::Function, constants, parameters, body, reports)
     }
 }
 
-impl TryLift<()> for Definition {
+impl TryLift<UsefulConstants> for Definition {
     type IR = Cfg;
     type Error = CFGError;
 
-    fn try_lift(&self, _: (), reports: &mut ReportCollection) -> CFGResult<Cfg> {
+    fn try_lift(
+        &self,
+        constants: UsefulConstants,
+        reports: &mut ReportCollection,
+    ) -> CFGResult<Cfg> {
         match self {
             Definition::Template { name, body, .. } => {
                 debug!("building CFG for template `{name}`");
                 try_lift_impl(
                     name.clone(),
                     DefinitionType::Template,
+                    constants,
                     self.into(),
                     body.clone(),
                     reports,
@@ -107,6 +124,7 @@ impl TryLift<()> for Definition {
                 try_lift_impl(
                     name.clone(),
                     DefinitionType::Function,
+                    constants,
                     self.into(),
                     body.clone(),
                     reports,
@@ -119,6 +137,7 @@ impl TryLift<()> for Definition {
 fn try_lift_impl(
     name: String,
     definition_type: DefinitionType,
+    constants: UsefulConstants,
     parameters: Parameters,
     mut body: ast::Statement,
     reports: &mut ReportCollection,
@@ -131,15 +150,22 @@ fn try_lift_impl(
     let basic_blocks = build_basic_blocks(&body, &mut env, reports)?;
     let dominator_tree = DominatorTree::new(&basic_blocks);
     let declarations = Declarations::from(env);
-    let mut cfg =
-        Cfg::new(name, definition_type, parameters, declarations, basic_blocks, dominator_tree);
+    let mut cfg = Cfg::new(
+        name,
+        constants,
+        definition_type,
+        parameters,
+        declarations,
+        basic_blocks,
+        dominator_tree,
+    );
 
     // 3. Propagate metadata to all child nodes. Since determining variable use
     // requires that variable types are available, type propagation must run
     // before caching variable use.
     //
-    // Note that the current implementation of value propagation only makes
-    // sense in SSA form.
+    // Note that the current implementations of value and degree propagation
+    // only make sense in SSA form.
     cfg.propagate_types();
     cfg.cache_variable_use();
 

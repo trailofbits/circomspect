@@ -1,11 +1,10 @@
-use circom_algebra::modular_arithmetic;
 use log::trace;
 use num_traits::Zero;
 use std::collections::HashSet;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
-use crate::constants::UsefulConstants;
+use circom_algebra::modular_arithmetic;
 
 use super::declarations::Declarations;
 use super::degree_meta::{Degree, DegreeEnvironment, DegreeMeta, DegreeRange};
@@ -25,7 +24,7 @@ impl Expression {
             | Variable { meta, .. }
             | Number(meta, ..)
             | Call { meta, .. }
-            | Array { meta, .. }
+            | InlineArray { meta, .. }
             | Update { meta, .. }
             | Access { meta, .. }
             | Phi { meta, .. } => meta,
@@ -42,7 +41,7 @@ impl Expression {
             | Variable { meta, .. }
             | Number(meta, ..)
             | Call { meta, .. }
-            | Array { meta, .. }
+            | InlineArray { meta, .. }
             | Update { meta, .. }
             | Access { meta, .. }
             | Phi { meta, .. } => meta,
@@ -75,7 +74,7 @@ impl PartialEq for Expression {
                 Call { name: self_id, args: self_args, .. },
                 Call { name: other_id, args: other_args, .. },
             ) => self_id == other_id && self_args == other_args,
-            (Array { values: self_values, .. }, Array { values: other_values, .. }) => {
+            (InlineArray { values: self_values, .. }, InlineArray { values: other_values, .. }) => {
                 self_values == other_values
             }
             (
@@ -116,7 +115,7 @@ impl Hash for Expression {
             Call { args, .. } => {
                 args.hash(state);
             }
-            Array { values, .. } => {
+            InlineArray { values, .. } => {
                 values.hash(state);
             }
             Access { var, access, .. } => {
@@ -190,7 +189,7 @@ impl DegreeMeta for Expression {
                     meta.degree_knowledge_mut().set_degree(&Constant.into())
                 }
             }
-            Array { meta, values } => {
+            InlineArray { meta, values } => {
                 // The degree range of an array is the infimum of the ranges of all elements.
                 for value in values.iter_mut() {
                     value.propagate_degrees(env);
@@ -269,7 +268,7 @@ impl TypeMeta for Expression {
                     arg.propagate_types(vars);
                 }
             }
-            Array { values, .. } => {
+            InlineArray { values, .. } => {
                 for value in values {
                     value.propagate_types(vars);
                 }
@@ -389,7 +388,7 @@ impl VariableMeta for Expression {
                 locals_read
                     .extend(args.iter().map(|name| VariableUse::new(meta, name, &Vec::new())));
             }
-            Array { values, .. } => {
+            InlineArray { values, .. } => {
                 for value in values {
                     value.cache_variable_use();
                     locals_read.extend(value.locals_read().clone());
@@ -507,7 +506,7 @@ impl ValueMeta for Expression {
         match self {
             InfixOp { meta, lhe, infix_op, rhe, .. } => {
                 let mut result = lhe.propagate_values(env) || rhe.propagate_values(env);
-                match infix_op.propagate_values(lhe.value(), rhe.value()) {
+                match infix_op.propagate_values(lhe.value(), rhe.value(), env) {
                     Some(value) => {
                         result = result || meta.value_knowledge_mut().set_reduces_to(value)
                     }
@@ -517,7 +516,7 @@ impl ValueMeta for Expression {
             }
             PrefixOp { meta, prefix_op, rhe } => {
                 let mut result = rhe.propagate_values(env);
-                match prefix_op.propagate_values(rhe.value()) {
+                match prefix_op.propagate_values(rhe.value(), env) {
                     Some(value) => {
                         result = result || meta.value_knowledge_mut().set_reduces_to(value)
                     }
@@ -582,7 +581,7 @@ impl ValueMeta for Expression {
                 }
                 result
             }
-            Array { values, .. } => {
+            InlineArray { values, .. } => {
                 // TODO: Handle inline arrays.
                 let mut result = false;
                 for value in values {
@@ -682,9 +681,9 @@ impl ExpressionInfixOpcode {
         &self,
         lhv: Option<&ValueReduction>,
         rhv: Option<&ValueReduction>,
+        env: &ValueEnvironment,
     ) -> Option<ValueReduction> {
-        let constants = UsefulConstants::default();
-        let p = constants.get_p();
+        let p = env.prime();
 
         use ValueReduction::*;
         match (lhv, rhv) {
@@ -794,9 +793,12 @@ impl ExpressionPrefixOpcode {
         }
     }
 
-    fn propagate_values(&self, rhe: Option<&ValueReduction>) -> Option<ValueReduction> {
-        let constants = UsefulConstants::default();
-        let p = constants.get_p();
+    fn propagate_values(
+        &self,
+        rhe: Option<&ValueReduction>,
+        env: &ValueEnvironment,
+    ) -> Option<ValueReduction> {
+        let p = env.prime();
 
         use ValueReduction::*;
         match rhe {
@@ -846,7 +848,7 @@ impl fmt::Debug for Expression {
                 write!(f, "({cond:?}? {if_true:?} : {if_false:?})")
             }
             Call { name: id, args, .. } => write!(f, "{}({})", id, vec_to_debug(args, ", ")),
-            Array { values, .. } => write!(f, "[{}]", vec_to_debug(values, ", ")),
+            InlineArray { values, .. } => write!(f, "[{}]", vec_to_debug(values, ", ")),
             Access { var, access, .. } => {
                 let access = access
                     .iter()
@@ -888,7 +890,7 @@ impl fmt::Display for Expression {
                 write!(f, "({cond}? {if_true} : {if_false})")
             }
             Call { name: id, args, .. } => write!(f, "{}({})", id, vec_to_display(args, ", ")),
-            Array { values, .. } => write!(f, "[{}]", vec_to_display(values, ", ")),
+            InlineArray { values, .. } => write!(f, "[{}]", vec_to_display(values, ", ")),
             Access { var, access, .. } => {
                 write!(f, "{var}")?;
                 for access in access {
@@ -968,6 +970,8 @@ fn vec_to_display<T: fmt::Display>(elems: &[T], sep: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use crate::constants::{UsefulConstants, Curve};
+
     use super::*;
 
     #[test]
@@ -977,7 +981,8 @@ mod tests {
         use ValueReduction::*;
         let mut lhe = Number(Meta::default(), 7u64.into());
         let mut rhe = Variable { meta: Meta::default(), name: VariableName::from_name("v") };
-        let mut env = ValueEnvironment::new();
+        let constants = UsefulConstants::new(&Curve::default());
+        let mut env = ValueEnvironment::new(&constants);
         env.add_variable(&VariableName::from_name("v"), &FieldElement { value: 3u64.into() });
         lhe.propagate_values(&mut env);
         rhe.propagate_values(&mut env);

@@ -27,6 +27,10 @@ ParsePragma : Version = { // maybe change to usize instead of BigInt
     => version,
 };
 
+// Pragma to indicate that we are allowing the definition of custom templates.
+ParseCustomGates : () = {
+    "pragma" "custom_templates" ";" => ()
+}
 
 // Includes are added at the start of the file.
 // Their structure is the following: #include "path to the file"
@@ -36,22 +40,14 @@ ParseInclude : Include = {
 };
 
 // Parsing a program requires:
-// Parsing the "pragma" instruction, if there is one
-// Parsing "includes" instructions, if there are any,
-// Parsing function and template definitions,
+// Parsing the version pragma, if there is one
+// Parsing the custom templates pragma, if there is one
+// Parsing "includes" instructions, if there is anyone
+// Parsing function and template definitions
 // Parsing the declaration of the main component
 pub ParseAst : AST = {
-    <s:@L> <pragma: ParsePragma> <includes: ParseInclude*> <definitions: ParseDefinition*> <main: ParseMainComponent> <e:@R>
-    => AST::new(Meta::new(s,e), Some(pragma), includes, definitions, Some(main)),
-
-    <s:@L> <includes: ParseInclude*> <definitions: ParseDefinition*> <main: ParseMainComponent> <e:@R>
-    => AST::new(Meta::new(s,e), None, includes, definitions, Some(main)),
-
-    <s:@L> <pragma: ParsePragma> <includes: ParseInclude*> <definitions: ParseDefinition*> <e:@R>
-    => AST::new(Meta::new(s,e), Some(pragma), includes, definitions, None),
-
-    <s:@L> <includes: ParseInclude*> <definitions: ParseDefinition*> <e:@R>
-    => AST::new(Meta::new(s,e), None, includes, definitions, None),
+    <s:@L> <version: ParsePragma?> <custom_gates: ParseCustomGates?> <includes: ParseInclude*> <definitions: ParseDefinition*> <main: ParseMainComponent?> <e:@R>
+    => AST::new(Meta::new(s,e), version, custom_gates.is_some(), includes, definitions, main),
 };
 
 // ====================================================================
@@ -81,12 +77,12 @@ pub ParseDefinition : Definition = {
         Some(a)
         => build_function(Meta::new(s,e),name,a,args..arge,body),
     },
-    <s:@L> "template" <parallel: "parallel"?> <name: IDENTIFIER> "(" <args:@L> <arg_names: IdentifierListDef?>  <arge:@R> ")" <body: ParseBlock> <e:@R>
+    <s:@L> "template" <custom_gate: "custom"?> <parallel: "parallel"?> <name: IDENTIFIER> "(" <args:@L> <arg_names: IdentifierListDef?> <arge:@R> ")" <body: ParseBlock> <e:@R>
     => match arg_names {
         None
-        => build_template(Meta::new(s,e), name, Vec::new(), args..arge, body, parallel.is_some()),
+        => build_template(Meta::new(s,e), name, Vec::new(), args..arge, body, parallel.is_some(), custom_gate.is_some()),
         Some(a)
-        => build_template(Meta::new(s,e), name, a, args..arge, body, parallel.is_some()),
+        => build_template(Meta::new(s,e), name, a, args..arge, body, parallel.is_some(), custom_gate.is_some()),
     },
 };
 
@@ -134,7 +130,7 @@ SimpleSymbol : Symbol = {
     => Symbol {
         name,
         is_array: dims,
-        init: Option::None,
+        init: None,
     },
 }
 
@@ -143,13 +139,37 @@ ComplexSymbol : Symbol = {
     => Symbol {
         name,
         is_array: dims,
-        init: Option::Some(rhe),
+        init: Some(rhe),
     },
 };
+
+SignalConstraintSymbol : Symbol = {
+    <name:IDENTIFIER> <dims:ParseArrayAcc*> "<==" <rhe: ParseExpression>
+    => Symbol {
+        name,
+        is_array: dims,
+        init: Some(rhe),
+    },
+};
+
+SignalSimpleSymbol : Symbol = {
+    <name:IDENTIFIER> <dims:ParseArrayAcc*> "<--" <rhe: ParseExpression>
+    => Symbol {
+        name,
+        is_array: dims,
+        init: Some(rhe),
+    },
+};
+
 
 SomeSymbol : Symbol = {
     ComplexSymbol,
     SimpleSymbol,
+}
+
+SignalSymbol : Symbol = {
+    SimpleSymbol,
+    SignalConstraintSymbol,
 }
 
 // A declaration is the definition of a type followed by the initialization
@@ -160,21 +180,28 @@ ParseDeclaration : Statement = {
             let meta = Meta::new(s,e);
             let xtype = VariableType::Var;
             symbols.push(symbol);
-            ast_shortcuts::split_declaration_into_single_nodes(meta,xtype,symbols)
+            ast_shortcuts::split_declaration_into_single_nodes(meta,xtype,symbols,AssignOp::AssignVar)
     },
     <s:@L> "component" <symbols:(<SomeSymbol> ",")*> <symbol: SomeSymbol> <e:@R> => {
             let mut symbols = symbols;
             let meta = Meta::new(s,e);
             let xtype = VariableType::Component;
             symbols.push(symbol);
-            ast_shortcuts::split_declaration_into_single_nodes(meta,xtype,symbols)
+            ast_shortcuts::split_declaration_into_single_nodes(meta,xtype,symbols,AssignOp::AssignVar)
     },
-    <s:@L><xtype: SignalHeader> <symbols:(<SimpleSymbol> ",")*> <symbol: SimpleSymbol>  <e:@R>
+    <s:@L><xtype: SignalHeader> <symbols:(<SignalSymbol> ",")*> <symbol: SignalSymbol>  <e:@R>
     => {
             let mut symbols = symbols;
             let meta = Meta::new(s,e);
             symbols.push(symbol);
-            ast_shortcuts::split_declaration_into_single_nodes(meta,xtype,symbols)
+            ast_shortcuts::split_declaration_into_single_nodes(meta,xtype,symbols,AssignOp::AssignConstraintSignal)
+    },
+    <s:@L><xtype: SignalHeader> <symbols:(<SignalSimpleSymbol> ",")*> <symbol: SignalSimpleSymbol>  <e:@R>
+    => {
+            let mut symbols = symbols;
+            let meta = Meta::new(s,e);
+            symbols.push(symbol);
+            ast_shortcuts::split_declaration_into_single_nodes(meta,xtype,symbols,AssignOp::AssignSignal)
     },
 };
 ParseSubstitution : Statement = {
@@ -253,18 +280,18 @@ ParseStatement0 : Statement = {
 
 ParseStmt0NB : Statement = {
     <s:@L> "if" "(" <cond: ParseExpression> ")" <if_case: ParseStmt0NB> <e:@R>
-    => build_conditional_block(Meta::new(s,e),cond,if_case,Option::None),
+    => build_conditional_block(Meta::new(s,e),cond,if_case,None),
 
     <s:@L> "if" "(" <cond: ParseExpression> ")" <if_case: ParseStatement1> <e:@R>
-    => build_conditional_block(Meta::new(s,e),cond,if_case,Option::None),
+    => build_conditional_block(Meta::new(s,e),cond,if_case,None),
 
     <s:@L> "if" "(" <cond: ParseExpression> ")" <if_case: ParseStatement1> <else_case: ParseElse<ParseStmt0NB>><e:@R>
-    => build_conditional_block(Meta::new(s,e),cond,if_case,Option::Some(else_case)),
+    => build_conditional_block(Meta::new(s,e),cond,if_case,Some(else_case)),
 };
 
 ParseStatement1 : Statement = {
     <s:@L> "if" "(" <cond: ParseExpression> ")" <if_case: ParseStatement1> <else_case: ParseElse<ParseStatement1>><e:@R>
-    =>  build_conditional_block(Meta::new(s,e),cond,if_case,Option::Some(else_case)),
+    =>  build_conditional_block(Meta::new(s,e),cond,if_case,Some(else_case)),
     ParseStatement2
 };
 ParseStatement2 : Statement = {
@@ -286,13 +313,20 @@ ParseStatement2 : Statement = {
     <s:@L> <lhe: ParseExpression> "===" <rhe: ParseExpression> ";" <e:@R>
     => build_constraint_equality(Meta::new(s,e),lhe,rhe),
 
-    <s:@L> "log" "(" <arg: ParseExpression> ")" ";" <e:@R>
-    => build_log_call(Meta::new(s,e),arg),
+    ParseStatementLog,
 
     <s:@L> "assert" "(" <arg: ParseExpression> ")" ";" <e:@R>
     => build_assert(Meta::new(s,e),arg),
 
     ParseBlock
+};
+
+ParseStatementLog : Statement = {
+    <s:@L> "log" "(" <args: LogListable> ")" ";" <e:@R>
+    => build_log_call(Meta::new(s,e),args),
+
+    <s:@L> "log" "(" ")" ";" <e:@R>
+    => build_log_call(Meta::new(s,e),Vec::new()),
 };
 
 ParseStatement3 : Statement = {
@@ -336,6 +370,34 @@ Listable: Vec<Expression> = {
     },
 };
 
+ParseString : LogArgument = {
+     <e: STRING>
+    => {
+        build_log_string(e)
+    },
+};
+
+ParseLogExp: LogArgument = {
+    <e : ParseExpression>
+    => {
+        build_log_expression(e)
+    }
+}
+
+ParseLogArgument : LogArgument = {
+    ParseLogExp,
+    ParseString
+};
+
+LogListable: Vec<LogArgument> = {
+    <e:(<ParseLogArgument> ",")*> <tail: ParseLogArgument>
+    => {
+        let mut e = e;
+        e.push(tail);
+        e
+    },
+};
+
 InfixOpTier<Op,NextTier> : Expression = {
     <s:@L> <lhe:InfixOpTier<Op,NextTier>> <infix_op:Op> <rhe:NextTier> <e: @R>
     => build_infix(Meta::new(s,e),lhe,infix_op,rhe),
@@ -350,11 +412,24 @@ PrefixOpTier<Op,NextTier >: Expression = {
     NextTier
 };
 
-
 pub ParseExpression: Expression = {
+    Expression14,
+    ParseExpression1,
+}
+
+pub ParseExpression1: Expression = {
     Expression13,
     Expression12,
 };
+
+// parallel expr
+Expression14: Expression = {
+    <s:@L> "parallel" <expr: ParseExpression1> <e:@L>
+    => {
+        build_parallel_op(Meta::new(s, e), expr)
+    },
+
+}
 
 // ops: e ? a : i
 Expression13 : Expression  = {
@@ -423,7 +498,7 @@ Expression0: Expression = {
     <s:@L> <value:HEXNUMBER> <e:@L>
     => build_number(Meta::new(s,e),value),
 
-    "(" <Expression12> ")"
+    "(" <ParseExpression> ")"
 };
 
 

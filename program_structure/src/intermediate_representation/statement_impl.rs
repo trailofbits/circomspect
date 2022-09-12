@@ -59,9 +59,16 @@ impl Statement {
                     }
                 }
             }
+            LogCall { args, .. } => {
+                use LogArgument::*;
+                for arg in args {
+                    if let Expr(value) = arg {
+                        value.propagate_degrees(env);
+                    }
+                }
+            }
             IfThenElse { cond, .. } => cond.propagate_degrees(env),
             Return { value, .. } => value.propagate_degrees(env),
-            LogCall { arg, .. } => arg.propagate_degrees(env),
             Assert { arg, .. } => arg.propagate_degrees(env),
             ConstraintEquality { lhe, rhe, .. } => {
                 lhe.propagate_degrees(env);
@@ -90,9 +97,18 @@ impl Statement {
                 }
                 result
             }
+            LogCall { args, .. } => {
+                let mut result = false;
+                use LogArgument::*;
+                for arg in args {
+                    if let Expr(value) = arg {
+                        result = result || value.propagate_values(env);
+                    }
+                }
+                result
+            }
             IfThenElse { cond, .. } => cond.propagate_values(env),
             Return { value, .. } => value.propagate_values(env),
-            LogCall { arg, .. } => arg.propagate_values(env),
             Assert { arg, .. } => arg.propagate_values(env),
             ConstraintEquality { lhe, rhe, .. } => {
                 lhe.propagate_values(env) || rhe.propagate_values(env)
@@ -117,6 +133,14 @@ impl Statement {
                     meta.type_knowledge_mut().set_variable_type(var_type);
                 }
             }
+            LogCall { args, .. } => {
+                use LogArgument::*;
+                for arg in args {
+                    if let Expr(value) = arg {
+                        value.propagate_types(vars);
+                    }
+                }
+            }
             ConstraintEquality { lhe, rhe, .. } => {
                 lhe.propagate_types(vars);
                 rhe.propagate_types(vars);
@@ -126,9 +150,6 @@ impl Statement {
             }
             Return { value, .. } => {
                 value.propagate_types(vars);
-            }
-            LogCall { arg, .. } => {
-                arg.propagate_types(vars);
             }
             Assert { arg, .. } => {
                 arg.propagate_types(vars);
@@ -165,7 +186,7 @@ impl fmt::Debug for Statement {
             },
             Return { value, .. } => write!(f, "return {value:?}"),
             Assert { arg, .. } => write!(f, "assert({arg:?})"),
-            LogCall { arg, .. } => write!(f, "log({arg:?})"),
+            LogCall { args, .. } => write!(f, "log({:?})", vec_to_debug(args, ", ")),
         }
     }
 }
@@ -201,7 +222,7 @@ impl fmt::Display for Statement {
             IfThenElse { cond, .. } => write!(f, "if {cond}"),
             Return { value, .. } => write!(f, "return {value}"),
             Assert { arg, .. } => write!(f, "assert({arg})"),
-            LogCall { arg, .. } => write!(f, "log({arg})"),
+            LogCall { args, .. } => write!(f, "log({})", vec_to_display(args, ", ")),
         }
     }
 }
@@ -213,6 +234,26 @@ impl fmt::Display for AssignOp {
             AssignSignal => write!(f, "<--"),
             AssignConstraintSignal => write!(f, "<=="),
             AssignLocalOrComponent => write!(f, "="),
+        }
+    }
+}
+
+impl fmt::Display for LogArgument {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        use LogArgument::*;
+        match self {
+            String(message) => write!(f, "{message}"),
+            Expr(value) => write!(f, "{value}"),
+        }
+    }
+}
+
+impl fmt::Debug for LogArgument {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        use LogArgument::*;
+        match self {
+            String(message) => write!(f, "{message:?}"),
+            Expr(value) => write!(f, "{value:?}"),
         }
     }
 }
@@ -271,6 +312,17 @@ impl VariableMeta for Statement {
                     }
                 }
             }
+            LogCall { args, .. } => {
+                use LogArgument::*;
+                for arg in args {
+                    if let Expr(value) = arg {
+                        value.cache_variable_use();
+                        locals_read.extend(value.locals_read().clone());
+                        signals_read.extend(value.signals_read().clone());
+                        components_read.extend(value.components_read().clone());
+                    }
+                }
+            }
             IfThenElse { cond, .. } => {
                 cond.cache_variable_use();
                 locals_read.extend(cond.locals_read().clone());
@@ -282,12 +334,6 @@ impl VariableMeta for Statement {
                 locals_read.extend(value.locals_read().clone());
                 signals_read.extend(value.signals_read().clone());
                 components_read.extend(value.components_read().clone());
-            }
-            LogCall { arg, .. } => {
-                arg.cache_variable_use();
-                locals_read.extend(arg.locals_read().clone());
-                signals_read.extend(arg.signals_read().clone());
-                components_read.extend(arg.components_read().clone());
             }
             Assert { arg, .. } => {
                 arg.cache_variable_use();
@@ -339,4 +385,14 @@ impl VariableMeta for Statement {
     fn components_written(&self) -> &VariableUses {
         self.meta().variable_knowledge().components_written()
     }
+}
+
+#[must_use]
+fn vec_to_debug<T: fmt::Debug>(elems: &[T], sep: &str) -> String {
+    elems.iter().map(|elem| format!("{elem:?}")).collect::<Vec<String>>().join(sep)
+}
+
+#[must_use]
+fn vec_to_display<T: fmt::Display>(elems: &[T], sep: &str) -> String {
+    elems.iter().map(|elem| format!("{elem}")).collect::<Vec<String>>().join(sep)
 }

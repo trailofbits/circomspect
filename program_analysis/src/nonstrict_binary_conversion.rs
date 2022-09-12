@@ -67,16 +67,17 @@ pub fn find_nonstrict_binary_conversion(cfg: &Cfg) -> ReportCollection {
     }
     debug!("running non-strict `Num2Bits` analysis pass");
     let mut reports = ReportCollection::new();
+    let prime_size = BigInt::from(cfg.constants().prime_size());
     for basic_block in cfg.iter() {
         for stmt in basic_block.iter() {
-            visit_statement(stmt, &mut reports);
+            visit_statement(stmt, &prime_size, &mut reports);
         }
     }
     debug!("{} new reports generated", reports.len());
     reports
 }
 
-fn visit_statement(stmt: &Statement, reports: &mut ReportCollection) {
+fn visit_statement(stmt: &Statement, prime_size: &BigInt, reports: &mut ReportCollection) {
     use AssignOp::*;
     use Expression::*;
     use Statement::*;
@@ -96,9 +97,10 @@ fn visit_statement(stmt: &Statement, reports: &mut ReportCollection) {
         // We assume this is the `Num2Bits` circuit from Circomlib.
         if component_name == "Num2Bits" && args.len() == 1 {
             let arg = &args[0];
-            // If the input size is known to be < 254, this initialization is safe.
+            // If the input size is known to be less than the prime size, this
+            // initialization is safe.
             if let Some(FieldElement { value }) = arg.value() {
-                if value < &BigInt::from(254u8) {
+                if value < prime_size {
                     return;
                 }
             }
@@ -107,9 +109,10 @@ fn visit_statement(stmt: &Statement, reports: &mut ReportCollection) {
         // We assume this is the `Bits2Num` circuit from Circomlib.
         if component_name == "Bits2Num" && args.len() == 1 {
             let arg = &args[0];
-            // If the input size is known to be < 254, this initialization is safe.
+            // If the input size is known to be less than the prime size, this
+            // initialization is safe.
             if let Some(FieldElement { value }) = arg.value() {
-                if value < &BigInt::from(254u8) {
+                if value < prime_size {
                     return;
                 }
             }
@@ -137,7 +140,7 @@ fn build_bits2num(meta: &Meta) -> Report {
 #[cfg(test)]
 mod tests {
     use parser::parse_definition;
-    use program_structure::cfg::IntoCfg;
+    use program_structure::{cfg::IntoCfg, constants::Curve};
 
     use super::*;
 
@@ -156,13 +159,32 @@ mod tests {
             }
         "#;
         validate_reports(src, 1);
+
+        let src = r#"
+            template F(n) {
+                signal input in;
+                signal output out[n];
+
+                var bits = 254;
+                component n2b = Num2Bits(bits - 1);
+                n2b.in === in;
+                for (var i = 0; i < n; i++) {
+                    out[i] <== n2b.out[i];
+                }
+            }
+        "#;
+        validate_reports(src, 0);
     }
 
     fn validate_reports(src: &str, expected_len: usize) {
         // Build CFG.
         let mut reports = ReportCollection::new();
-        let cfg =
-            parse_definition(src).unwrap().into_cfg(&mut reports).unwrap().into_ssa().unwrap();
+        let cfg = parse_definition(src)
+            .unwrap()
+            .into_cfg(&Curve::Bn128, &mut reports)
+            .unwrap()
+            .into_ssa()
+            .unwrap();
         assert!(reports.is_empty());
 
         // Generate report collection.

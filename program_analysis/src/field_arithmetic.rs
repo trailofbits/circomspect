@@ -52,10 +52,17 @@ fn visit_statement(stmt: &Statement, reports: &mut ReportCollection) {
                 visit_expression(size, reports);
             }
         }
+        LogCall { args, .. } => {
+            use LogArgument::*;
+            for arg in args {
+                if let Expr(value) = arg {
+                    visit_expression(value, reports);
+                }
+            }
+        }
         IfThenElse { cond, .. } => visit_expression(cond, reports),
         Substitution { rhe, .. } => visit_expression(rhe, reports),
         Return { value, .. } => visit_expression(value, reports),
-        LogCall { arg, .. } => visit_expression(arg, reports),
         Assert { arg, .. } => visit_expression(arg, reports),
         ConstraintEquality { lhe, rhe, .. } => {
             visit_expression(lhe, reports);
@@ -87,7 +94,7 @@ fn visit_expression(expr: &Expression, reports: &mut ReportCollection) {
                 visit_expression(arg, reports);
             }
         }
-        Array { values, .. } => {
+        InlineArray { values, .. } => {
             for value in values {
                 visit_expression(value, reports);
             }
@@ -133,7 +140,7 @@ fn build_report(meta: &Meta) -> Report {
 #[cfg(test)]
 mod tests {
     use parser::parse_definition;
-    use program_structure::cfg::IntoCfg;
+    use program_structure::{cfg::IntoCfg, constants::Curve};
 
     use super::*;
 
@@ -152,8 +159,12 @@ mod tests {
     fn validate_reports(src: &str, expected_len: usize) {
         // Build CFG.
         let mut reports = ReportCollection::new();
-        let cfg =
-            parse_definition(src).unwrap().into_cfg(&mut reports).unwrap().into_ssa().unwrap();
+        let cfg = parse_definition(src)
+            .unwrap()
+            .into_cfg(&Curve::default(), &mut reports)
+            .unwrap()
+            .into_ssa()
+            .unwrap();
         assert!(reports.is_empty());
 
         // Generate report collection.

@@ -49,7 +49,9 @@ pub fn split_declaration_into_single_nodes(
     meta: Meta,
     xtype: VariableType,
     symbols: Vec<Symbol>,
+    op: AssignOp,
 ) -> Statement {
+    // use crate::ast_shortcuts::VariableType::Var;
     let mut initializations = Vec::new();
 
     for symbol in symbols {
@@ -58,14 +60,25 @@ pub fn split_declaration_into_single_nodes(
         let name = symbol.name.clone();
         let dimensions = symbol.is_array;
         let possible_init = symbol.init;
-        let single_declaration = build_declaration(with_meta, has_type, name, dimensions);
+        let single_declaration = build_declaration(with_meta, has_type, name, dimensions.clone());
         initializations.push(single_declaration);
 
         if let Option::Some(init) = possible_init {
-            let substitution =
-                build_substitution(meta.clone(), symbol.name, vec![], AssignOp::AssignVar, init);
+            let substitution = build_substitution(meta.clone(), symbol.name, vec![], op, init);
             initializations.push(substitution);
         }
+        // If the variable is not initialialized it is default initialized to 0.
+        // We remove this because we don't want this assignment to be flagged as
+        // an unused assignment by the side-effect analysis.
+        // else if xtype == Var {
+        //     let mut value = Expression::Number(meta.clone(), BigInt::from(0));
+        //     for dim_expr in dimensions.iter().rev() {
+        //         value = build_uniform_array(meta.clone(), value, dim_expr.clone());
+        //     }
+
+        //     let substitution = build_substitution(meta.clone(), symbol.name, vec![], op, value);
+        //     initializations.push(substitution);
+        // }
     }
     build_initialization_block(meta, xtype, initializations)
 }

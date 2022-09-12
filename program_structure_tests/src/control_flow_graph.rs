@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use parser::parse_definition;
 use program_structure::cfg::*;
+use program_structure::constants::Curve;
 use program_structure::report::ReportCollection;
 use program_structure::ir::VariableName;
 
@@ -403,7 +404,7 @@ fn validate_cfg(
 ) {
     // 1. Generate CFG from source.
     let mut reports = ReportCollection::new();
-    let cfg = parse_definition(src).unwrap().into_cfg(&mut reports).unwrap();
+    let cfg = parse_definition(src).unwrap().into_cfg(&Curve::default(), &mut reports).unwrap();
     assert!(reports.is_empty());
 
     // 2. Verify declared variables.
@@ -459,7 +460,7 @@ fn validate_dominance(
 ) {
     // 1. Generate CFG from source.
     let mut reports = ReportCollection::new();
-    let cfg = parse_definition(src).unwrap().into_cfg(&mut reports).unwrap();
+    let cfg = parse_definition(src).unwrap().into_cfg(&Curve::default(), &mut reports).unwrap();
     assert!(reports.is_empty());
 
     // 2. Validate immediate dominators.
@@ -489,7 +490,7 @@ fn validate_branches(
 ) {
     // 1. Generate CFG from source.
     let mut reports = ReportCollection::new();
-    let cfg = parse_definition(src).unwrap().into_cfg(&mut reports).unwrap();
+    let cfg = parse_definition(src).unwrap().into_cfg(&Curve::default(), &mut reports).unwrap();
     assert!(reports.is_empty());
 
     // 2. Validate the set of true branches.
