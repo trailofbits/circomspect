@@ -4,9 +4,7 @@ Circomspect is a static analyzer and linter for the [Circom](https://github.com/
 
 Circomspect currently implements a number of analysis passes which can identify potential issues in Circom circuits. It is our goal to continue to add new analysis passes to be able to detect more issues in the future.
 
-<p align="center">
-  <img src="https://github.com/trailofbits/circomspect/raw/main/doc/circomspect.png" alt="Output example image" width="800"/>
-</p>
+![Circomspect example image](https://github.com/trailofbits/circomspect/raw/main/doc/circomspect.png)
 
 ## Installing Circomspect
 
@@ -36,7 +34,7 @@ By default, Circomspect outputs warnings and errors to stdout. To see informatio
 
 To output the results to a Sarif file (which can be read by the [VSCode Sarif Viewer](https://marketplace.visualstudio.com/items?itemName=MS-SarifVSCode.sarif-viewer)), use the option `--sarif-file`.
 
-<img src="https://github.com/trailofbits/circomspect/raw/main/doc/vscode.png" alt="VSCode example image" width="1200" />
+![VSCode example image](https://github.com/trailofbits/circomspect/raw/main/doc/vscode.png)
 
 ## Analysis Passes
 

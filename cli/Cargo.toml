@@ -1,6 +1,6 @@
 [package]
 name = "circomspect"
-version = "0.5.4"
+version = "0.5.5"
 edition = "2021"
 license = "LGPL-3.0-only"
 authors = ["Trail of Bits"]
