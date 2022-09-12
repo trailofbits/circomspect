@@ -26,7 +26,7 @@ project by running `cargo build` in the project root. To install from source, us
 
 ## Running Circomspect
 
-To run Circomspect on a file or directory, simple run
+To run Circomspect on a file or directory, simply run
 
 ```sh
   circomspect path/to/circuit
