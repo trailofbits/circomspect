@@ -9,13 +9,17 @@ use thiserror::Error;
 use crate::report::{Report, ReportCollection, ReportLabel};
 use crate::file_definition::{FileID, FileLibrary};
 
+// This is the Sarif file format version, not the tool version.
 const SARIF_VERSION: &str = "2.1.0";
-const DRIVER_NAME: &str = "circomspect";
+const DRIVER_NAME: &str = "Circomspect";
+const ORGANIZATION: &str = "Trail of Bits";
 
+/// A trait for objects that can be converted into a Sarif artifact.
 pub trait ToSarif {
     type Sarif;
     type Error;
 
+    /// Converts the object to the corresponding Sarif artifact.
     fn to_sarif(&self, files: &FileLibrary) -> Result<Self::Sarif, Self::Error>;
 }
 
@@ -25,9 +29,25 @@ impl ToSarif for ReportCollection {
 
     fn to_sarif(&self, files: &FileLibrary) -> Result<Self::Sarif, Self::Error> {
         debug!("converting report collection to sarif-format");
+        // Build reporting descriptors.
+        let rules = self
+            .iter()
+            .map(|report| {
+                sarif::ReportingDescriptorBuilder::default()
+                    .name(report.id())
+                    .id(report.id())
+                    .build()
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(SarifError::from)?;
         // Build tool.
         trace!("building tool");
-        let driver = sarif::ToolComponentBuilder::default().name(DRIVER_NAME).build()?;
+        // TODO: Should include version.
+        let driver = sarif::ToolComponentBuilder::default()
+            .name(DRIVER_NAME)
+            .organization(ORGANIZATION)
+            .rules(rules)
+            .build()?;
         let tool = sarif::ToolBuilder::default().driver(driver).build()?;
         // Build run.
         trace!("building run");
@@ -73,12 +93,18 @@ impl ToSarif for Report {
             .chain(secondary_locations.into_iter())
             .take(1)
             .collect::<Vec<_>>();
+        // Build reporting descriptor reference.
+        let rule = sarif::ReportingDescriptorReferenceBuilder::default()
+            .id(&rule_id)
+            .build()
+            .map_err(SarifError::from)?;
         // Build result.
         trace!("building result");
         sarif::ResultBuilder::default()
             .level(level)
             .message(message)
             .rule_id(rule_id)
+            .rule(rule)
             .locations(locations)
             .build()
             .map_err(SarifError::from)
@@ -154,6 +180,8 @@ impl ToUri for FileID {
 
 #[derive(Error, Debug)]
 pub enum SarifError {
+    InvalidReportingDescriptorReference(#[from] sarif::ReportingDescriptorReferenceBuilderError),
+    InvalidReportingDescriptor(#[from] sarif::ReportingDescriptorBuilderError),
     InvalidPhysicalLocationError(#[from] sarif::PhysicalLocationBuilderError),
     InvalidArtifactLocation(#[from] sarif::ArtifactLocationBuilderError),
     InvalidToolComponent(#[from] sarif::ToolComponentBuilderError),
