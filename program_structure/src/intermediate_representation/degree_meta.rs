@@ -1,8 +1,7 @@
+use log::trace;
 use std::cmp::{Ordering, min, max};
 use std::collections::HashMap;
 use std::fmt;
-
-use log::{warn, trace};
 
 use super::{VariableName, VariableType};
 
@@ -439,18 +438,20 @@ impl DegreeEnvironment {
         DegreeEnvironment::default()
     }
 
-    /// Sets the degree range of the given variable.
-    pub fn set_degree(&mut self, var: &VariableName, range: &DegreeRange) {
-        trace!("setting degree range of `{var:?}` to {range:?}");
-        if self.degree_ranges.insert(var.clone(), range.clone()).is_some() {
-            warn!("attempting to assign multiple degree ranges to `{:?}`", var);
+    /// Sets the degree range of the given variable. Returns true on first update.
+    pub fn set_degree(&mut self, var: &VariableName, range: &DegreeRange) -> bool {
+        if self.degree_ranges.insert(var.clone(), range.clone()).is_none() {
+            trace!("setting degree range of `{var:?}` to {range:?}");
+            true
+        } else {
+            false
         }
     }
 
     /// Sets the type of the given variable.
     pub fn set_type(&mut self, var: &VariableName, var_type: &VariableType) {
-        if self.var_types.insert(var.clone(), var_type.clone()).is_some() {
-            warn!("attempting to assign multiple types to `{:?}`", var);
+        if self.var_types.insert(var.clone(), var_type.clone()).is_none() {
+            trace!("setting type of `{var:?}` to `{var_type}`");
         }
     }
 
@@ -468,8 +469,9 @@ impl DegreeEnvironment {
 }
 
 pub trait DegreeMeta {
-    /// Compute expression degrees for this node and child nodes.
-    fn propagate_degrees(&mut self, env: &DegreeEnvironment);
+    /// Compute expression degrees for this node and child nodes. Returns true
+    /// if the node (or a child node) is updated.
+    fn propagate_degrees(&mut self, env: &DegreeEnvironment) -> bool;
 
     /// Returns an inclusive range the degree of the node may take.
     #[must_use]
@@ -488,8 +490,13 @@ impl DegreeKnowledge {
         DegreeKnowledge::default()
     }
 
-    pub fn set_degree(&mut self, range: &DegreeRange) {
-        self.degree_range = Some(range.clone());
+    pub fn set_degree(&mut self, range: &DegreeRange) -> bool {
+        if self.degree_range.is_none() {
+            self.degree_range = Some(range.clone());
+            true
+        } else {
+            false
+        }
     }
 
     #[must_use]

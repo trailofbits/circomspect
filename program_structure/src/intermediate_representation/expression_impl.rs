@@ -138,43 +138,49 @@ impl Hash for Expression {
 }
 
 impl DegreeMeta for Expression {
-    fn propagate_degrees(&mut self, env: &DegreeEnvironment) {
+    fn propagate_degrees(&mut self, env: &DegreeEnvironment) -> bool {
+        let mut result = false;
+
         use Degree::*;
         use Expression::*;
         match self {
             InfixOp { meta, lhe, rhe, infix_op } => {
-                lhe.propagate_degrees(env);
-                rhe.propagate_degrees(env);
+                result = result || lhe.propagate_degrees(env);
+                result = result || rhe.propagate_degrees(env);
                 let range = infix_op.propagate_degrees(lhe.degree(), rhe.degree());
                 if let Some(range) = range {
-                    meta.degree_knowledge_mut().set_degree(&range);
+                    result = result || meta.degree_knowledge_mut().set_degree(&range);
                 }
+                result
             }
             PrefixOp { meta, rhe, prefix_op, .. } => {
-                rhe.propagate_degrees(env);
+                result = result || rhe.propagate_degrees(env);
                 let range = prefix_op.propagate_degrees(rhe.degree());
                 if let Some(range) = range {
-                    meta.degree_knowledge_mut().set_degree(&range);
+                    result = result || meta.degree_knowledge_mut().set_degree(&range);
                 }
+                result
             }
             SwitchOp { meta, cond, if_true, if_false, .. } => {
                 // The degree of a switch operation is the infimum of the true and false cases.
-                cond.propagate_degrees(env);
-                if_true.propagate_degrees(env);
-                if_false.propagate_degrees(env);
+                result = result || cond.propagate_degrees(env);
+                result = result || if_true.propagate_degrees(env);
+                result = result || if_false.propagate_degrees(env);
                 let range = DegreeRange::iter_opt([if_true.degree(), if_false.degree()]);
                 if let Some(range) = range {
-                    meta.degree_knowledge_mut().set_degree(&range);
+                    result = result || meta.degree_knowledge_mut().set_degree(&range);
                 }
+                result
             }
             Variable { meta, name } => {
                 if let Some(range) = env.degree(name) {
-                    meta.degree_knowledge_mut().set_degree(range);
+                    result = result || meta.degree_knowledge_mut().set_degree(range);
                 }
+                result
             }
             Call { meta, args, .. } => {
                 for arg in args.iter_mut() {
-                    arg.propagate_degrees(env);
+                    result = result || arg.propagate_degrees(env);
                 }
                 // If one or more non-constant arguments is passed to the function we cannot
                 // say anything about the degree of the output. If the function only takes
@@ -186,49 +192,63 @@ impl DegreeMeta for Expression {
                         false
                     }
                 }) {
-                    meta.degree_knowledge_mut().set_degree(&Constant.into())
+                    result = result || meta.degree_knowledge_mut().set_degree(&Constant.into())
                 }
+                result
             }
             InlineArray { meta, values } => {
                 // The degree range of an array is the infimum of the ranges of all elements.
                 for value in values.iter_mut() {
-                    value.propagate_degrees(env);
+                    result = result || value.propagate_degrees(env);
                 }
                 let range = DegreeRange::iter_opt(values.iter().map(|value| value.degree()));
                 if let Some(range) = range {
-                    meta.degree_knowledge_mut().set_degree(&range);
+                    result = result || meta.degree_knowledge_mut().set_degree(&range);
                 }
+                result
             }
             Access { meta, var, access } => {
                 // Accesses are ignored when determining the degree of a variable.
                 for access in access.iter_mut() {
                     if let AccessType::ArrayAccess(index) = access {
-                        index.propagate_degrees(env);
+                        result = result || index.propagate_degrees(env);
                     }
                 }
                 if let Some(range) = env.degree(var) {
-                    meta.degree_knowledge_mut().set_degree(range);
+                    result = result || meta.degree_knowledge_mut().set_degree(range);
                 }
+                result
             }
             Update { meta, var, access, rhe, .. } => {
                 // Accesses are ignored when determining the degree of a variable.
-                rhe.propagate_degrees(env);
+                result = result || rhe.propagate_degrees(env);
                 for access in access.iter_mut() {
                     if let AccessType::ArrayAccess(index) = access {
-                        index.propagate_degrees(env);
+                        result = result || index.propagate_degrees(env);
                     }
                 }
-                let range = DegreeRange::iter_opt([env.degree(var), rhe.degree()]);
-                if let Some(range) = range {
-                    meta.degree_knowledge_mut().set_degree(&range);
+                if env.degree(var).is_none() {
+                    // This is the first assignment to the array. The degree is given by the RHS.
+                    if let Some(range) = rhe.degree() {
+                        result = result || meta.degree_knowledge_mut().set_degree(&range);
+                    }
+                } else {
+                    // The array has been assigned to previously. The degree is the infimum of
+                    // the degrees of `var` and the RHS.
+                    let range = DegreeRange::iter_opt([env.degree(var), rhe.degree()]);
+                    if let Some(range) = range {
+                        result = result || meta.degree_knowledge_mut().set_degree(&range);
+                    }
                 }
+                result
             }
             Phi { meta, args } => {
                 // The degree range of a phi expression is the infimum of the ranges of all the arguments.
                 let range = DegreeRange::iter_opt(args.iter().map(|arg| env.degree(arg)));
                 if let Some(range) = range {
-                    meta.degree_knowledge_mut().set_degree(&range);
+                    result = result || meta.degree_knowledge_mut().set_degree(&range);
                 }
+                result
             }
             Number(meta, _) => {
                 // Constants have constant degree.

@@ -5,7 +5,7 @@ use std::fmt;
 use crate::constants::UsefulConstants;
 use crate::file_definition::FileID;
 use crate::ir::declarations::{Declaration, Declarations};
-use crate::ir::degree_meta::{DegreeEnvironment, Degree};
+use crate::ir::degree_meta::{DegreeEnvironment, Degree, DegreeRange};
 use crate::ir::value_meta::ValueEnvironment;
 use crate::ir::variable_meta::VariableMeta;
 use crate::ir::{VariableName, VariableType};
@@ -419,14 +419,27 @@ impl Cfg {
 
     /// Propagate expression degrees along the CFG.
     pub(crate) fn propagate_degrees(&mut self) {
+        use Degree::*;
         debug!("propagating expression degrees for `{}`", self.name());
         let mut env = DegreeEnvironment::new();
         for param in self.parameters().iter() {
             env.set_type(param, &VariableType::Local);
-            env.set_degree(param, &Degree::Constant.into())
+            if matches!(self.definition_type(), DefinitionType::Function) {
+                // For functions, the parameters may be constants or signals.
+                let range = DegreeRange::new(Constant, Linear);
+                env.set_degree(param, &range);
+            } else {
+                // For templates, the parameters are constants.
+                env.set_degree(param, &Constant.into());
+            }
         }
-        for basic_block in self.iter_mut() {
-            basic_block.propagate_degrees(&mut env);
+        let mut rerun = true;
+        while rerun {
+            // Rerun degree propagation if a single child node was updated.
+            rerun = false;
+            for basic_block in self.iter_mut() {
+                rerun = rerun || basic_block.propagate_degrees(&mut env);
+            }
         }
     }
 

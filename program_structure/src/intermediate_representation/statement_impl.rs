@@ -37,7 +37,9 @@ impl Statement {
         }
     }
 
-    pub fn propagate_degrees(&mut self, env: &mut DegreeEnvironment) {
+    pub fn propagate_degrees(&mut self, env: &mut DegreeEnvironment) -> bool {
+        let mut result = false;
+
         use Degree::*;
         use Statement::*;
         use VariableType::*;
@@ -46,33 +48,37 @@ impl Statement {
                 for name in names.iter() {
                     // Since we disregard accesses, components are treated as signals.
                     if matches!(var_type, Signal(_) | Component) {
-                        env.set_degree(name, &Linear.into());
+                        result = result || env.set_degree(name, &Linear.into());
                     }
                     env.set_type(name, var_type);
                 }
+                result
             }
             Substitution { var, rhe, .. } => {
-                rhe.propagate_degrees(env);
+                result = result || rhe.propagate_degrees(env);
                 if env.is_local(var) {
                     if let Some(range) = rhe.degree() {
-                        env.set_degree(var, range);
+                        result = result || env.set_degree(var, range);
                     }
                 }
+                result
             }
             LogCall { args, .. } => {
                 use LogArgument::*;
                 for arg in args {
                     if let Expr(value) = arg {
-                        value.propagate_degrees(env);
+                        result = result || value.propagate_degrees(env);
                     }
                 }
+                result
             }
             IfThenElse { cond, .. } => cond.propagate_degrees(env),
             Return { value, .. } => value.propagate_degrees(env),
             Assert { arg, .. } => arg.propagate_degrees(env),
             ConstraintEquality { lhe, rhe, .. } => {
-                lhe.propagate_degrees(env);
-                rhe.propagate_degrees(env);
+                result = result || lhe.propagate_degrees(env);
+                result = result || rhe.propagate_degrees(env);
+                result
             }
         }
     }
