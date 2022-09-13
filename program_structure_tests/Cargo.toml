@@ -1,6 +1,6 @@
 [package]
 name = "circomspect-program-structure-tests"
-version = "0.5.1"
+version = "0.6.1"
 edition = "2021"
 
 [dependencies]
