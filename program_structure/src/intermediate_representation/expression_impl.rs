@@ -230,7 +230,7 @@ impl DegreeMeta for Expression {
                 if env.degree(var).is_none() {
                     // This is the first assignment to the array. The degree is given by the RHS.
                     if let Some(range) = rhe.degree() {
-                        result = result || meta.degree_knowledge_mut().set_degree(&range);
+                        result = result || meta.degree_knowledge_mut().set_degree(range);
                     }
                 } else {
                     // The array has been assigned to previously. The degree is the infimum of
