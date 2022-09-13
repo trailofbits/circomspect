@@ -221,4 +221,8 @@ impl Report {
     pub fn id(&self) -> String {
         self.code.id()
     }
+
+    pub fn name(&self) -> String {
+        self.code.name()
+    }
 }
