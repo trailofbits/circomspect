@@ -85,13 +85,11 @@ impl UnecessarySignalAssignmentWarning {
                 ),
             );
         }
-        // If no constraints are identified, suggest using `<==` instead.
-        if report.secondary().is_empty() {
-            report.add_note(
-                "Consider rewriting the statement using the constraint assignment operator `<==`."
-                    .to_string(),
-            );
-        }
+        // We always suggest using `<==` instead.
+        report.add_note(
+            "Consider rewriting the statement using the constraint assignment operator `<==`."
+                .to_string(),
+        );
         report
     }
 }
@@ -209,8 +207,9 @@ impl SignalUse {
 /// If the developer meant to use the constraint assignment operator `<==` this
 /// could lead to unexpected results.
 pub fn find_signal_assignments(cfg: &Cfg) -> ReportCollection {
-    if matches!(cfg.definition_type(), DefinitionType::Function) {
-        // Exit early if this is a function.
+    use DefinitionType::*;
+    if matches!(cfg.definition_type(), Function | CustomTemplate) {
+        // Exit early if this is a function or custom template.
         return ReportCollection::new();
     }
     debug!("running signal assignment analysis pass");

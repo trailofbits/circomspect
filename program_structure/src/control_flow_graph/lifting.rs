@@ -74,9 +74,13 @@ impl TryLift<UsefulConstants> for &TemplateData {
         let name = self.get_name().to_string();
         let parameters = Parameters::from(*self);
         let body = self.get_body().clone();
-
+        let definition_type = if self.is_custom_gate() {
+            DefinitionType::CustomTemplate
+        } else {
+            DefinitionType::Template
+        };
         debug!("building CFG for template `{name}`");
-        try_lift_impl(name, DefinitionType::Template, constants, parameters, body, reports)
+        try_lift_impl(name, definition_type, constants, parameters, body, reports)
     }
 }
 
@@ -108,11 +112,16 @@ impl TryLift<UsefulConstants> for Definition {
         reports: &mut ReportCollection,
     ) -> CFGResult<Cfg> {
         match self {
-            Definition::Template { name, body, .. } => {
+            Definition::Template { name, body, is_custom_gate, .. } => {
                 debug!("building CFG for template `{name}`");
+                let definition_type = if *is_custom_gate {
+                    DefinitionType::CustomTemplate
+                } else {
+                    DefinitionType::Template
+                };
                 try_lift_impl(
                     name.clone(),
-                    DefinitionType::Template,
+                    definition_type,
                     constants,
                     self.into(),
                     body.clone(),

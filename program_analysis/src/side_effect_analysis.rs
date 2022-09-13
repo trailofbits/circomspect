@@ -353,8 +353,12 @@ pub fn run_side_effect_analysis(cfg: &Cfg) -> ReportCollection {
         if !variables_read.contains(source) {
             // If the variable is unread, it must be unconstrained.
             reports.push(build_unused_signal(declaration));
-        } else if !taint_analysis.taints_any(source, &constraint_analysis.constrained_variables()) {
+        } else if matches!(cfg.definition_type(), DefinitionType::Template)
+            && !taint_analysis.taints_any(source, &constraint_analysis.constrained_variables())
+        {
             // If the signal does not flow to a constraint, it is unconstrained.
+            // (Note that we exclude functions and custom templates here since
+            // they are not allowed to contain constraints.)
             reports.push(build_unconstrained_signal(declaration));
         }
     }

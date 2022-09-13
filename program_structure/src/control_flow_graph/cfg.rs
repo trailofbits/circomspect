@@ -25,6 +25,7 @@ pub type Index = usize;
 pub enum DefinitionType {
     Function,
     Template,
+    CustomTemplate,
 }
 
 impl fmt::Display for DefinitionType {
@@ -32,6 +33,7 @@ impl fmt::Display for DefinitionType {
         match self {
             DefinitionType::Function => write!(f, "function"),
             DefinitionType::Template => write!(f, "template"),
+            DefinitionType::CustomTemplate => write!(f, "custom template"),
         }
     }
 }
