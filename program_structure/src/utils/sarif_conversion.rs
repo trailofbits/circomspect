@@ -34,7 +34,7 @@ impl ToSarif for ReportCollection {
             .iter()
             .map(|report| {
                 sarif::ReportingDescriptorBuilder::default()
-                    .name(report.id())
+                    .name(report.name())
                     .id(report.id())
                     .build()
             })
@@ -67,7 +67,7 @@ impl ToSarif for Report {
 
     fn to_sarif(&self, files: &FileLibrary) -> SarifResult<sarif::Result> {
         let level = self.category().to_string();
-        let rule_id = self.name();
+        let rule_id = self.id();
         // Build message.
         trace!("building message");
         let message = sarif::MessageBuilder::default().text(self.message()).build()?;
