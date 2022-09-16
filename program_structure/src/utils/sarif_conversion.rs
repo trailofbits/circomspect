@@ -34,7 +34,7 @@ impl ToSarif for ReportCollection {
             .iter()
             .map(|report| {
                 sarif::ReportingDescriptorBuilder::default()
-                    .name(report.id())
+                    .name(report.name())
                     .id(report.id())
                     .build()
             })
