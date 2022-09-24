@@ -71,7 +71,7 @@ pub enum ReportCode {
     FieldElementComparison,
     FieldElementArithmetic,
     SignalAssignmentStatement,
-    UnecessarySignalAssignment,
+    UnnecessarySignalAssignment,
     UnusedVariableValue,
     UnusedParameterValue,
     VariableWithoutSideEffect,
@@ -163,7 +163,7 @@ impl ReportCode {
             NonStrictBinaryConversion => "CS0010",
             CyclomaticComplexity => "CS0011",
             TooManyArguments => "CS0012",
-            UnecessarySignalAssignment => "CS0013",
+            UnnecessarySignalAssignment => "CS0013",
         }
         .to_string()
     }
@@ -240,7 +240,7 @@ impl ReportCode {
             FieldElementComparison => "field-element-comparison",
             FieldElementArithmetic => "field-element-arithmetic",
             SignalAssignmentStatement => "signal-assignment-statement",
-            UnecessarySignalAssignment => "unecessary-signal-assignment",
+            UnnecessarySignalAssignment => "unnecessary-signal-assignment",
             UnusedVariableValue => "unused-variable-value",
             UnusedParameterValue => "unused-parameter-value",
             VariableWithoutSideEffect => "variable-without-side-effect",
