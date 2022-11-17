@@ -162,13 +162,23 @@ impl DegreeMeta for Expression {
                 result
             }
             SwitchOp { meta, cond, if_true, if_false, .. } => {
-                // The degree of a switch operation is the infimum of the true and false cases.
+                // If the condition has constant degree, the expression can be
+                // desugared using an if-statement and the maximum degree in
+                // each case will be the maximum of the individual if- and
+                // else-case degrees.
                 result = result || cond.propagate_degrees(env);
                 result = result || if_true.propagate_degrees(env);
                 result = result || if_false.propagate_degrees(env);
-                let range = DegreeRange::iter_opt([if_true.degree(), if_false.degree()]);
-                if let Some(range) = range {
-                    result = result || meta.degree_knowledge_mut().set_degree(&range);
+                let Some(range) = cond.degree() else {
+                    return result;
+                };
+                if range.end() == Degree::Constant {
+                    // The condition has constant degree.
+                    if let Some(range) =
+                        DegreeRange::iter_opt([if_true.degree(), if_false.degree()])
+                    {
+                        result = result || meta.degree_knowledge_mut().set_degree(&range);
+                    }
                 }
                 result
             }
