@@ -276,14 +276,14 @@ pub fn run_side_effect_analysis(cfg: &Cfg) -> ReportCollection {
         })
         .cloned()
         .collect::<HashSet<_>>();
-    println!("exported signals: {exported_signals:?}");
+    // println!("exported signals: {exported_signals:?}");
 
     // Compute the set of variables tainted by input and output signals.
     let exported_sinks = exported_signals
         .iter()
         .flat_map(|source| taint_analysis.multi_step_taint(source))
         .collect::<HashSet<_>>();
-    println!("exported sinks: {exported_sinks:?}");
+    // println!("exported sinks: {exported_sinks:?}");
 
     // Collect variables constraining input and output sinks.
     let mut sinks = exported_sinks
