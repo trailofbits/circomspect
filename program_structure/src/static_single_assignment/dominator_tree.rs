@@ -34,7 +34,7 @@ impl<T: DirectedGraphNode> DominatorTree<T> {
         }
     }
 
-    pub fn get_entry_block(&self) -> Index {
+    pub fn entry_block(&self) -> Index {
         Index::default()
     }
 
