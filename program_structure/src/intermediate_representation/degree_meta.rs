@@ -491,16 +491,78 @@ impl DegreeKnowledge {
     }
 
     pub fn set_degree(&mut self, range: &DegreeRange) -> bool {
-        if self.degree_range.is_none() {
-            self.degree_range = Some(range.clone());
-            true
+        let result = self.degree_range.is_none();
+        self.degree_range = Some(range.clone());
+        result
+    }
+
+    #[must_use]
+    pub fn degree(&self) -> Option<&DegreeRange> {
+        self.degree_range.as_ref()
+    }
+
+    #[must_use]
+    pub fn is_constant(&self) -> bool {
+        if let Some(range) = &self.degree_range {
+            range.end() <= Degree::Constant
         } else {
             false
         }
     }
 
     #[must_use]
-    pub fn degree(&self) -> Option<&DegreeRange> {
-        self.degree_range.as_ref()
+    pub fn is_linear(&self) -> bool {
+        if let Some(range) = &self.degree_range {
+            range.end() <= Degree::Linear
+        } else {
+            false
+        }
+    }
+
+    #[must_use]
+    pub fn is_quadratic(&self) -> bool {
+        if let Some(range) = &self.degree_range {
+            range.end() <= Degree::Quadratic
+        } else {
+            false
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Degree, DegreeKnowledge};
+
+    #[test]
+    fn test_value_knowledge() {
+        let mut value = DegreeKnowledge::new();
+        assert!(value.degree().is_none());
+        assert_eq!(value.is_constant(), false);
+        assert_eq!(value.is_linear(), false);
+        assert_eq!(value.is_quadratic(), false);
+
+        assert_eq!(value.set_degree(&Degree::Constant.into()), true);
+        assert!(value.degree().is_some());
+        assert_eq!(value.is_constant(), true);
+        assert_eq!(value.is_linear(), true);
+        assert_eq!(value.is_quadratic(), true);
+
+        assert_eq!(value.set_degree(&Degree::Linear.into()), false);
+        assert!(value.degree().is_some());
+        assert_eq!(value.is_constant(), false);
+        assert_eq!(value.is_linear(), true);
+        assert_eq!(value.is_quadratic(), true);
+
+        assert_eq!(value.set_degree(&Degree::Quadratic.into()), false);
+        assert!(value.degree().is_some());
+        assert_eq!(value.is_constant(), false);
+        assert_eq!(value.is_linear(), false);
+        assert_eq!(value.is_quadratic(), true);
+
+        assert_eq!(value.set_degree(&Degree::NonQuadratic.into()), false);
+        assert!(value.degree().is_some());
+        assert_eq!(value.is_constant(), false);
+        assert_eq!(value.is_linear(), false);
+        assert_eq!(value.is_quadratic(), false);
     }
 }
