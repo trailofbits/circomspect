@@ -79,6 +79,7 @@ pub enum ReportCode {
     NonStrictBinaryConversion,
     CyclomaticComplexity,
     TooManyArguments,
+    UnconstrainedLessThan,
 }
 
 impl ReportCode {
@@ -164,6 +165,7 @@ impl ReportCode {
             CyclomaticComplexity => "CS0011",
             TooManyArguments => "CS0012",
             UnnecessarySignalAssignment => "CS0013",
+            UnconstrainedLessThan => "CS0014",
         }
         .to_string()
     }
@@ -248,6 +250,7 @@ impl ReportCode {
             NonStrictBinaryConversion => "non-strict-binary-conversion",
             CyclomaticComplexity => "cyclomatic-complexity",
             TooManyArguments => "too-many-arguments",
+            UnconstrainedLessThan => "unconstrained-less-than",
         }
         .to_string()
     }
