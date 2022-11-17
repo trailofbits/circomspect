@@ -53,12 +53,12 @@ impl Curve {
 impl FromStr for Curve {
     type Err = Error;
 
-    fn from_str(prime: &str) -> Result<Self, Self::Err> {
-        match &prime.to_uppercase()[..] {
+    fn from_str(curve: &str) -> Result<Self, Self::Err> {
+        match &curve.to_uppercase()[..] {
             "BN128" => Ok(Curve::Bn128),
             "BLS12_381" => Ok(Curve::Bls12_381),
             "GOLDILOCKS" => Ok(Curve::Goldilocks),
-            _ => Err(anyhow!("failed to parse prime `{prime}`")),
+            _ => Err(anyhow!("failed to parse curve `{curve}`")),
         }
     }
 }

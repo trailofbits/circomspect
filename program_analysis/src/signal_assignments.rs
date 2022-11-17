@@ -71,7 +71,7 @@ impl UnecessarySignalAssignmentWarning {
     pub fn into_report(self) -> Report {
         let mut report = Report::warning(
             "Using the signal assignment operator `<--` is not necessary here.".to_string(),
-            ReportCode::UnecessarySignalAssignment,
+            ReportCode::UnnecessarySignalAssignment,
         );
         // Add signal assignment warning.
         if let Some(file_id) = self.assignment_meta.file_id {
