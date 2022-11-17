@@ -968,6 +968,16 @@ impl fmt::Display for ExpressionPrefixOpcode {
     }
 }
 
+impl fmt::Debug for AccessType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        use AccessType::*;
+        match self {
+            ArrayAccess(index) => write!(f, "{index:?}"),
+            ComponentAccess(name) => write!(f, "{name:?}"),
+        }
+    }
+}
+
 impl fmt::Display for AccessType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         use AccessType::*;
