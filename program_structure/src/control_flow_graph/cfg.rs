@@ -1,6 +1,7 @@
 use log::debug;
 use std::collections::HashSet;
 use std::fmt;
+use std::time::{Instant, Duration};
 
 use crate::constants::UsefulConstants;
 use crate::file_definition::FileID;
@@ -20,6 +21,8 @@ use super::ssa_impl::{Config, Environment};
 
 /// Basic block index type.
 pub type Index = usize;
+
+const MAX_ANALYSIS_DURATION: Duration = Duration::from_secs(10);
 
 #[derive(Clone)]
 pub enum DefinitionType {
@@ -434,11 +437,17 @@ impl Cfg {
             }
         }
         let mut rerun = true;
+        let start = Instant::now();
         while rerun {
             // Rerun degree propagation if a single child node was updated.
             rerun = false;
             for basic_block in self.iter_mut() {
                 rerun = rerun || basic_block.propagate_degrees(&mut env);
+            }
+            // Bail out if analysis takes more than 10 seconds.
+            if start.elapsed() > MAX_ANALYSIS_DURATION {
+                debug!("failed to propagate degrees within allotted time");
+                rerun = false;
             }
         }
     }
@@ -448,11 +457,17 @@ impl Cfg {
         debug!("propagating constant values for `{}`", self.name());
         let mut env = ValueEnvironment::new(&self.constants);
         let mut rerun = true;
+        let start = Instant::now();
         while rerun {
             // Rerun value propagation if a single child node was updated.
             rerun = false;
             for basic_block in self.iter_mut() {
                 rerun = rerun || basic_block.propagate_values(&mut env);
+            }
+            // Bail out if analysis takes more than 10 seconds.
+            if start.elapsed() > MAX_ANALYSIS_DURATION {
+                debug!("failed to propagate values within allotted time");
+                rerun = false;
             }
         }
     }

@@ -276,14 +276,14 @@ pub fn run_side_effect_analysis(cfg: &Cfg) -> ReportCollection {
         })
         .cloned()
         .collect::<HashSet<_>>();
-    // println!("exported signals: {:?}", exported_signals.keys().collect::<HashSet<_>>());
+    println!("exported signals: {exported_signals:?}");
 
     // Compute the set of variables tainted by input and output signals.
     let exported_sinks = exported_signals
         .iter()
         .flat_map(|source| taint_analysis.multi_step_taint(source))
         .collect::<HashSet<_>>();
-    // println!("exported sinks: {:?}", exported_sinks);
+    println!("exported sinks: {exported_sinks:?}");
 
     // Collect variables constraining input and output sinks.
     let mut sinks = exported_sinks
@@ -300,8 +300,7 @@ pub fn run_side_effect_analysis(cfg: &Cfg) -> ReportCollection {
 
     // Add input and output signals to this set.
     sinks.extend(exported_signals.into_iter());
-
-    // println!("constraint sinks: {:?}", sinks);
+    // println!("constraint sinks: {sinks:?}");
 
     // Add variables occurring in declarations, return values, asserts, and
     // control-flow conditions.
@@ -318,13 +317,15 @@ pub fn run_side_effect_analysis(cfg: &Cfg) -> ReportCollection {
             }
         }
     }
-    // println!("all sinks: {:?}", sinks);
-    // println!("variables read: {:?}", variables_read);
+    // println!("all sinks: {sinks:?}");
+    // println!("variables read: {variables_read:?}");
 
     let mut reports = ReportCollection::new();
     let mut reported_vars = HashSet::new();
 
     // Generate a report for any variable that does not taint a sink.
+    // TODO: The call to TaintAnalysis::taints_any chokes on CFGs containing
+    // large (65536 element) arrays.
     for source in taint_analysis.definitions() {
         if !variables_read.contains(source.name()) {
             // If the variable is unread, the corresponding value is unused.
@@ -345,6 +346,8 @@ pub fn run_side_effect_analysis(cfg: &Cfg) -> ReportCollection {
         }
     }
     // Generate reports for unused or unconstrained signals.
+    // TODO: The call to TaintAnalysis::taints_any chokes on CFGs containing
+    // large (65536 element) arrays.
     for (source, declaration) in signal_decls {
         // Don't generate multiple reports for the same variable.
         if reported_vars.contains(&source.to_string()) {
