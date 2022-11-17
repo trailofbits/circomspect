@@ -71,6 +71,19 @@ impl FromStr for MessageCategory {
     }
 }
 
+impl MessageCategory {
+    /// Convert message category to Sarif level.
+    pub fn to_level(&self) -> String {
+        use MessageCategory::*;
+        match self {
+            Error => "error",
+            Warning => "warning",
+            Info => "note",
+        }
+        .to_string()
+    }
+}
+
 #[derive(Clone)]
 pub struct Report {
     category: MessageCategory,
