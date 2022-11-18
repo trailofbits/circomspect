@@ -3,7 +3,7 @@ use num_bigint::BigInt;
 use std::fmt;
 use std::str::FromStr;
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum Curve {
     Bn128,
     Bls12_381,
@@ -65,12 +65,18 @@ impl FromStr for Curve {
 
 #[derive(Clone)]
 pub struct UsefulConstants {
+    curve: Curve,
     prime: BigInt,
 }
 
 impl UsefulConstants {
     pub fn new(curve: &Curve) -> UsefulConstants {
-        UsefulConstants { prime: curve.prime() }
+        UsefulConstants { curve: curve.clone(), prime: curve.prime() }
+    }
+
+    /// Returns the used curve.
+    pub fn curve(&self) -> &Curve {
+        &self.curve
     }
 
     /// Returns the used prime.

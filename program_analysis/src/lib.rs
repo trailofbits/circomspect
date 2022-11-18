@@ -8,6 +8,7 @@ pub mod taint_analysis;
 
 // Analysis passes.
 mod bitwise_complement;
+mod bn128_specific_circuit;
 mod constant_conditional;
 mod definition_complexity;
 mod field_arithmetic;
@@ -25,6 +26,7 @@ pub fn get_analysis_passes<'a>() -> Vec<Box<dyn Fn(&'a Cfg) -> ReportCollection 
         Box::new(side_effect_analysis::run_side_effect_analysis),
         Box::new(field_arithmetic::find_field_element_arithmetic),
         Box::new(field_comparisons::find_field_element_comparisons),
+        Box::new(bn128_specific_circuit::find_bn128_specific_circuits),
         Box::new(unconstrained_less_than::find_unconstrained_less_than),
         Box::new(constant_conditional::find_constant_conditional_statement),
         Box::new(nonstrict_binary_conversion::find_nonstrict_binary_conversion),
