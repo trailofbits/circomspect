@@ -138,6 +138,13 @@ mod tests {
             }
         "#;
         validate_reports(src, 1);
+
+        let src = r#"
+            function f() {
+                return (1 > 2)? 3: 4;
+            }
+        "#;
+        validate_reports(src, 0);
     }
 
     fn validate_reports(src: &str, expected_len: usize) {

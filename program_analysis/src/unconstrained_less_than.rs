@@ -331,7 +331,7 @@ mod tests {
               ok <== lt.out;
             }
         "#;
-        validate_reports(src, 1);
+        validate_reports(src, 2);
 
         let src = r#"
             template Test(n) {
