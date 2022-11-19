@@ -536,21 +536,15 @@ impl ValueMeta for Expression {
         match self {
             InfixOp { meta, lhe, infix_op, rhe, .. } => {
                 let mut result = lhe.propagate_values(env) || rhe.propagate_values(env);
-                match infix_op.propagate_values(lhe.value(), rhe.value(), env) {
-                    Some(value) => {
-                        result = result || meta.value_knowledge_mut().set_reduces_to(value)
-                    }
-                    None => {}
+                if let Some(value) = infix_op.propagate_values(lhe.value(), rhe.value(), env) {
+                    result = result || meta.value_knowledge_mut().set_reduces_to(value)
                 }
                 result
             }
             PrefixOp { meta, prefix_op, rhe } => {
                 let mut result = rhe.propagate_values(env);
-                match prefix_op.propagate_values(rhe.value(), env) {
-                    Some(value) => {
-                        result = result || meta.value_knowledge_mut().set_reduces_to(value)
-                    }
-                    None => {}
+                if let Some(value) = prefix_op.propagate_values(rhe.value(), env) {
+                    result = result || meta.value_knowledge_mut().set_reduces_to(value)
                 }
                 result
             }

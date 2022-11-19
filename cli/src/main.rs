@@ -52,8 +52,11 @@ fn generate_cfg<Ast: IntoCfg>(
     ast: Ast,
     curve: &Curve,
     reports: &mut ReportCollection,
-) -> Result<Cfg, Report> {
-    ast.into_cfg(curve, reports).map_err(Report::from)?.into_ssa().map_err(Report::from)
+) -> Result<Cfg, Box<Report>> {
+    ast.into_cfg(curve, reports)
+        .map_err(|error| Box::new(Report::from(error)))?
+        .into_ssa()
+        .map_err(|error| Box::new(Report::from(error)))
 }
 
 fn analyze_cfg(cfg: &Cfg, reports: &mut ReportCollection) {
@@ -68,7 +71,7 @@ fn analyze_ast<Ast: IntoCfg>(ast: Ast, curve: &Curve, reports: &mut ReportCollec
             analyze_cfg(&cfg, reports);
         }
         Err(error) => {
-            reports.push(error);
+            reports.push(*error);
         }
     };
 }

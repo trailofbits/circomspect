@@ -48,25 +48,28 @@ struct VariableAccess {
 }
 
 impl VariableAccess {
-    fn new(var: &VariableName, access: &Vec<AccessType>) -> Self {
-        VariableAccess { var: var.clone(), access: access.clone() }
+    fn new(var: &VariableName, access: &[AccessType]) -> Self {
+        VariableAccess { var: var.clone(), access: access.to_vec() }
     }
 }
 
 /// Tracks component instantiations `var = T(...)` where `T` is either `LessThan`
 /// or `Num2Bits`.
 enum Component {
-    LessThan { meta: Meta, required_size: Expression },
-    Num2Bits { enforced_size: Expression },
+    LessThan { meta: Box<Meta>, required_size: Box<Expression> },
+    Num2Bits { enforced_size: Box<Expression> },
 }
 
 impl Component {
     fn less_than(meta: &Meta, required_size: &Expression) -> Self {
-        Self::LessThan { meta: meta.clone(), required_size: required_size.clone() }
+        Self::LessThan {
+            meta: Box::new(meta.clone()),
+            required_size: Box::new(required_size.clone()),
+        }
     }
 
     fn num_2_bits(enforced_size: &Expression) -> Self {
-        Self::Num2Bits { enforced_size: enforced_size.clone() }
+        Self::Num2Bits { enforced_size: Box::new(enforced_size.clone()) }
     }
 }
 
@@ -74,14 +77,14 @@ impl Component {
 /// where `T` is either `LessThan` or `Num2Bits`.
 enum ComponentInput {
     LessThan {
-        component_meta: Meta,
-        input_meta: Meta,
-        value: Expression,
-        required_size: Expression,
+        component_meta: Box<Meta>,
+        input_meta: Box<Meta>,
+        value: Box<Expression>,
+        required_size: Box<Expression>,
     },
     Num2Bits {
-        value: Expression,
-        enforced_size: Expression,
+        value: Box<Expression>,
+        enforced_size: Box<Expression>,
     },
 }
 
@@ -93,15 +96,18 @@ impl ComponentInput {
         required_size: &Expression,
     ) -> Self {
         Self::LessThan {
-            component_meta: component_meta.clone(),
-            input_meta: input_meta.clone(),
-            value: value.clone(),
-            required_size: required_size.clone(),
+            component_meta: Box::new(component_meta.clone()),
+            input_meta: Box::new(input_meta.clone()),
+            value: Box::new(value.clone()),
+            required_size: Box::new(required_size.clone()),
         }
     }
 
     fn num_2_bits(value: &Expression, enforced_size: &Expression) -> Self {
-        Self::Num2Bits { value: value.clone(), enforced_size: enforced_size.clone() }
+        Self::Num2Bits {
+            value: Box::new(value.clone()),
+            enforced_size: Box::new(enforced_size.clone()),
+        }
     }
 }
 
@@ -168,14 +174,14 @@ pub fn find_unconstrained_less_than(cfg: &Cfg) -> ReportCollection {
     for input in inputs {
         match input {
             ComponentInput::LessThan { component_meta, input_meta, value, required_size } => {
-                constraints.entry(value.clone()).or_default().required.push(SizeEntry::new(
+                constraints.entry(*value.clone()).or_default().required.push(SizeEntry::new(
                     &component_meta,
                     &input_meta,
                     &required_size,
                 ));
             }
             ComponentInput::Num2Bits { value, enforced_size, .. } => {
-                constraints.entry(value.clone()).or_default().enforced.push(enforced_size);
+                constraints.entry(*value.clone()).or_default().enforced.push(*enforced_size);
             }
         }
     }

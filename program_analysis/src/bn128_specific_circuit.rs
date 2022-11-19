@@ -85,9 +85,9 @@ fn visit_statement(stmt: &Statement, reports: &mut ReportCollection) {
     }
 }
 
-fn build_report(meta: &Meta, name: &String) -> Report {
+fn build_report(meta: &Meta, name: &str) -> Report {
     BN128SpecificCircuitWarning {
-        template_name: name.clone(),
+        template_name: name.to_string(),
         file_id: meta.file_id,
         file_location: meta.file_location(),
     }

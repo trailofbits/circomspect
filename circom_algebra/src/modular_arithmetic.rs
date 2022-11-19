@@ -79,7 +79,7 @@ pub fn complement_256(elem: &BigInt, field: &BigInt) -> BigInt {
         bit_repr.push(0);
     }
     for bit in &mut bit_repr {
-        *bit = if *bit == 0 { 1 } else { 0 };
+        *bit = u8::from(*bit == 0);
     }
     let cp = BigInt::from_radix_le(sign, &bit_repr, 2).unwrap();
     modulus(&cp, field)

@@ -537,32 +537,32 @@ mod tests {
     fn test_value_knowledge() {
         let mut value = DegreeKnowledge::new();
         assert!(value.degree().is_none());
-        assert_eq!(value.is_constant(), false);
-        assert_eq!(value.is_linear(), false);
-        assert_eq!(value.is_quadratic(), false);
+        assert!(!value.is_constant());
+        assert!(!value.is_linear());
+        assert!(!value.is_quadratic());
 
-        assert_eq!(value.set_degree(&Degree::Constant.into()), true);
+        assert!(value.set_degree(&Degree::Constant.into()));
         assert!(value.degree().is_some());
-        assert_eq!(value.is_constant(), true);
-        assert_eq!(value.is_linear(), true);
-        assert_eq!(value.is_quadratic(), true);
+        assert!(value.is_constant());
+        assert!(value.is_linear());
+        assert!(value.is_quadratic());
 
-        assert_eq!(value.set_degree(&Degree::Linear.into()), false);
+        assert!(!value.set_degree(&Degree::Linear.into()));
         assert!(value.degree().is_some());
-        assert_eq!(value.is_constant(), false);
-        assert_eq!(value.is_linear(), true);
-        assert_eq!(value.is_quadratic(), true);
+        assert!(!value.is_constant());
+        assert!(value.is_linear());
+        assert!(value.is_quadratic());
 
-        assert_eq!(value.set_degree(&Degree::Quadratic.into()), false);
+        assert!(!value.set_degree(&Degree::Quadratic.into()));
         assert!(value.degree().is_some());
-        assert_eq!(value.is_constant(), false);
-        assert_eq!(value.is_linear(), false);
-        assert_eq!(value.is_quadratic(), true);
+        assert!(!value.is_constant());
+        assert!(!value.is_linear());
+        assert!(value.is_quadratic());
 
-        assert_eq!(value.set_degree(&Degree::NonQuadratic.into()), false);
+        assert!(!value.set_degree(&Degree::NonQuadratic.into()));
         assert!(value.degree().is_some());
-        assert_eq!(value.is_constant(), false);
-        assert_eq!(value.is_linear(), false);
-        assert_eq!(value.is_quadratic(), false);
+        assert!(!value.is_constant());
+        assert!(!value.is_linear());
+        assert!(!value.is_quadratic());
     }
 }

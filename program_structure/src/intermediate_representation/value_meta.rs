@@ -140,17 +140,16 @@ mod tests {
         let mut value = ValueKnowledge::new();
         assert!(matches!(value.get_reduces_to(), None));
 
-        assert_eq!(
-            value.set_reduces_to(ValueReduction::FieldElement { value: BigInt::from(1) }),
-            true
-        );
+        let number = ValueReduction::FieldElement { value: BigInt::from(1) };
+        assert!(value.set_reduces_to(number));
         assert!(matches!(value.get_reduces_to(), Some(ValueReduction::FieldElement { .. })));
-        assert_eq!(value.is_field_element(), true);
-        assert_eq!(value.is_boolean(), false);
+        assert!(value.is_field_element());
+        assert!(!value.is_boolean());
 
-        assert_eq!(value.set_reduces_to(ValueReduction::Boolean { value: true }), false);
+        let boolean = ValueReduction::Boolean { value: true };
+        assert!(!value.set_reduces_to(boolean));
         assert!(matches!(value.get_reduces_to(), Some(ValueReduction::Boolean { .. })));
-        assert_eq!(value.is_field_element(), false);
-        assert_eq!(value.is_boolean(), true);
+        assert!(!value.is_field_element());
+        assert!(value.is_boolean());
     }
 }

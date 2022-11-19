@@ -48,7 +48,7 @@ pub fn parse_files(file_paths: &Vec<PathBuf>, compiler_version: &str) -> ParseRe
                 reports.append(&mut warnings);
             }
             Err(error) => {
-                reports.push(error);
+                reports.push(*error);
             }
         }
     }
@@ -88,7 +88,7 @@ fn parse_file(
     file_stack: &mut FileStack,
     file_library: &mut FileLibrary,
     compiler_version: &Version,
-) -> Result<(FileID, AST, ReportCollection), Report> {
+) -> Result<(FileID, AST, ReportCollection), Box<Report>> {
     let mut reports = ReportCollection::new();
 
     debug!("reading file `{}`", file_path.display());
@@ -99,24 +99,24 @@ fn parse_file(
     let program = parser_logic::parse_file(&file_content, file_id)?;
     for include in &program.includes {
         if let Err(report) = FileStack::add_include(file_stack, include) {
-            reports.push(report);
+            reports.push(*report);
         }
     }
     match check_compiler_version(file_path, program.compiler_version, compiler_version) {
         Ok(warnings) => reports.extend(warnings),
-        Err(error) => reports.push(error),
+        Err(error) => reports.push(*error),
     }
     Ok((file_id, program, reports))
 }
 
-fn open_file(file_path: &PathBuf) -> Result<(String, String), Report> /* path, src*/ {
+fn open_file(file_path: &PathBuf) -> Result<(String, String), Box<Report>> /* path, src*/ {
     use errors::FileOsError;
     use std::fs::read_to_string;
     let path_str = format!("{}", file_path.display());
     read_to_string(file_path)
         .map(|contents| (path_str.clone(), contents))
         .map_err(|_| FileOsError { path: path_str.clone() })
-        .map_err(|error| error.into_report())
+        .map_err(|error| Box::new(error.into_report()))
 }
 
 fn parse_version_string(version: &str) -> Version {
@@ -134,7 +134,7 @@ fn check_compiler_version(
     file_path: &Path,
     required_version: Option<Version>,
     compiler_version: &Version,
-) -> Result<ReportCollection, Report> {
+) -> Result<ReportCollection, Box<Report>> {
     use errors::{CompilerVersionError, NoCompilerVersionWarning};
     if let Some(required_version) = required_version {
         if required_version.0 == compiler_version.0
@@ -143,12 +143,12 @@ fn check_compiler_version(
         {
             Ok(vec![])
         } else {
-            let report = CompilerVersionError::produce_report(CompilerVersionError {
+            let error = CompilerVersionError {
                 path: format!("{}", file_path.display()),
                 required_version,
                 version: *compiler_version,
-            });
-            Err(report)
+            };
+            Err(Box::new(error.into_report()))
         }
     } else {
         let report = NoCompilerVersionWarning::produce_report(NoCompilerVersionWarning {
