@@ -93,3 +93,59 @@ fn build_report(meta: &Meta, name: &String) -> Report {
     }
     .into_report()
 }
+
+#[cfg(test)]
+mod tests {
+    use parser::parse_definition;
+    use program_structure::{cfg::IntoCfg, constants::Curve};
+
+    use super::*;
+
+    #[test]
+    fn test_num2bits_strict() {
+        let src = r#"
+            template T(n) {
+                signal input in;
+                signal output out[n];
+
+                component n2b = Num2Bits_strict(n);
+                n2b.in === in;
+                for (var i = 0; i < n; i++) {
+                    out[i] <== n2b.out[i];
+                }
+            }
+        "#;
+        validate_reports(src, 1);
+
+        let src = r#"
+            template T(n) {
+                signal input in;
+                signal output out[n];
+
+                component n2b = Num2Bits(n);
+                n2b.in === in;
+                for (var i = 0; i < n; i++) {
+                    out[i] <== n2b.out[i];
+                }
+            }
+        "#;
+        validate_reports(src, 0);
+    }
+
+    fn validate_reports(src: &str, expected_len: usize) {
+        // Build CFG.
+        let mut reports = ReportCollection::new();
+        let cfg = parse_definition(src)
+            .unwrap()
+            .into_cfg(&Curve::Goldilocks, &mut reports)
+            .unwrap()
+            .into_ssa()
+            .unwrap();
+        assert!(reports.is_empty());
+
+        // Generate report collection.
+        let reports = find_bn128_specific_circuits(&cfg);
+
+        assert_eq!(reports.len(), expected_len);
+    }
+}
