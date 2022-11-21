@@ -53,7 +53,7 @@ pub fn find_bn128_specific_circuits(cfg: &Cfg) -> ReportCollection {
         // Exit early if we're using the default curve.
         return ReportCollection::new();
     }
-    debug!("running bn128-specific circuits analysis pass");
+    debug!("running bn128-specific circuit analysis pass");
     let mut reports = ReportCollection::new();
     for basic_block in cfg.iter() {
         for stmt in basic_block.iter() {
