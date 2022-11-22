@@ -49,7 +49,8 @@ struct VariableAccess {
 
 impl VariableAccess {
     fn new(var: &VariableName, access: &[AccessType]) -> Self {
-        VariableAccess { var: var.clone(), access: access.to_vec() }
+        // We disregard the version to make sure accesses are not order dependent.
+        VariableAccess { var: var.without_version(), access: access.to_vec() }
     }
 }
 
@@ -373,6 +374,29 @@ mod tests {
               component lt = LessThan(n);
               lt.in[0] <== small;
               lt.in[1] <== large;
+
+              ok <== lt.out;
+            }
+        "#;
+        validate_reports(src, 0);
+
+        let src = r#"
+            template Test(n) {
+              signal input small;
+              signal input large;
+              signal output ok;
+
+              // Check that small < large.
+              component lt = LessThan(n);
+              lt.in[1] <== large;
+              lt.in[0] <== small;
+
+              // Constrain inputs to n bits.
+              component n2b[2];
+              n2b[0] = Num2Bits(n);
+              n2b[0].in <== small;
+              n2b[1] = Num2Bits(n);
+              n2b[1].in <== large;
 
               ok <== lt.out;
             }
