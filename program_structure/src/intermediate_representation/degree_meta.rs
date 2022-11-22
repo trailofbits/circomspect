@@ -269,6 +269,24 @@ impl DegreeRange {
         self.start() <= degree && degree <= self.end()
     }
 
+    /// Returns true if the upper bound is at most constant.
+    #[must_use]
+    pub fn is_constant(&self) -> bool {
+        self.end() <= Degree::Constant
+    }
+
+    /// Returns true if the upper bound is at most linear.
+    #[must_use]
+    pub fn is_linear(&self) -> bool {
+        self.end() <= Degree::Linear
+    }
+
+    /// Returns true if the upper bound is at most quadratic.
+    #[must_use]
+    pub fn is_quadratic(&self) -> bool {
+        self.end() <= Degree::Quadratic
+    }
+
     /// Computes the infimum (under inverse inclusion) of `self` and `other`.
     /// Note, if the two ranges overlap this will simply be the union of `self`
     /// and `other`.
@@ -491,16 +509,84 @@ impl DegreeKnowledge {
     }
 
     pub fn set_degree(&mut self, range: &DegreeRange) -> bool {
-        if self.degree_range.is_none() {
-            self.degree_range = Some(range.clone());
-            true
-        } else {
-            false
-        }
+        let result = self.degree_range.is_none();
+        self.degree_range = Some(range.clone());
+        result
     }
 
     #[must_use]
     pub fn degree(&self) -> Option<&DegreeRange> {
         self.degree_range.as_ref()
+    }
+
+    /// Returns true if the degree range is known, and the upper bound is
+    /// at most constant.
+    #[must_use]
+    pub fn is_constant(&self) -> bool {
+        if let Some(range) = &self.degree_range {
+            range.is_constant()
+        } else {
+            false
+        }
+    }
+
+    /// Returns true if the degree range is known, and the upper bound is
+    /// at most linear.
+    #[must_use]
+    pub fn is_linear(&self) -> bool {
+        if let Some(range) = &self.degree_range {
+            range.is_linear()
+        } else {
+            false
+        }
+    }
+
+    /// Returns true if the degree range is known, and the upper bound is
+    /// at most quadratic.
+    #[must_use]
+    pub fn is_quadratic(&self) -> bool {
+        if let Some(range) = &self.degree_range {
+            range.is_quadratic()
+        } else {
+            false
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Degree, DegreeKnowledge};
+
+    #[test]
+    fn test_value_knowledge() {
+        let mut value = DegreeKnowledge::new();
+        assert!(value.degree().is_none());
+        assert!(!value.is_constant());
+        assert!(!value.is_linear());
+        assert!(!value.is_quadratic());
+
+        assert!(value.set_degree(&Degree::Constant.into()));
+        assert!(value.degree().is_some());
+        assert!(value.is_constant());
+        assert!(value.is_linear());
+        assert!(value.is_quadratic());
+
+        assert!(!value.set_degree(&Degree::Linear.into()));
+        assert!(value.degree().is_some());
+        assert!(!value.is_constant());
+        assert!(value.is_linear());
+        assert!(value.is_quadratic());
+
+        assert!(!value.set_degree(&Degree::Quadratic.into()));
+        assert!(value.degree().is_some());
+        assert!(!value.is_constant());
+        assert!(!value.is_linear());
+        assert!(value.is_quadratic());
+
+        assert!(!value.set_degree(&Degree::NonQuadratic.into()));
+        assert!(value.degree().is_some());
+        assert!(!value.is_constant());
+        assert!(!value.is_linear());
+        assert!(!value.is_quadratic());
     }
 }

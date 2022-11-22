@@ -119,15 +119,8 @@ impl BasicBlock {
     pub fn propagate_degrees(&mut self, env: &mut DegreeEnvironment) -> bool {
         trace!("propagating degree ranges for basic block {}", self.index());
         let mut result = false;
-        let mut rerun = true;
-        while rerun {
-            // Rerun value propagation if a single child node was updated.
-            rerun = false;
-            for stmt in self.iter_mut() {
-                rerun = rerun || stmt.propagate_degrees(env);
-            }
-            // Return true if a single child node was updated.
-            result = result || rerun;
+        for stmt in self.iter_mut() {
+            result = result || stmt.propagate_degrees(env);
         }
         result
     }
@@ -135,15 +128,8 @@ impl BasicBlock {
     pub fn propagate_values(&mut self, env: &mut ValueEnvironment) -> bool {
         trace!("propagating values for basic block {}", self.index());
         let mut result = false;
-        let mut rerun = true;
-        while rerun {
-            // Rerun value propagation if a single child node was updated.
-            rerun = false;
-            for stmt in self.iter_mut() {
-                rerun = rerun || stmt.propagate_values(env);
-            }
-            // Return true if a single child node was updated.
-            result = result || rerun;
+        for stmt in self.iter_mut() {
+            result = result || stmt.propagate_values(env);
         }
         result
     }

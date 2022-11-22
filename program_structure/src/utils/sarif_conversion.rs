@@ -13,6 +13,7 @@ use crate::file_definition::{FileID, FileLibrary};
 const SARIF_VERSION: &str = "2.1.0";
 const DRIVER_NAME: &str = "Circomspect";
 const ORGANIZATION: &str = "Trail of Bits";
+const DOWNLOAD_URI: &str = "https://github.com/trailofbits/circomspect";
 
 /// A trait for objects that can be converted into a Sarif artifact.
 pub trait ToSarif {
@@ -28,7 +29,7 @@ impl ToSarif for ReportCollection {
     type Error = SarifError;
 
     fn to_sarif(&self, files: &FileLibrary) -> Result<Self::Sarif, Self::Error> {
-        debug!("converting report collection to sarif-format");
+        debug!("converting report collection to Sarif-format");
         // Build reporting descriptors.
         let rules = self
             .iter()
@@ -41,11 +42,13 @@ impl ToSarif for ReportCollection {
             .collect::<Result<Vec<_>, _>>()
             .map_err(SarifError::from)?;
         // Build tool.
+        //
+        // TODO: Should include primary package version.
         trace!("building tool");
-        // TODO: Should include version.
         let driver = sarif::ToolComponentBuilder::default()
             .name(DRIVER_NAME)
             .organization(ORGANIZATION)
+            .download_uri(DOWNLOAD_URI)
             .rules(rules)
             .build()?;
         let tool = sarif::ToolBuilder::default().driver(driver).build()?;
@@ -55,7 +58,7 @@ impl ToSarif for ReportCollection {
             self.iter().map(|report| report.to_sarif(files)).collect::<SarifResult<Vec<_>>>()?;
         let run = sarif::RunBuilder::default().tool(tool).results(results).build()?;
         // Build main object.
-        trace!("building main sarif object");
+        trace!("building main Sarif object");
         let sarif = sarif::SarifBuilder::default().runs(vec![run]).version(SARIF_VERSION).build();
         sarif.map_err(SarifError::from)
     }
@@ -66,33 +69,23 @@ impl ToSarif for Report {
     type Error = SarifError;
 
     fn to_sarif(&self, files: &FileLibrary) -> SarifResult<sarif::Result> {
-        let level = self.category().to_string();
+        let level = self.category().to_level();
         let rule_id = self.id();
         // Build message.
         trace!("building message");
         let message = sarif::MessageBuilder::default().text(self.message()).build()?;
-        // Build locations from first primary label (or first secondary label if
-        // there are no primary labels).
-        //
-        // Note: We currently only use the first available label to generate the
-        // output. The reason for this is that the VS Code Sarif viewer does not
-        // handle reports with multiple locations well.
+        // Build primary and secondary locations.
         trace!("building locations");
-        let primary_locations = self
+        let locations = self
             .primary()
             .iter()
             .map(|label| label.to_sarif(files))
             .collect::<SarifResult<Vec<_>>>()?;
-        let secondary_locations = self
+        let related_locations = self
             .secondary()
             .iter()
             .map(|label| label.to_sarif(files))
             .collect::<SarifResult<Vec<_>>>()?;
-        let locations = primary_locations
-            .into_iter()
-            .chain(secondary_locations.into_iter())
-            .take(1)
-            .collect::<Vec<_>>();
         // Build reporting descriptor reference.
         let rule = sarif::ReportingDescriptorReferenceBuilder::default()
             .id(&rule_id)
@@ -106,6 +99,7 @@ impl ToSarif for Report {
             .rule_id(rule_id)
             .rule(rule)
             .locations(locations)
+            .related_locations(related_locations)
             .build()
             .map_err(SarifError::from)
     }
@@ -201,6 +195,6 @@ type SarifResult<T> = Result<T, SarifError>;
 
 impl fmt::Display for SarifError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "failed to convert analysis results to sarif-format")
+        write!(f, "failed to convert analysis results to Sarif format")
     }
 }

@@ -3,7 +3,7 @@ use num_bigint::BigInt;
 use std::fmt;
 use std::str::FromStr;
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum Curve {
     Bn128,
     Bls12_381,
@@ -53,24 +53,30 @@ impl Curve {
 impl FromStr for Curve {
     type Err = Error;
 
-    fn from_str(prime: &str) -> Result<Self, Self::Err> {
-        match &prime.to_uppercase()[..] {
+    fn from_str(curve: &str) -> Result<Self, Self::Err> {
+        match &curve.to_uppercase()[..] {
             "BN128" => Ok(Curve::Bn128),
             "BLS12_381" => Ok(Curve::Bls12_381),
             "GOLDILOCKS" => Ok(Curve::Goldilocks),
-            _ => Err(anyhow!("failed to parse prime `{prime}`")),
+            _ => Err(anyhow!("failed to parse curve `{curve}`")),
         }
     }
 }
 
 #[derive(Clone)]
 pub struct UsefulConstants {
+    curve: Curve,
     prime: BigInt,
 }
 
 impl UsefulConstants {
     pub fn new(curve: &Curve) -> UsefulConstants {
-        UsefulConstants { prime: curve.prime() }
+        UsefulConstants { curve: curve.clone(), prime: curve.prime() }
+    }
+
+    /// Returns the used curve.
+    pub fn curve(&self) -> &Curve {
+        &self.curve
     }
 
     /// Returns the used prime.

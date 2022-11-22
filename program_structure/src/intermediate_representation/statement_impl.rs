@@ -86,6 +86,7 @@ impl Statement {
     #[must_use]
     pub fn propagate_values(&mut self, env: &mut ValueEnvironment) -> bool {
         use Statement::*;
+        use Expression::*;
         match self {
             Declaration { dimensions, .. } => {
                 let mut result = false;
@@ -95,12 +96,16 @@ impl Statement {
                 result
             }
             Substitution { meta, var, rhe, .. } => {
-                // TODO: Handle array values.
                 let mut result = rhe.propagate_values(env);
-                if let Some(value) = rhe.value() {
-                    env.add_variable(var, value);
-                    result = result || meta.value_knowledge_mut().set_reduces_to(value.clone());
+
+                // TODO: Handle array values.
+                if !matches!(rhe, Update { .. }) {
+                    if let Some(value) = rhe.value() {
+                        env.add_variable(var, value);
+                        result = result || meta.value_knowledge_mut().set_reduces_to(value.clone());
+                    }
                 }
+                trace!("Substitution returned {result}");
                 result
             }
             LogCall { args, .. } => {

@@ -48,7 +48,7 @@ impl FileStack {
         }
     }
 
-    pub fn add_include(&mut self, include: &Include) -> Result<(), Report> {
+    pub fn add_include(&mut self, include: &Include) -> Result<(), Box<Report>> {
         let mut location = self.current_location.clone().expect("parsing file");
         location.push(include.path.clone());
         match fs::canonicalize(location) {
@@ -58,12 +58,14 @@ impl FileStack {
                 }
                 Ok(())
             }
-            Err(_) => Err(IncludeError {
-                path: include.path.clone(),
-                file_id: include.meta.file_id,
-                file_location: include.meta.file_location(),
+            Err(_) => {
+                let error = IncludeError {
+                    path: include.path.clone(),
+                    file_id: include.meta.file_id,
+                    file_location: include.meta.file_location(),
+                };
+                Err(Box::new(error.into_report()))
             }
-            .into_report()),
         }
     }
 

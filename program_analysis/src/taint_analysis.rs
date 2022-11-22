@@ -226,7 +226,7 @@ mod tests {
         );
         taint_map.insert("i", HashSet::from(["i".to_string(), "right".to_string()]));
 
-        validate_taint(&src, &taint_map);
+        validate_taint(src, &taint_map);
     }
 
     fn validate_taint(src: &str, taint_map: &HashMap<&str, HashSet<String>>) {

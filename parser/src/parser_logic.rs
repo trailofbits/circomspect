@@ -4,7 +4,7 @@ use program_structure::ast::AST;
 use program_structure::report::Report;
 use program_structure::file_definition::FileID;
 
-pub fn preprocess(expr: &str, file_id: FileID) -> Result<String, Report> {
+pub fn preprocess(expr: &str, file_id: FileID) -> Result<String, Box<Report>> {
     let mut pp = String::new();
     let mut state = 0;
     let mut loc = 0;
@@ -60,7 +60,7 @@ pub fn preprocess(expr: &str, file_id: FileID) -> Result<String, Report> {
                     None => {
                         let error =
                             UnclosedCommentError { location: block_start..block_start, file_id };
-                        return Err(UnclosedCommentError::produce_report(error));
+                        return Err(Box::new(error.into_report()));
                     }
                 }
             }
@@ -74,7 +74,7 @@ pub fn preprocess(expr: &str, file_id: FileID) -> Result<String, Report> {
     Ok(pp)
 }
 
-pub fn parse_file(src: &str, file_id: FileID) -> Result<AST, Report> {
+pub fn parse_file(src: &str, file_id: FileID) -> Result<AST, Box<Report>> {
     use lalrpop_util::ParseError::*;
     lang::ParseAstParser::new()
         .parse(&preprocess(src, file_id)?)
@@ -103,7 +103,7 @@ pub fn parse_file(src: &str, file_id: FileID) -> Result<AST, Report> {
             },
             _ => ParsingError { file_id, msg: format!("{:?}", parse_error), location: 0..0 },
         })
-        .map_err(ParsingError::produce_report)
+        .map_err(|error| Box::new(error.into_report()))
 }
 
 pub fn parse_string(src: &str) -> Option<AST> {

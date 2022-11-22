@@ -126,3 +126,30 @@ impl ValueKnowledge {
         matches!(self.reduces_to, Some(FieldElement { .. }))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use num_bigint::BigInt;
+
+    use crate::ir::value_meta::ValueReduction;
+
+    use super::ValueKnowledge;
+
+    #[test]
+    fn test_value_knowledge() {
+        let mut value = ValueKnowledge::new();
+        assert!(matches!(value.get_reduces_to(), None));
+
+        let number = ValueReduction::FieldElement { value: BigInt::from(1) };
+        assert!(value.set_reduces_to(number));
+        assert!(matches!(value.get_reduces_to(), Some(ValueReduction::FieldElement { .. })));
+        assert!(value.is_field_element());
+        assert!(!value.is_boolean());
+
+        let boolean = ValueReduction::Boolean { value: true };
+        assert!(!value.set_reduces_to(boolean));
+        assert!(matches!(value.get_reduces_to(), Some(ValueReduction::Boolean { .. })));
+        assert!(!value.is_field_element());
+        assert!(value.is_boolean());
+    }
+}

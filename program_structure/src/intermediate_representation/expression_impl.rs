@@ -162,13 +162,23 @@ impl DegreeMeta for Expression {
                 result
             }
             SwitchOp { meta, cond, if_true, if_false, .. } => {
-                // The degree of a switch operation is the infimum of the true and false cases.
+                // If the condition has constant degree, the expression can be
+                // desugared using an if-statement and the maximum degree in
+                // each case will be the maximum of the individual if- and
+                // else-case degrees.
                 result = result || cond.propagate_degrees(env);
                 result = result || if_true.propagate_degrees(env);
                 result = result || if_false.propagate_degrees(env);
-                let range = DegreeRange::iter_opt([if_true.degree(), if_false.degree()]);
-                if let Some(range) = range {
-                    result = result || meta.degree_knowledge_mut().set_degree(&range);
+                let Some(range) = cond.degree() else {
+                    return result;
+                };
+                if range.is_constant() {
+                    // The condition has constant degree.
+                    if let Some(range) =
+                        DegreeRange::iter_opt([if_true.degree(), if_false.degree()])
+                    {
+                        result = result || meta.degree_knowledge_mut().set_degree(&range);
+                    }
                 }
                 result
             }
@@ -187,7 +197,7 @@ impl DegreeMeta for Expression {
                 // constant arguments the output must also be constant.
                 if args.iter().all(|arg| {
                     if let Some(range) = arg.degree() {
-                        matches!(range.end(), Constant)
+                        range.is_constant()
                     } else {
                         false
                     }
@@ -526,21 +536,15 @@ impl ValueMeta for Expression {
         match self {
             InfixOp { meta, lhe, infix_op, rhe, .. } => {
                 let mut result = lhe.propagate_values(env) || rhe.propagate_values(env);
-                match infix_op.propagate_values(lhe.value(), rhe.value(), env) {
-                    Some(value) => {
-                        result = result || meta.value_knowledge_mut().set_reduces_to(value)
-                    }
-                    None => {}
+                if let Some(value) = infix_op.propagate_values(lhe.value(), rhe.value(), env) {
+                    result = result || meta.value_knowledge_mut().set_reduces_to(value)
                 }
                 result
             }
             PrefixOp { meta, prefix_op, rhe } => {
                 let mut result = rhe.propagate_values(env);
-                match prefix_op.propagate_values(rhe.value(), env) {
-                    Some(value) => {
-                        result = result || meta.value_knowledge_mut().set_reduces_to(value)
-                    }
-                    None => {}
+                if let Some(value) = prefix_op.propagate_values(rhe.value(), env) {
+                    result = result || meta.value_knowledge_mut().set_reduces_to(value)
                 }
                 result
             }
@@ -964,6 +968,16 @@ impl fmt::Display for ExpressionPrefixOpcode {
             Sub => f.write_str("-"),
             BoolNot => f.write_str("!"),
             Complement => f.write_str("~"),
+        }
+    }
+}
+
+impl fmt::Debug for AccessType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        use AccessType::*;
+        match self {
+            ArrayAccess(index) => write!(f, "{index:?}"),
+            ComponentAccess(name) => write!(f, "{name:?}"),
         }
     }
 }
