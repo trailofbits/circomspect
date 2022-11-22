@@ -178,18 +178,20 @@ Goldilocks (defined over a 448-bit prime field). However, since there are no con
 
 Circomlib templates that may be problematic when used together with curves other than BN128 include the following circuit definitions.
 
-  1.  `Sign` (defined in `circuits/sign.circom`)
-  2.  `AliasCheck` (defined in `circuits/aliascheck.circom`)
-  3.  `CompConstant` (defined in `circuits/compconstant.circom`)
-  4.  `Num2Bits_strict` (defined in `circuits/bitify.circom`)
-  5.  `Bits2Num_strict` (defined in `circuits/bitify.circom`)
-  6.  `Bits2Point_Strict` (defined in `circuits/bitify.circom`)
-  7.  `Point2Bits_Strict` (defined in `circuits/bitify.circom`)
-  8.  `SMTVerifier` (defined in `circuits/smt/smtverifier.circom`)
-  9.  `SMTProcessor` (defined in `circuits/smt/smtprocessor.circom`)
-  10. `EdDSAVerifier` (defined in `circuits/eddsa.circom`)
-  11. `EdDSAPoseidonVerifier` (defined in `circuits/eddsaposeidon.circom`)
-  12. `EdDSAMiMCSpongeVerifier` (defined in `circuits/eddsamimcsponge.circom`)
+  | Template                  | Source file                        |
+  | ------------------------- | ---------------------------------- |
+  | `Sign`                    | `circuits/sign.circom`             |
+  | `AliasCheck`              | `circuits/aliascheck.circom`       |
+  | `CompConstant`            | `circuits/compconstant.circom`     |
+  | `Num2Bits_strict`         | `circuits/bitify.circom`           |
+  | `Bits2Num_strict`         | `circuits/bitify.circom`           |
+  | `Bits2Point_Strict`       | `circuits/bitify.circom`           |
+  | `Point2Bits_Strict`       | `circuits/bitify.circom`           |
+  | `SMTVerifier`             | `circuits/smt/smtverifier.circom`  |
+  | `SMTProcessor`            | `circuits/smt/smtprocessor.circom` |
+  | `EdDSAVerifier`           | `circuits/eddsa.circom`            |
+  | `EdDSAPoseidonVerifier`   | `circuits/eddsaposeidon.circom`    |
+  | `EdDSAMiMCSpongeVerifier` | `circuits/eddsamimcsponge.circom`  |
 
 
 #### Overly complex functions or templates (Warning)
