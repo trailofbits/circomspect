@@ -172,7 +172,7 @@ impl DegreeMeta for Expression {
                 let Some(range) = cond.degree() else {
                     return result;
                 };
-                if range.end() == Degree::Constant {
+                if range.is_constant() {
                     // The condition has constant degree.
                     if let Some(range) =
                         DegreeRange::iter_opt([if_true.degree(), if_false.degree()])
@@ -197,7 +197,7 @@ impl DegreeMeta for Expression {
                 // constant arguments the output must also be constant.
                 if args.iter().all(|arg| {
                     if let Some(range) = arg.degree() {
-                        matches!(range.end(), Constant)
+                        range.is_constant()
                     } else {
                         false
                     }

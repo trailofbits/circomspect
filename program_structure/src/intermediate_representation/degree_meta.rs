@@ -269,6 +269,24 @@ impl DegreeRange {
         self.start() <= degree && degree <= self.end()
     }
 
+    /// Returns true if the upper bound is at most constant.
+    #[must_use]
+    pub fn is_constant(&self) -> bool {
+        self.end() <= Degree::Constant
+    }
+
+    /// Returns true if the upper bound is at most linear.
+    #[must_use]
+    pub fn is_linear(&self) -> bool {
+        self.end() <= Degree::Linear
+    }
+
+    /// Returns true if the upper bound is at most quadratic.
+    #[must_use]
+    pub fn is_quadratic(&self) -> bool {
+        self.end() <= Degree::Quadratic
+    }
+
     /// Computes the infimum (under inverse inclusion) of `self` and `other`.
     /// Note, if the two ranges overlap this will simply be the union of `self`
     /// and `other`.
@@ -501,28 +519,34 @@ impl DegreeKnowledge {
         self.degree_range.as_ref()
     }
 
+    /// Returns true if the degree range is known, and the upper bound is
+    /// at most constant.
     #[must_use]
     pub fn is_constant(&self) -> bool {
         if let Some(range) = &self.degree_range {
-            range.end() <= Degree::Constant
+            range.is_constant()
         } else {
             false
         }
     }
 
+    /// Returns true if the degree range is known, and the upper bound is
+    /// at most linear.
     #[must_use]
     pub fn is_linear(&self) -> bool {
         if let Some(range) = &self.degree_range {
-            range.end() <= Degree::Linear
+            range.is_linear()
         } else {
             false
         }
     }
 
+    /// Returns true if the degree range is known, and the upper bound is
+    /// at most quadratic.
     #[must_use]
     pub fn is_quadratic(&self) -> bool {
         if let Some(range) = &self.degree_range {
-            range.end() <= Degree::Quadratic
+            range.is_quadratic()
         } else {
             false
         }
