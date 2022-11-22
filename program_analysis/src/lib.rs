@@ -15,6 +15,7 @@ mod field_arithmetic;
 mod field_comparisons;
 mod nonstrict_binary_conversion;
 mod unconstrained_less_than;
+mod unconstrained_division;
 mod side_effect_analysis;
 mod signal_assignments;
 
@@ -26,6 +27,7 @@ pub fn get_analysis_passes<'a>() -> Vec<Box<dyn Fn(&'a Cfg) -> ReportCollection 
         Box::new(side_effect_analysis::run_side_effect_analysis),
         Box::new(field_arithmetic::find_field_element_arithmetic),
         Box::new(field_comparisons::find_field_element_comparisons),
+        Box::new(unconstrained_division::find_unconstrained_division),
         Box::new(bn128_specific_circuit::find_bn128_specific_circuits),
         Box::new(unconstrained_less_than::find_unconstrained_less_than),
         Box::new(constant_conditional::find_constant_conditional_statement),

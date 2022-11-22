@@ -80,6 +80,7 @@ pub enum ReportCode {
     CyclomaticComplexity,
     TooManyArguments,
     UnconstrainedLessThan,
+    UnconstrainedDivision,
     BN128SpecificCircuit,
 }
 
@@ -167,7 +168,8 @@ impl ReportCode {
             TooManyArguments => "CS0012",
             UnnecessarySignalAssignment => "CS0013",
             UnconstrainedLessThan => "CS0014",
-            BN128SpecificCircuit => "CS0015",
+            UnconstrainedDivision => "CS0015",
+            BN128SpecificCircuit => "CS0016",
         }
         .to_string()
     }
@@ -253,6 +255,7 @@ impl ReportCode {
             CyclomaticComplexity => "cyclomatic-complexity",
             TooManyArguments => "too-many-arguments",
             UnconstrainedLessThan => "unconstrained-less-than",
+            UnconstrainedDivision => "unconstrained-division",
             BN128SpecificCircuit => "bn128-specific-circuit",
         }
         .to_string()
