@@ -178,7 +178,6 @@ Goldilocks (defined over a 448-bit prime field). However, since there are no con
 
 Circomlib templates that may be problematic when used together with curves other than BN128 include the following circuit definitions.
 
-<center>
   | Template                  | Circomlib Source File            |
   | ------------------------- | -------------------------------- |
   | `Sign`                    | circuits/sign.circom             |
@@ -193,7 +192,7 @@ Circomlib templates that may be problematic when used together with curves other
   | `EdDSAVerifier`           | circuits/eddsa.circom            |
   | `EdDSAPoseidonVerifier`   | circuits/eddsaposeidon.circom    |
   | `EdDSAMiMCSpongeVerifier` | circuits/eddsamimcsponge.circom  |
-</center>
+
 
 #### Overly complex functions or templates (Warning)
 
