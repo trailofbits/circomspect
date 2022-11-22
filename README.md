@@ -48,7 +48,7 @@ The project currently implements analysis passes for the following types of issu
 
 An assigned value which does not contribute either directly or indirectly to a constraint, or a function return value, typically indicates a mistake in the implementation of the circuit. For example, consider the following `BinSum` template from circomlib where we've changed the final constraint to introduce a bug.
 
-```js
+```cpp
   template BinSum(n, ops) {
       var nout = nbits((2 ** n - 1) * ops);
       var lin = 0;
@@ -87,7 +87,7 @@ A shadowing variable declaration is a declaration of a variable with the same na
 
 For example, consider this function which is supposed to compute the number of bits needed to represent `a`.
 
-```js
+```cpp
   function numberOfBits(a) {
       var n = 1;
       var r = 0;  // Shadowed variable is declared here.
@@ -135,7 +135,7 @@ The Circomlib `LessThan` template takes an input size as argument. If the indivi
 For example, consider the following template which takes a single input signal
 and attempts to constrain it to be less than 256.
 
-```js
+```cpp
   template IsByte() {
     signal input in;
     signal output out;
@@ -152,20 +152,33 @@ and attempts to constrain it to be less than 256.
 
 Suppose that we define the private input `in` as 512. This would result in the constraints
 
-```js
+```cpp
     component lt = LessThan(8);
     lt.in[0] <== 512;
     lt.in[1] <== 256;
 ```
 
-Clearly 512 is not less than 256, so we would expect `IsByte` to return 0. However, looking at [the implementation of `LessThan`](https://github.com/iden3/circomlib/blob/cff5ab6288b55ef23602221694a6a38a0239dcc0/circuits/comparators.circom#L89-L99), we see that `lt.out` is given by `1 - n2b.out[8] = 1 - (`bit `8` of `512 + 256 - 256) = 1 - 0 = 1`. It follows that 512 actually satisfies `IsByte()`, which is not what we wanted.
+Clearly 512 is not less than 256, so we would expect `IsByte` to return 0. However, looking at [the implementation](https://github.com/iden3/circomlib/blob/cff5ab6288b55ef23602221694a6a38a0239dcc0/circuits/comparators.circom#L89-L99) of `LessThan`, we see that `lt.out` is given by 
+
+```cpp
+    1 - n2b.out[8] = 1 - (bit 8 of 512 + 256 - 256) = 1 - 0 = 1.
+```
+
+It follows that 512 satisfies `IsByte()`, which is not what we wanted.
 
 Circomspect will check if the inputs to `LessThan` are constrained to the input size using `Num2Bits`. If it cannot prove that both inputs are constrained in this way, a warning is generated.
 
 
-#### Divisor in signal assignment not constrained to be non-zero (Warning)
+#### Divisor in signal assignment is not constrained to be non-zero (Warning)
 
-To ensure that a signal `c` is equal to `a / b` (where `b` is not constant), it is common to use a signal assignment to set `c <-- a / b` during witness generation, and then constrain `a`, `b`, and `c` to ensure that `c * b === a` during proof verification. However, the statement `c = a / b` only makes sense when `b` is not zero, whereas `c * b = a` may be true even when `b` is zero. For this reason it is important to also ensure that the divisor is non-zero when the proof is verified.
+Since division cannot be expressed directly using a quadratic constraint, it is common to use the following pattern to ensure that the signal `c` is equal to `a / b`. 
+
+```cpp
+    c <-- a / b;
+    c * b === a;
+```
+
+This forces `c` to be equal to `a / b` during witness generation, and checks that `c * b = a` during proof verification. However, the statement `c = a / b` only makes sense when `b` is non-zero, whereas `c * b = a` may be true even when `b` is zero. For this reason it is important to also constrain the divisor `b` to ensure that it is non-zero when the proof is verified.
 
 Circomspect will identify signal assignments on the form `c <-- a / b` and ensure that the expression `b` is constrained to be non-zero using the Circomlib `IsZero` template. If no such constraint is found, a warning is emitted.
 
