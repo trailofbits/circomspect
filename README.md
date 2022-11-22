@@ -178,20 +178,20 @@ Goldilocks (defined over a 448-bit prime field). However, since there are no con
 
 Circomlib templates that may be problematic when used together with curves other than BN128 include the following circuit definitions.
 
-  | Template                  | Source file                        |
-  | ------------------------- | ---------------------------------- |
-  | `Sign`                    | `circuits/sign.circom`             |
-  | `AliasCheck`              | `circuits/aliascheck.circom`       |
-  | `CompConstant`            | `circuits/compconstant.circom`     |
-  | `Num2Bits_strict`         | `circuits/bitify.circom`           |
-  | `Bits2Num_strict`         | `circuits/bitify.circom`           |
-  | `Bits2Point_Strict`       | `circuits/bitify.circom`           |
-  | `Point2Bits_Strict`       | `circuits/bitify.circom`           |
-  | `SMTVerifier`             | `circuits/smt/smtverifier.circom`  |
-  | `SMTProcessor`            | `circuits/smt/smtprocessor.circom` |
-  | `EdDSAVerifier`           | `circuits/eddsa.circom`            |
-  | `EdDSAPoseidonVerifier`   | `circuits/eddsaposeidon.circom`    |
-  | `EdDSAMiMCSpongeVerifier` | `circuits/eddsamimcsponge.circom`  |
+  | Template                | Circomlib Source File            |
+  | ----------------------- | -------------------------------- |
+  | Sign                    | circuits/sign.circom             |
+  | AliasCheck              | circuits/aliascheck.circom       |
+  | CompConstant            | circuits/compconstant.circom     |
+  | Num2Bits_strict         | circuits/bitify.circom           |
+  | Bits2Num_strict         | circuits/bitify.circom           |
+  | Bits2Point_Strict       | circuits/bitify.circom           |
+  | Point2Bits_Strict       | circuits/bitify.circom           |
+  | SMTVerifier             | circuits/smt/smtverifier.circom  |
+  | SMTProcessor            | circuits/smt/smtprocessor.circom |
+  | EdDSAVerifier           | circuits/eddsa.circom            |
+  | EdDSAPoseidonVerifier   | circuits/eddsaposeidon.circom    |
+  | EdDSAMiMCSpongeVerifier | circuits/eddsamimcsponge.circom  |
 
 
 #### Overly complex functions or templates (Warning)
