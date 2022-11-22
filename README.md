@@ -163,6 +163,13 @@ Clearly 512 is not less than 256, so we would expect `IsByte` to return 0. Howev
 Circomspect will check if the inputs to `LessThan` are constrained to the input size using `Num2Bits`. If it cannot prove that both inputs are constrained in this way, a warning is generated.
 
 
+#### Divisor in signal assignment not constrained to be non-zero (Warning)
+
+To ensure that a signal `c` is equal to `a / b` (where `b` is not constant), it is common to use a signal assignment to set `c <-- a / b` during witness generation, and then constrain `a`, `b`, and `c` to ensure that `c * b === a` during proof verification. However, the statement `c = a / b` only makes sense when `b` is not zero, whereas `c * b = a` may be true even when `b` is zero. For this reason it is important to also ensure that the divisor is non-zero when the proof is verified.
+
+Circomspect will identify signal assignments on the form `c <-- a / b` and ensure that the expression `b` is constrained to be non-zero using the Circomlib `IsZero` template. If no such constraint is found, a warning is emitted.
+
+
 #### Using BN128 specific templates together with custom primes (Warning)
 
 Circom defaults to using the BN128 curve (defined over a 254-bit prime field),
