@@ -163,6 +163,28 @@ Clearly 512 is not less than 256, so we would expect `IsByte` to return 0. Howev
 Circomspect will check if the inputs to `LessThan` are constrained to the input size using `Num2Bits`. If it cannot prove that both inputs are constrained in this way, a warning is generated.
 
 
+#### Using BN128 specific templates together with custom primes (Warning)
+
+Circom defaults to using the BN128 curve (defined over a 254-bit prime field),
+but it also supports BSL12-381 (which is defined over a 381-bit field) and
+Goldilocks (defined over a 448-bit prime field). However, since there are no constants denoting either the prime or the prime size in bits available in the Circom language, some Circomlib templates like `Sign` (which returns the sign of the input signal), and `AliasCheck` (used by the strict versions of `Num2Bits` and `Bits2Num`), hardcode either the BN128 prime size or some other constant related to BN128. Using these circuits with a custom prime may thus lead to unexpected results and should be avoided.
+
+Circomlib templates that may be problematic when used together with curves other than BN128 include the following circuit definitions.
+
+  1.  `Sign` (defined in `circuits/sign.circom`)
+  2.  `AliasCheck` (defined in `circuits/aliascheck.circom`)
+  3.  `CompConstant` (defined in `circuits/compconstant.circom`)
+  4.  `Num2Bits_strict` (defined in `circuits/bitify.circom`)
+  5.  `Bits2Num_strict` (defined in `circuits/bitify.circom`)
+  6.  `Bits2Point_Strict` (defined in `circuits/bitify.circom`)
+  7.  `Point2Bits_Strict` (defined in `circuits/bitify.circom`)
+  8.  `SMTVerifier` (defined in `circuits/smt/smtverifier.circom`)
+  9.  `SMTProcessor` (defined in `circuits/smt/smtprocessor.circom`)
+  10. `EdDSAVerifier` (defined in `circuits/eddsa.circom`)
+  11. `EdDSAPoseidonVerifier` (defined in `circuits/eddsaposeidon.circom`)
+  12. `EdDSAMiMCSpongeVerifier` (defined in `circuits/eddsamimcsponge.circom`)
+
+
 #### Overly complex functions or templates (Warning)
 
 As functions and templates grow in complexity they become more difficult to review and maintain. This typically indicates that the code should be refactored into smaller, more easily understandable, components. Circomspect uses cyclomatic complexity to estimate the complexity of each function and template, and will generate a warning if the code is considered too complex. Circomspect will also generate a warning if a function or template takes too many arguments, as this also impacts the readability of the code.
