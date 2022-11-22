@@ -7,7 +7,6 @@ use program_structure::report_code::ReportCode;
 use program_structure::report::{Report, ReportCollection};
 use program_structure::ir::*;
 use program_structure::ir::AccessType;
-use program_structure::ir::degree_meta::Degree;
 use program_structure::ir::variable_meta::VariableMeta;
 
 pub struct SignalAssignmentWarning {
@@ -121,7 +120,7 @@ impl Assignment {
 
     fn is_quadratic(&self) -> bool {
         if let Some(range) = &self.degree {
-            range.end() <= Degree::Quadratic
+            range.is_quadratic()
         } else {
             false
         }
