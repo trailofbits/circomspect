@@ -38,7 +38,7 @@ To output the results to a Sarif file (which can be read by the [VSCode Sarif Vi
 
 ![VSCode example image](https://github.com/trailofbits/circomspect/raw/main/doc/vscode.png)
 
-Circomspect supports the same curves that Circom does: BN128, BLS12-381, and Ed448-Goldilocks. If you are using a different curve than the default (BN128) you can set the curve using the command line option `--curve`.
+Circomspect supports the same curves that Circom does: BN128, BLS12-381, and Goldilocks. If you are using a different curve than the default (BN128) you can set the curve using the command line option `--curve`.
 
 ## Analysis Passes
 
