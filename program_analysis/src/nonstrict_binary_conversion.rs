@@ -2,6 +2,7 @@ use log::debug;
 use num_bigint::BigInt;
 
 use program_structure::cfg::{Cfg, DefinitionType};
+use program_structure::constants::Curve;
 use program_structure::report_code::ReportCode;
 use program_structure::report::{Report, ReportCollection};
 use program_structure::file_definition::{FileID, FileLocation};
@@ -64,6 +65,10 @@ pub fn find_nonstrict_binary_conversion(cfg: &Cfg) -> ReportCollection {
     use DefinitionType::*;
     if matches!(cfg.definition_type(), Function | CustomTemplate) {
         // Exit early if this is a function or custom template.
+        return ReportCollection::new();
+    }
+    if cfg.constants().curve() != &Curve::Bn128 {
+        // Exit early if we're not using the default curve.
         return ReportCollection::new();
     }
     debug!("running non-strict `Num2Bits` analysis pass");
