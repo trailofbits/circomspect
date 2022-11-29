@@ -41,7 +41,8 @@ pub struct UnderConstrainedSignalWarning {
 impl UnderConstrainedSignalWarning {
     pub fn into_report(self) -> Report {
         let mut report = Report::warning(
-            "Intermediate signals should occur in at least two separate constraints.".to_string(),
+            "Intermediate signals should typically occur in at least two separate constraints."
+                .to_string(),
             ReportCode::UnderConstrainedSignal,
         );
         if let Some(file_id) = self.file_id {
@@ -56,7 +57,7 @@ impl UnderConstrainedSignalWarning {
                         secondary_location,
                         file_id,
                         Some(format!(
-                            "The intermediate signal `{}` are constrained here.",
+                            "The intermediate signal `{}` is constrained here.",
                             self.name
                         )),
                     );
