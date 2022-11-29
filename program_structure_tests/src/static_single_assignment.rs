@@ -86,7 +86,7 @@ fn test_ssa_from_while() {
             return y + x;
         }
     "#;
-    validate_ssa(&src, &["x.0", "y.0", "y.1", "y.2"]);
+    validate_ssa(src, &["x.0", "y.0", "y.1", "y.2"]);
 }
 
 #[test]
@@ -103,7 +103,7 @@ fn test_ssa_from_nested_if() {
             return y + x;
         }
     "#;
-    validate_ssa(&src, &["x.0", "y.0", "y.1", "y.2", "y.3"]);
+    validate_ssa(src, &["x.0", "y.0", "y.1", "y.2", "y.3"]);
 }
 
 #[test]
@@ -120,7 +120,7 @@ fn test_ssa_from_nested_while() {
             return y + x;
         }
     "#;
-    validate_ssa(&src, &["x.0", "y.0", "y.1", "y.2", "y.3", "y.4"]);
+    validate_ssa(src, &["x.0", "y.0", "y.1", "y.2", "y.3", "y.4"]);
 }
 
 #[test]
@@ -209,7 +209,7 @@ fn validate_reads(current_block: &BasicBlock, cfg: &Cfg, env: &mut HashSet<Varia
         }
     }
     // Recurse into successors.
-    for successor_block in cfg.get_dominator_successors(&current_block) {
+    for successor_block in cfg.get_dominator_successors(current_block) {
         validate_reads(successor_block, cfg, &mut env.clone());
     }
 }

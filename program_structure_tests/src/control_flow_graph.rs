@@ -266,7 +266,7 @@ fn test_dominance_from_nested_if() {
     dominance_frontier.insert(2, HashSet::from([3]));
     dominance_frontier.insert(3, HashSet::new());
 
-    validate_dominance(&src, &immediate_dominators, &dominance_frontier);
+    validate_dominance(src, &immediate_dominators, &dominance_frontier);
 }
 
 #[test]
@@ -315,7 +315,7 @@ fn test_dominance_from_nested_if_then_else() {
     dominance_frontier.insert(2, HashSet::new());
     dominance_frontier.insert(3, HashSet::new());
 
-    validate_dominance(&src, &immediate_dominators, &dominance_frontier);
+    validate_dominance(src, &immediate_dominators, &dominance_frontier);
 }
 
 #[test]
@@ -359,7 +359,7 @@ fn test_branches_from_nested_if_then_else() {
     false_branches.insert(0, HashSet::from([2, 3, 4]));
     false_branches.insert(2, HashSet::from([4]));
 
-    validate_branches(&src, &true_branches, &false_branches);
+    validate_branches(src, &true_branches, &false_branches);
 }
 
 #[test]
@@ -399,7 +399,7 @@ fn test_branches_from_nested_if() {
     false_branches.insert(0, HashSet::new());
     false_branches.insert(1, HashSet::new());
 
-    validate_branches(&src, &true_branches, &false_branches);
+    validate_branches(src, &true_branches, &false_branches);
 }
 
 fn validate_cfg(
