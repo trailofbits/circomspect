@@ -8,7 +8,8 @@ use program_structure::ir::variable_meta::VariableUse;
 use program_structure::ir::{Statement, VariableName};
 
 /// This analysis computes the transitive closure of the constraint relation.
-/// (Note that the resulting relation will not be reflexive in general.)
+/// (Note that the resulting relation will be symmetric, but not reflexive in
+/// general.)
 #[derive(Clone, Default)]
 pub struct ConstraintAnalysis {
     constraint_map: HashMap<VariableName, HashSet<VariableName>>,
@@ -27,10 +28,13 @@ impl ConstraintAnalysis {
         // overwriting component initializations here. For example, in the
         // following case the component initialization will be clobbered.
         //
-        //   component c[2] = C();
+        //   component c[2];
+        //   ...
         //   c[0].in[0] <== 0;
         //   c[1].in[1] <== 1;
         //
+        // The constraint map should probably track VariableAccesses rather
+        // than VariableNames.
         self.definitions.insert(var.name().clone(), var.clone());
     }
 
@@ -130,4 +134,73 @@ pub fn run_constraint_analysis(cfg: &Cfg) -> ConstraintAnalysis {
         }
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use parser::parse_definition;
+    use program_structure::cfg::IntoCfg;
+    use program_structure::constants::Curve;
+    use program_structure::report::ReportCollection;
+
+    use super::*;
+
+    #[test]
+    fn test_single_step_constraint() {
+        let src = r#"
+            template T(n) {
+                signal input in;
+                signal output out;
+                signal tmp;
+
+                tmp <== 2 * in;
+                out <== in * in;
+
+            }
+        "#;
+        let sources = [
+            VariableName::from_name("in"),
+            VariableName::from_name("out"),
+            VariableName::from_name("tmp"),
+        ];
+        let sinks = [2, 1, 1];
+        validate_constraints(src, &sources, &sinks);
+
+        let src = r#"
+            template T(n) {
+                signal input in;
+                signal output out;
+                signal tmp;
+
+                tmp === 2 * in;
+                out <== in * in;
+
+            }
+        "#;
+        let sources = [
+            VariableName::from_name("in"),
+            VariableName::from_name("out"),
+            VariableName::from_name("tmp"),
+        ];
+        let sinks = [2, 1, 1];
+        validate_constraints(src, &sources, &sinks);
+    }
+
+    fn validate_constraints(src: &str, sources: &[VariableName], sinks: &[usize]) {
+        // Build CFG.
+        let mut reports = ReportCollection::new();
+        let cfg = parse_definition(src)
+            .unwrap()
+            .into_cfg(&Curve::default(), &mut reports)
+            .unwrap()
+            .into_ssa()
+            .unwrap();
+        assert!(reports.is_empty());
+
+        // Run constraint analysis.
+        let constraint_analysis = run_constraint_analysis(&cfg);
+        for (source, sinks) in sources.iter().zip(sinks) {
+            assert_eq!(constraint_analysis.single_step_constraint(source).len(), *sinks)
+        }
+    }
 }

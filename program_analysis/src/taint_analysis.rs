@@ -34,7 +34,8 @@ impl TaintAnalysis {
         // overwriting component initializations here. For example, in the
         // following case the component initialization will be clobbered.
         //
-        //   component c[2] = C();
+        //   component c[2];
+        //   ...
         //   c[0].in[0] <== 0;
         //   c[1].in[1] <== 1;
         //
