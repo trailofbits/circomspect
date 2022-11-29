@@ -26,7 +26,7 @@ impl FileLibrary {
         self.get_mut_files().add(file_name, file_source)
     }
     pub fn get_line(&self, start: usize, file_id: FileID) -> Option<usize> {
-        self.files.line_index(file_id, start).map(|lines| lines + 1)
+        self.files.line_index(file_id, start).map(|lines| lines + 1).ok()
     }
     pub fn to_storage(&self) -> &FileStorage {
         self.get_files()

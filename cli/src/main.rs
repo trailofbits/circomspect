@@ -130,7 +130,7 @@ fn log_message(message: &str) {
 
 fn main() -> ExitCode {
     pretty_env_logger::init();
-    let options = Cli::from_args();
+    let options = Cli::parse();
     if options.input_files.is_empty() {
         match Cli::command().print_help() {
             Ok(()) => return ExitCode::SUCCESS,

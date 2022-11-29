@@ -5,25 +5,28 @@ edition = "2018"
 license = "LGPL-3.0-only"
 description = "Support crate for the Circomspect static analyzer"
 repository = "https://github.com/trailofbits/circomspect"
-authors = ["hermeGarcia <hermegarcianavarro@gmail.com>", "Fredrik Dahlgren <fredrik.dahlgren@trailofbits.com>"]
+authors = [
+  "hermeGarcia <hermegarcianavarro@gmail.com>",
+  "Fredrik Dahlgren <fredrik.dahlgren@trailofbits.com>",
+]
 
 [dependencies]
 anyhow = "1.0"
-atty = "0.2.14"
+atty = "0.2"
 circom_algebra = { package = "circomspect-circom-algebra", version = "2.0.0", path = "../circom_algebra" }
-codespan = "0.9.0"
-codespan-reporting = "0.9.0"
+codespan = "0.11"
+codespan-reporting = "0.11"
 log = "0.4"
-regex = "1.1.2"
-rustc-hex = "2.0.1"
-num-bigint-dig = "0.6.0"
-num-traits = "0.2.6"
-serde = "1.0.82"
-serde_derive = "1.0.91"
-serde-sarif = "0.3.1"
-serde_json = "1.0.79"
-thiserror = "1.0.31"
+regex = "1.7"
+rustc-hex = "2.1"
+num-bigint-dig = "0.8"
+num-traits = "0.2"
+serde = "1.0"
+serde_derive = "1.0"
+serde-sarif = "0.3"
+serde_json = "1.0"
+thiserror = "1.0"
 
 [dev-dependencies]
-proptest = "1.0.0"
+proptest = "1.0"
 circom_algebra = { package = "circomspect-circom-algebra", version = "2.0.0", path = "../circom_algebra" }
