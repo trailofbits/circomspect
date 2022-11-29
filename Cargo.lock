@@ -184,7 +184,7 @@ dependencies = [
 
 [[package]]
 name = "circomspect-circom-algebra"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "num-bigint-dig 0.8.2",
  "num-traits",
