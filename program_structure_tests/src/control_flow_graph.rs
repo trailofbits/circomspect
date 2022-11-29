@@ -22,6 +22,7 @@ fn test_cfg_from_if() {
         src,
         &["x", "y"],
         &[3, 2, 1],
+        &[0, 0, 0],
         &[(vec![], vec![1, 2]), (vec![0], vec![2]), (vec![0, 1], vec![])],
     );
 }
@@ -45,6 +46,7 @@ fn test_cfg_from_if_then_else() {
         src,
         &["x", "y"],
         &[3, 2, 2, 1],
+        &[0, 0, 0, 0],
         &[(vec![], vec![1, 2]), (vec![0], vec![3]), (vec![0], vec![3]), (vec![1, 2], vec![])],
     );
 }
@@ -64,6 +66,7 @@ fn test_cfg_from_while() {
         src,
         &["x", "y"],
         &[2, 1, 1, 1],
+        &[0, 0, 1, 0],
         &[
             (vec![], vec![1]),
             // 0:
@@ -100,6 +103,7 @@ fn test_cfg_from_nested_if() {
         src,
         &["x", "y"],
         &[3, 2, 1, 1],
+        &[0, 0, 0, 0],
         &[
             (vec![], vec![1, 3]),
             // 0:
@@ -138,6 +142,7 @@ fn test_cfg_from_nested_while() {
         src,
         &["x", "y"],
         &[2, 1, 1, 1, 1, 1],
+        &[0, 0, 1, 1, 2, 0],
         &[
             (vec![], vec![1]),
             // 0:
@@ -186,6 +191,7 @@ fn test_cfg_with_non_unique_variables() {
         src,
         &["n", "in", "out", "comp", "i", "i.0"],
         &[4, 2, 1, 2, 2, 1, 2],
+        &[0, 0, 0, 1, 0, 0, 1],
         &[
             (vec![], vec![1, 4]),
             // 0:
@@ -400,6 +406,7 @@ fn validate_cfg(
     src: &str,
     variables: &[&str],
     lengths: &[usize],
+    loop_depths: &[usize],
     edges: &[(Vec<Index>, Vec<Index>)],
 ) {
     // 1. Generate CFG from source.
@@ -416,6 +423,11 @@ fn validate_cfg(
     // 3. Validate block lengths.
     for (basic_block, length) in cfg.iter().zip(lengths.iter()) {
         assert_eq!(basic_block.len(), *length);
+    }
+
+    // 3. Validate loop depths.
+    for (basic_block, loop_depth) in cfg.iter().zip(loop_depths.iter()) {
+        assert_eq!(basic_block.loop_depth(), *loop_depth);
     }
 
     // 4. Validate block edges against input.

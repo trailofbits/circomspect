@@ -192,8 +192,8 @@ pub(crate) fn build_basic_blocks(
     assert!(matches!(body, ast::Statement::Block { .. }));
 
     let meta = body.get_meta().try_lift((), reports)?;
-    let mut basic_blocks = BasicBlockVec::new(BasicBlock::new(Index::default(), meta));
-    visit_statement(body, env, reports, &mut basic_blocks)?;
+    let mut basic_blocks = BasicBlockVec::new(BasicBlock::new(meta, Index::default(), 0));
+    visit_statement(body, 0, env, reports, &mut basic_blocks)?;
     Ok(basic_blocks.into())
 }
 
@@ -201,16 +201,17 @@ pub(crate) fn build_basic_blocks(
 /// all control-flow statement bodies are wrapped by a `Block` statement. Blocks
 /// are finalized and the current block (i.e. last block) is updated when:
 ///
-///   2. The current statement is a `While` statement. An `IfThenElse` statement
+///   1. The current statement is a `While` statement. An `IfThenElse` statement
 ///      is added to the current block. The successors of the if-statement will be
 ///      the while-statement body and the while-statement successor (if any).
-///   3. The current statement is an `IfThenElse` statement. The current statement
+///   2. The current statement is an `IfThenElse` statement. The current statement
 ///      is added to the current block. The successors of the if-statement will
 ///      be the if-case body and else-case body (if any).
 ///
 /// The function returns the predecessors of the next block in the CFG.
 fn visit_statement(
     stmt: &ast::Statement,
+    loop_depth: usize,
     env: &mut LiftingEnvironment,
     reports: &mut ReportCollection,
     basic_blocks: &mut BasicBlockVec,
@@ -224,7 +225,7 @@ fn visit_statement(
             // substitutions, we do not need to track predecessors here.
             trace!("entering initialization block statement");
             for stmt in stmts {
-                assert!(visit_statement(stmt, env, reports, basic_blocks)?.is_empty());
+                assert!(visit_statement(stmt, loop_depth, env, reports, basic_blocks)?.is_empty());
             }
             trace!("leaving initialization block statement");
             Ok(HashSet::new())
@@ -240,9 +241,9 @@ fn visit_statement(
             for stmt in stmts {
                 if !pred_set.is_empty() {
                     let meta = stmt.get_meta().try_lift((), reports)?;
-                    complete_basic_block(basic_blocks, &pred_set, meta);
+                    complete_basic_block(basic_blocks, meta, &pred_set, loop_depth);
                 }
-                pred_set = visit_statement(stmt, env, reports, basic_blocks)?;
+                pred_set = visit_statement(stmt, loop_depth, env, reports, basic_blocks)?;
             }
             trace!("leaving block statement (predecessors: {:?})", pred_set);
 
@@ -252,7 +253,7 @@ fn visit_statement(
         }
         ast::Statement::While { meta, cond, stmt: while_body, .. } => {
             let pred_set = HashSet::from([current_index]);
-            complete_basic_block(basic_blocks, &pred_set, meta.try_lift((), reports)?);
+            complete_basic_block(basic_blocks, meta.try_lift((), reports)?, &pred_set, loop_depth);
 
             // While statements are translated into a loop head with a single
             // if-statement, and a loop body containing the while-statement
@@ -270,10 +271,11 @@ fn visit_statement(
             // Visit the while-statement body.
             let meta = while_body.get_meta().try_lift((), reports)?;
             let pred_set = HashSet::from([header_index]);
-            complete_basic_block(basic_blocks, &pred_set, meta);
+            complete_basic_block(basic_blocks, meta, &pred_set, loop_depth + 1);
 
             trace!("visiting while body");
-            let mut pred_set = visit_statement(while_body, env, reports, basic_blocks)?;
+            let mut pred_set =
+                visit_statement(while_body, loop_depth + 1, env, reports, basic_blocks)?;
             // The returned predecessor set will be empty if the last statement
             // of the body is not a conditional. In this case we need to add the
             // last block of the body to complete the corresponding block.
@@ -303,10 +305,10 @@ fn visit_statement(
             // Visit the if-case body.
             let meta = if_case.get_meta().try_lift((), reports)?;
             let pred_set = HashSet::from([current_index]);
-            complete_basic_block(basic_blocks, &pred_set, meta);
+            complete_basic_block(basic_blocks, meta, &pred_set, loop_depth);
 
             trace!("visiting true if-statement branch");
-            let mut if_pred_set = visit_statement(if_case, env, reports, basic_blocks)?;
+            let mut if_pred_set = visit_statement(if_case, loop_depth, env, reports, basic_blocks)?;
             // The returned predecessor set will be empty if the last statement
             // of the body is not a conditional. In this case we need to add the
             // last block of the body to complete the corresponding block.
@@ -319,9 +321,10 @@ fn visit_statement(
                 trace!("visiting false if-statement branch");
                 let meta = else_case.get_meta().try_lift((), reports)?;
                 let pred_set = HashSet::from([current_index]);
-                complete_basic_block(basic_blocks, &pred_set, meta);
+                complete_basic_block(basic_blocks, meta, &pred_set, loop_depth);
 
-                let mut else_pred_set = visit_statement(else_case, env, reports, basic_blocks)?;
+                let mut else_pred_set =
+                    visit_statement(else_case, loop_depth, env, reports, basic_blocks)?;
                 // The returned predecessor set will be empty if the last statement
                 // of the body is not a conditional. In this case we need to add the
                 // last block of the body to complete the corresponding block.
@@ -365,11 +368,16 @@ fn visit_statement(
 /// If the final statement of the predecessor block is a control-flow statement,
 /// and the new block is not the true branch target of the statement, the new
 /// block is added as the false branch target.
-fn complete_basic_block(basic_blocks: &mut BasicBlockVec, pred_set: &IndexSet, meta: ir::Meta) {
+fn complete_basic_block(
+    basic_blocks: &mut BasicBlockVec,
+    meta: ir::Meta,
+    pred_set: &IndexSet,
+    loop_depth: usize,
+) {
     use ir::Statement::*;
     trace!("finalizing basic block {}", basic_blocks.last().index());
     let j = basic_blocks.len();
-    basic_blocks.push(BasicBlock::new(j, meta));
+    basic_blocks.push(BasicBlock::new(meta, j, loop_depth));
     for i in pred_set {
         basic_blocks[i].add_successor(j);
         basic_blocks[j].add_predecessor(*i);
