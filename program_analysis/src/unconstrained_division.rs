@@ -326,6 +326,18 @@ mod tests {
               signal input b;
               signal output c;
 
+              c <-- a / (2 * n + 1);
+              c * b === a;
+            }
+        "#;
+        validate_reports(src, 0);
+
+        let src = r#"
+            template Test(n) {
+              signal input a;
+              signal input b;
+              signal output c;
+
               component check = IsZero();
               check.in <== b;
               check.out === 1;

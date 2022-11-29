@@ -1,6 +1,6 @@
 [package]
 name = "circomspect"
-version = "0.6.2"
+version = "0.7.0"
 edition = "2021"
 license = "LGPL-3.0-only"
 authors = ["Trail of Bits"]
@@ -11,12 +11,12 @@ keywords = ["cryptography", "static-analysis", "zero-knowledge", "circom"]
 
 [dependencies]
 anyhow = "1.0"
-atty = "0.2.14"
-clap = { version = "3.2", features = ["derive"] }
+atty = "0.2"
+clap = { version = "4.0", features = ["derive"] }
 log = "0.4"
-parser = { package = "circomspect-parser", version = "2.0.10", path = "../parser" }
+parser = { package = "circomspect-parser", version = "2.0.11", path = "../parser" }
 pretty_env_logger = "0.4"
-program_analysis = { package = "circomspect-program-analysis", version = "0.6.2", path = "../program_analysis" }
-program_structure = { package = "circomspect-program-structure", version = "2.0.10", path = "../program_structure" }
-serde_json = "1.0.81"
-termcolor = "1.1.3"
+program_analysis = { package = "circomspect-program-analysis", version = "0.7.0", path = "../program_analysis" }
+program_structure = { package = "circomspect-program-structure", version = "2.0.11", path = "../program_structure" }
+serde_json = "1.0"
+termcolor = "1.1"

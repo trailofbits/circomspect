@@ -22,6 +22,7 @@ fn test_cfg_from_if() {
         src,
         &["x", "y"],
         &[3, 2, 1],
+        &[0, 0, 0],
         &[(vec![], vec![1, 2]), (vec![0], vec![2]), (vec![0, 1], vec![])],
     );
 }
@@ -45,6 +46,7 @@ fn test_cfg_from_if_then_else() {
         src,
         &["x", "y"],
         &[3, 2, 2, 1],
+        &[0, 0, 0, 0],
         &[(vec![], vec![1, 2]), (vec![0], vec![3]), (vec![0], vec![3]), (vec![1, 2], vec![])],
     );
 }
@@ -64,6 +66,7 @@ fn test_cfg_from_while() {
         src,
         &["x", "y"],
         &[2, 1, 1, 1],
+        &[0, 0, 1, 0],
         &[
             (vec![], vec![1]),
             // 0:
@@ -100,6 +103,7 @@ fn test_cfg_from_nested_if() {
         src,
         &["x", "y"],
         &[3, 2, 1, 1],
+        &[0, 0, 0, 0],
         &[
             (vec![], vec![1, 3]),
             // 0:
@@ -138,6 +142,7 @@ fn test_cfg_from_nested_while() {
         src,
         &["x", "y"],
         &[2, 1, 1, 1, 1, 1],
+        &[0, 0, 1, 1, 2, 0],
         &[
             (vec![], vec![1]),
             // 0:
@@ -186,6 +191,7 @@ fn test_cfg_with_non_unique_variables() {
         src,
         &["n", "in", "out", "comp", "i", "i.0"],
         &[4, 2, 1, 2, 2, 1, 2],
+        &[0, 0, 0, 1, 0, 0, 1],
         &[
             (vec![], vec![1, 4]),
             // 0:
@@ -260,7 +266,7 @@ fn test_dominance_from_nested_if() {
     dominance_frontier.insert(2, HashSet::from([3]));
     dominance_frontier.insert(3, HashSet::new());
 
-    validate_dominance(&src, &immediate_dominators, &dominance_frontier);
+    validate_dominance(src, &immediate_dominators, &dominance_frontier);
 }
 
 #[test]
@@ -309,7 +315,7 @@ fn test_dominance_from_nested_if_then_else() {
     dominance_frontier.insert(2, HashSet::new());
     dominance_frontier.insert(3, HashSet::new());
 
-    validate_dominance(&src, &immediate_dominators, &dominance_frontier);
+    validate_dominance(src, &immediate_dominators, &dominance_frontier);
 }
 
 #[test]
@@ -353,7 +359,7 @@ fn test_branches_from_nested_if_then_else() {
     false_branches.insert(0, HashSet::from([2, 3, 4]));
     false_branches.insert(2, HashSet::from([4]));
 
-    validate_branches(&src, &true_branches, &false_branches);
+    validate_branches(src, &true_branches, &false_branches);
 }
 
 #[test]
@@ -393,13 +399,14 @@ fn test_branches_from_nested_if() {
     false_branches.insert(0, HashSet::new());
     false_branches.insert(1, HashSet::new());
 
-    validate_branches(&src, &true_branches, &false_branches);
+    validate_branches(src, &true_branches, &false_branches);
 }
 
 fn validate_cfg(
     src: &str,
     variables: &[&str],
     lengths: &[usize],
+    loop_depths: &[usize],
     edges: &[(Vec<Index>, Vec<Index>)],
 ) {
     // 1. Generate CFG from source.
@@ -416,6 +423,11 @@ fn validate_cfg(
     // 3. Validate block lengths.
     for (basic_block, length) in cfg.iter().zip(lengths.iter()) {
         assert_eq!(basic_block.len(), *length);
+    }
+
+    // 3. Validate loop depths.
+    for (basic_block, loop_depth) in cfg.iter().zip(loop_depths.iter()) {
+        assert_eq!(basic_block.loop_depth(), *loop_depth);
     }
 
     // 4. Validate block edges against input.

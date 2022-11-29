@@ -500,6 +500,47 @@ mod tests {
             }
         "#;
         validate_reports(src, 1);
+
+        let src = r#"
+            template T() {
+                signal input in[2];
+                signal output out;
+                component c = C();
+                signal s;
+
+                c.in <== 2 * s;
+                out <== in[0] * in[1];
+
+            }
+        "#;
+        validate_reports(src, 1);
+
+        let src = r#"
+            template T() {
+                signal input in[2];
+                signal output out;
+                component n2b = Num2Bits();
+
+                n2b.in <== in[0] * in[1] + 1;
+                out <== in[0] * in[1];
+
+            }
+        "#;
+        validate_reports(src, 0);
+
+        // TODO: The assignment to `tmp` should be detected.
+        let src = r#"
+            template T() {
+                signal input in[2];
+                signal output out;
+                signal tmp;
+
+                tmp <== 2 * in[0];
+                out <== in[0] * in[1];
+
+            }
+        "#;
+        validate_reports(src, 0);
     }
 
     fn validate_reports(src: &str, expected_len: usize) {
