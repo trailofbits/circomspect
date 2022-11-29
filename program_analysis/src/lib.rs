@@ -14,6 +14,7 @@ mod definition_complexity;
 mod field_arithmetic;
 mod field_comparisons;
 mod nonstrict_binary_conversion;
+mod under_constrained_signals;
 mod unconstrained_less_than;
 mod unconstrained_division;
 mod side_effect_analysis;
@@ -31,6 +32,7 @@ pub fn get_analysis_passes<'a>() -> Vec<Box<dyn Fn(&'a Cfg) -> ReportCollection 
         Box::new(bn128_specific_circuit::find_bn128_specific_circuits),
         Box::new(unconstrained_less_than::find_unconstrained_less_than),
         Box::new(constant_conditional::find_constant_conditional_statement),
+        Box::new(under_constrained_signals::find_under_constrained_signals),
         Box::new(nonstrict_binary_conversion::find_nonstrict_binary_conversion),
     ]
 }
