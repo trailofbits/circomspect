@@ -192,7 +192,7 @@ dependencies = [
 
 [[package]]
 name = "circomspect-parser"
-version = "2.0.10"
+version = "2.0.11"
 dependencies = [
  "circomspect-program-structure",
  "lalrpop 0.18.1",
@@ -210,7 +210,7 @@ dependencies = [
 
 [[package]]
 name = "circomspect-program-analysis"
-version = "0.6.2"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "circomspect-parser",
@@ -222,7 +222,7 @@ dependencies = [
 
 [[package]]
 name = "circomspect-program-structure"
-version = "2.0.10"
+version = "2.0.11"
 dependencies = [
  "anyhow",
  "atty",
