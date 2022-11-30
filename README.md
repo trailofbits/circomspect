@@ -125,7 +125,7 @@ the prime. If not, there may be multiple correct representations of the input
 which could cause issues, since we typically expect the circuit output to be
 uniquely determined by the input.
 
-For example, suppose that we create a component `n2b` given by `Num2Bits(254)` and set the input to `1`. Now, both the binary representation of `1` _and_ the representation of `p + 1` will satisfy the circuit over BN128, since both are 254-bit numbers. If you cannot restrict the input size below the prime size you should use the strict versions `Num2Bits_strict` and `Bits2Num_strict` to convert to and from binary representation. Circomspect will generate a warning if it cannot prove (using constant propagation) that the input size passed to `Num2Bits` or `Bits2Num` is less than the size of the prime in bits.
+For example, suppose that we create a component `n2b` given by `Num2Bits(254)` and set the input to `1`. Now, both the binary representation of `1` _and_ the representation of `p + 1` (where `p` is the order of the underlying finite field) will satisfy the circuit over BN128, since both are 254-bit numbers. If you cannot restrict the input size below the prime size you should use the strict versions `Num2Bits_strict` and `Bits2Num_strict` to convert to and from binary representation. Circomspect will generate a warning if it cannot prove (using constant propagation) that the input size passed to `Num2Bits` or `Bits2Num` is less than the size of the prime in bits.
 
 
 #### Unconstrained input signals passed to `LessThan` from Circomlib (Warning)
@@ -133,45 +133,42 @@ For example, suppose that we create a component `n2b` given by `Num2Bits(254)` a
 The Circomlib `LessThan` template takes an input size as argument. If the individual input signals are not constrained to the input size (for example using the Circomlib `Num2Bits` circuit), it is possible to find inputs `a` and `b` such that `a > b`, but `LessThan` still evaluates to true when given `a` and `b` as inputs.
 
 For example, consider the following template which takes a single input signal
-and attempts to constrain it to be less than 256.
+and attempts to constrain it to be less than two.
 
 ```cpp
-  template IsByte() {
+  template LessThanTwo() {
     signal input in;
     signal output out;
 
     component lt = LessThan(8);
     lt.in[0] <== in;
-    lt.in[1] <== 256;
+    lt.in[1] <== 2;
 
     out <== lt.out;
   }
-
-  component main = IsByte()
 ```
 
-Suppose that we define the private input `in` as 512. This would result in the constraints
+Suppose that we define the private input `in` as `p - 254`, where `p` is the prime order of the field. This would result in the constraints
 
 ```cpp
-    component lt = LessThan(8);
-    lt.in[0] <== 512;
-    lt.in[1] <== 256;
+    lt.in[0] <== p - 254;
+    lt.in[1] <== 2;
 ```
 
-Clearly 512 is not less than 256, so we would expect `IsByte` to return 0. However, looking at [the implementation](https://github.com/iden3/circomlib/blob/cff5ab6288b55ef23602221694a6a38a0239dcc0/circuits/comparators.circom#L89-L99) of `LessThan`, we see that `lt.out` is given by 
+Since `p` is at least 64 bits, `p - 254` is not less than two (at least not when viewed as an unsigned integer), so we would perhaps expect `LessThanTwo` to return zero here. However, looking at [the implementation](https://github.com/iden3/circomlib/blob/cff5ab6288b55ef23602221694a6a38a0239dcc0/circuits/comparators.circom#L89-L99) of `LessThan`, we see that `lt.out` is given by
 
 ```cpp
-    1 - n2b.out[8] = 1 - (bit 8 of 512 + 256 - 256) = 1 - 0 = 1.
+    1 - n2b.out[8] = 1 - (bit 8 of (p - 254) + 256 - 2) = 1 - 0 = 1.
 ```
 
-It follows that 512 satisfies `IsByte()`, which is not what we wanted.
+It follows that `p - 254` satisfies `LessThanTwo()`, which is perhaps not what we expected. Note that, `p - 254` is equal to -254 which _is_ less than two, so there is nothing wrong with the Circomlib `LessThan` circuit. This may just be unexpected behavior if we're thinking of field elements as unsigned integers.
 
 Circomspect will check if the inputs to `LessThan` are constrained to the input size using `Num2Bits`. If it cannot prove that both inputs are constrained in this way, a warning is generated.
 
 
 #### Divisor in signal assignment is not constrained to be non-zero (Warning)
 
-Since division cannot be expressed directly using a quadratic constraint, it is common to use the following pattern to ensure that the signal `c` is equal to `a / b`. 
+Since division cannot be expressed directly using a quadratic constraint, it is common to use the following pattern to ensure that the signal `c` is equal to `a / b`.
 
 ```cpp
     c <-- a / b;
