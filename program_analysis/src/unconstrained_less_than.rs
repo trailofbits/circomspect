@@ -19,7 +19,7 @@ pub struct UnconstrainedLessThanWarning {
 impl UnconstrainedLessThanWarning {
     pub fn into_report(self) -> Report {
         let mut report = Report::warning(
-            "Inputs to `LessThan` must be constrained to the input size".to_string(),
+            "Inputs to `LessThan` should typically be constrained to the input size".to_string(),
             ReportCode::UnconstrainedLessThan,
         );
         if let Some(file_id) = self.file_id {
@@ -27,7 +27,7 @@ impl UnconstrainedLessThanWarning {
                 self.primary_location,
                 file_id,
                 format!(
-                    "This input to `LessThan` must be constrained to `{}` bits.",
+                    "This input to `LessThan` should be constrained to `{}` bits.",
                     self.input_size
                 ),
             );

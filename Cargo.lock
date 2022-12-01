@@ -168,7 +168,7 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "circomspect"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "anyhow",
  "atty",
@@ -210,7 +210,7 @@ dependencies = [
 
 [[package]]
 name = "circomspect-program-analysis"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "anyhow",
  "circomspect-parser",
