@@ -1,6 +1,20 @@
 # Release Notes
 
 
+## v0.7.2 (2022-12-01)
+
+### Features
+
+  - Added a URL to the issue description for each output.
+
+
+### Bug Fixes
+
+  - Rewrote description of the unconstrained less-than analysis pass, as the
+    previous description was too broad.
+  - Fixed grammar in the under-constrained signal warning message.
+
+
 ## v0.7.0 (2022-11-29)
 
 
