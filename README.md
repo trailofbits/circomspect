@@ -42,4 +42,4 @@ Circomspect supports the same curves that Circom does: BN128, BLS12-381, and Gol
 
 ## Analysis Passes
 
-Circomspect implements analysis passes for a number of different types of issues. A complete list, together with a high-level description of each issue, can be found [here](https://github.com/trailofbits/circomspect/raw/main/doc/analysis_passes.md).
+Circomspect implements analysis passes for a number of different types of issues. A complete list, together with a high-level description of each issue, can be found [here](https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md).
