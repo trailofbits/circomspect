@@ -186,6 +186,10 @@ impl Report {
         .with_labels(labels);
 
         let mut notes = self.notes().clone();
+        if let Some(url) = self.code().url() {
+            // Add URL to documentation if available.
+            notes.push(format!("For more details, see {url}."));
+        }
         if verbose {
             // Add report code and note on `--allow ID`.
             notes.push(format!("To ignore this type of result, use `--allow {}`.", self.id()));
