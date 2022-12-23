@@ -270,7 +270,7 @@ pub struct VariableName {
 impl VariableName {
     /// Returns a new variable name with the given name (without suffix or version).
     #[must_use]
-    pub fn from_name<N: ToString>(name: N) -> VariableName {
+    pub fn from_string<N: ToString>(name: N) -> VariableName {
         VariableName { name: name.to_string(), suffix: None, version: None }
     }
 

@@ -159,9 +159,9 @@ mod tests {
             }
         "#;
         let sources = [
-            VariableName::from_name("in"),
-            VariableName::from_name("out"),
-            VariableName::from_name("tmp"),
+            VariableName::from_string("in"),
+            VariableName::from_string("out"),
+            VariableName::from_string("tmp"),
         ];
         let sinks = [2, 1, 1];
         validate_constraints(src, &sources, &sinks);
@@ -178,9 +178,9 @@ mod tests {
             }
         "#;
         let sources = [
-            VariableName::from_name("in"),
-            VariableName::from_name("out"),
-            VariableName::from_name("tmp"),
+            VariableName::from_string("in"),
+            VariableName::from_string("out"),
+            VariableName::from_string("tmp"),
         ];
         let sinks = [2, 1, 1];
         validate_constraints(src, &sources, &sinks);

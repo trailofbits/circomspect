@@ -238,8 +238,8 @@ impl TryLift<&ast::Meta> for String {
         // We assume that the input string uses '.' to separate the name from the suffix.
         let tokens: Vec<_> = self.split('.').collect();
         match tokens.len() {
-            1 => Ok(ir::VariableName::from_name(tokens[0])),
-            2 => Ok(ir::VariableName::from_name(tokens[0]).with_suffix(tokens[1])),
+            1 => Ok(ir::VariableName::from_string(tokens[0])),
+            2 => Ok(ir::VariableName::from_string(tokens[0]).with_suffix(tokens[1])),
             // Either the original name from the AST contains `.`, or the suffix
             // added when ensuring uniqueness contains `.`. Neither case should
             // occur, so we return an error here instead of producing a report.

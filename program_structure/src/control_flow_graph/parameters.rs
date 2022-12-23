@@ -19,7 +19,7 @@ impl Parameters {
         file_location: FileLocation,
     ) -> Parameters {
         Parameters {
-            param_names: param_names.iter().map(VariableName::from_name).collect(),
+            param_names: param_names.iter().map(VariableName::from_string).collect(),
             file_id,
             file_location,
         }

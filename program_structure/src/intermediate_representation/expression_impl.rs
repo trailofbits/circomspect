@@ -1014,10 +1014,10 @@ mod tests {
         use ExpressionInfixOpcode::*;
         use ValueReduction::*;
         let mut lhe = Number(Meta::default(), 7u64.into());
-        let mut rhe = Variable { meta: Meta::default(), name: VariableName::from_name("v") };
+        let mut rhe = Variable { meta: Meta::default(), name: VariableName::from_string("v") };
         let constants = UsefulConstants::new(&Curve::default());
         let mut env = ValueEnvironment::new(&constants);
-        env.add_variable(&VariableName::from_name("v"), &FieldElement { value: 3u64.into() });
+        env.add_variable(&VariableName::from_string("v"), &FieldElement { value: 3u64.into() });
         lhe.propagate_values(&mut env);
         rhe.propagate_values(&mut env);
 

@@ -243,7 +243,7 @@ mod tests {
 
         let taint_analysis = run_taint_analysis(&cfg);
         for (source, expected_sinks) in taint_map {
-            let source = VariableName::from_name(source).with_version(0);
+            let source = VariableName::from_string(source).with_version(0);
             let sinks = taint_analysis
                 .multi_step_taint(&source)
                 .iter()

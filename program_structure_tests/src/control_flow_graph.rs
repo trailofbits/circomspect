@@ -528,8 +528,8 @@ fn lift(name: &str) -> VariableName {
     // We assume that the input string uses '.' to separate the name from the suffix.
     let tokens: Vec<_> = name.split('.').collect();
     match tokens.len() {
-        1 => VariableName::from_name(tokens[0]),
-        2 => VariableName::from_name(tokens[0]).with_suffix(tokens[1]),
+        1 => VariableName::from_string(tokens[0]),
+        2 => VariableName::from_string(tokens[0]).with_suffix(tokens[1]),
         _ => panic!("invalid variable name"),
     }
 }
