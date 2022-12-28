@@ -1,7 +1,8 @@
 [package]
 name = "circomspect-parser"
-version = "2.0.11"
-edition = "2018"
+version = "2.1.2"
+edition = "2021"
+rust-version = "1.65"
 build = "build.rs"
 license = "LGPL-3.0-only"
 description = "Support crate for the Circomspect static analyzer"
@@ -18,7 +19,7 @@ num-bigint-dig = "0.6"
 num-traits = "0.2"
 
 [dependencies]
-program_structure = { package = "circomspect-program-structure", version = "2.0.11", path = "../program_structure" }
+program_structure = { package = "circomspect-program-structure", version = "2.1.2", path = "../program_structure" }
 lalrpop = { version = "0.19", features = ["lexer"] }
 lalrpop-util = "0.19"
 log = "0.4"
@@ -30,4 +31,4 @@ serde = "1.0"
 serde_derive = "1.0"
 
 [dev-dependencies]
-program_structure = { package = "circomspect-program-structure", version = "2.0.11", path = "../program_structure" }
+program_structure = { package = "circomspect-program-structure", version = "2.1.2", path = "../program_structure" }

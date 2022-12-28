@@ -1,12 +1,13 @@
 [package]
 name = "circomspect-program-structure-tests"
-version = "0.6.1"
+version = "0.8.0"
 edition = "2021"
+rust-version = "1.65"
 
 [dependencies]
-parser = { package = "circomspect-parser", version = "2.0.10", path = "../parser" }
-program_structure = { package = "circomspect-program-structure", version = "2.0.10", path = "../program_structure"}
+parser = { package = "circomspect-parser", version = "2.1.2", path = "../parser" }
+program_structure = { package = "circomspect-program-structure", version = "2.1.2", path = "../program_structure" }
 
 [dev-dependencies]
-parser = { package = "circomspect-parser", version = "2.0.10", path = "../parser" }
-program_structure = { package = "circomspect-program-structure", version = "2.0.10", path = "../program_structure"}
+parser = { package = "circomspect-parser", version = "2.1.2", path = "../parser" }
+program_structure = { package = "circomspect-program-structure", version = "2.1.2", path = "../program_structure" }
