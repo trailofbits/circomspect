@@ -61,7 +61,7 @@ pub fn run_complexity_analysis(cfg: &Cfg) -> ReportCollection {
         edges += basic_block.successors().len();
         nodes += 1;
     }
-    let complexity = edges - nodes + 2;
+    let complexity = 2 + edges - nodes;
 
     let mut reports = ReportCollection::new();
     // Generate a report if the cyclomatic complexity is high.
