@@ -392,11 +392,11 @@ impl VariableMeta for Expression {
                         trace!("adding `{name:?}` to local variables read");
                         locals_read.insert(VariableUse::new(meta, name, &Vec::new()));
                     }
-                    Some(VariableType::Component) => {
+                    Some(VariableType::Component | VariableType::AnonymousComponent) => {
                         trace!("adding `{name:?}` to components read");
                         components_read.insert(VariableUse::new(meta, name, &Vec::new()));
                     }
-                    Some(VariableType::Signal(_)) => {
+                    Some(VariableType::Signal(_, _)) => {
                         trace!("adding `{name:?}` to signals read");
                         signals_read.insert(VariableUse::new(meta, name, &Vec::new()));
                     }
@@ -442,11 +442,11 @@ impl VariableMeta for Expression {
                         trace!("adding `{var:?}` to local variables read");
                         locals_read.insert(VariableUse::new(meta, var, access));
                     }
-                    Some(VariableType::Component) => {
+                    Some(VariableType::Component | VariableType::AnonymousComponent) => {
                         trace!("adding `{var:?}` to components read");
                         components_read.insert(VariableUse::new(meta, var, access));
                     }
-                    Some(VariableType::Signal(_)) => {
+                    Some(VariableType::Signal(_, _)) => {
                         trace!("adding `{var:?}` to signals read");
                         signals_read.insert(VariableUse::new(meta, var, access));
                     }
@@ -478,11 +478,11 @@ impl VariableMeta for Expression {
                         trace!("adding `{var:?}` to local variables read");
                         locals_read.insert(VariableUse::new(meta, var, &Vec::new()));
                     }
-                    Some(VariableType::Component) => {
+                    Some(VariableType::Component | VariableType::AnonymousComponent) => {
                         trace!("adding `{var:?}` to components read");
                         components_read.insert(VariableUse::new(meta, var, &Vec::new()));
                     }
-                    Some(VariableType::Signal(_)) => {
+                    Some(VariableType::Signal(_, _)) => {
                         trace!("adding `{var:?}` to signals read");
                         signals_read.insert(VariableUse::new(meta, var, &Vec::new()));
                     }

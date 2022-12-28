@@ -205,11 +205,14 @@ pub enum Expression {
     Phi { meta: Meta, args: Vec<VariableName> },
 }
 
+pub type TagList = Vec<String>;
+
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub enum VariableType {
     Local,
     Component,
-    Signal(SignalType),
+    AnonymousComponent,
+    Signal(SignalType, TagList),
 }
 
 impl fmt::Display for VariableType {
@@ -218,12 +221,17 @@ impl fmt::Display for VariableType {
         use VariableType::*;
         match self {
             Local => write!(f, "var"),
-            Component => write!(f, "component"),
-            Signal(signal_type) => {
+            AnonymousComponent | Component => write!(f, "component"),
+            Signal(signal_type, tag_list) => {
                 if matches!(signal_type, Intermediate) {
-                    write!(f, "signal")
+                    write!(f, "signal")?;
                 } else {
-                    write!(f, "signal {signal_type}")
+                    write!(f, "signal {signal_type}")?;
+                }
+                if !tag_list.is_empty() {
+                    write!(f, " {{{}}}", tag_list.join(", "))
+                } else {
+                    Ok(())
                 }
             }
         }

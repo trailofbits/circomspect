@@ -126,7 +126,7 @@ impl ProgramArchive {
     pub fn get_public_inputs_main_component(&self) -> &Vec<String> {
         &self.public_inputs
     }
-    pub fn get_main_expression(&self) -> &Expression {
+    pub fn main_expression(&self) -> &Expression {
         &self.initial_template_call
     }
     // FileLibrary functions

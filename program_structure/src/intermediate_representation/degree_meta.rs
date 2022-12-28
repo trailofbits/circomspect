@@ -457,6 +457,8 @@ impl DegreeEnvironment {
     }
 
     /// Sets the degree range of the given variable. Returns true on first update.
+    /// TODO: Should probably take the supremum of the given range and any
+    /// existing range.
     pub fn set_degree(&mut self, var: &VariableName, range: &DegreeRange) -> bool {
         if self.degree_ranges.insert(var.clone(), range.clone()).is_none() {
             trace!("setting degree range of `{var:?}` to {range:?}");

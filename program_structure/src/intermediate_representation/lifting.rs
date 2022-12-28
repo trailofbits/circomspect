@@ -45,9 +45,9 @@ impl From<LiftingEnvironment> for Declarations {
 }
 
 // Attempt to convert an AST statement into an IR statement. This will fail on
-// statements that need to be handled manually (`While` and `IfThenElse`), as
-// well as statements that have no direct IR counterparts (like `Declaration`,
-// `Block` and `InitializationBlock`).
+// statements that need to be handled manually (like `While`, `IfThenElse`, and
+// `MultiSubstitution`), as well as statements that have no direct IR
+// counterparts (like `Declaration`, `Block`, and `InitializationBlock`).
 impl TryLift<()> for ast::Statement {
     type IR = ir::Statement;
     type Error = IRError;
@@ -113,6 +113,7 @@ impl TryLift<()> for ast::Statement {
             ast::Statement::Block { .. }
             | ast::Statement::While { .. }
             | ast::Statement::IfThenElse { .. }
+            | ast::Statement::MultiSubstitution { .. }
             | ast::Statement::InitializationBlock { .. } => {
                 // These need to be handled by the caller.
                 panic!("failed to convert AST statement to IR")
@@ -121,7 +122,9 @@ impl TryLift<()> for ast::Statement {
     }
 }
 
-// Attempt to convert an AST expression to an IR expression.
+// Attempt to convert an AST expression to an IR expression. This will fail on
+// expressions that need to be handled directly by the caller (like `Tuple` and
+// `AnonymousComponent`).
 impl TryLift<()> for ast::Expression {
     type IR = ir::Expression;
     type Error = IRError;
@@ -185,6 +188,10 @@ impl TryLift<()> for ast::Expression {
             // TODO: We currently treat `ParallelOp` as transparent and simply
             // lift the underlying expression. Should this be added to the IR?
             ast::Expression::ParallelOp { rhe, .. } => rhe.try_lift((), reports),
+            ast::Expression::Tuple { .. } | ast::Expression::AnonymousComponent { .. } => {
+                // These need to be handled by the caller.
+                panic!("failed to convert AST expression to IR")
+            }
         }
     }
 }
@@ -206,10 +213,11 @@ impl TryLift<()> for ast::VariableType {
 
     fn try_lift(&self, _: (), reports: &mut ReportCollection) -> IRResult<Self::IR> {
         match self {
-            ast::VariableType::Component => Ok(ir::VariableType::Component),
             ast::VariableType::Var => Ok(ir::VariableType::Local),
-            ast::VariableType::Signal(signal_type, _) => {
-                Ok(ir::VariableType::Signal(signal_type.try_lift((), reports)?))
+            ast::VariableType::Component => Ok(ir::VariableType::Component),
+            ast::VariableType::AnonymousComponent => Ok(ir::VariableType::AnonymousComponent),
+            ast::VariableType::Signal(signal_type, tag_list) => {
+                Ok(ir::VariableType::Signal(signal_type.try_lift((), reports)?, tag_list.clone()))
             }
         }
     }

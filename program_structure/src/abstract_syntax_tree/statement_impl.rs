@@ -11,6 +11,7 @@ impl Statement {
             | Return { meta, .. }
             | Declaration { meta, .. }
             | Substitution { meta, .. }
+            | MultiSubstitution { meta, .. }
             | LogCall { meta, .. }
             | Block { meta, .. }
             | Assert { meta, .. }
@@ -26,6 +27,7 @@ impl Statement {
             | Return { meta, .. }
             | Declaration { meta, .. }
             | Substitution { meta, .. }
+            | MultiSubstitution { meta, .. }
             | LogCall { meta, .. }
             | Block { meta, .. }
             | Assert { meta, .. }
@@ -38,38 +40,52 @@ impl Statement {
         use Statement::*;
         matches!(self, IfThenElse { .. })
     }
+
     pub fn is_while(&self) -> bool {
         use Statement::*;
         matches!(self, While { .. })
     }
+
     pub fn is_return(&self) -> bool {
         use Statement::*;
         matches!(self, Return { .. })
     }
+
     pub fn is_initialization_block(&self) -> bool {
         use Statement::*;
         matches!(self, InitializationBlock { .. })
     }
+
     pub fn is_declaration(&self) -> bool {
         use Statement::*;
         matches!(self, Declaration { .. })
     }
+
     pub fn is_substitution(&self) -> bool {
         use Statement::*;
         matches!(self, Substitution { .. })
     }
+
+    pub fn is_multi_substitution(&self) -> bool {
+        use Statement::*;
+        matches!(self, MultiSubstitution { .. })
+    }
+
     pub fn is_constraint_equality(&self) -> bool {
         use Statement::*;
         matches!(self, ConstraintEquality { .. })
     }
+
     pub fn is_log_call(&self) -> bool {
         use Statement::*;
         matches!(self, LogCall { .. })
     }
+
     pub fn is_block(&self) -> bool {
         use Statement::*;
         matches!(self, Block { .. })
     }
+
     pub fn is_assert(&self) -> bool {
         use Statement::*;
         matches!(self, Assert { .. })
@@ -95,6 +111,9 @@ impl FillMeta for Statement {
             }
             Substitution { meta, access, rhe, .. } => {
                 fill_substitution(meta, access, rhe, file_id, element_id)
+            }
+            MultiSubstitution { meta, lhe, rhe, .. } => {
+                fill_multi_substitution(meta, lhe, rhe, file_id, element_id);
             }
             ConstraintEquality { meta, lhe, rhe } => {
                 fill_constraint_equality(meta, lhe, rhe, file_id, element_id)
@@ -179,6 +198,18 @@ fn fill_substitution(
     }
 }
 
+fn fill_multi_substitution(
+    meta: &mut Meta,
+    lhe: &mut Expression,
+    rhe: &mut Expression,
+    file_id: usize,
+    element_id: &mut usize,
+) {
+    meta.set_file_id(file_id);
+    rhe.fill(file_id, element_id);
+    lhe.fill(file_id, element_id);
+}
+
 fn fill_constraint_equality(
     meta: &mut Meta,
     lhe: &mut Expression,
@@ -221,16 +252,17 @@ impl Debug for Statement {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         use Statement::*;
         match self {
-            IfThenElse { .. } => f.write_str("Statement::IfThenElse"),
-            While { .. } => f.write_str("Statement::While"),
-            Return { .. } => f.write_str("Statement::Return"),
-            Declaration { .. } => f.write_str("Statement::Declaration"),
-            Substitution { .. } => f.write_str("Statement::Substitution"),
-            LogCall { .. } => f.write_str("Statement::LogCall"),
-            Block { .. } => f.write_str("Statement::Block"),
-            Assert { .. } => f.write_str("Statement::Assert"),
-            ConstraintEquality { .. } => f.write_str("Statement::ConstraintEquality"),
-            InitializationBlock { .. } => f.write_str("Statement::InitializationBlock"),
+            IfThenElse { .. } => write!(f, "Statement::IfThenElse"),
+            While { .. } => write!(f, "Statement::While"),
+            Return { .. } => write!(f, "Statement::Return"),
+            Declaration { .. } => write!(f, "Statement::Declaration"),
+            Substitution { .. } => write!(f, "Statement::Substitution"),
+            MultiSubstitution { .. } => write!(f, "Statement::MultiSubstitution"),
+            LogCall { .. } => write!(f, "Statement::LogCall"),
+            Block { .. } => write!(f, "Statement::Block"),
+            Assert { .. } => write!(f, "Statement::Assert"),
+            ConstraintEquality { .. } => write!(f, "Statement::ConstraintEquality"),
+            InitializationBlock { .. } => write!(f, "Statement::InitializationBlock"),
         }
     }
 }
@@ -240,7 +272,7 @@ impl Display for Statement {
         use Statement::*;
         match self {
             IfThenElse { cond, else_case, .. } => match else_case {
-                Some(_) => write!(f, "if-else {cond}"),
+                Some(_) => write!(f, "if {cond} else"),
                 None => write!(f, "if {cond}"),
             },
             While { cond, .. } => write!(f, "while {cond}"),
@@ -253,21 +285,11 @@ impl Display for Statement {
                 }
                 write!(f, " {op} {rhe}")
             }
-            LogCall { args, .. } => {
-                write!(f, "log(")?;
-                for (index, arg) in args.iter().enumerate() {
-                    if index > 0 {
-                        write!(f, ", ")?;
-                    }
-                    write!(f, "{arg}")?;
-                }
-                write!(f, ")")
-            }
-            // TODO: Remove this when switching to IR.
+            MultiSubstitution { lhe, op, rhe, .. } => write!(f, "{lhe} {op} {rhe}"),
+            LogCall { args, .. } => write!(f, "log({})", vec_to_string(args)),
             Block { .. } => Ok(()),
             Assert { arg, .. } => write!(f, "assert({arg})"),
             ConstraintEquality { lhe, rhe, .. } => write!(f, "{lhe} === {rhe}"),
-            // TODO: Remove this when switching to IR.
             InitializationBlock { .. } => Ok(()),
         }
     }
@@ -290,14 +312,20 @@ impl Display for VariableType {
         use VariableType::*;
         match self {
             Var => write!(f, "var"),
-            Signal(signal_type, _) => {
+            Signal(signal_type, tag_list) => {
                 if matches!(signal_type, Intermediate) {
-                    write!(f, "signal")
+                    write!(f, "signal")?;
                 } else {
-                    write!(f, "signal {signal_type}")
+                    write!(f, "signal {signal_type}")?;
+                }
+                if !tag_list.is_empty() {
+                    write!(f, " {{{}}}", tag_list.join("}} {{"))
+                } else {
+                    Ok(())
                 }
             }
             Component => write!(f, "component"),
+            AnonymousComponent => write!(f, "anonymous component"),
         }
     }
 }
@@ -321,4 +349,8 @@ impl Display for LogArgument {
             LogExp(value) => write!(f, "{value}"),
         }
     }
+}
+
+fn vec_to_string<T: ToString>(elems: &[T]) -> String {
+    elems.iter().map(|arg| arg.to_string()).collect::<Vec<String>>().join(", ")
 }

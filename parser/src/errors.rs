@@ -1,4 +1,4 @@
-use program_structure::abstract_syntax_tree::ast::Version;
+use program_structure::ast::{Meta, Version};
 use program_structure::report_code::ReportCode;
 use program_structure::report::Report;
 use program_structure::file_definition::{FileID, FileLocation};
@@ -100,6 +100,64 @@ impl NoCompilerVersionWarning {
             ),
             ReportCode::NoCompilerVersionWarning,
         )
+    }
+}
+
+pub struct AnonymousComponentError {
+    pub meta: Option<Meta>,
+    pub message: String,
+    pub primary: Option<String>,
+}
+
+impl AnonymousComponentError {
+    pub fn new(meta: Option<&Meta>, message: &str, primary: Option<&str>) -> Self {
+        AnonymousComponentError {
+            meta: meta.cloned(),
+            message: message.to_string(),
+            primary: primary.map(ToString::to_string),
+        }
+    }
+
+    pub fn into_report(self) -> Report {
+        let mut report = Report::error(self.message, ReportCode::AnonymousComponentError);
+        if let Some(meta) = self.meta {
+            let primary = self.primary.unwrap_or_else(|| "The problem occurs here.".to_string());
+            report.add_primary(meta.file_location(), meta.get_file_id(), primary);
+        }
+        report
+    }
+
+    pub fn boxed_report(meta: &Meta, message: &str) -> Box<Report> {
+        Box::new(Self::new(Some(meta), message, None).into_report())
+    }
+}
+
+pub struct TupleError {
+    pub meta: Option<Meta>,
+    pub message: String,
+    pub primary: Option<String>,
+}
+
+impl TupleError {
+    pub fn new(meta: Option<&Meta>, message: &str, primary: Option<&str>) -> Self {
+        TupleError {
+            meta: meta.cloned(),
+            message: message.to_string(),
+            primary: primary.map(ToString::to_string),
+        }
+    }
+
+    pub fn into_report(self) -> Report {
+        let mut report = Report::error(self.message, ReportCode::TupleError);
+        if let Some(meta) = self.meta {
+            let primary = self.primary.unwrap_or_else(|| "The problem occurs here.".to_string());
+            report.add_primary(meta.file_location(), meta.get_file_id(), primary);
+        }
+        report
+    }
+
+    pub fn boxed_report(meta: &Meta, message: &str) -> Box<Report> {
+        Box::new(Self::new(Some(meta), message, None).into_report())
     }
 }
 

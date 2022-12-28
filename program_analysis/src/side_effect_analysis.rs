@@ -255,7 +255,7 @@ pub fn run_side_effect_analysis(cfg: &Cfg) -> ReportCollection {
         .declarations()
         .iter()
         .filter_map(|(name, declaration)| {
-            if matches!(declaration.variable_type(), VariableType::Signal(_)) {
+            if matches!(declaration.variable_type(), VariableType::Signal(_, _)) {
                 Some((name, declaration))
             } else {
                 None
@@ -267,7 +267,7 @@ pub fn run_side_effect_analysis(cfg: &Cfg) -> ReportCollection {
         .filter_map(|(name, declaration)| {
             if matches!(
                 declaration.variable_type(),
-                VariableType::Signal(SignalType::Input | SignalType::Output)
+                VariableType::Signal(SignalType::Input | SignalType::Output, _)
             ) {
                 Some(*name)
             } else {
@@ -324,9 +324,15 @@ pub fn run_side_effect_analysis(cfg: &Cfg) -> ReportCollection {
     let mut reported_vars = HashSet::new();
 
     // Generate a report for any variable that does not taint a sink.
+    //
     // TODO: The call to TaintAnalysis::taints_any chokes on CFGs containing
     // large (65536 element) arrays.
     for source in taint_analysis.definitions() {
+        // Circom 2.1.2 introduces `_` for ignored variables in tuple
+        // assignments. We respect this convention here as well.
+        if source.to_string() == "_" {
+            continue;
+        }
         if !variables_read.contains(source.name()) {
             // If the variable is unread, the corresponding value is unused.
             if cfg.parameters().contains(source.name()) {
@@ -346,9 +352,15 @@ pub fn run_side_effect_analysis(cfg: &Cfg) -> ReportCollection {
         }
     }
     // Generate reports for unused or unconstrained signals.
+    //
     // TODO: The call to TaintAnalysis::taints_any chokes on CFGs containing
     // large (65536 element) arrays.
     for (source, declaration) in signal_decls {
+        // Circom 2.1.2 introduces `_` for ignored variables in tuple
+        // assignments. We respect this convention here as well.
+        if source.to_string() == "_" {
+            continue;
+        }
         // Don't generate multiple reports for the same variable.
         if reported_vars.contains(&source.to_string()) {
             continue;

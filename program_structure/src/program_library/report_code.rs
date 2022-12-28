@@ -62,6 +62,8 @@ pub enum ReportCode {
     NonQuadratic,
     NonConstantArrayLength,
     NonComputableExpression,
+    AnonymousComponentError,
+    TupleError,
     // Constraint analysis codes
     UnconstrainedSignal,
     OneConstraintIntermediate,
@@ -151,6 +153,8 @@ impl ReportCode {
             NonConstantArrayLength => "T20463",
             NonComputableExpression => "T20464",
             WrongNumberOfArguments(..) => "T20465",
+            AnonymousComponentError => "TAC01",
+            TupleError => "TAC02",
             // Constraint analysis codes
             UnconstrainedSignal => "CA01",
             OneConstraintIntermediate => "CA02",
@@ -186,6 +190,8 @@ impl ReportCode {
             CompilerVersionError => "compiler-version-error",
             WrongTypesInAssignOperation => "wrong-types-in-assign-operation",
             WrongNumberOfArguments(..) => "wrong-number-of-arguments",
+            AnonymousComponentError => "anonymous-component-error",
+            TupleError => "tuple-error",
             UndefinedFunction => "undefined-function",
             UndefinedTemplate => "undefined-template",
             UninitializedSymbolInExpression => "uninitialized-symbol-in-expression",
@@ -282,7 +288,7 @@ impl ReportCode {
             TooManyArguments => Some("overly-complex-function-or-template"),
             UnnecessarySignalAssignment => Some("unnecessary-signal-assignment"),
             UnconstrainedLessThan => Some("unconstrained-less-than"),
-            UnconstrainedDivision => Some("unconstrained-devision"),
+            UnconstrainedDivision => Some("unconstrained-division"),
             BN128SpecificCircuit => Some("bn128-specific-circuit"),
             UnderConstrainedSignal => Some("under-constrained-signal"),
             // We only provide a URL for Circomspect specific issues.

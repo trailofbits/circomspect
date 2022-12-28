@@ -116,6 +116,16 @@ pub fn parse_string(src: &str) -> Option<AST> {
     lang::ParseAstParser::new().parse(&src).ok()
 }
 
+/// Parse a single (function or template) definition for testing purposes.
+use program_structure::ast::Definition;
+
+pub fn parse_definition(src: &str) -> Option<Definition> {
+    match parse_string(src) {
+        Some(AST { mut definitions, .. }) if definitions.len() == 1 => definitions.pop(),
+        _ => None,
+    }
+}
+
 #[must_use]
 fn format_expected(tokens: &[String]) -> String {
     if tokens.is_empty() {
