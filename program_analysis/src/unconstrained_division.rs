@@ -75,8 +75,8 @@ impl Component {
         use ValueReduction::*;
         let value = self.output.as_ref().map(|output| output.value());
         match value {
-            Some(FieldElement (Some(value))) => Some(!value.is_zero()),
-            Some(Boolean (Some(value))) => Some(value),
+            Some(FieldElement(Some(value))) => Some(!value.is_zero()),
+            Some(Boolean(Some(value))) => Some(value),
             _ => None,
         }
     }

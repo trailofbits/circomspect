@@ -22,17 +22,15 @@ impl NonBooleanConditionWarning {
         );
         if let Some(file_id) = self.file_id {
             let msg = match self.value {
-                ValueReduction::FieldElement(v)
-                    => format!("This value is a field element{}.", if let Some(v) = v { format!(" equal to {v}") } else { "".to_string() }),
+                ValueReduction::FieldElement(v) => format!(
+                    "This value is a field element{}.",
+                    if let Some(v) = v { format!(" equal to {v}") } else { "".to_string() }
+                ),
 
-                _  => "This value may or may not be a boolean".to_string(),
+                _ => "This value may or may not be a boolean".to_string(),
             };
 
-            report.add_primary(
-                self.file_location,
-                file_id,
-                msg,
-            );
+            report.add_primary(self.file_location, file_id, msg);
         }
         report
     }
@@ -54,7 +52,7 @@ pub fn find_non_boolean_conditional(cfg: &Cfg) -> ReportCollection {
 
 fn expect_boolean(e: &Expression, reports: &mut ReportCollection) {
     let value = e.meta().value_knowledge();
-    if !matches!(value,ValueReduction::Boolean(_)) {
+    if !matches!(value, ValueReduction::Boolean(_)) {
         reports.push(build_report(e.meta(), value.clone()));
     }
 }
@@ -63,8 +61,8 @@ fn visit_statement(stmt: &Statement, reports: &mut ReportCollection) {
     use Statement::*;
     match stmt {
         IfThenElse { cond, .. } => {
-            visit_expression(cond,reports);
-            expect_boolean(cond,reports);
+            visit_expression(cond, reports);
+            expect_boolean(cond, reports);
         }
 
         Declaration { dimensions, .. } => {
@@ -89,7 +87,6 @@ fn visit_statement(stmt: &Statement, reports: &mut ReportCollection) {
         }
 
         Assert { arg, .. } => visit_expression(arg, reports),
-
     }
 }
 
@@ -118,10 +115,10 @@ fn visit_expression(e: &Expression, reports: &mut ReportCollection) {
         }
 
         SwitchOp { meta: _, cond, if_true, if_false } => {
-            visit_expression(if_true,reports);
-            visit_expression(if_false,reports);
-            visit_expression(cond,reports);
-            expect_boolean(cond,reports);
+            visit_expression(if_true, reports);
+            visit_expression(if_false, reports);
+            visit_expression(cond, reports);
+            expect_boolean(cond, reports);
         }
 
         Call { args, .. } => {
@@ -223,4 +220,3 @@ mod tests {
         assert_eq!(reports.len(), expected_len);
     }
 }
-

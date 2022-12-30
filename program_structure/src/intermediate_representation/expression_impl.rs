@@ -547,45 +547,35 @@ impl ValueMeta for Expression {
                 let result = cond.propagate_values(env)
                     | if_true.propagate_values(env)
                     | if_false.propagate_values(env);
-                result || match (cond.value(), if_true.value(), if_false.value()) {
+                result
+                    || match (cond.value(), if_true.value(), if_false.value()) {
+                        (Boolean(cond), t, f) => {
+                            let value = match cond {
+                                Some(true) => t.clone(),
+                                Some(false) => f.clone(),
+                                None => t.union(&f),
+                            };
+                            meta.value_knowledge_mut().set_reduces_to(value.clone())
+                        }
 
-                    (
-                        Boolean(cond),
-                        t,
-                        f,
-                    ) => {
-                        let value = match cond {
-                        Some(true) => t.clone(),
-                        Some(false) => f.clone(),
-                        None => t.union(&f),
-                        };
-                        meta.value_knowledge_mut().set_reduces_to(value.clone())
-                    },
+                        (FieldElement(cond), t, f) => {
+                            let value = match cond.map(|c| !c.is_zero()) {
+                                Some(true) => t.clone(),
+                                Some(false) => f.clone(),
+                                None => t.union(&f),
+                            };
 
-                    (
-                        FieldElement(cond),
-                        t,
-                        f,
-                    ) => {
-                        let value = match cond.map(|c| !c.is_zero()) {
-                            Some(true) => t.clone(),
-                            Some(false) => f.clone(),
-                            None => t.union(&f),
-                        };
+                            meta.value_knowledge_mut().set_reduces_to(value.clone())
+                        }
 
-                        meta.value_knowledge_mut().set_reduces_to(value.clone())
-                    },
+                        (Unknown, t, f) => meta.value_knowledge_mut().set_reduces_to(t.union(&f)),
 
-                    (Unknown, t, f) =>
-                        meta.value_knowledge_mut().set_reduces_to(t.union(&f)),
-
-                    (Impossible, _, _) =>
-                        meta.value_knowledge_mut().set_reduces_to(Impossible),
-
-                }
+                        (Impossible, _, _) => meta.value_knowledge_mut().set_reduces_to(Impossible),
+                    }
             }
-            Variable { meta, name, .. } =>
-                meta.value_knowledge_mut().set_reduces_to(env.get_variable(name)),
+            Variable { meta, name, .. } => {
+                meta.value_knowledge_mut().set_reduces_to(env.get_variable(name))
+            }
             Number(meta, value) => {
                 let value = FieldElement(Some(value.clone()));
                 meta.value_knowledge_mut().set_reduces_to(value)
@@ -708,39 +698,39 @@ impl ExpressionInfixOpcode {
                 match self {
                     Mul => {
                         let value = modular_arithmetic::mul(lhv, rhv, p);
-                        FieldElement( Some(value) )
+                        FieldElement(Some(value))
                     }
                     Div => modular_arithmetic::div(lhv, rhv, p)
                         .ok()
-                        .map(|value| FieldElement( Some(value) ))
+                        .map(|value| FieldElement(Some(value)))
                         .unwrap_or(Impossible),
                     Add => {
                         let value = modular_arithmetic::add(lhv, rhv, p);
-                        FieldElement( Some(value) )
+                        FieldElement(Some(value))
                     }
                     Sub => {
                         let value = modular_arithmetic::sub(lhv, rhv, p);
-                        FieldElement( Some(value) )
+                        FieldElement(Some(value))
                     }
                     Pow => {
                         let value = modular_arithmetic::pow(lhv, rhv, p);
-                        FieldElement( Some(value) )
+                        FieldElement(Some(value))
                     }
                     IntDiv => modular_arithmetic::idiv(lhv, rhv, p)
                         .ok()
-                        .map(|value| FieldElement( Some(value) ))
+                        .map(|value| FieldElement(Some(value)))
                         .unwrap_or(Impossible),
                     Mod => modular_arithmetic::mod_op(lhv, rhv, p)
                         .ok()
-                        .map(|value| FieldElement( Some(value) ))
+                        .map(|value| FieldElement(Some(value)))
                         .unwrap_or(Impossible),
                     ShiftL => modular_arithmetic::shift_l(lhv, rhv, p)
                         .ok()
-                        .map(|value| FieldElement( Some(value) ))
+                        .map(|value| FieldElement(Some(value)))
                         .unwrap_or(Impossible),
                     ShiftR => modular_arithmetic::shift_r(lhv, rhv, p)
                         .ok()
-                        .map(|value| FieldElement( Some(value) ))
+                        .map(|value| FieldElement(Some(value)))
                         .unwrap_or(Impossible),
                     LesserEq => {
                         let value = modular_arithmetic::lesser_eq(lhv, rhv, p);
@@ -768,15 +758,15 @@ impl ExpressionInfixOpcode {
                     }
                     BitOr => {
                         let value = modular_arithmetic::bit_or(lhv, rhv, p);
-                        FieldElement(Some( value ))
+                        FieldElement(Some(value))
                     }
                     BitAnd => {
                         let value = modular_arithmetic::bit_and(lhv, rhv, p);
-                        FieldElement(Some( value ))
+                        FieldElement(Some(value))
                     }
                     BitXor => {
                         let value = modular_arithmetic::bit_xor(lhv, rhv, p);
-                        FieldElement(Some( value ))
+                        FieldElement(Some(value))
                     }
                     // Remaining operations do not make sense.
                     // TODO: Add report/error propagation here.
@@ -787,16 +777,16 @@ impl ExpressionInfixOpcode {
             (Boolean(lhv), Boolean(rhv)) => {
                 use ExpressionInfixOpcode::*;
                 match self {
-                    BoolAnd => Boolean(match (lhv,rhv) {
-                        (Some(true),r) => r.clone(),
-                        (Some(false),_) => Some(false),
-                        (None,Some(false)) => Some(false),
+                    BoolAnd => Boolean(match (lhv, rhv) {
+                        (Some(true), r) => r.clone(),
+                        (Some(false), _) => Some(false),
+                        (None, Some(false)) => Some(false),
                         _ => None,
                     }),
-                    BoolOr => Boolean(match (lhv,rhv) {
-                        (Some(false),r) => r.clone(),
-                        (Some(true),_) => Some(true),
-                        (None,Some(true)) => Some(true),
+                    BoolOr => Boolean(match (lhv, rhv) {
+                        (Some(false), r) => r.clone(),
+                        (Some(true), _) => Some(true),
+                        (None, Some(true)) => Some(true),
                         _ => None,
                     }),
                     // Remaining operations do not make sense.
@@ -808,11 +798,12 @@ impl ExpressionInfixOpcode {
                 use ExpressionInfixOpcode::*;
                 // TODO: should we check the input types?
                 match self {
-                    Mul | Div | Add | Sub | Pow | IntDiv | Mod | ShiftL | ShiftR | BitOr | BitAnd | BitXor =>
-                        FieldElement(None),
+                    Mul | Div | Add | Sub | Pow | IntDiv | Mod | ShiftL | ShiftR | BitOr
+                    | BitAnd | BitXor => FieldElement(None),
 
-                    LesserEq | GreaterEq | Lesser | Greater | Eq | NotEq | BoolAnd | BoolOr =>
-                        Boolean(None),
+                    LesserEq | GreaterEq | Lesser | Greater | Eq | NotEq | BoolAnd | BoolOr => {
+                        Boolean(None)
+                    }
                 }
             }
         }
@@ -833,11 +824,7 @@ impl ExpressionPrefixOpcode {
         }
     }
 
-    fn propagate_values(
-        &self,
-        rhe: &ValueReduction,
-        env: &ValueEnvironment,
-    ) -> ValueReduction {
+    fn propagate_values(&self, rhe: &ValueReduction, env: &ValueEnvironment) -> ValueReduction {
         let p = env.prime();
 
         use ValueReduction::*;
@@ -849,9 +836,9 @@ impl ExpressionPrefixOpcode {
                     Sub => {
                         FieldElement(arg.as_ref().map(|arg| modular_arithmetic::prefix_sub(arg, p)))
                     }
-                    Complement => {
-                        FieldElement(arg.as_ref().map(|arg| modular_arithmetic::complement_256(arg, p)))
-                    }
+                    Complement => FieldElement(
+                        arg.as_ref().map(|arg| modular_arithmetic::complement_256(arg, p)),
+                    ),
                     // Remaining operations do not make sense.
                     // TODO: Add report propagation here as well.
                     _ => Unknown,

@@ -1,4 +1,4 @@
-use num_bigint::{BigInt,Sign};
+use num_bigint::{BigInt, Sign};
 use num_traits::Zero;
 use std::collections::HashMap;
 use std::fmt;
@@ -23,7 +23,7 @@ impl ValueEnvironment {
         let prev_value = self.reduces_to.get(name).cloned().unwrap_or_default();
         let new_value = prev_value.intersect(value);
         if new_value != prev_value {
-            self.reduces_to.insert(name.clone(),new_value);
+            self.reduces_to.insert(name.clone(), new_value);
             true
         } else {
             false
@@ -101,27 +101,21 @@ impl ValueReduction {
     // knowledge is `a.union(b)`
     pub fn union(&self, b: &Self) -> Self {
         use ValueReduction::*;
-        match (self,b) {
-            (Unknown,_) => Unknown,
-            (_,Unknown) => Unknown,
+        match (self, b) {
+            (Unknown, _) => Unknown,
+            (_, Unknown) => Unknown,
 
-            (l,Impossible) => l.clone(),
-            (Impossible,r) => r.clone(),
+            (l, Impossible) => l.clone(),
+            (Impossible, r) => r.clone(),
 
-            (Boolean(_),      FieldElement(_)) => Unknown,
+            (Boolean(_), FieldElement(_)) => Unknown,
             (FieldElement(_), Boolean(_)) => Unknown,
 
-            (FieldElement(av), FieldElement(bv))
-                if av == bv
-                => FieldElement(av.clone()),
-            (FieldElement(_), FieldElement(_))
-                => FieldElement(None),
+            (FieldElement(av), FieldElement(bv)) if av == bv => FieldElement(av.clone()),
+            (FieldElement(_), FieldElement(_)) => FieldElement(None),
 
-            (Boolean(av), Boolean(bv))
-                if av == bv
-                => Boolean(av.clone()),
-            (Boolean(_), Boolean(_))
-                => Boolean(None),
+            (Boolean(av), Boolean(bv)) if av == bv => Boolean(av.clone()),
+            (Boolean(_), Boolean(_)) => Boolean(None),
         }
     }
 
@@ -130,36 +124,30 @@ impl ValueReduction {
     pub fn intersect(&self, b: &Self) -> Self {
         use ValueReduction::*;
 
-        let bool_felt_merge = |b: &Option<bool>, fe: &Option<BigInt>| match (b,fe) {
+        let bool_felt_merge = |b: &Option<bool>, fe: &Option<BigInt>| match (b, fe) {
             // TODO: does this make sense? Should `true` be treated as
             // incompatible with `1`? It seems like it shouldn't be.
             (Some(false), Some(n)) if n.is_zero() => Unknown,
-            (Some(true), Some(n)) if n == &BigInt::from_bytes_le(Sign::Plus,&[1]) => Unknown,
+            (Some(true), Some(n)) if n == &BigInt::from_bytes_le(Sign::Plus, &[1]) => Unknown,
             (Some(_), Some(_)) => Impossible,
             _ => Unknown,
         };
 
-        match (self,b) {
-            (Unknown,r) => r.clone(),
-            (l,Unknown) => l.clone(),
+        match (self, b) {
+            (Unknown, r) => r.clone(),
+            (l, Unknown) => l.clone(),
 
-            (_,Impossible) => Impossible,
-            (Impossible,_) => Impossible,
+            (_, Impossible) => Impossible,
+            (Impossible, _) => Impossible,
 
-            (Boolean(b),       FieldElement(fe)) => bool_felt_merge(b,fe),
-            (FieldElement(fe), Boolean(b)) => bool_felt_merge(b,fe),
+            (Boolean(b), FieldElement(fe)) => bool_felt_merge(b, fe),
+            (FieldElement(fe), Boolean(b)) => bool_felt_merge(b, fe),
 
-            (FieldElement(av), FieldElement(bv))
-                if av == bv
-                => FieldElement(av.clone()),
-            (FieldElement(_), FieldElement(_))
-                => Impossible,
+            (FieldElement(av), FieldElement(bv)) if av == bv => FieldElement(av.clone()),
+            (FieldElement(_), FieldElement(_)) => Impossible,
 
-            (Boolean(av), Boolean(bv))
-                if av == bv
-                => Boolean(av.clone()),
-            (Boolean(_), Boolean(_))
-                => Impossible,
+            (Boolean(av), Boolean(bv)) if av == bv => Boolean(av.clone()),
+            (Boolean(_), Boolean(_)) => Impossible,
         }
     }
 
@@ -209,7 +197,7 @@ mod tests {
 
         let number = ValueReduction::FieldElement(Some(BigInt::from(1)));
         assert!(value.set_reduces_to(number));
-        assert!(matches!(value, ValueReduction::FieldElement( Some(_))));
+        assert!(matches!(value, ValueReduction::FieldElement(Some(_))));
         assert!(value.is_field_element());
         assert!(!value.is_boolean());
 
