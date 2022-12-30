@@ -17,24 +17,21 @@ impl ValueEnvironment {
         ValueEnvironment { constants: constants.clone(), reduces_to: HashMap::new() }
     }
 
-    /// Set the value of the given variable. Returns `true` on first update.
-    ///
-    /// # Panics
-    ///
-    /// This function panics if the caller attempts to set two different values
-    /// for the same variable.
+    /// Set the value of the given variable. Returns `true` on updates.
     pub fn add_variable(&mut self, name: &VariableName, value: &ValueReduction) -> bool {
-        if let Some(previous) = self.reduces_to.insert(name.clone(), value.clone()) {
-            assert_eq!(previous, *value);
-            false
-        } else {
+        let prev_value = self.reduces_to.get(name).cloned().unwrap_or_default();
+        let new_value = prev_value.intersect(value);
+        if new_value != prev_value {
+            self.reduces_to.insert(name.clone(),new_value);
             true
+        } else {
+            false
         }
     }
 
     #[must_use]
-    pub fn get_variable(&self, name: &VariableName) -> Option<&ValueReduction> {
-        self.reduces_to.get(name)
+    pub fn get_variable(&self, name: &VariableName) -> ValueReduction {
+        self.reduces_to.get(name).cloned().unwrap_or_default()
     }
 
     /// Returns the prime used.
@@ -62,68 +59,138 @@ pub trait ValueMeta {
 
     /// Returns the value if the node reduces to a constant, and None otherwise.
     #[must_use]
-    fn value(&self) -> Option<&ValueReduction>;
+    fn value(&self) -> ValueReduction;
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum ValueReduction {
-    Boolean { value: bool },
-    FieldElement { value: BigInt },
+    Unknown,
+    Boolean(Option<bool>),
+    FieldElement(Option<BigInt>),
+    Impossible,
+}
+
+impl Default for ValueReduction {
+    fn default() -> Self {
+        Self::Unknown
+    }
 }
 
 impl fmt::Display for ValueReduction {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         use ValueReduction::*;
         match self {
-            Boolean { value } => write!(f, "{value}"),
-            FieldElement { value } => write!(f, "{value}"),
+            Boolean(Some(value)) => write!(f, "{value}"),
+            Boolean(None) => write!(f, "<bool>"),
+            FieldElement(Some(value)) => write!(f, "{value}"),
+            FieldElement(None) => write!(f, "<felt>"),
+            Unknown => write!(f, "<unknown>"),
+            Impossible => write!(f, "<impossible>"),
         }
     }
 }
 
-#[derive(Default, Clone)]
-pub struct ValueKnowledge {
-    reduces_to: Option<ValueReduction>,
-}
-
-impl ValueKnowledge {
+impl ValueReduction {
     #[must_use]
-    pub fn new() -> ValueKnowledge {
-        ValueKnowledge::default()
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    /// Sets the value of the node. Returns `true` on the first update.
+    // if we know a variable is either `a` OR `b`, then our overall
+    // knowledge is `a.union(b)`
+    pub fn union(&self, b: &Self) -> Self {
+        use ValueReduction::*;
+        match (self,b) {
+            (Unknown,_) => Unknown,
+            (_,Unknown) => Unknown,
+
+            (l,Impossible) => l.clone(),
+            (Impossible,r) => r.clone(),
+
+            (Boolean(_),      FieldElement(_)) => Unknown,
+            (FieldElement(_), Boolean(_)) => Unknown,
+
+            (FieldElement(av), FieldElement(bv))
+                if av == bv
+                => FieldElement(av.clone()),
+            (FieldElement(_), FieldElement(_))
+                => FieldElement(None),
+
+            (Boolean(av), Boolean(bv))
+                if av == bv
+                => Boolean(av.clone()),
+            (Boolean(_), Boolean(_))
+                => Boolean(None),
+        }
+    }
+
+    // if we know a variable is both `a` AND `b`, then our overall
+    // knowledge is `a.intersect(b)`
+    pub fn intersect(&self, b: &Self) -> Self {
+        use ValueReduction::*;
+
+        let bool_felt_merge = |b: Option<Bool>, fe: Option<FieldElement>| match (b,fe) {
+            // TODO: does this make sense? Should `true` be treated as
+            // incompatible with `1`? It seems like it shouldn't be.
+            (Some(true), Some(1)) => Unknown,
+            (Some(false), Some(0)) => Unknown,
+            (Some(_), Some(n)) => Impossible,
+            _ => Unknown,
+        };
+
+        match (self,b) {
+            (Unknown,r) => r.clone(),
+            (l,Unknown) => l.clone(),
+
+            (_,Impossible) => Impossible,
+            (Impossible,_) => Impossible,
+
+            (Boolean(b),       FieldElement(fe)) => bool_felt_merge(b,fe),
+            (FieldElement(fe), Boolean(b)) => bool_felt_merge(b,fe),
+
+            (FieldElement(av), FieldElement(bv))
+                if av == bv
+                => FieldElement(av.clone()),
+            (FieldElement(_), FieldElement(_))
+                => Impossible,
+
+            (Boolean(av), Boolean(bv))
+                if av == bv
+                => Boolean(av.clone()),
+            (Boolean(_), Boolean(_))
+                => Impossible,
+        }
+    }
+
+    /// Restricts the value of the node. Returns `true` on the first update.
     #[must_use]
     pub fn set_reduces_to(&mut self, reduces_to: ValueReduction) -> bool {
-        let result = self.reduces_to.is_none();
-        self.reduces_to = Some(reduces_to);
+        let new_val = self.intersect(&reduces_to);
+        let result = self != &new_val;
+        *self = new_val;
         result
-    }
-
-    /// Gets the value of the node. Returns `None` if the value is unknown.
-    #[must_use]
-    pub fn get_reduces_to(&self) -> Option<&ValueReduction> {
-        self.reduces_to.as_ref()
     }
 
     /// Returns `true` if the value of the node is known.
     #[must_use]
     pub fn is_constant(&self) -> bool {
-        self.reduces_to.is_some()
+        match self {
+            Self::FieldElement(Some(_)) => true,
+            Self::Boolean(Some(_)) => true,
+            _ => false,
+        }
     }
 
     /// Returns `true` if the value of the node is a boolean.
     #[must_use]
     pub fn is_boolean(&self) -> bool {
-        use ValueReduction::*;
-        matches!(self.reduces_to, Some(Boolean { .. }))
+        matches!(self, ValueReduction::Boolean(_))
     }
 
     /// Returns `true` if the value of the node is a field element.
     #[must_use]
     pub fn is_field_element(&self) -> bool {
-        use ValueReduction::*;
-        matches!(self.reduces_to, Some(FieldElement { .. }))
+        matches!(self, ValueReduction::FieldElement(_))
     }
 }
 
@@ -133,23 +200,20 @@ mod tests {
 
     use crate::ir::value_meta::ValueReduction;
 
-    use super::ValueKnowledge;
-
     #[test]
     fn test_value_knowledge() {
-        let mut value = ValueKnowledge::new();
-        assert!(matches!(value.get_reduces_to(), None));
+        use ValueReduction::*;
+        let mut value = ValueReduction::new();
+        assert!(matches!(value, Unknown));
 
-        let number = ValueReduction::FieldElement { value: BigInt::from(1) };
+        let number = ValueReduction::FieldElement(Some(BigInt::from(1)));
         assert!(value.set_reduces_to(number));
-        assert!(matches!(value.get_reduces_to(), Some(ValueReduction::FieldElement { .. })));
+        assert!(matches!(value, ValueReduction::FieldElement( Some(_))));
         assert!(value.is_field_element());
         assert!(!value.is_boolean());
 
-        let boolean = ValueReduction::Boolean { value: true };
-        assert!(!value.set_reduces_to(boolean));
-        assert!(matches!(value.get_reduces_to(), Some(ValueReduction::Boolean { .. })));
-        assert!(!value.is_field_element());
-        assert!(value.is_boolean());
+        let boolean = ValueReduction::Boolean(Some(true));
+        assert!(value.set_reduces_to(boolean));
+        assert!(matches!(value, ValueReduction::Impossible));
     }
 }

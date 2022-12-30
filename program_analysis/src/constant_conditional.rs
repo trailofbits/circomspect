@@ -48,8 +48,8 @@ fn visit_statement(stmt: &Statement, reports: &mut ReportCollection) {
     use Statement::*;
     use ValueReduction::*;
     if let IfThenElse { cond, .. } = stmt {
-        let value = cond.meta().value_knowledge().get_reduces_to();
-        if let Some(Boolean { value }) = value {
+        let value = cond.meta().value_knowledge();
+        if let Boolean (Some(value)) = dbg!(value) {
             reports.push(build_report(cond.meta(), *value));
         }
     }
