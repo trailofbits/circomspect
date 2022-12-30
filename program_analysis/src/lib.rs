@@ -14,6 +14,7 @@ mod definition_complexity;
 mod field_arithmetic;
 mod field_comparisons;
 mod nonstrict_binary_conversion;
+mod non_boolean_condition;
 mod under_constrained_signals;
 mod unconstrained_less_than;
 mod unconstrained_division;
@@ -34,5 +35,6 @@ pub fn get_analysis_passes<'a>() -> Vec<Box<dyn Fn(&'a Cfg) -> ReportCollection 
         Box::new(constant_conditional::find_constant_conditional_statement),
         Box::new(under_constrained_signals::find_under_constrained_signals),
         Box::new(nonstrict_binary_conversion::find_nonstrict_binary_conversion),
+        Box::new(non_boolean_condition::find_non_boolean_conditional),
     ]
 }

@@ -1,4 +1,5 @@
-use num_bigint::BigInt;
+use num_bigint::{BigInt,Sign};
+use num_traits::Zero;
 use std::collections::HashMap;
 use std::fmt;
 
@@ -129,12 +130,12 @@ impl ValueReduction {
     pub fn intersect(&self, b: &Self) -> Self {
         use ValueReduction::*;
 
-        let bool_felt_merge = |b: Option<Bool>, fe: Option<FieldElement>| match (b,fe) {
+        let bool_felt_merge = |b: &Option<bool>, fe: &Option<BigInt>| match (b,fe) {
             // TODO: does this make sense? Should `true` be treated as
             // incompatible with `1`? It seems like it shouldn't be.
-            (Some(true), Some(1)) => Unknown,
-            (Some(false), Some(0)) => Unknown,
-            (Some(_), Some(n)) => Impossible,
+            (Some(false), Some(n)) if n.is_zero() => Unknown,
+            (Some(true), Some(n)) if n == &BigInt::from_bytes_le(Sign::Plus,&[1]) => Unknown,
+            (Some(_), Some(_)) => Impossible,
             _ => Unknown,
         };
 
@@ -214,6 +215,6 @@ mod tests {
 
         let boolean = ValueReduction::Boolean(Some(true));
         assert!(value.set_reduces_to(boolean));
-        assert!(matches!(value, ValueReduction::Impossible));
+        assert!(matches!(value, ValueReduction::Unknown));
     }
 }
