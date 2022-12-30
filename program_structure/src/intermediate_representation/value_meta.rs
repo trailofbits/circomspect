@@ -1,3 +1,4 @@
+#![deny(warnings)]
 use num_bigint::{BigInt, Sign};
 use num_traits::Zero;
 use std::collections::HashMap;
@@ -114,7 +115,7 @@ impl ValueReduction {
             (FieldElement(av), FieldElement(bv)) if av == bv => FieldElement(av.clone()),
             (FieldElement(_), FieldElement(_)) => FieldElement(None),
 
-            (Boolean(av), Boolean(bv)) if av == bv => Boolean(av.clone()),
+            (Boolean(av), Boolean(bv)) if av == bv => Boolean(*av),
             (Boolean(_), Boolean(_)) => Boolean(None),
         }
     }
@@ -146,7 +147,7 @@ impl ValueReduction {
             (FieldElement(av), FieldElement(bv)) if av == bv => FieldElement(av.clone()),
             (FieldElement(_), FieldElement(_)) => Impossible,
 
-            (Boolean(av), Boolean(bv)) if av == bv => Boolean(av.clone()),
+            (Boolean(av), Boolean(bv)) if av == bv => Boolean(*av),
             (Boolean(_), Boolean(_)) => Impossible,
         }
     }
@@ -163,11 +164,7 @@ impl ValueReduction {
     /// Returns `true` if the value of the node is known.
     #[must_use]
     pub fn is_constant(&self) -> bool {
-        match self {
-            Self::FieldElement(Some(_)) => true,
-            Self::Boolean(Some(_)) => true,
-            _ => false,
-        }
+        matches!(self, Self::FieldElement(Some(_)) | Self::Boolean(Some(_)))
     }
 
     /// Returns `true` if the value of the node is a boolean.

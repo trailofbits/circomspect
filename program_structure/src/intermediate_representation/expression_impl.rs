@@ -1,3 +1,4 @@
+#![deny(warnings)]
 use log::trace;
 use num_traits::Zero;
 use std::fmt;
@@ -551,21 +552,21 @@ impl ValueMeta for Expression {
                     || match (cond.value(), if_true.value(), if_false.value()) {
                         (Boolean(cond), t, f) => {
                             let value = match cond {
-                                Some(true) => t.clone(),
-                                Some(false) => f.clone(),
+                                Some(true) => t,
+                                Some(false) => f,
                                 None => t.union(&f),
                             };
-                            meta.value_knowledge_mut().set_reduces_to(value.clone())
+                            meta.value_knowledge_mut().set_reduces_to(value)
                         }
 
                         (FieldElement(cond), t, f) => {
                             let value = match cond.map(|c| !c.is_zero()) {
-                                Some(true) => t.clone(),
-                                Some(false) => f.clone(),
+                                Some(true) => t,
+                                Some(false) => f,
                                 None => t.union(&f),
                             };
 
-                            meta.value_knowledge_mut().set_reduces_to(value.clone())
+                            meta.value_knowledge_mut().set_reduces_to(value)
                         }
 
                         (Unknown, t, f) => meta.value_knowledge_mut().set_reduces_to(t.union(&f)),
@@ -778,13 +779,13 @@ impl ExpressionInfixOpcode {
                 use ExpressionInfixOpcode::*;
                 match self {
                     BoolAnd => Boolean(match (lhv, rhv) {
-                        (Some(true), r) => r.clone(),
+                        (Some(true), r) => *r,
                         (Some(false), _) => Some(false),
                         (None, Some(false)) => Some(false),
                         _ => None,
                     }),
                     BoolOr => Boolean(match (lhv, rhv) {
-                        (Some(false), r) => r.clone(),
+                        (Some(false), r) => *r,
                         (Some(true), _) => Some(true),
                         (None, Some(true)) => Some(true),
                         _ => None,
