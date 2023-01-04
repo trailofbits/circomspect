@@ -104,7 +104,9 @@ pub fn split_declaration_into_single_nodes_and_multi_substitution(
         let single_declaration =
             build_declaration(with_meta.clone(), has_type, name.clone(), dimensions.clone());
         initializations.push(single_declaration);
-        // Circom default initializes local arrays to 0.
+        // Circom default initializes local arrays to 0. We remove this because
+        // we don't want these assignments to be flagged as unused assignments
+        // by the side-effect analysis.
         // if xtype == Var && init.is_none() {
         //     let mut value = Expression::Number(meta.clone(), BigInt::from(0));
         //     for dim_expr in dimensions.iter().rev() {

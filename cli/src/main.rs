@@ -16,7 +16,7 @@ use program_structure::function_data::FunctionInfo;
 use program_structure::report_writer::{StdoutWriter, ReportWriter, SarifWriter};
 use program_structure::template_data::TemplateInfo;
 
-const COMPILER_VERSION: &str = "2.0.8";
+const COMPILER_VERSION: &str = "2.1.2";
 const DEFAULT_LEVEL: &str = "WARNING";
 const DEFAULT_CURVE: &str = "BN128";
 
@@ -87,7 +87,7 @@ fn analyze_definitions(
 
     // Analyze all functions.
     for (name, function) in functions {
-        log_message(&format!("analyzing function '{name}'"));
+        log_message(&format!("analyzing function `{name}`"));
         let mut new_reports = ReportCollection::new();
         analyze_ast(function, curve, &mut new_reports);
         writer.write(&new_reports, file_library);
@@ -95,7 +95,7 @@ fn analyze_definitions(
     }
     // Analyze all templates.
     for (name, template) in templates {
-        log_message(&format!("analyzing template '{name}'"));
+        log_message(&format!("analyzing template `{name}`"));
         let mut new_reports = ReportCollection::new();
         analyze_ast(template, curve, &mut new_reports);
         writer.write(&new_reports, file_library);
