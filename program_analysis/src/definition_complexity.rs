@@ -88,3 +88,40 @@ pub fn run_complexity_analysis(cfg: &Cfg) -> ReportCollection {
     }
     reports
 }
+
+#[cfg(test)]
+mod tests {
+    use parser::parse_definition;
+    use program_structure::{report::ReportCollection, constants::Curve, cfg::IntoCfg};
+
+    use crate::definition_complexity::run_complexity_analysis;
+
+    #[test]
+    fn test_small_template() {
+        let src = r#"
+            template Example () {
+               signal input a;
+               signal output b;
+               a <== b;
+            }
+        "#;
+        validate_reports(src, 0);
+    }
+
+    fn validate_reports(src: &str, expected_len: usize) {
+        // Build CFG.
+        let mut reports = ReportCollection::new();
+        let cfg = parse_definition(src)
+            .unwrap()
+            .into_cfg(&Curve::default(), &mut reports)
+            .unwrap()
+            .into_ssa()
+            .unwrap();
+        assert!(reports.is_empty());
+
+        // Generate report collection.
+        let reports = run_complexity_analysis(&cfg);
+
+        assert_eq!(reports.len(), expected_len);
+    }
+}
