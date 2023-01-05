@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use log::debug;
 
 use program_structure::cfg::Cfg;
@@ -7,9 +9,12 @@ use program_structure::report::{Report, ReportCollection};
 use program_structure::report_code::ReportCode;
 use program_structure::file_definition::{FileLocation, FileID};
 
-const PROBLEMATIC_GOLDILOCK_TEMPLATES: [&str; 23] = [
+const PROBLEMATIC_GOLDILOCK_TEMPLATES: [&str; 26] = [
     "BabyPbk",
+    "AliasCheck",
     "CompConstant",
+    "Num2Bits_strict",
+    "Bits2Num_strict",
     "EdDSAVerifier",
     "EdDSAMiMCVerifier",
     "EdDSAMiMCSpongeVerifier",
@@ -83,10 +88,10 @@ impl BN128SpecificCircuitWarning {
 //
 // Template             Goldilocks (64 bits)        BLS12-381 (255 bits)
 // -----------------------------------------------------------------
-// AliasCheck                                               x
+// AliasCheck                   x                           x
 // BabyPbk                      x
-// Bits2Num_strict                                          x
-// Num2Bits_strict                                          x
+// Bits2Num_strict              x                           x
+// Num2Bits_strict              x                           x
 // CompConstant                 x                           x
 // EdDSAVerifier                x                           x
 // EdDSAMiMCVerifier            x                           x
@@ -111,8 +116,8 @@ impl BN128SpecificCircuitWarning {
 // SMTVerifierLevel             x
 pub fn find_bn128_specific_circuits(cfg: &Cfg) -> ReportCollection {
     let problematic_templates = match cfg.constants().curve() {
-        Curve::Goldilocks => PROBLEMATIC_GOLDILOCK_TEMPLATES.to_vec(),
-        Curve::Bls12_381 => PROBLEMATIC_BLS12_381_TEMPLATES.to_vec(),
+        Curve::Goldilocks => HashSet::from(PROBLEMATIC_GOLDILOCK_TEMPLATES),
+        Curve::Bls12_381 => HashSet::from(PROBLEMATIC_BLS12_381_TEMPLATES),
         Curve::Bn128 => {
             // Exit early if we're using the default curve.
             return ReportCollection::new();
@@ -131,7 +136,7 @@ pub fn find_bn128_specific_circuits(cfg: &Cfg) -> ReportCollection {
 
 fn visit_statement(
     stmt: &Statement,
-    problematic_templates: &[&str],
+    problematic_templates: &HashSet<&str>,
     reports: &mut ReportCollection,
 ) {
     use AssignOp::*;
