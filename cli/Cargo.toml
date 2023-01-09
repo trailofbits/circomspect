@@ -12,7 +12,8 @@ keywords = ["cryptography", "static-analysis", "zero-knowledge", "circom"]
 [dependencies]
 anyhow = "1.0"
 atty = "0.2"
-clap = { version = "4.0", features = ["derive"] }
+# Stay on Clap version 3 until version 4 supports coloured help output.
+clap = { version = "3.2", features = ["derive"] }
 log = "0.4"
 parser = { package = "circomspect-parser", version = "2.0.11", path = "../parser" }
 pretty_env_logger = "0.4"
