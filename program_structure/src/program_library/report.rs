@@ -2,11 +2,10 @@ use anyhow::anyhow;
 use std::cmp::Ordering;
 use std::str::FromStr;
 
-use super::report_code::ReportCode;
-use super::file_definition::{FileID, FileLibrary, FileLocation};
-use atty;
 use codespan_reporting::diagnostic::{Diagnostic, Label};
-use codespan_reporting::term;
+
+use super::report_code::ReportCode;
+use super::file_definition::{FileID, FileLocation};
 
 pub type ReportCollection = Vec<Report>;
 pub type DiagnosticCode = String;
@@ -106,30 +105,6 @@ impl Report {
         }
     }
 
-    pub fn print_reports(reports: &[Report], file_library: &FileLibrary, verbose: bool) {
-        use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
-        let writer = if atty::is(atty::Stream::Stdout) {
-            StandardStream::stdout(ColorChoice::Always)
-        } else {
-            StandardStream::stdout(ColorChoice::Never)
-        };
-        let mut config = term::Config::default();
-        let mut diagnostics = Vec::new();
-        let files = file_library.to_storage();
-        for report in reports.iter() {
-            diagnostics.push(report.to_diagnostic(verbose));
-        }
-        config.styles.header_help.set_intense(false);
-        config.styles.header_error.set_intense(false);
-        config.styles.header_warning.set_intense(false);
-        for diagnostic in diagnostics.iter() {
-            let print_result = term::emit(&mut writer.lock(), &config, files, diagnostic);
-            if print_result.is_err() {
-                panic!("error printing reports")
-            }
-        }
-    }
-
     pub fn error(message: String, code: ReportCode) -> Report {
         Report::new(MessageCategory::Error, message, code)
     }
@@ -172,7 +147,7 @@ impl Report {
         self
     }
 
-    fn to_diagnostic(&self, verbose: bool) -> Diagnostic<FileID> {
+    pub fn to_diagnostic(&self, verbose: bool) -> Diagnostic<FileID> {
         let mut labels = self.primary().clone();
         let mut secondary = self.secondary().clone();
         labels.append(&mut secondary);
