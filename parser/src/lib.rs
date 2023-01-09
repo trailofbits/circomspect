@@ -21,25 +21,23 @@ use program_structure::program_archive::ProgramArchive;
 use program_structure::template_library::TemplateLibrary;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 
+/// A result from the Circom parser.
 pub enum ParseResult {
-    // The program was successfully parsed without issues.
+    /// The program was successfully parsed without issues.
     Program(Box<ProgramArchive>, ReportCollection),
-    // The parser failed to parse a complete program.
+    /// The parser failed to parse a complete program.
     Library(Box<TemplateLibrary>, ReportCollection),
 }
 
-pub fn parse_files(file_paths: &Vec<PathBuf>, compiler_version: &str) -> ParseResult {
-    let compiler_version = parse_version_string(compiler_version);
-
+pub fn parse_files(file_paths: &[PathBuf], compiler_version: &Version) -> ParseResult {
     let mut reports = ReportCollection::new();
     let mut file_stack = FileStack::new(file_paths, &mut reports);
     let mut file_library = FileLibrary::new();
     let mut definitions = HashMap::new();
     let mut main_components = Vec::new();
     while let Some(file_path) = FileStack::take_next(&mut file_stack) {
-        match parse_file(&file_path, &mut file_stack, &mut file_library, &compiler_version) {
+        match parse_file(&file_path, &mut file_stack, &mut file_library, compiler_version) {
             Ok((file_id, program, mut warnings)) => {
                 if let Some(main_component) = program.main_component {
                     main_components.push((file_id, main_component, program.custom_gates));
@@ -119,17 +117,6 @@ fn open_file(file_path: &PathBuf) -> Result<(String, String), Box<Report>> /* pa
         .map_err(|error| Box::new(error.into_report()))
 }
 
-fn parse_version_string(version: &str) -> Version {
-    let split_version: Vec<&str> = version.split('.').collect();
-    // This is only called on the internally defined version, so it is ok to
-    // call `unwrap` here.
-    (
-        usize::from_str(split_version[0]).unwrap(),
-        usize::from_str(split_version[1]).unwrap(),
-        usize::from_str(split_version[2]).unwrap(),
-    )
-}
-
 fn check_compiler_version(
     file_path: &Path,
     required_version: Option<Version>,
@@ -137,9 +124,10 @@ fn check_compiler_version(
 ) -> Result<ReportCollection, Box<Report>> {
     use errors::{CompilerVersionError, NoCompilerVersionWarning};
     if let Some(required_version) = required_version {
-        if required_version.0 == compiler_version.0
-            && required_version.1 == compiler_version.1
-            && required_version.2 <= compiler_version.2
+        if (required_version.0 == compiler_version.0 && required_version.1 < compiler_version.1)
+            || (required_version.0 == compiler_version.0
+                && required_version.1 == compiler_version.1
+                && required_version.2 <= compiler_version.2)
         {
             Ok(vec![])
         } else {
@@ -166,5 +154,27 @@ pub fn parse_definition(src: &str) -> Option<Definition> {
     match parser_logic::parse_string(src) {
         Some(AST { mut definitions, .. }) if definitions.len() == 1 => definitions.pop(),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use crate::check_compiler_version;
+
+    #[test]
+    fn test_compiler_version() {
+        let path = PathBuf::from("example.circom");
+
+        assert!(check_compiler_version(&path, None, &(2, 1, 2)).is_ok());
+        assert!(check_compiler_version(&path, Some((2, 0, 0)), &(2, 1, 2)).is_ok());
+        assert!(check_compiler_version(&path, Some((2, 0, 8)), &(2, 1, 2)).is_ok());
+        assert!(check_compiler_version(&path, Some((2, 1, 2)), &(2, 1, 2)).is_ok());
+
+        // We don't support Circom 1.
+        assert!(check_compiler_version(&path, Some((1, 0, 0)), &(2, 0, 8)).is_err());
+        assert!(check_compiler_version(&path, Some((2, 1, 2)), &(2, 0, 8)).is_err());
+        assert!(check_compiler_version(&path, Some((2, 1, 4)), &(2, 1, 2)).is_err());
     }
 }
