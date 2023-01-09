@@ -14,14 +14,14 @@ pub struct FileStack {
 }
 
 impl FileStack {
-    pub fn new(paths: &Vec<PathBuf>, reports: &mut ReportCollection) -> FileStack {
+    pub fn new(paths: &[PathBuf], reports: &mut ReportCollection) -> FileStack {
         let mut result =
             FileStack { current_location: None, black_paths: HashSet::new(), stack: Vec::new() };
         result.add_files(paths, reports);
         result
     }
 
-    fn add_files(&mut self, paths: &Vec<PathBuf>, reports: &mut ReportCollection) {
+    fn add_files(&mut self, paths: &[PathBuf], reports: &mut ReportCollection) {
         for path in paths {
             if path.is_dir() {
                 // Handle directories on a best effort basis only.
