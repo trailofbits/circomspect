@@ -190,16 +190,6 @@ fn check_compiler_version(
     }
 }
 
-/// Parse a single (function or template) definition for testing purposes.
-use program_structure::ast::Definition;
-
-pub fn parse_definition(src: &str) -> Option<Definition> {
-    match parser_logic::parse_string(src) {
-        Some(AST { mut definitions, .. }) if definitions.len() == 1 => definitions.pop(),
-        _ => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
