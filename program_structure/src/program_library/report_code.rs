@@ -87,6 +87,7 @@ pub enum ReportCode {
     UnconstrainedDivision,
     BN128SpecificCircuit,
     UnderConstrainedSignal,
+    UnusedOutputSignal,
 }
 
 impl ReportCode {
@@ -178,6 +179,7 @@ impl ReportCode {
             UnconstrainedDivision => "CS0015",
             BN128SpecificCircuit => "CS0016",
             UnderConstrainedSignal => "CS0017",
+            UnusedOutputSignal => "CS0018",
         }
         .to_string()
     }
@@ -268,6 +270,7 @@ impl ReportCode {
             UnconstrainedDivision => "unconstrained-division",
             BN128SpecificCircuit => "bn128-specific-circuit",
             UnderConstrainedSignal => "under-constrained-signal",
+            UnusedOutputSignal => "unused-output-signal",
         }
         .to_string()
     }
