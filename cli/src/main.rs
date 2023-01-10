@@ -1,11 +1,9 @@
-mod config;
-mod analysis_runner;
-
 use std::path::PathBuf;
 use std::process::ExitCode;
 use clap::{CommandFactory, Parser};
 
-use analysis_runner::AnalysisRunner;
+use program_analysis::config;
+use program_analysis::analysis_runner::AnalysisRunner;
 
 use program_structure::constants::Curve;
 use program_structure::report::Report;
