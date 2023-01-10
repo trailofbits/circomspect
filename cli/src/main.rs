@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
-use clap::{CommandFactory, Parser};
+use clap::{ArgAction, CommandFactory, Parser};
 
 use program_analysis::config;
 use program_analysis::analysis_runner::AnalysisRunner;
@@ -16,6 +16,10 @@ struct Cli {
     /// Initial input file(s)
     #[clap(name = "INPUT")]
     input_files: Vec<PathBuf>,
+
+    /// Analyze included files recursively
+    #[clap(short = 'i', long = "follow-includes", action = ArgAction::SetTrue)]
+    follow_includes: bool,
 
     /// Output level (INFO, WARNING, or ERROR)
     #[clap(short = 'l', long = "level", name = "LEVEL", default_value = config::DEFAULT_LEVEL)]
@@ -65,8 +69,11 @@ fn main() -> ExitCode {
     let mut stdout_writer = CachedStdoutWriter::new(options.verbose)
         .add_filter(move |report: &Report| filter_by_id(report, &allow_list))
         .add_filter(move |report: &Report| filter_by_level(report, &options.output_level));
-    let mut runner =
-        AnalysisRunner::new(options.curve).with_files(&options.input_files, &mut stdout_writer);
+    let mut runner = AnalysisRunner::new(options.curve).with_files(
+        &options.input_files,
+        options.follow_includes,
+        &mut stdout_writer,
+    );
 
     runner.analyze_functions(&mut stdout_writer);
     runner.analyze_templates(&mut stdout_writer);

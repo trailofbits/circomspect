@@ -36,14 +36,24 @@ pub enum ParseResult {
     Library(Box<TemplateLibrary>, ReportCollection),
 }
 
-pub fn parse_files(file_paths: &[PathBuf], compiler_version: &Version) -> ParseResult {
+pub fn parse_files(
+    file_paths: &[PathBuf],
+    follow_includes: bool,
+    compiler_version: &Version,
+) -> ParseResult {
     let mut reports = ReportCollection::new();
     let mut file_stack = FileStack::new(file_paths, &mut reports);
     let mut file_library = FileLibrary::new();
     let mut definitions = HashMap::new();
     let mut main_components = Vec::new();
     while let Some(file_path) = FileStack::take_next(&mut file_stack) {
-        match parse_file(&file_path, &mut file_stack, &mut file_library, compiler_version) {
+        match parse_file(
+            &file_path,
+            &mut file_stack,
+            &mut file_library,
+            follow_includes,
+            compiler_version,
+        ) {
             Ok((file_id, program, mut warnings)) => {
                 if let Some(main_component) = program.main_component {
                     main_components.push((file_id, main_component, program.custom_gates));
@@ -128,6 +138,7 @@ fn parse_file(
     file_path: &PathBuf,
     file_stack: &mut FileStack,
     file_library: &mut FileLibrary,
+    follow_includes: bool,
     compiler_version: &Version,
 ) -> Result<(FileID, AST, ReportCollection), Box<Report>> {
     let mut reports = ReportCollection::new();
@@ -138,14 +149,16 @@ fn parse_file(
 
     debug!("parsing file `{}`", file_path.display());
     let program = parser_logic::parse_file(&file_content, file_id)?;
-    for include in &program.includes {
-        if let Err(report) = file_stack.add_include(include) {
-            reports.push(*report);
-        }
-    }
     match check_compiler_version(file_path, program.compiler_version, compiler_version) {
         Ok(warnings) => reports.extend(warnings),
         Err(error) => reports.push(*error),
+    }
+    if follow_includes {
+        for include in &program.includes {
+            if let Err(report) = file_stack.add_include(include) {
+                reports.push(*report);
+            }
+        }
     }
     Ok((file_id, program, reports))
 }

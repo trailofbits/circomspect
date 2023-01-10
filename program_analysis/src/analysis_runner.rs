@@ -53,10 +53,11 @@ impl AnalysisRunner {
     pub fn with_files(
         mut self,
         input_files: &[PathBuf],
+        follow_includes: bool,
         writer: &mut (impl LogWriter + ReportWriter),
     ) -> Self {
         let (template_asts, function_asts, file_library) =
-            match parser::parse_files(input_files, &config::COMPILER_VERSION) {
+            match parser::parse_files(input_files, follow_includes, &config::COMPILER_VERSION) {
                 ParseResult::Program(program, warnings) => {
                     writer.write_reports(&warnings, &program.file_library);
                     (program.templates, program.functions, program.file_library)
