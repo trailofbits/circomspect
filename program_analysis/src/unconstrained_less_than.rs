@@ -155,7 +155,7 @@ pub fn find_unconstrained_less_than(cfg: &Cfg) -> ReportCollection {
         // Check if the value is constrained to be positive.
         let mut is_positive = false;
         for bit_size in &data.bit_sizes {
-            if let Some(ValueReduction::FieldElement { value }) = bit_size.value() {
+            if let ValueReduction::FieldElement(Some(ref value)) = bit_size.value() {
                 if value < &max_value {
                     is_positive = true;
                     break;
