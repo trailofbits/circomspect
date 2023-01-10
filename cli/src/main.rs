@@ -65,8 +65,8 @@ fn main() -> ExitCode {
     let mut stdout_writer = CachedStdoutWriter::new(options.verbose)
         .add_filter(move |report: &Report| filter_by_id(report, &allow_list))
         .add_filter(move |report: &Report| filter_by_level(report, &options.output_level));
-    let mut runner = AnalysisRunner::new(&options.curve);
-    runner.with_files(&options.input_files, &mut stdout_writer);
+    let mut runner =
+        AnalysisRunner::new(options.curve).with_files(&options.input_files, &mut stdout_writer);
 
     runner.analyze_functions(&mut stdout_writer);
     runner.analyze_templates(&mut stdout_writer);
