@@ -9,7 +9,7 @@ use crate::ir::declarations::{Declaration, Declarations};
 use crate::ir::degree_meta::{DegreeEnvironment, Degree, DegreeRange};
 use crate::ir::value_meta::ValueEnvironment;
 use crate::ir::variable_meta::VariableMeta;
-use crate::ir::{VariableName, VariableType};
+use crate::ir::{VariableName, VariableType, SignalType};
 use crate::ssa::dominator_tree::DominatorTree;
 use crate::ssa::errors::SSAResult;
 use crate::ssa::{insert_phi_statements, insert_ssa_variables};
@@ -172,6 +172,30 @@ impl Cfg {
     /// Returns an iterator over the set of variables defined by the CFG.
     pub fn variables(&self) -> impl Iterator<Item = &VariableName> {
         self.declarations.iter().map(|(name, _)| name)
+    }
+
+    /// Returns an iterator over the input signals of the CFG.
+    pub fn input_signals(&self) -> impl Iterator<Item = &VariableName> {
+        use SignalType::*;
+        use VariableType::*;
+        self.declarations.iter().filter_map(|(name, declaration)| {
+            match declaration.variable_type() {
+                Signal(Input, _) => Some(name),
+                _ => None,
+            }
+        })
+    }
+
+    /// Returns an iterator over the output signals of the CFG.
+    pub fn output_signals(&self) -> impl Iterator<Item = &VariableName> {
+        use SignalType::*;
+        use VariableType::*;
+        self.declarations.iter().filter_map(|(name, declaration)| {
+            match declaration.variable_type() {
+                Signal(Output, _) => Some(name),
+                _ => None,
+            }
+        })
     }
 
     /// Returns the declaration of the given variable.
