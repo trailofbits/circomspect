@@ -54,20 +54,20 @@ const PROBLEMATIC_BLS12_381_TEMPLATES: [&str; 13] = [
     "Sign",
 ];
 
-pub struct BN128SpecificCircuitWarning {
+pub struct Bn254SpecificCircuitWarning {
     template_name: String,
     file_id: Option<FileID>,
     file_location: FileLocation,
 }
 
-impl BN128SpecificCircuitWarning {
+impl Bn254SpecificCircuitWarning {
     pub fn into_report(self) -> Report {
         let mut report = Report::warning(
             format!(
-                "The `{}` template relies on BN128 specific parameters and should not be used with other curves.",
+                "The `{}` template relies on BN254 specific parameters and should not be used with other curves.",
                 self.template_name
             ),
-            ReportCode::BN128SpecificCircuit,
+            ReportCode::Bn254SpecificCircuit,
         );
         if let Some(file_id) = self.file_id {
             report.add_primary(
@@ -81,7 +81,7 @@ impl BN128SpecificCircuitWarning {
 }
 
 // This analysis pass identifies Circomlib templates with hard-coded constants
-// related to BN128. If these are used together with a different prime, this may
+// related to BN254. If these are used together with a different prime, this may
 // be an issue.
 //
 // The following table contains a check for each problematic template-curve pair.
@@ -114,16 +114,16 @@ impl BN128SpecificCircuitWarning {
 // SMTProcessorLevel            x
 // SMTVerifier                  x                           x
 // SMTVerifierLevel             x
-pub fn find_bn128_specific_circuits(cfg: &Cfg) -> ReportCollection {
+pub fn find_bn254_specific_circuits(cfg: &Cfg) -> ReportCollection {
     let problematic_templates = match cfg.constants().curve() {
         Curve::Goldilocks => HashSet::from(PROBLEMATIC_GOLDILOCK_TEMPLATES),
         Curve::Bls12_381 => HashSet::from(PROBLEMATIC_BLS12_381_TEMPLATES),
-        Curve::Bn128 => {
+        Curve::Bn254 => {
             // Exit early if we're using the default curve.
             return ReportCollection::new();
         }
     };
-    debug!("running bn128-specific circuit analysis pass");
+    debug!("running bn254-specific circuit analysis pass");
     let mut reports = ReportCollection::new();
     for basic_block in cfg.iter() {
         for stmt in basic_block.iter() {
@@ -160,7 +160,7 @@ fn visit_statement(
 }
 
 fn build_report(meta: &Meta, name: &str) -> Report {
-    BN128SpecificCircuitWarning {
+    Bn254SpecificCircuitWarning {
         template_name: name.to_string(),
         file_id: meta.file_id,
         file_location: meta.file_location(),
@@ -218,7 +218,7 @@ mod tests {
         assert!(reports.is_empty());
 
         // Generate report collection.
-        let reports = find_bn128_specific_circuits(&cfg);
+        let reports = find_bn254_specific_circuits(&cfg);
 
         assert_eq!(reports.len(), expected_len);
     }

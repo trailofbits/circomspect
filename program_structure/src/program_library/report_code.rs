@@ -85,7 +85,7 @@ pub enum ReportCode {
     TooManyArguments,
     UnconstrainedLessThan,
     UnconstrainedDivision,
-    BN128SpecificCircuit,
+    Bn254SpecificCircuit,
     UnderConstrainedSignal,
     UnusedOutputSignal,
 }
@@ -177,7 +177,7 @@ impl ReportCode {
             UnnecessarySignalAssignment => "CS0013",
             UnconstrainedLessThan => "CS0014",
             UnconstrainedDivision => "CS0015",
-            BN128SpecificCircuit => "CS0016",
+            Bn254SpecificCircuit => "CS0016",
             UnderConstrainedSignal => "CS0017",
             UnusedOutputSignal => "CS0018",
         }
@@ -268,7 +268,7 @@ impl ReportCode {
             TooManyArguments => "too-many-arguments",
             UnconstrainedLessThan => "unconstrained-less-than",
             UnconstrainedDivision => "unconstrained-division",
-            BN128SpecificCircuit => "bn128-specific-circuit",
+            Bn254SpecificCircuit => "bn254-specific-circuit",
             UnderConstrainedSignal => "under-constrained-signal",
             UnusedOutputSignal => "unused-output-signal",
         }
@@ -292,7 +292,7 @@ impl ReportCode {
             UnnecessarySignalAssignment => Some("unnecessary-signal-assignment"),
             UnconstrainedLessThan => Some("unconstrained-less-than"),
             UnconstrainedDivision => Some("unconstrained-division"),
-            BN128SpecificCircuit => Some("bn128-specific-circuit"),
+            Bn254SpecificCircuit => Some("bn254-specific-circuit"),
             UnderConstrainedSignal => Some("under-constrained-signal"),
             UnusedOutputSignal => Some("unused-output-signal"),
             // We only provide a URL for Circomspect specific issues.

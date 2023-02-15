@@ -13,7 +13,7 @@ pub mod config;
 
 // Intra-process analysis passes.
 mod bitwise_complement;
-mod bn128_specific_circuit;
+mod bn254_specific_circuit;
 mod constant_conditional;
 mod definition_complexity;
 mod field_arithmetic;
@@ -42,7 +42,7 @@ pub fn get_analysis_passes() -> Vec<Box<AnalysisPass>> {
         Box::new(|_, cfg| field_arithmetic::find_field_element_arithmetic(cfg)),
         Box::new(|_, cfg| field_comparisons::find_field_element_comparisons(cfg)),
         Box::new(|_, cfg| unconstrained_division::find_unconstrained_division(cfg)),
-        Box::new(|_, cfg| bn128_specific_circuit::find_bn128_specific_circuits(cfg)),
+        Box::new(|_, cfg| bn254_specific_circuit::find_bn254_specific_circuits(cfg)),
         Box::new(|_, cfg| unconstrained_less_than::find_unconstrained_less_than(cfg)),
         Box::new(|_, cfg| constant_conditional::find_constant_conditional_statement(cfg)),
         Box::new(|_, cfg| under_constrained_signals::find_under_constrained_signals(cfg)),

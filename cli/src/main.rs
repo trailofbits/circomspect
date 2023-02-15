@@ -35,7 +35,7 @@ struct Cli {
     #[clap(short = 'v', long = "verbose")]
     verbose: bool,
 
-    /// Set curve (BN128, BLS12_381, or GOLDILOCKS)
+    /// Set curve (BN254, BLS12_381, or GOLDILOCKS)
     #[clap(short = 'c', long = "curve", name = "NAME", default_value = config::DEFAULT_CURVE)]
     curve: Curve,
 }

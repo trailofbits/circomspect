@@ -89,7 +89,7 @@ the prime. If not, there may be multiple correct representations of the input
 which could cause issues, since we typically expect the circuit output to be
 uniquely determined by the input.
 
-For example, suppose that we create a component `n2b` given by `Num2Bits(254)` and set the input to `1`. Now, both the binary representation of `1` _and_ the representation of `p + 1` (where `p` is the order of the underlying finite field) will satisfy the circuit over BN128, since both are 254-bit numbers. If you cannot restrict the input size below the prime size you should use the strict versions `Num2Bits_strict` and `Bits2Num_strict` to convert to and from binary representation. Circomspect will generate a warning if it cannot prove (using constant propagation) that the input size passed to `Num2Bits` or `Bits2Num` is less than the size of the prime in bits.
+For example, suppose that we create a component `n2b` given by `Num2Bits(254)` and set the input to `1`. Now, both the binary representation of `1` _and_ the representation of `p + 1` (where `p` is the order of the underlying finite field) will satisfy the circuit over BN254, since both are 254-bit numbers. If you cannot restrict the input size below the prime size you should use the strict versions `Num2Bits_strict` and `Bits2Num_strict` to convert to and from binary representation. Circomspect will generate a warning if it cannot prove (using constant propagation) that the input size passed to `Num2Bits` or `Bits2Num` is less than the size of the prime in bits.
 
 ### Unconstrained less-than
 
@@ -133,13 +133,13 @@ This forces `c` to be equal to `a / b` during witness generation, and checks tha
 
 Circomspect will identify signal assignments on the form `c <-- a / b` and ensure that the expression `b` is constrained to be non-zero using the Circomlib `IsZero` template. If no such constraint is found, a warning is emitted.
 
-### BN128 specific circuit
+### BN254 specific circuit
 
-Circom defaults to using the BN128 scalar field (a 254-bit prime field),
+Circom defaults to using the BN254 scalar field (a 254-bit prime field),
 but it also supports BSL12-381 (which has a 255-bit scalar field) and
-Goldilocks (with a 64-bit scalar field). However, since there are no constants denoting either the prime or the prime size in bits available in the Circom language, some Circomlib templates like `Sign` (which returns the sign of the input signal), and `AliasCheck` (used by the strict versions of `Num2Bits` and `Bits2Num`), hardcode either the BN128 prime size or some other constant related to BN128. Using these circuits with a custom prime may thus lead to unexpected results and should be avoided.
+Goldilocks (with a 64-bit scalar field). However, since there are no constants denoting either the prime or the prime size in bits available in the Circom language, some Circomlib templates like `Sign` (which returns the sign of the input signal), and `AliasCheck` (used by the strict versions of `Num2Bits` and `Bits2Num`), hardcode either the BN254 prime size or some other constant related to BN254. Using these circuits with a custom prime may thus lead to unexpected results and should be avoided.
 
-Circomlib templates that may be problematic when used together with curves other than BN128 include the following circuit definitions. (An `x` means that the template should not be used together with the corresponding curve.)
+Circomlib templates that may be problematic when used together with curves other than BN254 include the following circuit definitions. (An `x` means that the template should not be used together with the corresponding curve.)
 
 | Template                  | Goldilocks (64 bits) | BLS12-381 (255 bits) |
 | :------------------------ | :------------------: | :------------------: |
