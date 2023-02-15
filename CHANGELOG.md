@@ -1,13 +1,18 @@
 # Release Notes
 
-## v0.8.0 (2023-01-10)
+## v0.8.0 (2023-02-16)
 
 ### Features
 
--   Added initial support for tags, tuples, and anonymous components.
-    Circomspect now supports Circom versions 2.0.0 - 2.1.4.
--   Added templates to the `bn128-specific-circuits` analysis pass.
+-   Circomspect will now only report findings for potential issues in the files
+    specified on the command line. (It will still attempt to parse included
+    files, but these will only be used to inform the analysis of the files
+    specified by the user.)
+-   Added support for tags, tuples, and anonymous components. Circomspect now
+    supports Circom versions 2.0.0 - 2.1.4.
+-   Added templates to the `bn254-specific-circuits` analysis pass.
 -   Added `unused-output-signal` analysis pass.
+-   All uses of the name BN128 have been replaced with BN254.
 
 ### Bug fixes
 
@@ -35,10 +40,12 @@
 -   New analysis pass (`unconstrained-less-than`) that detects uses of the
     Circomlib `LessThan` template where the input signals are not constrained
     to be less than the bit size passed to `LessThan`.
--   New analysis pass (`unconstrained-division`) that detects signal assignments
-    containing division, where the divisor is not constrained to be non-zero.
--   New analysis pass (`bn128-specific-circuits`) that detects uses of Circomlib
-    templates with hard-coded BN128-specific constants together with a custom curve like BLS12-381 or Goldilocks.
+-   New analysis pass (`unconstrained-division`) that detects signal
+    assignments containing division, where the divisor is not constrained to be
+    non-zero.
+-   New analysis pass (`bn254-specific-circuits`) that detects uses of
+    Circomlib templates with hard-coded BN254-specific constants together with
+    a custom curve like BLS12-381 or Goldilocks.
 -   New analysis pass (`under-constrained-signal`) that detects intermediate
     signals which do not occur in at least two separate constraints.
 -   Rule name is now included in Sarif output. (The rule name is now also
@@ -51,8 +58,8 @@
     arrays by mistake.
 -   Fixed an issue in the `nonstrict-binary-conversion` analysis pass where
     some instantiations of `Num2Bits` and `Bits2Num` would not be detected.
--   Fixed an issue where the maximum degree of switch expressions were evaluated
-    incorrectly.
+-   Fixed an issue where the maximum degree of switch expressions were
+    evaluated incorrectly.
 -   Previous versions could take a very long time to complete value and degree
-    propagation. These analyses are now time boxed and will exit if the analysis
-    takes more than 10 seconds to complete.
+    propagation. These analyses are now time boxed and will exit if the
+    analysis takes more than 10 seconds to complete.
