@@ -117,10 +117,10 @@ fn remove_anonymous_from_statement(
         }
         Statement::IfThenElse { meta, cond, if_case, else_case } => {
             if cond.contains_anonymous_component(None) {
-                return Err(AnonymousComponentError::boxed_report(
-                    cond.meta(),
+                Err(AnonymousComponentError::boxed_report(
+                    &meta,
                     "Anonymous components cannot be used inside conditions.",
-                ));
+                ))
             } else {
                 let (new_if_case, mut declarations) =
                     remove_anonymous_from_statement(templates, file_library, *if_case, var_access)?;
