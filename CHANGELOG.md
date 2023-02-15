@@ -4,9 +4,10 @@
 
 ### Features
 
--   Added initial support for Circom 2.1.2, which includes tags, tuples, and
-    anonymous components.
+-   Added initial support for tags, tuples, and anonymous components.
+    Circomspect now supports Circom versions 2.0.0 - 2.1.4.
 -   Added templates to the `bn128-specific-circuits` analysis pass.
+-   Added `unused-output-signal` analysis pass.
 
 ### Bug fixes
 
