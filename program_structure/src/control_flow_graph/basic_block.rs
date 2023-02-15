@@ -234,13 +234,13 @@ impl VariableMeta for BasicBlock {
 
 impl fmt::Debug for BasicBlock {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let lines = self.iter().map(|stmt| format!("{:?}", stmt)).collect::<Vec<_>>();
+        let lines = self.iter().map(|stmt| format!("{stmt:?}")).collect::<Vec<_>>();
         let width = lines.iter().map(|line| line.len()).max().unwrap_or_default();
         let border = format!("+{}+", (0..width + 2).map(|_| '-').collect::<String>());
 
         writeln!(f, "{}", &border)?;
         for line in lines {
-            writeln!(f, "| {:width$} |", line)?;
+            writeln!(f, "| {line:width$} |")?;
         }
         writeln!(f, "{}", &border)
     }

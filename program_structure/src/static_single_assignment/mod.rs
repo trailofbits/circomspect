@@ -52,8 +52,8 @@ pub fn insert_phi_statements<Cfg: SSAConfig>(
 ///    version of each variable.
 /// 2. Updates phi expression arguments in each successor of the current
 ///    block, adding the correct versioned arguments to the expression.
-pub fn insert_ssa_variables<'a, Cfg: SSAConfig>(
-    basic_blocks: &'a mut [Cfg::BasicBlock],
+pub fn insert_ssa_variables<Cfg: SSAConfig>(
+    basic_blocks: &mut [Cfg::BasicBlock],
     dominator_tree: &DominatorTree<Cfg::BasicBlock>,
     env: &mut Cfg::Environment,
 ) -> SSAResult<()> {

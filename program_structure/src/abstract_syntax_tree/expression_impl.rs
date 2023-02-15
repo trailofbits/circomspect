@@ -236,7 +236,7 @@ impl Display for Expression {
         use Expression::*;
         match self {
             Tuple { values, .. } => write!(f, "({})", vec_to_string(values)),
-            Number(_, value) => write!(f, "{}", value),
+            Number(_, value) => write!(f, "{value}"),
             Variable { name, access, .. } => {
                 write!(f, "{name}")?;
                 for access in access {

@@ -862,7 +862,7 @@ impl fmt::Debug for Expression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         use Expression::*;
         match self {
-            Number(_, value) => write!(f, "{}", value),
+            Number(_, value) => write!(f, "{value}"),
             Variable { name, .. } => {
                 write!(f, "{name:?}")
             }
@@ -904,12 +904,12 @@ impl fmt::Display for Expression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         use Expression::*;
         match self {
-            Number(_, value) => write!(f, "{}", value),
+            Number(_, value) => write!(f, "{value}"),
             Variable { name, .. } => {
                 write!(f, "{name}")
             }
             InfixOp { lhe, infix_op, rhe, .. } => write!(f, "({lhe} {infix_op} {rhe})"),
-            PrefixOp { prefix_op, rhe, .. } => write!(f, "{}({})", prefix_op, rhe),
+            PrefixOp { prefix_op, rhe, .. } => write!(f, "{prefix_op}({rhe})"),
             SwitchOp { cond, if_true, if_false, .. } => {
                 write!(f, "({cond}? {if_true} : {if_false})")
             }

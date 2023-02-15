@@ -518,7 +518,7 @@ impl fmt::Debug for Cfg {
                 basic_block.predecessors(),
                 basic_block.successors(),
             )?;
-            write!(f, "{:?}", basic_block)?;
+            write!(f, "{basic_block:?}")?;
         }
         Ok(())
     }

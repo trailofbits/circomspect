@@ -78,7 +78,7 @@ impl Merger {
                 report.add_primary(
                     meta.file_location(),
                     file_id,
-                    format!("The name `{}` is already used.", definition_name),
+                    format!("The name `{definition_name}` is already used."),
                 );
                 reports.push(report);
             }

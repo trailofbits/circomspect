@@ -106,7 +106,7 @@ pub fn parse_file(src: &str, file_id: FileID) -> Result<AST, Box<Report>> {
                 message: format!("Extra token `{}` found.", token.2),
                 location: token.0..token.2,
             },
-            _ => ParsingError { file_id, message: format!("{}", parse_error), location: 0..0 },
+            _ => ParsingError { file_id, message: format!("{parse_error}"), location: 0..0 },
         })
         .map_err(|error| Box::new(error.into_report()))
 }
@@ -145,7 +145,7 @@ fn format_expected(tokens: &[String]) -> String {
             })
             .collect::<Vec<_>>()
             .join("");
-        format!(" Expected one of {}.", tokens)
+        format!(" Expected one of {tokens}.")
     }
 }
 
