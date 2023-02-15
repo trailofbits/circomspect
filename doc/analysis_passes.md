@@ -62,11 +62,19 @@ Signals should typically be assigned using the constraint assignment operator `<
 
 However, sometimes it is not possible to express the assignment using a quadratic expression. In this case Circomspect will try to list all constraints containing the assigned signal to make it easier for the developer (or reviewer) to ensure that the variable is properly constrained.
 
-The Tornado Cash codebase was originally affected by an issue of this type. For details see the Tornado Cash disclosure [here](https://tornado-cash.medium.com/tornado-cash-got-hacked-by-us-b1e012a3c9a8).
+The Tornado Cash codebase was originally affected by an issue of this type. For details see [the Tornado Cash disclosure](https://tornado-cash.medium.com/tornado-cash-got-hacked-by-us-b1e012a3c9a8).
 
 ### Under-constrained signal
 
 Under-constrained signals are one of the most common issues in zero-knowledge circuits. Circomspect will flag intermediate signals that only occur in a single constraint. Since intermediate signals are not available outside the template, this typically indicates an issue with the implementation.
+
+### Unused output signal
+
+When a template is instantiated, the corresponding input signals must be constrained. This is typically also true for the output signals defined by the template, but if we fail to constrain an output signal defined by a template this will not be flagged as an error by the compiler. There are examples (like `Num2Bits` from Circomlib) where the template constrains the input and no further constraints on the output are required. However, in the general case, failing to constrain the output from a template indicates a potential mistake that should be investigated.
+
+Circomspect will generate a warning whenever it identifies an instantiated template where one or more output signals defined by the template are not constrained. Each location can then be manually reviewed for correctness.
+
+This type of issue [was identified by Veridise](https://medium.com/veridise/circom-pairing-a-million-dollar-zk-bug-caught-early-c5624b278f25) during a review of the circom-pairing library.
 
 ### Constant branching condition
 

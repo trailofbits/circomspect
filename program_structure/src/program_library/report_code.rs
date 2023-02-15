@@ -294,6 +294,7 @@ impl ReportCode {
             UnconstrainedDivision => Some("unconstrained-division"),
             BN128SpecificCircuit => Some("bn128-specific-circuit"),
             UnderConstrainedSignal => Some("under-constrained-signal"),
+            UnusedOutputSignal => Some("unused-output-signal"),
             // We only provide a URL for Circomspect specific issues.
             _ => None,
         }
