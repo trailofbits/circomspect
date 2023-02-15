@@ -989,7 +989,7 @@ mod tests {
         let mut file_library = FileLibrary::new();
         let mut elem_id = 0;
         for src in src {
-            let file_id = file_library.add_file("memory".to_string(), src.to_string());
+            let file_id = file_library.add_file("memory".to_string(), src.to_string(), true);
             let definition = parse_definition(src).unwrap();
             let Definition::Template {
                 name,
