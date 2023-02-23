@@ -1,6 +1,7 @@
 use codespan_reporting::files::Files;
 use log::{debug, trace};
 use serde_sarif::sarif;
+use std::collections::HashSet;
 use std::fmt;
 use std::ops::Range;
 use std::path::PathBuf;
@@ -31,13 +32,14 @@ impl ToSarif for ReportCollection {
     fn to_sarif(&self, files: &FileLibrary) -> Result<Self::Sarif, Self::Error> {
         debug!("converting report collection to Sarif-format");
         // Build reporting descriptors.
+        trace!("building reporting descriptors");
         let rules = self
             .iter()
-            .map(|report| {
-                sarif::ReportingDescriptorBuilder::default()
-                    .name(report.name())
-                    .id(report.id())
-                    .build()
+            .map(|report| (report.name(), report.id()))
+            .collect::<HashSet<_>>()
+            .iter()
+            .map(|(name, id)| {
+                sarif::ReportingDescriptorBuilder::default().name(name).id(id).build()
             })
             .collect::<Result<Vec<_>, _>>()
             .map_err(SarifError::from)?;
