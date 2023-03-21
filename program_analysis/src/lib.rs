@@ -1,4 +1,5 @@
-use analysis_context::{AnalysisContext, AnalysisError};
+use analysis_context::AnalysisContext;
+
 use program_structure::cfg::Cfg;
 use program_structure::report::ReportCollection;
 
@@ -7,10 +8,12 @@ extern crate num_bigint_dig as num_bigint;
 pub mod constraint_analysis;
 pub mod taint_analysis;
 pub mod analysis_context;
+pub mod analysis_runner;
+pub mod config;
 
-// Analysis passes.
+// Intra-process analysis passes.
 mod bitwise_complement;
-mod bn128_specific_circuit;
+mod bn254_specific_circuit;
 mod constant_conditional;
 mod definition_complexity;
 mod field_arithmetic;
@@ -22,12 +25,14 @@ mod unconstrained_division;
 mod side_effect_analysis;
 mod signal_assignments;
 
+// Inter-process analysis passes.
+mod unused_output_signal;
+
 /// An analysis pass is a function which takes an analysis context and a CFG and
 /// returns a set of reports.
-type AnalysisPass<'a> =
-    dyn Fn(&mut dyn AnalysisContext<Error = AnalysisError>, &'a Cfg) -> ReportCollection + 'a;
+type AnalysisPass = dyn Fn(&mut dyn AnalysisContext, &Cfg) -> ReportCollection;
 
-pub fn get_analysis_passes<'a>() -> Vec<Box<AnalysisPass<'a>>> {
+pub fn get_analysis_passes() -> Vec<Box<AnalysisPass>> {
     vec![
         // Intra-process analysis passes.
         Box::new(|_, cfg| bitwise_complement::find_bitwise_complement(cfg)),
@@ -37,10 +42,12 @@ pub fn get_analysis_passes<'a>() -> Vec<Box<AnalysisPass<'a>>> {
         Box::new(|_, cfg| field_arithmetic::find_field_element_arithmetic(cfg)),
         Box::new(|_, cfg| field_comparisons::find_field_element_comparisons(cfg)),
         Box::new(|_, cfg| unconstrained_division::find_unconstrained_division(cfg)),
-        Box::new(|_, cfg| bn128_specific_circuit::find_bn128_specific_circuits(cfg)),
+        Box::new(|_, cfg| bn254_specific_circuit::find_bn254_specific_circuits(cfg)),
         Box::new(|_, cfg| unconstrained_less_than::find_unconstrained_less_than(cfg)),
         Box::new(|_, cfg| constant_conditional::find_constant_conditional_statement(cfg)),
         Box::new(|_, cfg| under_constrained_signals::find_under_constrained_signals(cfg)),
         Box::new(|_, cfg| nonstrict_binary_conversion::find_nonstrict_binary_conversion(cfg)),
+        // Inter-process analysis passes.
+        Box::new(unused_output_signal::find_unused_output_signals),
     ]
 }

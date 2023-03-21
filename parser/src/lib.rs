@@ -2,6 +2,7 @@ extern crate num_bigint_dig as num_bigint;
 extern crate num_traits;
 extern crate serde;
 extern crate serde_derive;
+
 #[macro_use]
 extern crate lalrpop_util;
 
@@ -13,6 +14,11 @@ use log::debug;
 mod errors;
 mod include_logic;
 mod parser_logic;
+mod syntax_sugar_traits;
+mod syntax_sugar_remover;
+
+pub use parser_logic::parse_definition;
+
 use include_logic::FileStack;
 use program_structure::ast::{Version, AST};
 use program_structure::report::{Report, ReportCollection};
@@ -50,7 +56,8 @@ pub fn parse_files(file_paths: &[PathBuf], compiler_version: &Version) -> ParseR
             }
         }
     }
-    match &main_components[..] {
+    // Create a parse result.
+    let mut result = match &main_components[..] {
         [(main_id, main_component, custom_gates)] => {
             // TODO: This calls FillMeta::fill a second time.
             match ProgramArchive::new(
@@ -78,7 +85,43 @@ pub fn parse_files(file_paths: &[PathBuf], compiler_version: &Version) -> ParseR
             let template_library = TemplateLibrary::new(definitions, file_library);
             ParseResult::Library(Box::new(template_library), reports)
         }
+    };
+    // Remove anonymous components and tuples.
+    //
+    // TODO: This could be moved to the lifting phase.
+    match &mut result {
+        ParseResult::Program(program_archive, reports) => {
+            if program_archive.main_expression().is_anonymous_component() {
+                reports.push(
+                    errors::AnonymousComponentError::new(
+                        Some(program_archive.main_expression().meta()),
+                        "The main component cannot contain an anonymous call.",
+                        Some("Main component defined here."),
+                    )
+                    .into_report(),
+                );
+            }
+            let (new_templates, new_functions) = syntax_sugar_remover::remove_syntactic_sugar(
+                &program_archive.templates,
+                &program_archive.functions,
+                &program_archive.file_library,
+                reports,
+            );
+            program_archive.templates = new_templates;
+            program_archive.functions = new_functions;
+        }
+        ParseResult::Library(template_library, reports) => {
+            let (new_templates, new_functions) = syntax_sugar_remover::remove_syntactic_sugar(
+                &template_library.templates,
+                &template_library.functions,
+                &template_library.file_library,
+                reports,
+            );
+            template_library.templates = new_templates;
+            template_library.functions = new_functions;
+        }
     }
+    result
 }
 
 fn parse_file(
@@ -91,18 +134,19 @@ fn parse_file(
 
     debug!("reading file `{}`", file_path.display());
     let (path_str, file_content) = open_file(file_path)?;
-    let file_id = file_library.add_file(path_str, file_content.clone());
+    let is_user_input = file_stack.is_user_input(file_path);
+    let file_id = file_library.add_file(path_str, file_content.clone(), is_user_input);
 
     debug!("parsing file `{}`", file_path.display());
     let program = parser_logic::parse_file(&file_content, file_id)?;
-    for include in &program.includes {
-        if let Err(report) = FileStack::add_include(file_stack, include) {
-            reports.push(*report);
-        }
-    }
     match check_compiler_version(file_path, program.compiler_version, compiler_version) {
         Ok(warnings) => reports.extend(warnings),
         Err(error) => reports.push(*error),
+    }
+    for include in &program.includes {
+        if let Err(report) = file_stack.add_include(include) {
+            reports.push(*report);
+        }
     }
     Ok((file_id, program, reports))
 }
@@ -144,16 +188,6 @@ fn check_compiler_version(
             version: *compiler_version,
         });
         Ok(vec![report])
-    }
-}
-
-/// Parse a single (function or template) definition for testing purposes.
-use program_structure::ast::Definition;
-
-pub fn parse_definition(src: &str) -> Option<Definition> {
-    match parser_logic::parse_string(src) {
-        Some(AST { mut definitions, .. }) if definitions.len() == 1 => definitions.pop(),
-        _ => None,
     }
 }
 

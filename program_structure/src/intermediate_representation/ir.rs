@@ -205,11 +205,14 @@ pub enum Expression {
     Phi { meta: Meta, args: Vec<VariableName> },
 }
 
+pub type TagList = Vec<String>;
+
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub enum VariableType {
     Local,
     Component,
-    Signal(SignalType),
+    AnonymousComponent,
+    Signal(SignalType, TagList),
 }
 
 impl fmt::Display for VariableType {
@@ -218,12 +221,17 @@ impl fmt::Display for VariableType {
         use VariableType::*;
         match self {
             Local => write!(f, "var"),
-            Component => write!(f, "component"),
-            Signal(signal_type) => {
+            AnonymousComponent | Component => write!(f, "component"),
+            Signal(signal_type, tag_list) => {
                 if matches!(signal_type, Intermediate) {
-                    write!(f, "signal")
+                    write!(f, "signal")?;
                 } else {
-                    write!(f, "signal {signal_type}")
+                    write!(f, "signal {signal_type}")?;
+                }
+                if !tag_list.is_empty() {
+                    write!(f, " {{{}}}", tag_list.join(", "))
+                } else {
+                    Ok(())
                 }
             }
         }
@@ -270,7 +278,7 @@ pub struct VariableName {
 impl VariableName {
     /// Returns a new variable name with the given name (without suffix or version).
     #[must_use]
-    pub fn from_name<N: ToString>(name: N) -> VariableName {
+    pub fn from_string<N: ToString>(name: N) -> VariableName {
         VariableName { name: name.to_string(), suffix: None, version: None }
     }
 

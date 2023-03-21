@@ -13,6 +13,7 @@ pub fn build_main_component(public: Vec<String>, call: Expression) -> MainCompon
 }
 
 pub type Version = (usize, usize, usize);
+pub type TagList = Vec<String>;
 
 #[derive(Clone)]
 pub struct Include {
@@ -196,6 +197,12 @@ pub enum Statement {
         op: AssignOp,
         rhe: Expression,
     },
+    MultiSubstitution {
+        meta: Meta,
+        lhe: Expression,
+        op: AssignOp,
+        rhe: Expression,
+    },
     ConstraintEquality {
         meta: Meta,
         lhe: Expression,
@@ -229,11 +236,12 @@ pub enum SignalType {
     Intermediate,
 }
 
-#[derive(Copy, Clone, PartialEq, Ord, PartialOrd, Eq)]
+#[derive(Clone, PartialEq, Ord, PartialOrd, Eq)]
 pub enum VariableType {
     Var,
-    Signal(SignalType, SignalElementType),
+    Signal(SignalType, TagList),
     Component,
+    AnonymousComponent,
 }
 
 #[derive(Clone)]
@@ -270,7 +278,26 @@ pub enum Expression {
         id: String,
         args: Vec<Expression>,
     },
+    AnonymousComponent {
+        meta: Meta,
+        id: String,
+        is_parallel: bool,
+        params: Vec<Expression>,
+        signals: Vec<Expression>,
+        names: Option<Vec<(AssignOp, String)>>,
+    },
+    // UniformArray is only used internally by Circom for default initialization
+    // of uninitialized arrays.
+    // UniformArray {
+    //     meta: Meta,
+    //     value: Box<Expression>,
+    //     dimension: Box<Expression>,
+    // },
     ArrayInLine {
+        meta: Meta,
+        values: Vec<Expression>,
+    },
+    Tuple {
         meta: Meta,
         values: Vec<Expression>,
     },
@@ -346,6 +373,7 @@ pub enum TypeReduction {
     Variable,
     Component,
     Signal,
+    Tag,
 }
 
 #[derive(Default, Clone)]
@@ -359,21 +387,24 @@ impl TypeKnowledge {
     pub fn set_reduces_to(&mut self, reduces_to: TypeReduction) {
         self.reduces_to = Option::Some(reduces_to);
     }
-    pub fn get_reduces_to(&self) -> TypeReduction {
+    pub fn reduces_to(&self) -> TypeReduction {
         if let Option::Some(t) = &self.reduces_to {
             *t
         } else {
-            panic!("reduces_to knowledge is been look at without being initialized");
+            panic!("Type knowledge accessed before it is initialized.");
         }
     }
     pub fn is_var(&self) -> bool {
-        self.get_reduces_to() == TypeReduction::Variable
+        self.reduces_to() == TypeReduction::Variable
     }
     pub fn is_component(&self) -> bool {
-        self.get_reduces_to() == TypeReduction::Component
+        self.reduces_to() == TypeReduction::Component
     }
     pub fn is_signal(&self) -> bool {
-        self.get_reduces_to() == TypeReduction::Signal
+        self.reduces_to() == TypeReduction::Signal
+    }
+    pub fn is_tag(&self) -> bool {
+        self.reduces_to() == TypeReduction::Tag
     }
 }
 
@@ -394,25 +425,25 @@ impl MemoryKnowledge {
     pub fn set_abstract_memory_address(&mut self, value: usize) {
         self.abstract_memory_address = Option::Some(value);
     }
-    pub fn get_concrete_dimensions(&self) -> &[usize] {
+    pub fn concrete_dimensions(&self) -> &[usize] {
         if let Option::Some(v) = &self.concrete_dimensions {
             v
         } else {
-            panic!("concrete dimensions was look at without being initialized");
+            panic!("Concrete dimensions accessed before it is initialized.");
         }
     }
-    pub fn get_full_length(&self) -> usize {
+    pub fn full_length(&self) -> usize {
         if let Option::Some(v) = &self.full_length {
             *v
         } else {
-            panic!("full dimension was look at without being initialized");
+            panic!("Full dimension accessed before it is initialized.");
         }
     }
-    pub fn get_abstract_memory_address(&self) -> usize {
+    pub fn abstract_memory_address(&self) -> usize {
         if let Option::Some(v) = &self.abstract_memory_address {
             *v
         } else {
-            panic!("abstract memory address was look at without being initialized");
+            panic!("Abstract memory address accessed before it is initialized.");
         }
     }
 }

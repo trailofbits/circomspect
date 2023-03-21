@@ -31,9 +31,9 @@ pub enum CFGError {
 pub type CFGResult<T> = Result<T, CFGError>;
 
 impl CFGError {
-    pub fn produce_report(error: Self) -> Report {
+    pub fn into_report(self) -> Report {
         use CFGError::*;
-        match error {
+        match self {
             UndefinedVariableError { name, file_id, file_location } => {
                 let mut report = Report::error(
                     format!("The variable `{name}` is used before it is defined."),
@@ -124,6 +124,6 @@ impl From<IRError> for CFGError {
 
 impl From<CFGError> for Report {
     fn from(error: CFGError) -> Report {
-        CFGError::produce_report(error)
+        error.into_report()
     }
 }

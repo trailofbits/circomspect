@@ -97,7 +97,8 @@ pub fn find_under_constrained_signals(cfg: &Cfg) -> ReportCollection {
     let mut constraint_locations = cfg
         .variables()
         .filter_map(|name| {
-            if matches!(cfg.get_type(name), Some(VariableType::Signal(SignalType::Intermediate))) {
+            if matches!(cfg.get_type(name), Some(VariableType::Signal(SignalType::Intermediate, _)))
+            {
                 Some((name.clone(), Vec::new()))
             } else {
                 None

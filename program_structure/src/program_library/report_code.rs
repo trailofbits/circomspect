@@ -62,6 +62,8 @@ pub enum ReportCode {
     NonQuadratic,
     NonConstantArrayLength,
     NonComputableExpression,
+    AnonymousComponentError,
+    TupleError,
     // Constraint analysis codes
     UnconstrainedSignal,
     OneConstraintIntermediate,
@@ -83,8 +85,9 @@ pub enum ReportCode {
     TooManyArguments,
     UnconstrainedLessThan,
     UnconstrainedDivision,
-    BN128SpecificCircuit,
+    Bn254SpecificCircuit,
     UnderConstrainedSignal,
+    UnusedOutputSignal,
 }
 
 impl ReportCode {
@@ -151,6 +154,8 @@ impl ReportCode {
             NonConstantArrayLength => "T20463",
             NonComputableExpression => "T20464",
             WrongNumberOfArguments(..) => "T20465",
+            AnonymousComponentError => "TAC01",
+            TupleError => "TAC02",
             // Constraint analysis codes
             UnconstrainedSignal => "CA01",
             OneConstraintIntermediate => "CA02",
@@ -172,8 +177,9 @@ impl ReportCode {
             UnnecessarySignalAssignment => "CS0013",
             UnconstrainedLessThan => "CS0014",
             UnconstrainedDivision => "CS0015",
-            BN128SpecificCircuit => "CS0016",
+            Bn254SpecificCircuit => "CS0016",
             UnderConstrainedSignal => "CS0017",
+            UnusedOutputSignal => "CS0018",
         }
         .to_string()
     }
@@ -186,6 +192,8 @@ impl ReportCode {
             CompilerVersionError => "compiler-version-error",
             WrongTypesInAssignOperation => "wrong-types-in-assign-operation",
             WrongNumberOfArguments(..) => "wrong-number-of-arguments",
+            AnonymousComponentError => "anonymous-component-error",
+            TupleError => "tuple-error",
             UndefinedFunction => "undefined-function",
             UndefinedTemplate => "undefined-template",
             UninitializedSymbolInExpression => "uninitialized-symbol-in-expression",
@@ -260,8 +268,9 @@ impl ReportCode {
             TooManyArguments => "too-many-arguments",
             UnconstrainedLessThan => "unconstrained-less-than",
             UnconstrainedDivision => "unconstrained-division",
-            BN128SpecificCircuit => "bn128-specific-circuit",
+            Bn254SpecificCircuit => "bn254-specific-circuit",
             UnderConstrainedSignal => "under-constrained-signal",
+            UnusedOutputSignal => "unused-output-signal",
         }
         .to_string()
     }
@@ -282,9 +291,10 @@ impl ReportCode {
             TooManyArguments => Some("overly-complex-function-or-template"),
             UnnecessarySignalAssignment => Some("unnecessary-signal-assignment"),
             UnconstrainedLessThan => Some("unconstrained-less-than"),
-            UnconstrainedDivision => Some("unconstrained-devision"),
-            BN128SpecificCircuit => Some("bn128-specific-circuit"),
+            UnconstrainedDivision => Some("unconstrained-division"),
+            Bn254SpecificCircuit => Some("bn254-specific-circuit"),
             UnderConstrainedSignal => Some("under-constrained-signal"),
+            UnusedOutputSignal => Some("unused-output-signal"),
             // We only provide a URL for Circomspect specific issues.
             _ => None,
         }

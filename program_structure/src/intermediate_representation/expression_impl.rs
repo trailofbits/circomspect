@@ -392,11 +392,11 @@ impl VariableMeta for Expression {
                         trace!("adding `{name:?}` to local variables read");
                         locals_read.insert(VariableUse::new(meta, name, &Vec::new()));
                     }
-                    Some(VariableType::Component) => {
+                    Some(VariableType::Component | VariableType::AnonymousComponent) => {
                         trace!("adding `{name:?}` to components read");
                         components_read.insert(VariableUse::new(meta, name, &Vec::new()));
                     }
-                    Some(VariableType::Signal(_)) => {
+                    Some(VariableType::Signal(_, _)) => {
                         trace!("adding `{name:?}` to signals read");
                         signals_read.insert(VariableUse::new(meta, name, &Vec::new()));
                     }
@@ -442,11 +442,11 @@ impl VariableMeta for Expression {
                         trace!("adding `{var:?}` to local variables read");
                         locals_read.insert(VariableUse::new(meta, var, access));
                     }
-                    Some(VariableType::Component) => {
+                    Some(VariableType::Component | VariableType::AnonymousComponent) => {
                         trace!("adding `{var:?}` to components read");
                         components_read.insert(VariableUse::new(meta, var, access));
                     }
-                    Some(VariableType::Signal(_)) => {
+                    Some(VariableType::Signal(_, _)) => {
                         trace!("adding `{var:?}` to signals read");
                         signals_read.insert(VariableUse::new(meta, var, access));
                     }
@@ -478,11 +478,11 @@ impl VariableMeta for Expression {
                         trace!("adding `{var:?}` to local variables read");
                         locals_read.insert(VariableUse::new(meta, var, &Vec::new()));
                     }
-                    Some(VariableType::Component) => {
+                    Some(VariableType::Component | VariableType::AnonymousComponent) => {
                         trace!("adding `{var:?}` to components read");
                         components_read.insert(VariableUse::new(meta, var, &Vec::new()));
                     }
-                    Some(VariableType::Signal(_)) => {
+                    Some(VariableType::Signal(_, _)) => {
                         trace!("adding `{var:?}` to signals read");
                         signals_read.insert(VariableUse::new(meta, var, &Vec::new()));
                     }
@@ -862,7 +862,7 @@ impl fmt::Debug for Expression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         use Expression::*;
         match self {
-            Number(_, value) => write!(f, "{}", value),
+            Number(_, value) => write!(f, "{value}"),
             Variable { name, .. } => {
                 write!(f, "{name:?}")
             }
@@ -904,12 +904,12 @@ impl fmt::Display for Expression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         use Expression::*;
         match self {
-            Number(_, value) => write!(f, "{}", value),
+            Number(_, value) => write!(f, "{value}"),
             Variable { name, .. } => {
                 write!(f, "{name}")
             }
             InfixOp { lhe, infix_op, rhe, .. } => write!(f, "({lhe} {infix_op} {rhe})"),
-            PrefixOp { prefix_op, rhe, .. } => write!(f, "{}({})", prefix_op, rhe),
+            PrefixOp { prefix_op, rhe, .. } => write!(f, "{prefix_op}({rhe})"),
             SwitchOp { cond, if_true, if_false, .. } => {
                 write!(f, "({cond}? {if_true} : {if_false})")
             }
@@ -1014,10 +1014,10 @@ mod tests {
         use ExpressionInfixOpcode::*;
         use ValueReduction::*;
         let mut lhe = Number(Meta::default(), 7u64.into());
-        let mut rhe = Variable { meta: Meta::default(), name: VariableName::from_name("v") };
+        let mut rhe = Variable { meta: Meta::default(), name: VariableName::from_string("v") };
         let constants = UsefulConstants::new(&Curve::default());
         let mut env = ValueEnvironment::new(&constants);
-        env.add_variable(&VariableName::from_name("v"), &FieldElement { value: 3u64.into() });
+        env.add_variable(&VariableName::from_string("v"), &FieldElement { value: 3u64.into() });
         lhe.propagate_values(&mut env);
         rhe.propagate_values(&mut env);
 

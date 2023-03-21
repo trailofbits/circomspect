@@ -32,8 +32,6 @@ pub enum AnalysisError {
 
 /// Context passed to each analysis pass.
 pub trait AnalysisContext {
-    type Error;
-
     /// Returns true if the context knows of a function with the given name.
     /// This method does not compute the CFG of the function which saves time
     /// compared to `AnalysisContext::function`.
@@ -45,15 +43,15 @@ pub trait AnalysisContext {
     fn is_template(&self, name: &str) -> bool;
 
     /// Returns the CFG for the function with the given name.
-    fn function(&mut self, name: &str) -> Result<&Cfg, Self::Error>;
+    fn function(&mut self, name: &str) -> Result<&Cfg, AnalysisError>;
 
     /// Returns the CFG for the template with the given name.
-    fn template(&mut self, name: &str) -> Result<&Cfg, Self::Error>;
+    fn template(&mut self, name: &str) -> Result<&Cfg, AnalysisError>;
 
     /// Returns the string corresponding to the given file ID and location.
     fn underlying_str(
         &self,
         file_id: &FileID,
         file_location: &FileLocation,
-    ) -> Result<String, Self::Error>;
+    ) -> Result<String, AnalysisError>;
 }

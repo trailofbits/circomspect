@@ -87,6 +87,7 @@ impl MessageCategory {
 pub struct Report {
     category: MessageCategory,
     message: String,
+    primary_file_ids: Vec<FileID>,
     primary: Vec<ReportLabel>,
     secondary: Vec<ReportLabel>,
     notes: Vec<ReportNote>,
@@ -98,6 +99,7 @@ impl Report {
         Report {
             category,
             message,
+            primary_file_ids: Vec::new(),
             primary: Vec::new(),
             secondary: Vec::new(),
             notes: Vec::new(),
@@ -125,6 +127,7 @@ impl Report {
     ) -> &mut Self {
         let label = ReportLabel::primary(file_id, location).with_message(message);
         self.primary_mut().push(label);
+        self.primary_file_ids_mut().push(file_id);
         self
     }
 
@@ -135,7 +138,7 @@ impl Report {
         possible_message: Option<String>,
     ) -> &mut Self {
         let mut label = ReportLabel::secondary(file_id, location);
-        if let Option::Some(message) = possible_message {
+        if let Some(message) = possible_message {
             label = label.with_message(message);
         }
         self.secondary_mut().push(label);
@@ -172,6 +175,14 @@ impl Report {
         } else {
             diagnostic.with_notes(notes)
         }
+    }
+
+    pub fn primary_file_ids(&self) -> &Vec<FileID> {
+        &self.primary_file_ids
+    }
+
+    fn primary_file_ids_mut(&mut self) -> &mut Vec<FileID> {
+        &mut self.primary_file_ids
     }
 
     pub fn category(&self) -> &MessageCategory {

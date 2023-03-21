@@ -34,10 +34,13 @@ impl TypeKnowledge {
         TypeKnowledge::default()
     }
 
+    // Sets the variable type of a node representing a variable.
     pub fn set_variable_type(&mut self, var_type: &VariableType) {
         self.var_type = Some(var_type.clone());
     }
 
+    /// For declared variables, this returns the type. For undeclared variables
+    /// and other expression nodes this returns `None`.
     #[must_use]
     pub fn variable_type(&self) -> Option<&VariableType> {
         self.var_type.as_ref()
@@ -52,12 +55,12 @@ impl TypeKnowledge {
     /// Returns true if the node is a signal.
     #[must_use]
     pub fn is_signal(&self) -> bool {
-        matches!(self.var_type, Some(VariableType::Signal(_)))
+        matches!(self.var_type, Some(VariableType::Signal(_, _)))
     }
 
-    /// Returns true if the node is a component.
+    /// Returns true if the node is a (possibly anonymous) component.
     #[must_use]
     pub fn is_component(&self) -> bool {
-        matches!(self.var_type, Some(VariableType::Component))
+        matches!(self.var_type, Some(VariableType::Component | VariableType::AnonymousComponent))
     }
 }

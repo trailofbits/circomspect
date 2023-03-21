@@ -3,39 +3,41 @@ use std::fmt;
 
 use log::{debug, trace};
 
+use num_bigint::BigInt;
 use program_structure::cfg::Cfg;
+use program_structure::ir::value_meta::{ValueMeta, ValueReduction};
 use program_structure::report_code::ReportCode;
 use program_structure::report::{Report, ReportCollection};
-use program_structure::file_definition::{FileID, FileLocation};
 use program_structure::ir::*;
 
 pub struct UnconstrainedLessThanWarning {
-    input_size: Expression,
-    file_id: Option<FileID>,
-    primary_location: FileLocation,
-    secondary_location: FileLocation,
+    value: Expression,
+    bit_sizes: Vec<(Meta, Expression)>,
 }
-
 impl UnconstrainedLessThanWarning {
+    fn primary_meta(&self) -> &Meta {
+        self.value.meta()
+    }
+
     pub fn into_report(self) -> Report {
         let mut report = Report::warning(
-            "Inputs to `LessThan` should typically be constrained to the input size".to_string(),
+            "Inputs to `LessThan` need to be constrained to ensure that they are non-negative"
+                .to_string(),
             ReportCode::UnconstrainedLessThan,
         );
-        if let Some(file_id) = self.file_id {
+        if let Some(file_id) = self.primary_meta().file_id {
             report.add_primary(
-                self.primary_location,
+                self.primary_meta().file_location(),
                 file_id,
-                format!(
-                    "This input to `LessThan` should be constrained to `{}` bits.",
-                    self.input_size
-                ),
+                format!("`{}` needs to be constrained to ensure that it is <= p/2.", self.value),
             );
-            report.add_secondary(
-                self.secondary_location,
-                file_id,
-                Some("Circomlib template `LessThan` instantiated here.".to_string()),
-            );
+            for (meta, size) in self.bit_sizes {
+                report.add_secondary(
+                    meta.file_location(),
+                    file_id,
+                    Some(format!("`{}` is constrained to `{}` bits here.", self.value, size)),
+                );
+            }
         }
         report
     }
@@ -54,109 +56,64 @@ impl VariableAccess {
     }
 }
 
-/// Tracks component instantiations `var = T(...)` where `T` is either `LessThan`
-/// or `Num2Bits`.
+/// Tracks component instantiations `var = T(...)` where then template `T` is
+/// either `LessThan` or `Num2Bits`.
 enum Component {
-    LessThan { meta: Box<Meta>, required_size: Box<Expression> },
-    Num2Bits { enforced_size: Box<Expression> },
+    LessThan,
+    Num2Bits { bit_size: Box<Expression> },
 }
 
 impl Component {
-    fn less_than(meta: &Meta, required_size: &Expression) -> Self {
-        Self::LessThan {
-            meta: Box::new(meta.clone()),
-            required_size: Box::new(required_size.clone()),
-        }
+    fn less_than() -> Self {
+        Self::LessThan
     }
 
-    fn num_2_bits(enforced_size: &Expression) -> Self {
-        Self::Num2Bits { enforced_size: Box::new(enforced_size.clone()) }
+    fn num_2_bits(bit_size: &Expression) -> Self {
+        Self::Num2Bits { bit_size: Box::new(bit_size.clone()) }
     }
 }
 
 /// Tracks component input signal initializations on the form `T.in <== input`
 /// where `T` is either `LessThan` or `Num2Bits`.
 enum ComponentInput {
-    LessThan {
-        component_meta: Box<Meta>,
-        input_meta: Box<Meta>,
-        value: Box<Expression>,
-        required_size: Box<Expression>,
-    },
-    Num2Bits {
-        value: Box<Expression>,
-        enforced_size: Box<Expression>,
-    },
+    LessThan { value: Box<Expression> },
+    Num2Bits { value: Box<Expression>, bit_size: Box<Expression> },
 }
 
 impl ComponentInput {
-    fn less_than(
-        component_meta: &Meta,
-        input_meta: &Meta,
-        value: &Expression,
-        required_size: &Expression,
-    ) -> Self {
-        Self::LessThan {
-            component_meta: Box::new(component_meta.clone()),
-            input_meta: Box::new(input_meta.clone()),
-            value: Box::new(value.clone()),
-            required_size: Box::new(required_size.clone()),
-        }
+    fn less_than(value: &Expression) -> Self {
+        Self::LessThan { value: Box::new(value.clone()) }
     }
 
-    fn num_2_bits(value: &Expression, enforced_size: &Expression) -> Self {
-        Self::Num2Bits {
-            value: Box::new(value.clone()),
-            enforced_size: Box::new(enforced_size.clone()),
-        }
+    fn num_2_bits(value: &Expression, bit_size: &Expression) -> Self {
+        Self::Num2Bits { value: Box::new(value.clone()), bit_size: Box::new(bit_size.clone()) }
     }
 }
 
-// The signal input at `signal_meta` for the component defined at
-// `component_meta` must be at most `size` bits.
-struct SizeEntry {
-    pub component_meta: Meta,
-    pub input_meta: Meta,
-    pub required_size: Expression,
-}
-
-impl SizeEntry {
-    pub fn new(component_meta: &Meta, input_meta: &Meta, required_size: &Expression) -> Self {
-        SizeEntry {
-            component_meta: component_meta.clone(),
-            input_meta: input_meta.clone(),
-            required_size: required_size.clone(),
-        }
-    }
-}
-
-impl fmt::Debug for SizeEntry {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self.required_size)
-    }
-}
-
-/// Size constraints for a single component input.
-#[derive(Debug, Default)]
-struct SizeConstraints {
-    /// Size constraint required by `LessThan`.
-    pub required: Vec<SizeEntry>,
-    /// Size constraint enforced by `Num2Bits`.
-    pub enforced: Vec<Expression>,
+/// Tracks constraints for a single input to `LessThan`.
+#[derive(Default)]
+struct ConstraintData {
+    /// Input to `LessThan`.
+    pub less_than: Vec<Meta>,
+    /// Input to `Num2Bits`.
+    pub num_2_bits: Vec<Meta>,
+    /// Size constraints enforced by `Num2Bits`.
+    pub bit_sizes: Vec<Expression>,
 }
 
 /// The `LessThan` template from Circomlib does not constrain the individual
-/// inputs to the input size `n`. If the input size can be more than `n` bits,
-/// it is possible to find field elements `a` and `b` such that
+/// inputs to the input size `n` bits, or to be positive. If the inputs are
+/// allowed to be greater than p/2 it is possible to find field elements `a` and
+/// `b` such that
 ///
-///   1. `a > b`,
+///   1. `a > b` either as unsigned integers, or as signed elements in GF(p),
 ///   2. lt = LessThan(n),
 ///   3. lt.in[0] = a,
 ///   4. lt.in[1] = b, and
 ///   5. lt.out = 1
 ///
 /// This analysis pass looks for instantiations of `LessThan` where the inputs
-/// are not constrained to `n` bits using `Num2Bits`.
+/// are not constrained to be <= p/2 using `Num2Bits`.
 pub fn find_unconstrained_less_than(cfg: &Cfg) -> ReportCollection {
     debug!("running unconstrained less-than analysis pass");
     let mut components = HashMap::new();
@@ -171,35 +128,45 @@ pub fn find_unconstrained_less_than(cfg: &Cfg) -> ReportCollection {
             update_inputs(stmt, &components, &mut inputs);
         }
     }
-    let mut constraints = HashMap::<Expression, SizeConstraints>::new();
+    let mut constraints = HashMap::<Expression, ConstraintData>::new();
     for input in inputs {
         match input {
-            ComponentInput::LessThan { component_meta, input_meta, value, required_size } => {
-                constraints.entry(*value.clone()).or_default().required.push(SizeEntry::new(
-                    &component_meta,
-                    &input_meta,
-                    &required_size,
-                ));
+            ComponentInput::LessThan { value } => {
+                let entry = constraints.entry(*value.clone()).or_default();
+                entry.less_than.push(value.meta().clone());
             }
-            ComponentInput::Num2Bits { value, enforced_size, .. } => {
-                constraints.entry(*value.clone()).or_default().enforced.push(*enforced_size);
+            ComponentInput::Num2Bits { value, bit_size, .. } => {
+                let entry = constraints.entry(*value.clone()).or_default();
+                entry.num_2_bits.push(value.meta().clone());
+                entry.bit_sizes.push(*bit_size.clone());
             }
         }
     }
 
     // Generate a report for each input to `LessThan` where the input size is
-    // not constrained to the `LessThan` bit size using `Num2Bits`.
+    // not constrained to be positive using `Num2Bits`.
     let mut reports = ReportCollection::new();
-    for sizes in constraints.values() {
-        for required in &sizes.required {
-            if !sizes.enforced.contains(&required.required_size) {
-                reports.push(build_report(
-                    &required.component_meta,
-                    &required.input_meta,
-                    &required.required_size,
-                ))
+    let max_value = BigInt::from(cfg.constants().prime_size() - 1);
+    for (value, data) in constraints {
+        // Check if the the value is used as input for `LessThan`.
+        if data.less_than.is_empty() {
+            continue;
+        }
+        // Check if the value is constrained to be positive.
+        let mut is_positive = false;
+        for bit_size in &data.bit_sizes {
+            if let Some(ValueReduction::FieldElement { value }) = bit_size.value() {
+                if value < &max_value {
+                    is_positive = true;
+                    break;
+                }
             }
         }
+        if is_positive {
+            continue;
+        }
+        // We failed to prove that the input is positive. Generate a report.
+        reports.push(build_report(&value, &data));
     }
     debug!("{} new reports generated", reports.len());
     reports
@@ -228,7 +195,7 @@ fn update_components(stmt: &Statement, components: &mut HashMap<VariableAccess, 
                     vec_to_display(&access, "")
                 );
                 let component = VariableAccess::new(var, &access);
-                components.insert(component, Component::less_than(meta, &args[0]));
+                components.insert(component, Component::less_than());
             } else if component_name == "Num2Bits" && args.len() == 1 {
                 // We assume this is the `Num2Bits` circuit from Circomlib.
                 trace!(
@@ -260,7 +227,7 @@ fn update_inputs(
         let mut component_access = access.clone();
         let signal_access = component_access.pop();
         let component = VariableAccess::new(var, &component_access);
-        if let Some(Component::Num2Bits { enforced_size, .. }) = components.get(&component) {
+        if let Some(Component::Num2Bits { bit_size, .. }) = components.get(&component) {
             let Some(ComponentAccess(signal_name)) = signal_access else {
                 return;
             };
@@ -268,7 +235,7 @@ fn update_inputs(
                 return;
             }
             trace!("`Num2Bits` input signal assignment `{rhe}` found");
-            inputs.push(ComponentInput::num_2_bits(rhe, enforced_size));
+            inputs.push(ComponentInput::num_2_bits(rhe, bit_size));
         }
 
         // If this is a `LessThan` input signal assignment, the input index
@@ -278,9 +245,7 @@ fn update_inputs(
         let index_access = component_access.pop();
         let signal_access = component_access.pop();
         let component = VariableAccess::new(var, &component_access);
-        if let Some(Component::LessThan { meta: component_meta, required_size, .. }) =
-            components.get(&component)
-        {
+        if let Some(Component::LessThan { .. }) = components.get(&component) {
             let (Some(ComponentAccess(signal_name)), Some(ArrayAccess(_))) = (signal_access, index_access) else {
                 return;
             };
@@ -288,18 +253,16 @@ fn update_inputs(
                 return;
             }
             trace!("`LessThan` input signal assignment `{rhe}` found");
-            inputs.push(ComponentInput::less_than(component_meta, rhe.meta(), rhe, required_size));
+            inputs.push(ComponentInput::less_than(rhe));
         }
     }
 }
 
 #[must_use]
-fn build_report(component_meta: &Meta, input_meta: &Meta, size: &Expression) -> Report {
+fn build_report(value: &Expression, data: &ConstraintData) -> Report {
     UnconstrainedLessThanWarning {
-        input_size: size.clone(),
-        file_id: component_meta.file_id,
-        primary_location: input_meta.file_location(),
-        secondary_location: component_meta.file_location(),
+        value: value.clone(),
+        bit_sizes: data.num_2_bits.iter().cloned().zip(data.bit_sizes.iter().cloned()).collect(),
     }
     .into_report()
 }
@@ -355,7 +318,7 @@ mod tests {
               ok <== lt.out;
             }
         "#;
-        validate_reports(src, 1);
+        validate_reports(src, 2);
 
         let src = r#"
             template Test(n) {
@@ -367,7 +330,7 @@ mod tests {
               component n2b[2];
               n2b[0] = Num2Bits(n);
               n2b[0].in <== small;
-              n2b[1] = Num2Bits(n);
+              n2b[1] = Num2Bits(32);
               n2b[1].in <== large;
 
               // Check that small < large.
@@ -378,7 +341,7 @@ mod tests {
               ok <== lt.out;
             }
         "#;
-        validate_reports(src, 0);
+        validate_reports(src, 1);
 
         let src = r#"
             template Test(n) {
@@ -393,9 +356,9 @@ mod tests {
 
               // Constrain inputs to n bits.
               component n2b[2];
-              n2b[0] = Num2Bits(n);
+              n2b[0] = Num2Bits(32);
               n2b[0].in <== small;
-              n2b[1] = Num2Bits(n);
+              n2b[1] = Num2Bits(64);
               n2b[1].in <== large;
 
               ok <== lt.out;

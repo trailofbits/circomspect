@@ -162,7 +162,7 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "circomspect"
-version = "0.7.2"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "atty",
@@ -178,7 +178,7 @@ dependencies = [
 
 [[package]]
 name = "circomspect-circom-algebra"
-version = "2.0.1"
+version = "2.0.2"
 dependencies = [
  "num-bigint-dig 0.8.2",
  "num-traits",
@@ -186,7 +186,7 @@ dependencies = [
 
 [[package]]
 name = "circomspect-parser"
-version = "2.0.11"
+version = "2.1.2"
 dependencies = [
  "circomspect-program-structure",
  "lalrpop 0.18.1",
@@ -204,7 +204,7 @@ dependencies = [
 
 [[package]]
 name = "circomspect-program-analysis"
-version = "0.7.2"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "circomspect-parser",
@@ -217,7 +217,7 @@ dependencies = [
 
 [[package]]
 name = "circomspect-program-structure"
-version = "2.0.11"
+version = "2.1.2"
 dependencies = [
  "anyhow",
  "atty",
@@ -240,7 +240,7 @@ dependencies = [
 
 [[package]]
 name = "circomspect-program-structure-tests"
-version = "0.6.1"
+version = "0.8.0"
 dependencies = [
  "circomspect-parser",
  "circomspect-program-structure",

@@ -47,7 +47,7 @@ impl Statement {
             Declaration { names, var_type, .. } => {
                 for name in names.iter() {
                     // Since we disregard accesses, components are treated as signals.
-                    if matches!(var_type, Signal(_) | Component) {
+                    if matches!(var_type, Signal(_, _) | Component | AnonymousComponent) {
                         result = result || env.set_degree(name, &Linear.into());
                     }
                     env.set_type(name, var_type);
@@ -304,7 +304,7 @@ impl VariableMeta for Statement {
                         trace!("adding `{var:?}` to local variables written");
                         locals_written.insert(VariableUse::new(meta, var, &access));
                     }
-                    Some(VariableType::Signal(_)) => {
+                    Some(VariableType::Signal(_, _)) => {
                         trace!("adding `{var:?}` to signals written");
                         signals_written.insert(VariableUse::new(meta, var, &access));
                         if matches!(op, AssignOp::AssignConstraintSignal) {
@@ -314,7 +314,7 @@ impl VariableMeta for Statement {
                             signals_read.insert(VariableUse::new(meta, var, &access));
                         }
                     }
-                    Some(VariableType::Component) => {
+                    Some(VariableType::Component | VariableType::AnonymousComponent) => {
                         trace!("adding `{var:?}` to components written");
                         components_written.insert(VariableUse::new(meta, var, &access));
                     }

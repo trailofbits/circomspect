@@ -33,7 +33,7 @@ impl fmt::Display for VariableUse {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.name)?;
         for access in &self.access {
-            write!(f, "{}", access)?;
+            write!(f, "{access}")?;
         }
         Ok(())
     }

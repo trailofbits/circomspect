@@ -3,25 +3,19 @@ use num_bigint::BigInt;
 use std::fmt;
 use std::str::FromStr;
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Default, Clone, PartialEq, Eq)]
 pub enum Curve {
-    Bn128,
+    #[default] // Used for testing.
+    Bn254,
     Bls12_381,
     Goldilocks,
-}
-
-// Used for testing.
-impl Default for Curve {
-    fn default() -> Self {
-        Curve::Bn128
-    }
 }
 
 impl fmt::Display for Curve {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use Curve::*;
         match self {
-            Bn128 => write!(f, "BN128"),
+            Bn254 => write!(f, "BN254"),
             Bls12_381 => write!(f, "BLS12_381"),
             Goldilocks => write!(f, "Goldilocks"),
         }
@@ -30,7 +24,7 @@ impl fmt::Display for Curve {
 
 impl fmt::Debug for Curve {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self)
+        write!(f, "{self}")
     }
 }
 
@@ -38,7 +32,7 @@ impl Curve {
     fn prime(&self) -> BigInt {
         use Curve::*;
         let prime = match self {
-            Bn128 => {
+            Bn254 => {
                 "21888242871839275222246405745257275088548364400416034343698204186575808495617"
             }
             Bls12_381 => {
@@ -55,7 +49,7 @@ impl FromStr for Curve {
 
     fn from_str(curve: &str) -> Result<Self, Self::Err> {
         match &curve.to_uppercase()[..] {
-            "BN128" => Ok(Curve::Bn128),
+            "BN254" => Ok(Curve::Bn254),
             "BLS12_381" => Ok(Curve::Bls12_381),
             "GOLDILOCKS" => Ok(Curve::Goldilocks),
             _ => Err(anyhow!("failed to parse curve `{curve}`")),

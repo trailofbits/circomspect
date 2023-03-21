@@ -132,7 +132,9 @@ impl TryFrom<&Parameters> for DeclarationEnvironment {
     }
 }
 
-/// Renames variables to ensure that variable names are globally unique.
+/// Renames variables to ensure that variable names are globally unique.  This
+/// is done before the CFG is generated to ensure that different variables with
+/// the same names are not identified by mistake.
 ///
 /// There are a number of different cases to consider.
 ///
@@ -231,6 +233,10 @@ fn visit_statement(
             }
             visit_expression(rhe, env);
         }
+        MultiSubstitution { lhe, rhe, .. } => {
+            visit_expression(lhe, env);
+            visit_expression(rhe, env);
+        }
         LogCall { args, .. } => {
             use LogArgument::*;
             for arg in args {
@@ -312,7 +318,7 @@ fn visit_expression(expr: &mut Expression, env: &DeclarationEnvironment) {
                 visit_expression(arg, env);
             }
         }
-        ArrayInLine { values, .. } => {
+        Tuple { values, .. } | ArrayInLine { values, .. } => {
             for value in values {
                 visit_expression(value, env);
             }
@@ -320,15 +326,38 @@ fn visit_expression(expr: &mut Expression, env: &DeclarationEnvironment) {
         ParallelOp { rhe, .. } => {
             visit_expression(rhe, env);
         }
+        AnonymousComponent { params, signals, names, .. } => {
+            for param in params {
+                visit_expression(param, env)
+            }
+            for signal in signals {
+                visit_expression(signal, env)
+            }
+            if let Some(names) = names {
+                for (_, name) in names {
+                    trace!("visiting variable '{name}'");
+                    *name = match env.get_current_version(name) {
+                        Some(version) => {
+                            trace!(
+                                "renaming occurrence of variable `{name}` to `{name}.{version}`"
+                            );
+                            format!("{name}.{version}")
+                        }
+                        None => name.clone(),
+                    };
+                }
+            }
+        }
     }
 }
 
 fn build_report(name: &str, primary_meta: &Meta, secondary_decl: &Declaration) -> Report {
-    CFGError::produce_report(CFGError::ShadowingVariableWarning {
+    CFGError::ShadowingVariableWarning {
         name: name.to_string(),
         primary_file_id: primary_meta.file_id,
         primary_location: primary_meta.file_location(),
         secondary_file_id: secondary_decl.file_id(),
         secondary_location: secondary_decl.file_location(),
-    })
+    }
+    .into()
 }

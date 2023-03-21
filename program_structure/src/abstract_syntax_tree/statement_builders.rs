@@ -83,3 +83,21 @@ fn split_string(str: String) -> Vec<LogArgument> {
 pub fn build_assert(meta: Meta, arg: Expression) -> Statement {
     Assert { meta, arg }
 }
+
+pub fn build_multi_substitution(
+    meta: Meta,
+    lhe: Expression,
+    op: AssignOp,
+    rhe: Expression,
+) -> Statement {
+    MultiSubstitution { meta, lhe, op, rhe }
+}
+
+pub fn build_anonymous_component_statement(meta: Meta, arg: Expression) -> Statement {
+    MultiSubstitution {
+        meta: meta.clone(),
+        lhe: crate::expression_builders::build_tuple(meta, Vec::new()),
+        op: AssignOp::AssignConstraintSignal,
+        rhe: arg,
+    }
+}

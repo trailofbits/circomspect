@@ -10,14 +10,21 @@ use std::path::PathBuf;
 pub struct FileStack {
     current_location: Option<PathBuf>,
     black_paths: HashSet<PathBuf>,
+    user_inputs: HashSet<PathBuf>,
     stack: Vec<PathBuf>,
 }
 
 impl FileStack {
     pub fn new(paths: &[PathBuf], reports: &mut ReportCollection) -> FileStack {
-        let mut result =
-            FileStack { current_location: None, black_paths: HashSet::new(), stack: Vec::new() };
+        let mut result = FileStack {
+            current_location: None,
+            black_paths: HashSet::new(),
+            user_inputs: HashSet::new(),
+            stack: Vec::new(),
+        };
         result.add_files(paths, reports);
+        result.user_inputs = result.stack.iter().cloned().collect::<HashSet<_>>();
+
         result
     }
 
@@ -85,5 +92,9 @@ impl FileStack {
                 _ => {}
             }
         }
+    }
+
+    pub fn is_user_input(&self, path: &PathBuf) -> bool {
+        self.user_inputs.contains(path)
     }
 }

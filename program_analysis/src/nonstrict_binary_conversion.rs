@@ -67,7 +67,7 @@ pub fn find_nonstrict_binary_conversion(cfg: &Cfg) -> ReportCollection {
         // Exit early if this is a function or custom template.
         return ReportCollection::new();
     }
-    if cfg.constants().curve() != &Curve::Bn128 {
+    if cfg.constants().curve() != &Curve::Bn254 {
         // Exit early if we're not using the default curve.
         return ReportCollection::new();
     }
@@ -186,7 +186,7 @@ mod tests {
         let mut reports = ReportCollection::new();
         let cfg = parse_definition(src)
             .unwrap()
-            .into_cfg(&Curve::Bn128, &mut reports)
+            .into_cfg(&Curve::Bn254, &mut reports)
             .unwrap()
             .into_ssa()
             .unwrap();

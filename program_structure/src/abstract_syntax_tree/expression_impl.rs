@@ -1,8 +1,10 @@
-use super::ast::*;
 use std::fmt::{Debug, Display, Error, Formatter};
 
+use super::ast::*;
+use super::expression_builders::build_anonymous_component;
+
 impl Expression {
-    pub fn get_meta(&self) -> &Meta {
+    pub fn meta(&self) -> &Meta {
         use Expression::*;
         match self {
             InfixOp { meta, .. }
@@ -12,10 +14,12 @@ impl Expression {
             | ParallelOp { meta, .. }
             | Number(meta, ..)
             | Call { meta, .. }
-            | ArrayInLine { meta, .. } => meta,
+            | AnonymousComponent { meta, .. }
+            | ArrayInLine { meta, .. }
+            | Tuple { meta, .. } => meta,
         }
     }
-    pub fn get_mut_meta(&mut self) -> &mut Meta {
+    pub fn meta_mut(&mut self) -> &mut Meta {
         use Expression::*;
         match self {
             InfixOp { meta, .. }
@@ -25,7 +29,9 @@ impl Expression {
             | ParallelOp { meta, .. }
             | Number(meta, ..)
             | Call { meta, .. }
-            | ArrayInLine { meta, .. } => meta,
+            | AnonymousComponent { meta, .. }
+            | ArrayInLine { meta, .. }
+            | Tuple { meta, .. } => meta,
         }
     }
 
@@ -68,14 +74,35 @@ impl Expression {
         use Expression::*;
         matches!(self, ParallelOp { .. })
     }
+
+    pub fn is_tuple(&self) -> bool {
+        use Expression::*;
+        matches!(self, Tuple { .. })
+    }
+
+    pub fn is_anonymous_component(&self) -> bool {
+        use Expression::*;
+        matches!(self, AnonymousComponent { .. })
+    }
+
+    pub fn make_anonymous_parallel(self) -> Expression {
+        use Expression::*;
+        match self {
+            AnonymousComponent { meta, id, params, signals, names, .. } => {
+                build_anonymous_component(meta, id, params, signals, names, true)
+            }
+            _ => self,
+        }
+    }
 }
 
 impl FillMeta for Expression {
     fn fill(&mut self, file_id: usize, element_id: &mut usize) {
         use Expression::*;
-        self.get_mut_meta().elem_id = *element_id;
+        self.meta_mut().elem_id = *element_id;
         *element_id += 1;
         match self {
+            Tuple { meta, values } => fill_tuple(meta, values, file_id, element_id),
             Number(meta, _) => fill_number(meta, file_id, element_id),
             Variable { meta, access, .. } => fill_variable(meta, access, file_id, element_id),
             InfixOp { meta, lhe, rhe, .. } => fill_infix(meta, lhe, rhe, file_id, element_id),
@@ -87,6 +114,9 @@ impl FillMeta for Expression {
             Call { meta, args, .. } => fill_call(meta, args, file_id, element_id),
             ArrayInLine { meta, values, .. } => {
                 fill_array_inline(meta, values, file_id, element_id)
+            }
+            AnonymousComponent { meta, params, signals, .. } => {
+                fill_anonymous_component(meta, params, signals, file_id, element_id)
             }
         }
     }
@@ -155,6 +185,29 @@ fn fill_array_inline(
     }
 }
 
+fn fill_anonymous_component(
+    meta: &mut Meta,
+    params: &mut [Expression],
+    signals: &mut [Expression],
+    file_id: usize,
+    element_id: &mut usize,
+) {
+    meta.set_file_id(file_id);
+    for param in params {
+        param.fill(file_id, element_id);
+    }
+    for signal in signals {
+        signal.fill(file_id, element_id);
+    }
+}
+
+fn fill_tuple(meta: &mut Meta, values: &mut [Expression], file_id: usize, element_id: &mut usize) {
+    meta.set_file_id(file_id);
+    for value in values {
+        value.fill(file_id, element_id);
+    }
+}
+
 fn fill_parallel(meta: &mut Meta, rhe: &mut Expression, file_id: usize, element_id: &mut usize) {
     meta.set_file_id(file_id);
     rhe.fill(file_id, element_id);
@@ -162,7 +215,19 @@ fn fill_parallel(meta: &mut Meta, rhe: &mut Expression, file_id: usize, element_
 
 impl Debug for Expression {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        write!(f, "{}", self)
+        use Expression::*;
+        match self {
+            InfixOp { .. } => write!(f, "Expression::InfixOp"),
+            PrefixOp { .. } => write!(f, "Expression::PrefixOp"),
+            InlineSwitchOp { .. } => write!(f, "Expression::InlineSwitchOp"),
+            Variable { .. } => write!(f, "Expression::Variable"),
+            ParallelOp { .. } => write!(f, "Expression::ParallelOp"),
+            Number(..) => write!(f, "Expression::Number"),
+            Call { .. } => write!(f, "Expression::Call"),
+            AnonymousComponent { .. } => write!(f, "Expression::AnonymousComponent"),
+            ArrayInLine { .. } => write!(f, "Expression::ArrayInline"),
+            Tuple { .. } => write!(f, "Expression::Tuple"),
+        }
     }
 }
 
@@ -170,7 +235,8 @@ impl Display for Expression {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         use Expression::*;
         match self {
-            Number(_, value) => write!(f, "{}", value),
+            Tuple { values, .. } => write!(f, "({})", vec_to_string(values)),
+            Number(_, value) => write!(f, "{value}"),
             Variable { name, access, .. } => {
                 write!(f, "{name}")?;
                 for access in access {
@@ -184,8 +250,11 @@ impl Display for Expression {
             InlineSwitchOp { cond, if_true, if_false, .. } => {
                 write!(f, "({cond}? {if_true} : {if_false})")
             }
-            Call { id, args, .. } => write!(f, "{}({})", id, vec_to_string(args)),
+            Call { id, args, .. } => write!(f, "{id}({})", vec_to_string(args)),
             ArrayInLine { values, .. } => write!(f, "[{}]", vec_to_string(values)),
+            AnonymousComponent { id, params, signals, names, .. } => {
+                write!(f, "{id}({})({})", vec_to_string(params), signals_to_string(names, signals))
+            }
         }
     }
 }
@@ -241,4 +310,17 @@ impl Display for Access {
 
 fn vec_to_string(elems: &[Expression]) -> String {
     elems.iter().map(|arg| arg.to_string()).collect::<Vec<String>>().join(", ")
+}
+
+fn signals_to_string(names: &Option<Vec<(AssignOp, String)>>, signals: &[Expression]) -> String {
+    if let Some(names) = names {
+        names
+            .iter()
+            .zip(signals.iter())
+            .map(|((op, name), signal)| format!("{name} {op} {signal}"))
+            .collect::<Vec<_>>()
+    } else {
+        signals.iter().map(|signal| signal.to_string()).collect::<Vec<_>>()
+    }
+    .join(", ")
 }
