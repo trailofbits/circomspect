@@ -20,6 +20,8 @@
     underlying issue.
 -   Fixed an issue where the cyclomatic complexity calculation could underflow
     in some cases in the `overly-complex-function-or-template` analysis pass.
+-   Fixed an issue in the Sarif export implementation where reporting
+    descriptors were added multiple times.
 
 ## v0.7.2 (2022-12-01)
 

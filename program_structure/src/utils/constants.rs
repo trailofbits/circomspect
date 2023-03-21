@@ -3,18 +3,12 @@ use num_bigint::BigInt;
 use std::fmt;
 use std::str::FromStr;
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Default, Clone, PartialEq, Eq)]
 pub enum Curve {
+    #[default] // Used for testing.
     Bn254,
     Bls12_381,
     Goldilocks,
-}
-
-// Used for testing.
-impl Default for Curve {
-    fn default() -> Self {
-        Curve::Bn254
-    }
 }
 
 impl fmt::Display for Curve {
