@@ -1,5 +1,9 @@
 # Release Notes
 
+## v0.8.1 (2023-03-21)
+
+-   Updated dependencies flagged by cargo-audit.
+
 ## v0.8.0 (2023-03-21)
 
 ### Features
