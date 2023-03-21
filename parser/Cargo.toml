@@ -1,6 +1,6 @@
 [package]
 name = "circomspect-parser"
-version = "2.1.2"
+version = "2.1.3"
 edition = "2021"
 rust-version = "1.65"
 build = "build.rs"
@@ -14,7 +14,7 @@ authors = [
 
 [build-dependencies]
 rustc-hex = "2.0"
-lalrpop = { version = "0.18", features = ["lexer"] }
+lalrpop = { version = "0.19", features = ["lexer"] }
 num-bigint-dig = "0.6"
 num-traits = "0.2"
 
