@@ -1,6 +1,6 @@
 [package]
 name = "circomspect-program-analysis"
-version = "0.8.0"
+version = "0.8.1"
 edition = "2021"
 rust-version = "1.65"
 license = "LGPL-3.0-only"
@@ -14,9 +14,9 @@ log = "0.4"
 num-bigint-dig = "0.8"
 num-traits = "0.2"
 thiserror = "1.0"
-parser = { package = "circomspect-parser", version = "2.1.2", path = "../parser" }
-program_structure = { package = "circomspect-program-structure", version = "2.1.2", path = "../program_structure" }
+parser = { package = "circomspect-parser", version = "2.1.3", path = "../parser" }
+program_structure = { package = "circomspect-program-structure", version = "2.1.3", path = "../program_structure" }
 
 [dev-dependencies]
-parser = { package = "circomspect-parser", version = "2.1.2", path = "../parser" }
-program_structure = { package = "circomspect-program-structure", version = "2.1.2", path = "../program_structure" }
+parser = { package = "circomspect-parser", version = "2.1.3", path = "../parser" }
+program_structure = { package = "circomspect-program-structure", version = "2.1.3", path = "../program_structure" }
