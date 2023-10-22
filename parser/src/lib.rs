@@ -124,7 +124,7 @@ pub fn parse_files(file_paths: &[PathBuf], compiler_version: &Version) -> ParseR
     result
 }
 
-fn parse_file(
+pub fn parse_file(
     file_path: &PathBuf,
     file_stack: &mut FileStack,
     file_library: &mut FileLibrary,
