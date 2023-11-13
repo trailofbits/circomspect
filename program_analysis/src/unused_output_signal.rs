@@ -99,8 +99,16 @@ impl MaybeEqual for VariableAccess {
                     return false;
                 }
                 (ArrayAccess(self_index), ArrayAccess(other_index)) => {
+                    use value_meta::ValueReduction::*;
                     match (self_index.value(), other_index.value()) {
-                        (Some(self_value), Some(other_value)) if self_value != other_value => {
+                        (FieldElement(Some(self_value)), FieldElement(Some(other_value)))
+                            if self_value != other_value =>
+                        {
+                            return false;
+                        }
+                        (Boolean(Some(self_value)), Boolean(Some(other_value)))
+                            if self_value != other_value =>
+                        {
                             return false;
                         }
                         // Identify all other array accesses.

@@ -138,7 +138,7 @@ pub fn run_taint_analysis(cfg: &Cfg) -> TaintAnalysis {
                 IfThenElse { cond, .. } => {
                     // A variable which occurs in a non-constant condition taints all
                     // variables assigned in the if-statement body.
-                    if cond.value().is_some() {
+                    if cond.value().is_constant() {
                         continue;
                     }
                     let true_branch = cfg.get_true_branch(basic_block);

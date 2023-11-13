@@ -19,6 +19,7 @@ mod definition_complexity;
 mod field_arithmetic;
 mod field_comparisons;
 mod nonstrict_binary_conversion;
+mod non_boolean_condition;
 mod under_constrained_signals;
 mod unconstrained_less_than;
 mod unconstrained_division;
@@ -47,6 +48,7 @@ pub fn get_analysis_passes() -> Vec<Box<AnalysisPass>> {
         Box::new(|_, cfg| constant_conditional::find_constant_conditional_statement(cfg)),
         Box::new(|_, cfg| under_constrained_signals::find_under_constrained_signals(cfg)),
         Box::new(|_, cfg| nonstrict_binary_conversion::find_nonstrict_binary_conversion(cfg)),
+        Box::new(|_, cfg| non_boolean_condition::find_non_boolean_conditional(cfg)),
         // Inter-process analysis passes.
         Box::new(unused_output_signal::find_unused_output_signals),
     ]
