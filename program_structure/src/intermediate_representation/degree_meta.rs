@@ -28,9 +28,7 @@ impl Ord for Degree {
         match (self, other) {
             // `Constant <= _`
             (Constant, Constant) => Ordering::Equal,
-            (Constant, Linear) | (Constant, Quadratic) | (Constant, NonQuadratic) => {
-                Ordering::Less
-            }
+            (Constant, Linear) | (Constant, Quadratic) | (Constant, NonQuadratic) => Ordering::Less,
             // `Linear <= _`
             (Linear, Linear) => Ordering::Equal,
             (Linear, Quadratic) | (Linear, NonQuadratic) => Ordering::Less,

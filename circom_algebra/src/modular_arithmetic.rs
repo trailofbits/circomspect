@@ -39,8 +39,7 @@ pub fn sub(left: &BigInt, right: &BigInt, field: &BigInt) -> BigInt {
     modulus(&(left - right), field)
 }
 pub fn div(left: &BigInt, right: &BigInt, field: &BigInt) -> Result<BigInt, ArithmeticError> {
-    let right_inverse =
-        right.mod_inverse(field).ok_or(ArithmeticError::DivisionByZero)?;
+    let right_inverse = right.mod_inverse(field).ok_or(ArithmeticError::DivisionByZero)?;
     let res = mul(left, &right_inverse, field);
     Ok(res)
 }
