@@ -1,5 +1,7 @@
 use crate::errors::FileOsError;
 
+use log::debug;
+
 use super::errors::IncludeError;
 use program_structure::ast::Include;
 use program_structure::report::{Report, ReportCollection};
@@ -85,9 +87,10 @@ impl FileStack {
     pub fn add_include(&mut self, include: &Include) -> Result<(), Box<Report>> {
         let mut location = self.current_location.clone().expect("parsing file");
         location.push(include.path.clone());
-        match fs::canonicalize(location) {
+        match fs::canonicalize(&location) {
             Ok(path) => {
                 if !self.black_paths.contains(&path) {
+                    debug!("adding local or absolute include `{}`", location.display());
                     self.stack.push(path);
                 }
                 Ok(())
@@ -108,18 +111,22 @@ impl FileStack {
                 }
 
                 let libpath = lib.path.join(&include.path);
+                debug!("searching for `{}` in `{}`", include.path, lib.path.display());
                 if fs::canonicalize(&libpath).is_ok() {
+                    debug!("adding include `{}` from directory", libpath.display());
                     self.stack.push(libpath);
                     return Ok(());
                 }
             } else {
                 // only match include paths with a single component i.e. lib.circom and not dir/lib.circom or
                 // ./lib.circom
-                if include.path.find(std::path::MAIN_SEPARATOR) == None
-                    && lib.path.file_name().expect("good library file") == pathos
-                {
-                    self.stack.push(lib.path.clone());
-                    return Ok(());
+                if include.path.find(std::path::MAIN_SEPARATOR) == None {
+                    debug!("checking if `{}` matches `{}`", include.path, lib.path.display());
+                    if lib.path.file_name().expect("good library file") == pathos {
+                        debug!("adding include `{}` from file", lib.path.display());
+                        self.stack.push(lib.path.clone());
+                        return Ok(());
+                    }
                 }
             }
         }

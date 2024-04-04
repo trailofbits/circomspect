@@ -52,6 +52,11 @@ pub fn parse_files(
                 if let Some(main_component) = program.main_component {
                     main_components.push((file_id, main_component, program.custom_gates));
                 }
+                debug!(
+                    "adding {} definitions from `{}`",
+                    program.definitions.iter().map(|x| x.name()).collect::<Vec<_>>().join(", "),
+                    file_path.display(),
+                );
                 definitions.insert(file_id, program.definitions);
                 reports.append(&mut warnings);
             }
