@@ -36,7 +36,11 @@ pub enum ParseResult {
     Library(Box<TemplateLibrary>, ReportCollection),
 }
 
-pub fn parse_files(file_paths: &[PathBuf], libraries: &[PathBuf], compiler_version: &Version) -> ParseResult {
+pub fn parse_files(
+    file_paths: &[PathBuf],
+    libraries: &[PathBuf],
+    compiler_version: &Version,
+) -> ParseResult {
     let mut reports = ReportCollection::new();
     let mut file_stack = FileStack::new(file_paths, libraries, &mut reports);
     let mut file_library = FileLibrary::new();

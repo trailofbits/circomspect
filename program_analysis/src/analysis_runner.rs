@@ -53,25 +53,26 @@ impl AnalysisRunner {
     }
 
     pub fn with_libraries(mut self, libraries: &[PathBuf]) -> Self {
-      self.libraries.extend_from_slice(libraries);
-      self
+        self.libraries.extend_from_slice(libraries);
+        self
     }
 
     pub fn with_files(mut self, input_files: &[PathBuf]) -> (Self, ReportCollection) {
-        let reports = match parser::parse_files(input_files, &self.libraries, &config::COMPILER_VERSION) {
-            ParseResult::Program(program, warnings) => {
-                self.template_asts = program.templates;
-                self.function_asts = program.functions;
-                self.file_library = program.file_library;
-                warnings
-            }
-            ParseResult::Library(library, warnings) => {
-                self.template_asts = library.templates;
-                self.function_asts = library.functions;
-                self.file_library = library.file_library;
-                warnings
-            }
-        };
+        let reports =
+            match parser::parse_files(input_files, &self.libraries, &config::COMPILER_VERSION) {
+                ParseResult::Program(program, warnings) => {
+                    self.template_asts = program.templates;
+                    self.function_asts = program.functions;
+                    self.file_library = program.file_library;
+                    warnings
+                }
+                ParseResult::Library(library, warnings) => {
+                    self.template_asts = library.templates;
+                    self.function_asts = library.functions;
+                    self.file_library = library.file_library;
+                    warnings
+                }
+            };
         (self, reports)
     }
 
@@ -223,7 +224,7 @@ impl AnalysisRunner {
             // Get the AST corresponding to the template.
             let Some(ast) = self.template_asts.get(name) else {
                 trace!("failed to lift unknown template `{name}`");
-                return Err(AnalysisError::UnknownTemplate { name: name.to_string() })
+                return Err(AnalysisError::UnknownTemplate { name: name.to_string() });
             };
             // Generate the template CFG from the AST. Cache any reports.
             let mut reports = ReportCollection::new();
@@ -249,7 +250,7 @@ impl AnalysisRunner {
             // Get the AST corresponding to the function.
             let Some(ast) = self.function_asts.get(name) else {
                 trace!("failed to lift unknown function `{name}`");
-                return Err(AnalysisError::UnknownFunction { name: name.to_string() })
+                return Err(AnalysisError::UnknownFunction { name: name.to_string() });
             };
             // Generate the function CFG from the AST. Cache any reports.
             let mut reports = ReportCollection::new();

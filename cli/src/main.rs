@@ -73,7 +73,9 @@ fn main() -> ExitCode {
     }
 
     // Set up analysis runner.
-    let (mut runner, reports) = AnalysisRunner::new(options.curve).with_libraries(&options.libraries).with_files(&options.input_files);
+    let (mut runner, reports) = AnalysisRunner::new(options.curve)
+        .with_libraries(&options.libraries)
+        .with_files(&options.input_files);
 
     // Set up writer and write reports to `stdout`.
     let allow_list = options.allow_list.clone();

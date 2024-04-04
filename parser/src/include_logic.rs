@@ -18,8 +18,8 @@ pub struct FileStack {
 
 #[derive(Debug)]
 struct Library {
-  dir: bool,
-  path: PathBuf,
+    dir: bool,
+    path: PathBuf,
 }
 
 impl FileStack {
@@ -92,9 +92,7 @@ impl FileStack {
                 }
                 Ok(())
             }
-            Err(_) => {
-                self.include_library(include)
-            }
+            Err(_) => self.include_library(include),
         }
     }
 
@@ -117,7 +115,9 @@ impl FileStack {
             } else {
                 // only match include paths with a single component i.e. lib.circom and not dir/lib.circom or
                 // ./lib.circom
-                if include.path.find(std::path::MAIN_SEPARATOR) == None && lib.path.file_name().expect("good library file") == pathos {
+                if include.path.find(std::path::MAIN_SEPARATOR) == None
+                    && lib.path.file_name().expect("good library file") == pathos
+                {
                     self.stack.push(lib.path.clone());
                     return Ok(());
                 }
@@ -125,9 +125,9 @@ impl FileStack {
         }
 
         let error = IncludeError {
-          path: include.path.clone(),
-          file_id: include.meta.file_id,
-          file_location: include.meta.file_location(),
+            path: include.path.clone(),
+            file_id: include.meta.file_id,
+            file_location: include.meta.file_location(),
         };
         Err(Box::new(error.into_report()))
     }
