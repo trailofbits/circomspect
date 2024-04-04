@@ -100,17 +100,24 @@ impl FileStack {
 
     fn include_library(&mut self, include: &Include) -> Result<(), Box<Report>> {
         // try and perform library resolution on the include
+        // at this point any absolute path has been handled by the push in add_include
         let pathos = OsString::from(include.path.clone());
         for lib in &self.libraries {
             if lib.dir {
+                // only match relative paths that do not start with .
+                if include.path.find('.') == Some(0) {
+                    continue;
+                }
+
                 let libpath = lib.path.join(&include.path);
                 if fs::canonicalize(&libpath).is_ok() {
                     self.stack.push(libpath);
                     return Ok(());
                 }
             } else {
-                // only match include paths with a single component i.e. lib.circom and not dir/lib.circom
-                if lib.path.file_name().expect("good library file") == pathos {
+                // only match include paths with a single component i.e. lib.circom and not dir/lib.circom or
+                // ./lib.circom
+                if include.path.find(std::path::MAIN_SEPARATOR) == None && lib.path.file_name().expect("good library file") == pathos {
                     self.stack.push(lib.path.clone());
                     return Ok(());
                 }
