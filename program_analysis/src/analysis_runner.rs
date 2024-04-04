@@ -217,7 +217,7 @@ impl AnalysisRunner {
             // Get the AST corresponding to the template.
             let Some(ast) = self.template_asts.get(name) else {
                 trace!("failed to lift unknown template `{name}`");
-                return Err(AnalysisError::UnknownTemplate { name: name.to_string() })
+                return Err(AnalysisError::UnknownTemplate { name: name.to_string() });
             };
             // Generate the template CFG from the AST. Cache any reports.
             let mut reports = ReportCollection::new();
@@ -243,7 +243,7 @@ impl AnalysisRunner {
             // Get the AST corresponding to the function.
             let Some(ast) = self.function_asts.get(name) else {
                 trace!("failed to lift unknown function `{name}`");
-                return Err(AnalysisError::UnknownFunction { name: name.to_string() })
+                return Err(AnalysisError::UnknownFunction { name: name.to_string() });
             };
             // Generate the function CFG from the AST. Cache any reports.
             let mut reports = ReportCollection::new();
