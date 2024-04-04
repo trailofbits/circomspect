@@ -30,7 +30,7 @@ impl<T: DirectedGraphNode> DominatorTree<T> {
             immediate_dominators,
             dominator_successors,
             dominance_frontier,
-            marker: PhantomData::default(),
+            marker: PhantomData,
         }
     }
 
