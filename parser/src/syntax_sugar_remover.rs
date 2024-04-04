@@ -493,7 +493,7 @@ fn remove_anonymous_from_expression(
             }
             let outputs = template.unwrap().get_declaration_outputs();
             if outputs.len() == 1 {
-                let output = outputs.get(0).unwrap().0.clone();
+                let output = outputs[0].0.clone();
                 let mut acc = if var_access.is_none() {
                     Vec::new()
                 } else {
