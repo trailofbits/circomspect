@@ -22,26 +22,25 @@ pub enum MessageCategory {
 /// Message categories are linearly ordered.
 impl PartialOrd for MessageCategory {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        use MessageCategory::*;
-        match (self, other) {
-            // `Info <= _`
-            (Info, Info) => Some(Ordering::Equal),
-            (Info, Warning) | (Info, Error) => Some(Ordering::Less),
-            // `Warning <= _`
-            (Warning, Warning) => Some(Ordering::Equal),
-            (Warning, Error) => Some(Ordering::Less),
-            // `Error <= _`
-            (Error, Error) => Some(Ordering::Equal),
-            // All other cases are on the form `_ >= _`.
-            _ => Some(Ordering::Greater),
-        }
+        Some(self.cmp(other))
     }
 }
 
 impl Ord for MessageCategory {
     fn cmp(&self, other: &Self) -> Ordering {
-        // `MessageCategory::partial_cmp` always returns `Some(_)`.
-        self.partial_cmp(other).unwrap()
+        use MessageCategory::*;
+        match (self, other) {
+            // `Info <= _`
+            (Info, Info) => Ordering::Equal,
+            (Info, Warning) | (Info, Error) => Ordering::Less,
+            // `Warning <= _`
+            (Warning, Warning) => Ordering::Equal,
+            (Warning, Error) => Ordering::Less,
+            // `Error <= _`
+            (Error, Error) => Ordering::Equal,
+            // All other cases are on the form `_ >= _`.
+            _ => Ordering::Greater,
+        }
     }
 }
 

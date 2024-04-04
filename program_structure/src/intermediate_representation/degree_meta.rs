@@ -17,32 +17,31 @@ pub enum Degree {
 // Degrees are linearly ordered.
 impl PartialOrd<Degree> for Degree {
     fn partial_cmp(&self, other: &Degree) -> Option<Ordering> {
-        use Degree::*;
-        match (self, other) {
-            // `Constant <= _`
-            (Constant, Constant) => Some(Ordering::Equal),
-            (Constant, Linear) | (Constant, Quadratic) | (Constant, NonQuadratic) => {
-                Some(Ordering::Less)
-            }
-            // `Linear <= _`
-            (Linear, Linear) => Some(Ordering::Equal),
-            (Linear, Quadratic) | (Linear, NonQuadratic) => Some(Ordering::Less),
-            // `Quadratic <= _`
-            (Quadratic, Quadratic) => Some(Ordering::Equal),
-            (Quadratic, NonQuadratic) => Some(Ordering::Less),
-            // `NonQuadratic <= _`
-            (NonQuadratic, NonQuadratic) => Some(Ordering::Equal),
-            // All other cases are on the form `_ >= _`.
-            _ => Some(Ordering::Greater),
-        }
+        Some(self.cmp(other))
     }
 }
 
 // Degrees are linearly ordered.
 impl Ord for Degree {
     fn cmp(&self, other: &Degree) -> Ordering {
-        // `Degree::partial_cmp` always returns `Some(_)`.
-        self.partial_cmp(other).unwrap()
+        use Degree::*;
+        match (self, other) {
+            // `Constant <= _`
+            (Constant, Constant) => Ordering::Equal,
+            (Constant, Linear) | (Constant, Quadratic) | (Constant, NonQuadratic) => {
+                Ordering::Less
+            }
+            // `Linear <= _`
+            (Linear, Linear) => Ordering::Equal,
+            (Linear, Quadratic) | (Linear, NonQuadratic) => Ordering::Less,
+            // `Quadratic <= _`
+            (Quadratic, Quadratic) => Ordering::Equal,
+            (Quadratic, NonQuadratic) => Ordering::Less,
+            // `NonQuadratic <= _`
+            (NonQuadratic, NonQuadratic) => Ordering::Equal,
+            // All other cases are on the form `_ >= _`.
+            _ => Ordering::Greater,
+        }
     }
 }
 
