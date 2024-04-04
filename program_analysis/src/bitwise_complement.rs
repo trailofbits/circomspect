@@ -74,7 +74,7 @@ fn visit_expression(expr: &Expression, reports: &mut ReportCollection) {
     use Expression::*;
     use ExpressionPrefixOpcode::*;
     match expr {
-        PrefixOp { meta, prefix_op, .. } if matches!(prefix_op, Complement) => {
+        PrefixOp { meta, prefix_op: Complement, .. } => {
             reports.push(build_report(meta));
         }
         PrefixOp { rhe, .. } => {
