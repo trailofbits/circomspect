@@ -299,7 +299,7 @@ pub fn run_side_effect_analysis(cfg: &Cfg) -> ReportCollection {
         .collect::<HashSet<_>>();
 
     // Add input and output signals to this set.
-    sinks.extend(exported_signals.into_iter());
+    sinks.extend(exported_signals);
     // println!("constraint sinks: {sinks:?}");
 
     // Add variables occurring in declarations, return values, asserts, and
