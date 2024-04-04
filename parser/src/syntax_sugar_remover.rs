@@ -999,7 +999,8 @@ mod tests {
                 parallel,
                 is_custom_gate,
                 ..
-            } = definition else {
+            } = definition
+            else {
                 unreachable!();
             };
             let template = TemplateData::new(

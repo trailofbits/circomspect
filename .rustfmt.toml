@@ -1,4 +1,4 @@
-fn_args_layout = "Tall"
+fn_params_layout = "Tall"
 use_small_heuristics = "Max"
 max_width = 100
 reorder_modules = false
