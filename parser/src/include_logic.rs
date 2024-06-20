@@ -120,7 +120,7 @@ impl FileStack {
             } else {
                 // only match include paths with a single component i.e. lib.circom and not dir/lib.circom or
                 // ./lib.circom
-                if include.path.find(std::path::MAIN_SEPARATOR) == None {
+                if include.path.find(std::path::MAIN_SEPARATOR).is_none() {
                     debug!("checking if `{}` matches `{}`", include.path, lib.path.display());
                     if lib.path.file_name().expect("good library file") == pathos {
                         debug!("adding include `{}` from file", lib.path.display());

@@ -452,7 +452,7 @@ fn remove_anonymous_from_expression(
                     }
                 }
             } else {
-                new_signals = signals.clone();
+                new_signals.clone_from(&signals);
                 for _ in 0..signals.len() {
                     new_operators.push(AssignOp::AssignConstraintSignal);
                 }

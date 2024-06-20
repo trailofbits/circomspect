@@ -217,7 +217,7 @@ impl AnalysisRunner {
     fn cache_template(&mut self, name: &str) -> Result<&Cfg, AnalysisError> {
         if !self.template_cfgs.contains_key(name) {
             // The template CFG needs to be generated from the AST.
-            if self.template_reports.get(name).is_some() {
+            if self.template_reports.contains_key(name) {
                 // We have already failed to generate the CFG.
                 return Err(AnalysisError::FailedToLiftTemplate { name: name.to_string() });
             }
@@ -243,7 +243,7 @@ impl AnalysisRunner {
     fn cache_function(&mut self, name: &str) -> Result<&Cfg, AnalysisError> {
         if !self.function_cfgs.contains_key(name) {
             // The function CFG needs to be generated from the AST.
-            if self.function_reports.get(name).is_some() {
+            if self.function_reports.contains_key(name) {
                 // We have already failed to generate the CFG.
                 return Err(AnalysisError::FailedToLiftFunction { name: name.to_string() });
             }
@@ -289,11 +289,11 @@ impl AnalysisRunner {
 
 impl AnalysisContext for AnalysisRunner {
     fn is_template(&self, name: &str) -> bool {
-        self.template_asts.get(name).is_some()
+        self.template_asts.contains_key(name)
     }
 
     fn is_function(&self, name: &str) -> bool {
-        self.function_asts.get(name).is_some()
+        self.function_asts.contains_key(name)
     }
 
     fn template(&mut self, name: &str) -> Result<&Cfg, AnalysisError> {
