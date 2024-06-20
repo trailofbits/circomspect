@@ -1,4 +1,6 @@
 [workspace]
+resolver = "1"
+
 members = [
   "cli",
   "parser",
