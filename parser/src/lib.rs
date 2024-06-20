@@ -36,9 +36,13 @@ pub enum ParseResult {
     Library(Box<TemplateLibrary>, ReportCollection),
 }
 
-pub fn parse_files(file_paths: &[PathBuf], compiler_version: &Version) -> ParseResult {
+pub fn parse_files(
+    file_paths: &[PathBuf],
+    libraries: &[PathBuf],
+    compiler_version: &Version,
+) -> ParseResult {
     let mut reports = ReportCollection::new();
-    let mut file_stack = FileStack::new(file_paths, &mut reports);
+    let mut file_stack = FileStack::new(file_paths, libraries, &mut reports);
     let mut file_library = FileLibrary::new();
     let mut definitions = HashMap::new();
     let mut main_components = Vec::new();
@@ -48,6 +52,11 @@ pub fn parse_files(file_paths: &[PathBuf], compiler_version: &Version) -> ParseR
                 if let Some(main_component) = program.main_component {
                     main_components.push((file_id, main_component, program.custom_gates));
                 }
+                debug!(
+                    "adding {} definitions from `{}`",
+                    program.definitions.iter().map(|x| x.name()).collect::<Vec<_>>().join(", "),
+                    file_path.display(),
+                );
                 definitions.insert(file_id, program.definitions);
                 reports.append(&mut warnings);
             }

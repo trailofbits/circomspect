@@ -161,6 +161,15 @@ pub fn build_function(
     Definition::Function { meta, name, args, arg_location, body }
 }
 
+impl Definition {
+    pub fn name(&self) -> String {
+        match self {
+            Self::Template { name, .. } => name.clone(),
+            Self::Function { name, .. } => name.clone(),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub enum Statement {
     IfThenElse {
