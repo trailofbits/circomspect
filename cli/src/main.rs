@@ -13,6 +13,7 @@ use program_structure::report::MessageCategory;
 use program_structure::writers::{LogWriter, ReportWriter, SarifWriter, CachedStdoutWriter};
 
 #[derive(Parser, Debug)]
+#[command(styles=cli_styles())]
 /// A static analyzer and linter for Circom programs.
 struct Cli {
     /// Initial input file(s)
@@ -42,6 +43,17 @@ struct Cli {
     /// Set curve (BN254, BLS12_381, or GOLDILOCKS)
     #[clap(short = 'c', long = "curve", name = "NAME", default_value = config::DEFAULT_CURVE)]
     curve: Curve,
+}
+
+/// Styles the help output for the [`Cli`].
+fn cli_styles() -> clap::builder::Styles {
+    use clap::builder::styling::*;
+
+    Styles::styled()
+        .header(AnsiColor::Yellow.on_default())
+        .usage(AnsiColor::Green.on_default())
+        .literal(AnsiColor::Green.on_default())
+        .placeholder(AnsiColor::Green.on_default())
 }
 
 /// Returns true if a primary location of the report corresponds to a file
