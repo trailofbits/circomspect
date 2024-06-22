@@ -13,8 +13,7 @@ repository = "https://github.com/trailofbits/circomspect"
 [dependencies]
 anyhow = "1.0"
 atty = "0.2"
-# Stay on Clap version 3 until version 4 supports coloured help output.
-clap = { version = "3.2", features = ["derive"] }
+clap = { version = "4.5", features = ["derive"] }
 log = "0.4"
 parser = { package = "circomspect-parser", version = "2.1.3", path = "../parser" }
 pretty_env_logger = "0.5"
