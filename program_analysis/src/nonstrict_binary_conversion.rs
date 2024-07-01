@@ -103,8 +103,8 @@ fn visit_statement(stmt: &Statement, prime_size: &BigInt, reports: &mut ReportCo
                 let arg = &args[0];
                 // If the input size is known to be less than the prime size, this
                 // initialization is safe.
-                if let Some(FieldElement { value }) = arg.value() {
-                    if value < prime_size {
+                if let FieldElement(Some(value)) = arg.value() {
+                    if &value < prime_size {
                         return;
                     }
                 }
@@ -115,8 +115,8 @@ fn visit_statement(stmt: &Statement, prime_size: &BigInt, reports: &mut ReportCo
                 let arg = &args[0];
                 // If the input size is known to be less than the prime size, this
                 // initialization is safe.
-                if let Some(FieldElement { value }) = arg.value() {
-                    if value < prime_size {
+                if let FieldElement(Some(value)) = arg.value() {
+                    if &value < prime_size {
                         return;
                     }
                 }

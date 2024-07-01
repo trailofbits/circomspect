@@ -324,14 +324,14 @@ pub fn build_array_access(expr: Expression) -> Access {
     Access::ArrayAccess(expr)
 }
 
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum AssignOp {
     AssignVar,
     AssignSignal,
     AssignConstraintSignal,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum ExpressionInfixOpcode {
     Mul,
     Div,

@@ -6,7 +6,7 @@ use crate::nonempty_vec::NonEmptyVec;
 
 use super::degree_meta::DegreeKnowledge;
 use super::type_meta::TypeKnowledge;
-use super::value_meta::ValueKnowledge;
+use super::value_meta::ValueReduction;
 use super::variable_meta::VariableKnowledge;
 
 type Index = usize;
@@ -18,7 +18,7 @@ pub struct Meta {
     pub file_id: Option<FileID>,
     degree_knowledge: DegreeKnowledge,
     type_knowledge: TypeKnowledge,
-    value_knowledge: ValueKnowledge,
+    value_knowledge: ValueReduction,
     variable_knowledge: VariableKnowledge,
 }
 
@@ -30,7 +30,7 @@ impl Meta {
             file_id: *file_id,
             degree_knowledge: DegreeKnowledge::default(),
             type_knowledge: TypeKnowledge::default(),
-            value_knowledge: ValueKnowledge::default(),
+            value_knowledge: ValueReduction::default(),
             variable_knowledge: VariableKnowledge::default(),
         }
     }
@@ -66,7 +66,7 @@ impl Meta {
     }
 
     #[must_use]
-    pub fn value_knowledge(&self) -> &ValueKnowledge {
+    pub fn value_knowledge(&self) -> &ValueReduction {
         &self.value_knowledge
     }
 
@@ -86,7 +86,7 @@ impl Meta {
     }
 
     #[must_use]
-    pub fn value_knowledge_mut(&mut self) -> &mut ValueKnowledge {
+    pub fn value_knowledge_mut(&mut self) -> &mut ValueReduction {
         &mut self.value_knowledge
     }
 
@@ -367,7 +367,7 @@ pub enum AssignOp {
     AssignLocalOrComponent,
 }
 
-#[derive(Copy, Clone, Hash, Eq, PartialEq)]
+#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
 pub enum ExpressionInfixOpcode {
     Mul,
     Div,

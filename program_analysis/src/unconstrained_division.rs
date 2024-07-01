@@ -73,11 +73,11 @@ impl Component {
 
     fn output(&self) -> Option<bool> {
         use ValueReduction::*;
-        let value = self.output.as_ref().and_then(|output| output.value());
+        let value = self.output.as_ref().map(|output| output.value());
         match value {
-            Some(FieldElement { value }) => Some(!value.is_zero()),
-            Some(Boolean { value }) => Some(*value),
-            None => None,
+            Some(FieldElement(Some(value))) => Some(!value.is_zero()),
+            Some(Boolean(Some(value))) => Some(value),
+            _ => None,
         }
     }
 }
