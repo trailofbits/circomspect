@@ -12,7 +12,7 @@ lalrpop_mod!(#[allow(clippy::all)] pub lang);
 use log::debug;
 
 mod errors;
-mod include_logic;
+pub mod include_logic;
 mod parser_logic;
 mod syntax_sugar_traits;
 mod syntax_sugar_remover;
