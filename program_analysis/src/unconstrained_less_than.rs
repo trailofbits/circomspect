@@ -152,6 +152,12 @@ pub fn find_unconstrained_less_than(cfg: &Cfg) -> ReportCollection {
         if data.less_than.is_empty() {
             continue;
         }
+        // A compile-time constant is fixed by the circuit source and cannot
+        // be chosen adversarially by the prover, so it does not need to be
+        // range-checked using `Num2Bits`.
+        if value.is_constant() {
+            continue;
+        }
         // Check if the value is constrained to be positive.
         let mut is_positive = false;
         for bit_size in &data.bit_sizes {
@@ -367,6 +373,25 @@ mod tests {
             }
         "#;
         validate_reports(src, 0);
+
+        // A compile-time constant input cannot be chosen adversarially by the
+        // prover, so it should not be reported, regardless of whether it is
+        // range-checked using `Num2Bits`. The other (unconstrained) input is
+        // still expected to be reported.
+        let src = r#"
+            template Test(n) {
+              signal input small;
+              signal output ok;
+
+              // Check that small < 55.
+              component lt = LessThan(n);
+              lt.in[0] <== small;
+              lt.in[1] <== 50 + 5;
+
+              ok <== lt.out;
+            }
+        "#;
+        validate_reports(src, 1);
     }
 
     fn validate_reports(src: &str, expected_len: usize) {
