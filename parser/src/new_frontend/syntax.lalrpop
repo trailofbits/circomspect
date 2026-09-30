@@ -11,16 +11,17 @@ pub Item: SyntaxNode = {
         => node(SyntaxKind::Pragma, source, s, e, vec![]),
     <s:@L> "include" <path:Str> ";" <e:@R>
         => labelled(SyntaxKind::Include, source, s, e, path, vec![]),
-    <s:@L> "function" <name:Id> <params:Parameters> <body:Block> <e:@R>
-        => labelled(SyntaxKind::Function, source, s, e, name, [params, vec![body]].concat()),
-    <s:@L> "template" <mods:TemplateModifiers> <name:Id> <params:Parameters?> <body:Block> <e:@R>
-        => labelled(SyntaxKind::Template, source, s, e, name,
-            [mods, params.unwrap_or_default(), vec![body]].concat()),
-    <s:@L> "bus" <name:Id> <params:Parameters?> <body:Block> <e:@R>
-        => labelled(SyntaxKind::Bus, source, s, e, name,
-            [params.unwrap_or_default(), vec![body]].concat()),
+    <s:@L> "function" <name:Name> <params:Parameters> <body:Block> <e:@R>
+        => node(SyntaxKind::Function, source, s, e, vec![name, params, body]),
+    <s:@L> "template" <mods:TemplateModifiers> <name:Name> <params:Parameters?> <body:Block> <e:@R>
+        => node(SyntaxKind::Template, source, s, e,
+            [mods, vec![name], params.into_iter().collect(), vec![body]].concat()),
+    <s:@L> "bus" <name:Name> <params:Parameters?> <body:Block> <e:@R>
+        => node(SyntaxKind::Bus, source, s, e,
+            [vec![name], params.into_iter().collect(), vec![body]].concat()),
     <s:@L> "component" "main" <public:PublicList?> "=" <expr:Expr> ";" <e:@R>
-        => node(SyntaxKind::Main, source, s, e, [public.unwrap_or_default(), vec![expr]].concat()),
+        => node(SyntaxKind::Main, source, s, e,
+            [public.into_iter().collect(), vec![expr]].concat()),
 };
 
 TemplateModifiers: Vec<SyntaxNode> = {
@@ -28,26 +29,28 @@ TemplateModifiers: Vec<SyntaxNode> = {
         => [custom, external, parallel].into_iter().flatten().collect(),
 };
 CustomModifier: SyntaxNode = {
-    <s:@L> "custom" <e:@R> => labelled(SyntaxKind::Name, source, s, e, "custom".into(), vec![]),
+    <s:@L> "custom" <e:@R> => labelled(SyntaxKind::Modifier, source, s, e, "custom".into(), vec![]),
 };
 ExternalModifier: SyntaxNode = {
-    <s:@L> "extern_c" <e:@R> => labelled(SyntaxKind::Name, source, s, e, "extern_c".into(), vec![]),
+    <s:@L> "extern_c" <e:@R> => labelled(SyntaxKind::Modifier, source, s, e, "extern_c".into(), vec![]),
 };
 ParallelModifier: SyntaxNode = {
-    <s:@L> "parallel" <e:@R> => labelled(SyntaxKind::Name, source, s, e, "parallel".into(), vec![]),
+    <s:@L> "parallel" <e:@R> => labelled(SyntaxKind::Modifier, source, s, e, "parallel".into(), vec![]),
 };
 
-PublicList: Vec<SyntaxNode> = {
-    "{" "public" "[" <names:NameList> "]" "}" => names,
+PublicList: SyntaxNode = {
+    <s:@L> "{" "public" "[" <names:NameList> "]" "}" <e:@R>
+        => node(SyntaxKind::PublicList, source, s, e, names),
 };
-Parameters: Vec<SyntaxNode> = {
-    "(" <names:NameList?> ")" => names.unwrap_or_default(),
+Parameters: SyntaxNode = {
+    <s:@L> "(" <names:NameList?> ")" <e:@R>
+        => node(SyntaxKind::Parameters, source, s, e, names.unwrap_or_default()),
 };
 NameList: Vec<SyntaxNode> = {
     <mut names:(<Name> ",")*> <last:Name> => { names.push(last); names },
 };
 Name: SyntaxNode = {
-    <s:@L> <name:Id> <e:@R> => labelled(SyntaxKind::Name, source, s, e, name, vec![]),
+    <s:@L> <name:Id> <e:@R> => labelled(SyntaxKind::Identifier, source, s, e, name, vec![]),
 };
 
 Block: SyntaxNode = {
@@ -69,13 +72,13 @@ Declaration: SyntaxNode = {
     <s:@L> <header:BusHeader> <symbols:SignalSymbolList> <e:@R>
         => node(SyntaxKind::Declaration, source, s, e, [vec![header], symbols].concat()),
     <s:@L> "var" "(" <symbols:SimpleSymbolList> ")" <init:TupleInit?> <e:@R>
-        => labelled(SyntaxKind::Declaration, source, s, e, "var".into(),
+        => labelled(SyntaxKind::TupleDeclaration, source, s, e, "var".into(),
             [symbols, init.into_iter().collect()].concat()),
     <s:@L> "component" "(" <symbols:SimpleSymbolList> ")" <init:TupleInit?> <e:@R>
-        => labelled(SyntaxKind::Declaration, source, s, e, "component".into(),
+        => labelled(SyntaxKind::TupleDeclaration, source, s, e, "component".into(),
             [symbols, init.into_iter().collect()].concat()),
     <s:@L> <header:SignalHeader> "(" <symbols:SimpleSymbolList> ")" <init:TupleInit?> <e:@R>
-        => node(SyntaxKind::Declaration, source, s, e,
+        => node(SyntaxKind::TupleDeclaration, source, s, e,
             [vec![header], symbols, init.into_iter().collect()].concat()),
 };
 
@@ -89,13 +92,13 @@ SignalSymbolList: Vec<SyntaxNode> = {
     <mut xs:(<SignalSymbol> ",")*> <x:SignalSymbol> => { xs.push(x); xs },
 };
 SimpleSymbol: SyntaxNode = {
-    <s:@L> <name:Id> <dims:Index*> <e:@R>
-        => labelled(SyntaxKind::Name, source, s, e, name, dims),
+    <s:@L> <name:Name> <dims:Index*> <e:@R>
+        => node(SyntaxKind::Name, source, s, e, [vec![name], dims].concat()),
 };
 Symbol: SyntaxNode = {
     <base:SimpleSymbol> => base,
     <s:@L> <base:SimpleSymbol> "=" <expr:Expr> <e:@R>
-        => node(SyntaxKind::Assignment, source, s, e, vec![base, expr]),
+        => labelled(SyntaxKind::Assignment, source, s, e, "=".into(), vec![base, expr]),
 };
 SignalSymbol: SyntaxNode = {
     <base:SimpleSymbol> => base,
@@ -108,26 +111,29 @@ TupleInit: SyntaxNode = {
 };
 SignalHeader: SyntaxNode = {
     <s:@L> "signal" <direction:Direction?> <tags:Tags?> <e:@R>
-        => labelled(SyntaxKind::Name, source, s, e, "signal".into(),
-            [direction.into_iter().map(|d| labelled(SyntaxKind::Name, source, s, e,
-                d, vec![])).collect(), tags.unwrap_or_default()].concat()),
+        => node(SyntaxKind::SignalHeader, source, s, e,
+            [direction.into_iter().collect(), tags.unwrap_or_default()].concat()),
     <s:@L> <direction:Direction> "signal" <tags:Tags?> <e:@R>
-        => labelled(SyntaxKind::Name, source, s, e, direction,
-            tags.unwrap_or_default()),
+        => node(SyntaxKind::DirectionFirstSignalHeader, source, s, e,
+            [vec![direction], tags.unwrap_or_default()].concat()),
 };
 BusHeader: SyntaxNode = {
-    <s:@L> <name:Id> <args:Arguments?> <direction:Direction?> <tags:Tags?> <e:@R>
-        => labelled(SyntaxKind::Name, source, s, e, name,
-            [args.unwrap_or_default(), direction.into_iter().map(|d| labelled(
-                SyntaxKind::Name, source, s, e, d, vec![])).collect(),
+    <s:@L> <name:Name> <args:Arguments?> <direction:Direction?> <tags:Tags?> <e:@R>
+        => node(SyntaxKind::BusHeader, source, s, e,
+            [vec![name], args.into_iter().collect(), direction.into_iter().collect(),
                 tags.unwrap_or_default()].concat()),
-    <s:@L> <direction:Direction> <name:Id> <args:Arguments?> <tags:Tags?> <e:@R>
-        => labelled(SyntaxKind::Name, source, s, e, name,
-            [args.unwrap_or_default(), vec![labelled(SyntaxKind::Name, source, s, e,
-                direction, vec![])], tags.unwrap_or_default()].concat()),
+    <s:@L> <direction:Direction> <name:Name> <args:Arguments?> <tags:Tags?> <e:@R>
+        => node(SyntaxKind::DirectionFirstBusHeader, source, s, e,
+            [vec![direction, name], args.into_iter().collect(), tags.unwrap_or_default()].concat()),
 };
-Tags: Vec<SyntaxNode> = { "{" <names:NameList> "}" => names };
-Direction: String = { "input" => "input".into(), "output" => "output".into() };
+Tags: Vec<SyntaxNode> = {
+    <s:@L> "{" <names:NameList> "}" <e:@R>
+        => vec![node(SyntaxKind::Tags, source, s, e, names)]
+};
+Direction: SyntaxNode = {
+    <s:@L> "input" <e:@R> => labelled(SyntaxKind::Direction, source, s, e, "input".into(), vec![]),
+    <s:@L> "output" <e:@R> => labelled(SyntaxKind::Direction, source, s, e, "output".into(), vec![]),
+};
 
 pub Statement: SyntaxNode = { Statement0 };
 Statement0: SyntaxNode = { IfNoElse, Statement1 };
@@ -194,20 +200,23 @@ CompoundAssignOp: String = {
 PostfixOp: String = { "++" => "++".into(), "--" => "--".into() };
 
 Variable: SyntaxNode = {
-    <s:@L> <name:Id> <access:Access*> <e:@R>
-        => labelled(SyntaxKind::Name, source, s, e, name, access),
+    <s:@L> <name:Name> <access:Access*> <e:@R>
+        => node(SyntaxKind::Name, source, s, e, [vec![name], access].concat()),
 };
 Access: SyntaxNode = {
     Index,
-    <s:@L> "." <name:Id> <e:@R>
-        => labelled(SyntaxKind::Access, source, s, e, name, vec![]),
+    <s:@L> "." <name:Name> <e:@R>
+        => node(SyntaxKind::Access, source, s, e, vec![name]),
 };
 Index: SyntaxNode = {
     <s:@L> "[" <expr:Expr> "]" <e:@R>
         => node(SyntaxKind::Access, source, s, e, vec![expr]),
 };
 
-Arguments: Vec<SyntaxNode> = { "(" <args:ExpressionList?> ")" => args.unwrap_or_default() };
+Arguments: SyntaxNode = {
+    <s:@L> "(" <args:ExpressionList?> ")" <e:@R>
+        => node(SyntaxKind::Arguments, source, s, e, args.unwrap_or_default()),
+};
 ExpressionList: Vec<SyntaxNode> = {
     <mut xs:(<Expr> ",")*> <x:Expr> => { xs.push(x); xs },
 };
@@ -215,17 +224,17 @@ NamedInputs: Vec<SyntaxNode> = {
     <mut xs:(<NamedInput> ",")*> <x:NamedInput> => { xs.push(x); xs },
 };
 NamedInput: SyntaxNode = {
-    <s:@L> <name:Id> <op:AssignOp> <expr:Expr> <e:@R>
-        => labelled(SyntaxKind::Assignment, source, s, e, name,
-            vec![labelled(SyntaxKind::Name, source, s, e, op, vec![]), expr]),
+    <s:@L> <name:Name> <op:AssignOp> <expr:Expr> <e:@R>
+        => labelled(SyntaxKind::Inputs, source, s, e, op, vec![name, expr]),
 };
 AnonymousInputs: Vec<SyntaxNode> = { ExpressionList, NamedInputs };
 
 pub Expr: SyntaxNode = { Expression14, Expression13, Expression12 };
 Expression14: SyntaxNode = {
-    <s:@L> "parallel" <expr:Expression1> <e:@R>
+    <s:@L> "parallel" <expr:ParallelOperand> <e:@R>
         => node(SyntaxKind::Parallel, source, s, e, vec![expr]),
 };
+ParallelOperand: SyntaxNode = { Expression13, Expression12 };
 Expression13: SyntaxNode = {
     <s:@L> <cond:Expression12> "?" <yes:Expression12> ":" <no:Expression12> <e:@R>
         => node(SyntaxKind::Ternary, source, s, e, vec![cond, yes, no]),
@@ -252,11 +261,14 @@ Expression4 = Infix<MulOp, Expression3>;
 Expression3 = Infix<PowOp, Expression2>;
 Expression2 = Prefix<UnaryOp, Expression1>;
 Expression1: SyntaxNode = {
-    <s:@L> <name:Id> "(" <params:ExpressionList?> ")" "(" <inputs:AnonymousInputs?> ")" <e:@R>
-        => labelled(SyntaxKind::AnonymousCall, source, s, e, name,
-            [params.unwrap_or_default(), inputs.unwrap_or_default()].concat()),
-    <s:@L> <name:Id> "(" <args:ExpressionList?> ")" <e:@R>
-        => labelled(SyntaxKind::Call, source, s, e, name, args.unwrap_or_default()),
+    <s:@L> <name:Name> <ps:@L> "(" <params:ExpressionList?> ")" <pe:@R>
+        <is:@L> "(" <inputs:AnonymousInputs?> ")" <ie:@R> <e:@R>
+        => node(SyntaxKind::AnonymousCall, source, s, e,
+            vec![name, node(SyntaxKind::Parameters, source, ps, pe, params.unwrap_or_default()),
+                 node(SyntaxKind::Inputs, source, is, ie, inputs.unwrap_or_default())]),
+    <s:@L> <name:Name> "(" <args:ExpressionList?> ")" <e:@R>
+        => node(SyntaxKind::Call, source, s, e,
+            [vec![name], args.unwrap_or_default()].concat()),
     <s:@L> "[" <items:ExpressionList> "]" <e:@R>
         => node(SyntaxKind::Array, source, s, e, items),
     <s:@L> "(" <first:Expr> "," <second:Expr> <rest:("," <Expr>)*> ")" <e:@R>
@@ -266,7 +278,7 @@ Expression1: SyntaxNode = {
 };
 Primary: SyntaxNode = {
     Variable,
-    <s:@L> "_" <e:@R> => labelled(SyntaxKind::Name, source, s, e, "_".into(), vec![]),
+    <s:@L> "_" <e:@R> => labelled(SyntaxKind::Identifier, source, s, e, "_".into(), vec![]),
     <s:@L> <value:Num> <e:@R> => labelled(SyntaxKind::Number, source, s, e, value, vec![]),
     <s:@L> "(" <expr:Expr> ")" <e:@R>
         => node(SyntaxKind::Group, source, s, e, vec![expr]),

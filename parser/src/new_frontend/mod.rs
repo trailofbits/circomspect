@@ -3,6 +3,8 @@
 mod ast;
 mod lexer;
 mod loader;
+mod typed;
+mod walk;
 
 lalrpop_mod!(
     #[allow(clippy::all)]
@@ -11,11 +13,20 @@ lalrpop_mod!(
 );
 
 pub use ast::{
-    DiagnosticKind, ParseOutcome, SourceAst, SourceId, Span, SyntaxDiagnostic, SyntaxKind,
-    SyntaxNode, Version, VersionPolicy,
+    DiagnosticKind, DiagnosticLocation, SourceId, Span, SyntaxDiagnostic, Version, VersionPolicy,
 };
-pub use lexer::{tokenize, LexOutcome, Token, TokenKind};
+pub use lexer::{tokenize, LexOutcome, Token, TokenKind, Trivia, TriviaKind};
 pub use loader::{load_sources, LoadedProject, SourceFile};
+pub use typed::{
+    Access, AnonymousCallExpr, AnonymousInput, ArgumentList, AssignmentOperator, BinaryOperator,
+    Block, Declaration, DeclarationKind, DeclaredSymbol, Definition, DefinitionKind,
+    DirectionSyntax, Expression, Identifier, InputAssignmentOperator, Item, LogArgument,
+    ParseOutcome, PendingFeatureCheck, PendingFeatureKind, PortDirection, PostfixOperator, Pragma,
+    SourceAst, SpannedDirection, Statement, UnaryOperator,
+};
+pub use walk::{SyntaxCategory, WalkSyntax};
+
+use ast::{SyntaxKind, SyntaxNode};
 
 use lalrpop_util::ParseError;
 
@@ -119,7 +130,13 @@ fn parse_error_location(
 }
 
 fn parse_segment(source: SourceId, segment: &[Token]) -> Result<SyntaxNode, SyntaxDiagnostic> {
-    let Some(first) = segment.first() else { unreachable!("caller supplies nonempty segment") };
+    let Some(first) = segment.first() else {
+        return Err(SyntaxDiagnostic::new(
+            DiagnosticKind::Syntax,
+            Span::from_lexer(source, 0, 0),
+            "empty syntax segment",
+        ));
+    };
     let end = segment.last().map_or(first.span.end(), |token| token.span.end());
     let tokens =
         segment.iter().map(|token| Ok((token.span.start(), token.kind.clone(), token.span.end())));
@@ -148,14 +165,94 @@ fn declared_version(item: &SyntaxNode) -> Option<Version> {
     Some(Version::new(major, minor, patch))
 }
 
+fn minimum_version(node: &SyntaxNode) -> Option<Version> {
+    let release = match node.kind {
+        SyntaxKind::Pragma if node.text.is_none() => (2, 0, 6),
+        SyntaxKind::Modifier if node.text.as_deref() == Some("custom") => (2, 0, 6),
+        SyntaxKind::Log => (2, 0, 7),
+        SyntaxKind::Parallel => (2, 0, 8),
+        SyntaxKind::Tags
+        | SyntaxKind::Tuple
+        | SyntaxKind::TupleDeclaration
+        | SyntaxKind::AnonymousCall
+        | SyntaxKind::Array => (2, 1, 0),
+        SyntaxKind::Identifier if node.text.as_deref() == Some("_") => (2, 1, 0),
+        SyntaxKind::Inputs if node.text.is_some() => (2, 1, 1),
+        SyntaxKind::Bus
+        | SyntaxKind::BusHeader
+        | SyntaxKind::DirectionFirstBusHeader
+        | SyntaxKind::DirectionFirstSignalHeader => (2, 2, 0),
+        SyntaxKind::Modifier if node.text.as_deref() == Some("extern_c") => (2, 2, 3),
+        _ => return None,
+    };
+    Some(Version::new(release.0, release.1, release.2))
+}
+
+fn contains_anonymous_call(node: &SyntaxNode) -> bool {
+    node.kind == SyntaxKind::AnonymousCall || node.children.iter().any(contains_anonymous_call)
+}
+
+fn may_contain_bus(node: &SyntaxNode) -> bool {
+    if node.kind == SyntaxKind::Name
+        || node.kind == SyntaxKind::Call
+        || node.kind == SyntaxKind::Group
+        || node.kind == SyntaxKind::Array
+        || node.kind == SyntaxKind::Tuple
+        || node.kind == SyntaxKind::Ternary
+    {
+        return true;
+    }
+    node.children.iter().any(may_contain_bus)
+}
+
+fn validate_feature_node(
+    node: &SyntaxNode,
+    target: Version,
+    declared: Option<Version>,
+    diagnostics: &mut Vec<SyntaxDiagnostic>,
+    pending: &mut Vec<PendingFeatureCheck>,
+) {
+    let anonymous_array =
+        node.kind == SyntaxKind::Array && node.children.iter().any(contains_anonymous_call);
+    let minimum = if anonymous_array { Some(Version::new(2, 2, 3)) } else { minimum_version(node) };
+    if let Some(minimum) = minimum {
+        let custom_pragma_too_old = node.kind == SyntaxKind::Modifier
+            && node.text.as_deref() == Some("custom")
+            && declared.is_some_and(|version| version < minimum);
+        if target < minimum || custom_pragma_too_old {
+            diagnostics.push(SyntaxDiagnostic::new(
+                DiagnosticKind::FeatureVersion,
+                node.span,
+                format!(
+                    "feature requires Circom {}.{}.{}",
+                    minimum.major, minimum.minor, minimum.patch
+                ),
+            ));
+        }
+    }
+    if node.kind == SyntaxKind::Array
+        && target < Version::new(2, 2, 3)
+        && !anonymous_array
+        && node.children.iter().any(may_contain_bus)
+    {
+        pending.push(PendingFeatureCheck {
+            kind: PendingFeatureKind::InlineArrayElementType,
+            span: node.span,
+            required_version: Version::new(2, 2, 3),
+        });
+    }
+    for child in &node.children {
+        validate_feature_node(child, target, declared, diagnostics, pending);
+    }
+}
+
 fn validate_version(
-    ast: &SourceAst,
-    tokens: &[Token],
+    items: &[SyntaxNode],
     policy: VersionPolicy,
     diagnostics: &mut Vec<SyntaxDiagnostic>,
-) {
-    let declared = ast.items.iter().find_map(declared_version);
-    for item in &ast.items {
+) -> Vec<PendingFeatureCheck> {
+    let declared = items.iter().find_map(declared_version);
+    for item in items {
         if item.kind == SyntaxKind::Pragma
             && item.text.is_some()
             && declared_version(item).is_none()
@@ -169,34 +266,20 @@ fn validate_version(
     }
     if let Some(version) = declared {
         if version > policy.supported {
-            if let Some(pragma) = ast.items.iter().find(|item| declared_version(item).is_some()) {
+            if let Some(pragma) = items.iter().find(|item| declared_version(item).is_some()) {
                 diagnostics.push(SyntaxDiagnostic::new(
                     DiagnosticKind::UnsupportedVersion,
                     pragma.span,
-                    "source requests a newer Circom release than this frontend supports",
+                    "source requires a newer compiler than the selected target",
                 ));
             }
         }
     }
-    let effective = declared.unwrap_or(policy.supported);
-    for token in tokens {
-        let minimum = match token.kind {
-            TokenKind::Bus | TokenKind::ExternC => Some(Version::new(2, 2, 0)),
-            _ => None,
-        };
-        if let Some(minimum) = minimum {
-            if effective < minimum || policy.supported < minimum {
-                diagnostics.push(SyntaxDiagnostic::new(
-                    DiagnosticKind::FeatureVersion,
-                    token.span,
-                    format!(
-                        "feature requires Circom {}.{}.{}",
-                        minimum.major, minimum.minor, minimum.patch
-                    ),
-                ));
-            }
-        }
+    let mut pending = Vec::new();
+    for item in items {
+        validate_feature_node(item, policy.supported, declared, diagnostics, &mut pending);
     }
+    pending
 }
 
 fn validate_node(node: &SyntaxNode, diagnostics: &mut Vec<SyntaxDiagnostic>) {
@@ -247,6 +330,9 @@ pub fn parse_source(source: SourceId, text: &str, policy: VersionPolicy) -> Pars
     while cursor < lexed.tokens.len() {
         let end = segment_end(&lexed.tokens, cursor);
         let segment = &lexed.tokens[cursor..end];
+        let (Some(first), Some(last)) = (segment.first(), segment.last()) else {
+            break;
+        };
         match parse_segment(source, segment) {
             Ok(item) => items.push(item),
             Err(diagnostic) => {
@@ -254,16 +340,27 @@ pub fn parse_source(source: SourceId, text: &str, policy: VersionPolicy) -> Pars
                 items.push(node(
                     SyntaxKind::Error,
                     source,
-                    segment[0].span.start(),
-                    segment[segment.len() - 1].span.end(),
+                    first.span.start(),
+                    last.span.end(),
                     vec![],
                 ));
             }
         }
         cursor = end;
     }
-    let ast = SourceAst { source, items };
-    validate_version(&ast, &lexed.tokens, policy, &mut lexed.diagnostics);
-    validate_item_order(&ast.items, &mut lexed.diagnostics);
-    ParseOutcome { ast, diagnostics: lexed.diagnostics }
+    let pending_feature_checks = validate_version(&items, policy, &mut lexed.diagnostics);
+    validate_item_order(&items, &mut lexed.diagnostics);
+    let mut typed_items = Vec::new();
+    for item in items {
+        let span = item.span;
+        match typed::item(item) {
+            Ok(item) => typed_items.push(item),
+            Err(diagnostic) => {
+                lexed.diagnostics.push(diagnostic);
+                typed_items.push(Item::Error { span });
+            }
+        }
+    }
+    let ast = SourceAst { source, items: typed_items, trivia: lexed.trivia };
+    ParseOutcome { ast, diagnostics: lexed.diagnostics, pending_feature_checks }
 }

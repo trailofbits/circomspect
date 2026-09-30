@@ -2,9 +2,8 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use super::ast::{
-    DiagnosticKind, ParseOutcome, SourceId, Span, SyntaxDiagnostic, SyntaxKind, VersionPolicy,
-};
+use super::ast::{DiagnosticKind, SourceId, Span, SyntaxDiagnostic, VersionPolicy};
+use super::typed::{Item, ParseOutcome};
 use super::parse_source;
 
 #[derive(Clone, Debug)]
@@ -30,6 +29,19 @@ struct Loader<'a> {
 }
 
 impl Loader<'_> {
+    fn path_diagnostic(
+        kind: DiagnosticKind,
+        path: &Path,
+        origin: Option<Span>,
+        message: String,
+    ) -> SyntaxDiagnostic {
+        if let Some(span) = origin {
+            SyntaxDiagnostic::new(kind, span, message)
+        } else {
+            SyntaxDiagnostic::at_path(kind, path.to_path_buf(), message)
+        }
+    }
+
     fn resolve_include(&self, path: &Path, name: &str) -> Option<PathBuf> {
         let local = path.parent().unwrap_or_else(|| Path::new(".")).join(name);
         if local.is_file() {
@@ -48,18 +60,20 @@ impl Loader<'_> {
         let canonical = match fs::canonicalize(path) {
             Ok(path) => path,
             Err(error) => {
-                self.project.diagnostics.push(SyntaxDiagnostic::new(
+                self.project.diagnostics.push(Self::path_diagnostic(
                     DiagnosticKind::FileRead,
-                    origin.unwrap_or_else(|| Span::from_lexer(SourceId::new(0), 0, 0)),
+                    path,
+                    origin,
                     format!("cannot read {}: {error}", path.display()),
                 ));
                 return;
             }
         };
         if self.active.contains(&canonical) {
-            self.project.diagnostics.push(SyntaxDiagnostic::new(
+            self.project.diagnostics.push(Self::path_diagnostic(
                 DiagnosticKind::CyclicInclude,
-                origin.unwrap_or_else(|| Span::from_lexer(SourceId::new(0), 0, 0)),
+                &canonical,
+                origin,
                 format!("cyclic include of {}", canonical.display()),
             ));
             return;
@@ -70,9 +84,10 @@ impl Loader<'_> {
         let text = match fs::read_to_string(&canonical) {
             Ok(text) => text,
             Err(error) => {
-                self.project.diagnostics.push(SyntaxDiagnostic::new(
+                self.project.diagnostics.push(Self::path_diagnostic(
                     DiagnosticKind::FileRead,
-                    origin.unwrap_or_else(|| Span::from_lexer(SourceId::new(0), 0, 0)),
+                    &canonical,
+                    origin,
                     format!("cannot read {}: {error}", canonical.display()),
                 ));
                 return;
@@ -86,8 +101,8 @@ impl Loader<'_> {
             .items
             .iter()
             .filter_map(|item| {
-                if item.kind == SyntaxKind::Include {
-                    item.text.as_deref().map(|text| (text.to_owned(), item.span))
+                if let Item::Include { path, span } = item {
+                    Some((path.clone(), *span))
                 } else {
                     None
                 }

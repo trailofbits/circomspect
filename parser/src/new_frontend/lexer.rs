@@ -95,6 +95,19 @@ pub struct Token {
 pub struct LexOutcome {
     pub tokens: Vec<Token>,
     pub diagnostics: Vec<SyntaxDiagnostic>,
+    pub trivia: Vec<Trivia>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TriviaKind {
+    LineComment,
+    BlockComment,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Trivia {
+    pub kind: TriviaKind,
+    pub span: Span,
 }
 
 fn keyword(word: &str) -> Option<TokenKind> {
@@ -317,6 +330,7 @@ pub fn tokenize(source: SourceId, text: &str) -> LexOutcome {
     let mut index = 0;
     let mut tokens = Vec::new();
     let mut diagnostics = Vec::new();
+    let mut trivia = Vec::new();
     while index < text.len() {
         let rest = &text[index..];
         if let Some(character) = rest.chars().next().filter(|character| character.is_whitespace()) {
@@ -324,12 +338,22 @@ pub fn tokenize(source: SourceId, text: &str) -> LexOutcome {
             continue;
         }
         if rest.starts_with("//") {
+            let start = index;
             index += rest.find('\n').unwrap_or(rest.len());
+            trivia.push(Trivia {
+                kind: TriviaKind::LineComment,
+                span: Span::from_lexer(source, start, index),
+            });
             continue;
         }
         if rest.starts_with("/*") {
             if let Some(end) = rest.find("*/") {
+                let start = index;
                 index += end + 2;
+                trivia.push(Trivia {
+                    kind: TriviaKind::BlockComment,
+                    span: Span::from_lexer(source, start, index),
+                });
             } else {
                 diagnostics.push(SyntaxDiagnostic::new(
                     DiagnosticKind::UnterminatedComment,
@@ -352,5 +376,5 @@ pub fn tokenize(source: SourceId, text: &str) -> LexOutcome {
             .push(Token { kind: scanned.kind, span: Span::from_lexer(source, index, scanned.end) });
         index = scanned.end;
     }
-    LexOutcome { tokens, diagnostics }
+    LexOutcome { tokens, diagnostics, trivia }
 }

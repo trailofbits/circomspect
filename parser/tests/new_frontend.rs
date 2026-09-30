@@ -1,21 +1,41 @@
-use circomspect_parser::new_frontend::{parse_source, SourceId, SyntaxKind, Version, VersionPolicy};
-use circomspect_parser::new_frontend::{load_sources, DiagnosticKind, SyntaxNode};
+use circomspect_parser::new_frontend::{
+    load_sources, parse_source, DefinitionKind, DiagnosticKind, DiagnosticLocation, Expression,
+    Item, SourceId, Statement, SyntaxCategory, Version, VersionPolicy, WalkSyntax,
+};
 use std::fs;
-use std::path::PathBuf;
 
 fn parse(source: &str) -> circomspect_parser::new_frontend::ParseOutcome {
     parse_source(SourceId::new(0), source, VersionPolicy::new(Version::new(2, 2, 3)))
 }
 
-fn assert_node_spans(node: &SyntaxNode, source: &str) {
-    assert!(source.is_char_boundary(node.span.start()));
-    assert!(source.is_char_boundary(node.span.end()));
-    assert!(node.span.start() <= node.span.end());
-    assert!(node.span.end() <= source.len());
-    for child in &node.children {
-        assert_node_spans(child, source);
-        assert!(child.span.start() >= node.span.start());
-        assert!(child.span.end() <= node.span.end());
+fn has_definition(outcome: &circomspect_parser::new_frontend::ParseOutcome, name: &str) -> bool {
+    outcome.ast.items.iter().any(|item| {
+        if let Item::Definition(definition) = item {
+            definition.name.name == name
+        } else {
+            false
+        }
+    })
+}
+
+fn assert_spans(source: &str, outcome: &circomspect_parser::new_frontend::ParseOutcome) {
+    outcome.ast.walk_syntax(None, &mut |_, span, parent| {
+        assert!(source.is_char_boundary(span.start()));
+        assert!(source.is_char_boundary(span.end()));
+        assert!(span.start() <= span.end());
+        assert!(span.end() <= source.len());
+        if let Some(parent) = parent {
+            assert!(span.start() >= parent.start());
+            assert!(span.end() <= parent.end());
+            assert_eq!(span.source(), parent.source());
+        }
+    });
+    for diagnostic in &outcome.diagnostics {
+        if let Some(span) = diagnostic.span() {
+            assert!(source.is_char_boundary(span.start()));
+            assert!(source.is_char_boundary(span.end()));
+            assert!(span.end() <= source.len());
+        }
     }
 }
 
@@ -26,11 +46,25 @@ fn parses_library_without_main_and_preserves_definition_spans() {
     let outcome = parse(source);
     assert!(outcome.diagnostics.is_empty(), "{:?}", outcome.diagnostics);
     assert_eq!(outcome.ast.items.len(), 3);
-    assert_eq!(outcome.ast.items[1].kind, SyntaxKind::Function);
-    assert_eq!(outcome.ast.items[2].kind, SyntaxKind::Template);
-    for item in &outcome.ast.items {
-        assert_node_spans(item, source);
-    }
+    assert!(has_definition(&outcome, "f"));
+    assert!(has_definition(&outcome, "T"));
+    assert_spans(source, &outcome);
+}
+
+#[test]
+fn malformed_definition_does_not_hide_later_library_definition() {
+    let source = "function Bad( { return 0; } function Good() { return 1; }";
+    let outcome = parse(source);
+    assert!(!outcome.diagnostics.is_empty());
+    assert!(has_definition(&outcome, "Good"));
+    let errors = outcome.ast.items.iter().filter_map(|item| {
+        let Item::Error { span } = item else {
+            return None;
+        };
+        Some(span)
+    });
+    assert!(errors.count() > 0);
+    assert_spans(source, &outcome);
 }
 
 #[test]
@@ -38,11 +72,8 @@ fn recovers_at_unambiguous_definition_boundary_without_closing_brace() {
     let source = "function Bad() { var x = ;\nfunction Good() { return 1; }";
     let outcome = parse(source);
     assert!(!outcome.diagnostics.is_empty());
-    assert!(outcome
-        .ast
-        .items
-        .iter()
-        .any(|item| item.kind == SyntaxKind::Function && item.text.as_deref() == Some("Good")));
+    assert!(has_definition(&outcome, "Good"));
+    assert_spans(source, &outcome);
 }
 
 #[test]
@@ -63,6 +94,11 @@ fn rejects_illegal_top_level_order_and_expression_statements() {
 fn version_policy_is_distinct_from_source_pragma() {
     let source = "pragma circom 2.1.0; bus B() { signal x; }";
     let outcome = parse(source);
+    assert!(outcome.diagnostics.is_empty(), "{:?}", outcome.diagnostics);
+    let outcome = parse_source(SourceId::new(0), source, VersionPolicy::new(Version::new(2, 1, 0)));
+    assert!(outcome.diagnostics.iter().any(|d| d.kind == DiagnosticKind::FeatureVersion));
+    let source = "pragma circom 2.2.0; template extern_c T() {}";
+    let outcome = parse_source(SourceId::new(0), source, VersionPolicy::new(Version::new(2, 2, 0)));
     assert!(outcome.diagnostics.iter().any(|d| d.kind == DiagnosticKind::FeatureVersion));
     let outcome = parse_source(
         SourceId::new(0),
@@ -75,108 +111,48 @@ fn version_policy_is_distinct_from_source_pragma() {
 }
 
 #[test]
-fn random_and_invalid_utf8_sequences_have_valid_utf8_spans() {
-    let alphabet = [b'a', b'0', b'{', b'}', b'"', b'/', b'\n', 0xff];
-    let mut state = 0x1234_5678_u64;
-    for _ in 0..2000 {
-        let mut bytes = Vec::new();
-        for _ in 0..30 {
-            state ^= state << 13;
-            state ^= state >> 7;
-            state ^= state << 17;
-            bytes.push(alphabet[(state as usize) % alphabet.len()]);
-        }
-        let source = String::from_utf8_lossy(&bytes);
-        let outcome = parse(&source);
-        for item in &outcome.ast.items {
-            assert_node_spans(item, &source);
-        }
-        for diagnostic in &outcome.diagnostics {
-            assert!(source.is_char_boundary(diagnostic.span.start()));
-            assert!(source.is_char_boundary(diagnostic.span.end()));
-            assert!(diagnostic.span.end() <= source.len());
-        }
-    }
+fn inline_array_bus_types_remain_pending_without_name_resolution() {
+    let source = include_str!("../../tests/conformance/cases/inline_array_buses_valid.circom")
+        .replacen("pragma circom 2.2.3", "pragma circom 2.2.2", 1);
+    let outcome =
+        parse_source(SourceId::new(0), &source, VersionPolicy::new(Version::new(2, 2, 2)));
+    assert!(
+        outcome
+            .diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.kind != DiagnosticKind::FeatureVersion),
+        "{:?}",
+        outcome.diagnostics
+    );
+    assert!(outcome.pending_feature_checks.iter().any(|check| {
+        &source[check.span.start()..check.span.end()] == "[a[2], a[0], a[1]]"
+            && check.required_version == Version::new(2, 2, 3)
+    }));
+    assert_spans(&source, &outcome);
 }
 
 #[test]
-fn include_loader_keeps_definitions_after_missing_and_cyclic_includes() {
-    let directory = std::env::temp_dir().join(format!(
-        "circomspect-frontend-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("clock available")
-            .as_nanos(),
-    ));
-    fs::create_dir(&directory).expect("create test directory");
-    let first = directory.join("a.circom");
-    let second = directory.join("b.circom");
-    fs::write(&first, "include \"b.circom\"; include \"gone.circom\"; function A() { return 1; }")
-        .expect("write first source");
-    fs::write(&second, "include \"a.circom\"; function B() { return 2; }")
-        .expect("write second source");
-    let project =
-        load_sources(&[PathBuf::from(&first)], &[], VersionPolicy::new(Version::new(2, 2, 3)));
-    assert_eq!(project.files.len(), 2);
-    assert!(project.diagnostics.iter().any(|d| d.kind == DiagnosticKind::MissingInclude));
-    assert!(project.diagnostics.iter().any(|d| d.kind == DiagnosticKind::CyclicInclude));
-    assert!(project.files.iter().any(|file| file
-        .outcome
-        .ast
-        .items
-        .iter()
-        .any(|item| item.text.as_deref() == Some("A"))));
-    assert!(project.files.iter().any(|file| file
-        .outcome
-        .ast
-        .items
-        .iter()
-        .any(|item| item.text.as_deref() == Some("B"))));
-    fs::remove_dir_all(directory).expect("remove test directory");
-}
-
-#[test]
-fn malformed_utf8_file_has_explicit_read_diagnostic() {
-    let directory = std::env::temp_dir().join(format!("circomspect-utf8-{}", std::process::id(),));
-    fs::create_dir_all(&directory).expect("create test directory");
-    let path = directory.join("invalid.circom");
-    fs::write(&path, [0xff_u8, 0xfe_u8]).expect("write invalid UTF-8");
-    let project = load_sources(&[path], &[], VersionPolicy::new(Version::new(2, 2, 3)));
-    assert!(project.files.is_empty());
-    assert!(project.diagnostics.iter().any(|d| d.kind == DiagnosticKind::FileRead));
-    fs::remove_dir_all(directory).expect("remove test directory");
-}
-
-#[test]
-fn malformed_definition_does_not_hide_later_library_definition() {
-    let outcome = parse("function Bad( { return 0; } function Good() { return 1; }");
-    assert!(!outcome.diagnostics.is_empty());
-    assert!(outcome
-        .ast
-        .items
-        .iter()
-        .any(|item| item.kind == SyntaxKind::Function && item.text.as_deref() == Some("Good")));
-    assert!(outcome.ast.items.iter().any(|item| item.kind == SyntaxKind::Error));
-}
-
-#[test]
-fn arbitrary_unicode_and_malformed_strings_never_panic_or_make_invalid_spans() {
-    let examples =
-        ["🦀", "\"unterminated", "/* unterminated", "\u{0000}", "α{β}", "0x", "a//🦀\n;", "\"🦀\""];
-    for source in examples {
-        let outcome = parse(source);
-        for diagnostic in &outcome.diagnostics {
-            assert!(source.is_char_boundary(diagnostic.span.start()));
-            assert!(source.is_char_boundary(diagnostic.span.end()));
-            assert!(diagnostic.span.end() <= source.len());
-        }
-        for item in &outcome.ast.items {
-            assert!(source.is_char_boundary(item.span.start()));
-            assert!(source.is_char_boundary(item.span.end()));
-            assert!(item.span.end() <= source.len());
-        }
-    }
+fn parallel_operand_preserves_binary_expression() {
+    let source = "template T() { component c = parallel U(1) + V(2); }";
+    let outcome = parse(source);
+    assert!(outcome.diagnostics.is_empty(), "{:?}", outcome.diagnostics);
+    let Item::Definition(definition) = &outcome.ast.items[0] else {
+        panic!("definition");
+    };
+    let Statement::Declaration(declaration) = &definition.body.statements[0] else {
+        panic!("declaration");
+    };
+    let Some((_, Expression::Parallel { operand, .. })) = &declaration.symbols[0].initialization
+    else {
+        panic!("parallel initializer");
+    };
+    let Expression::Binary { operator, left, right, span } = operand.as_ref() else {
+        panic!("binary parallel operand");
+    };
+    assert!(left.span().start() < right.span().start());
+    assert!(span.start() < span.end());
+    assert_eq!(*operator, circomspect_parser::new_frontend::BinaryOperator::Add);
+    assert_spans(source, &outcome);
 }
 
 #[test]
@@ -199,5 +175,117 @@ fn parses_expression_operators_and_extended_declarations() {
     for case in cases {
         let outcome = parse(case);
         assert!(outcome.diagnostics.is_empty(), "{case}: {:?}", outcome.diagnostics);
+        assert_spans(case, &outcome);
     }
+}
+
+#[test]
+fn source_ast_has_no_untyped_nodes_for_valid_examples() {
+    let source = "function F() { return 1; } template T() { signal input x; }";
+    let outcome = parse(source);
+    assert!(outcome.diagnostics.is_empty());
+    let mut categories = Vec::new();
+    outcome.ast.walk_syntax(None, &mut |category, _, _| categories.push(category));
+    assert!(categories.contains(&SyntaxCategory::Definition));
+    assert!(categories.contains(&SyntaxCategory::Statement));
+    assert!(categories.contains(&SyntaxCategory::Declaration));
+    assert!(categories.contains(&SyntaxCategory::Expression));
+    assert!(categories.contains(&SyntaxCategory::Identifier));
+}
+
+#[test]
+fn include_loader_keeps_definitions_after_missing_and_cyclic_includes() {
+    let directory = std::env::temp_dir().join(format!(
+        "circomspect-frontend-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock available")
+            .as_nanos(),
+    ));
+    fs::create_dir(&directory).expect("create test directory");
+    let first = directory.join("a.circom");
+    let second = directory.join("b.circom");
+    fs::write(&first, "include \"b.circom\"; include \"gone.circom\"; function A() { return 1; }")
+        .expect("write first source");
+    fs::write(&second, "include \"a.circom\"; function B() { return 2; }")
+        .expect("write second source");
+    let project = load_sources(&[first], &[], VersionPolicy::new(Version::new(2, 2, 3)));
+    assert_eq!(project.files.len(), 2);
+    assert!(project.diagnostics.iter().any(|d| d.kind == DiagnosticKind::MissingInclude));
+    assert!(project.diagnostics.iter().any(|d| d.kind == DiagnosticKind::CyclicInclude));
+    assert!(project.files.iter().any(|file| has_definition(&file.outcome, "A")));
+    assert!(project.files.iter().any(|file| has_definition(&file.outcome, "B")));
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn malformed_utf8_file_has_path_located_read_diagnostic() {
+    let directory = std::env::temp_dir().join(format!("circomspect-utf8-{}", std::process::id()));
+    fs::create_dir_all(&directory).expect("create test directory");
+    let path = directory.join("invalid.circom");
+    fs::write(&path, [0xff_u8, 0xfe_u8]).expect("write invalid UTF-8");
+    let canonical = fs::canonicalize(&path).expect("canonical source path");
+    let project =
+        load_sources(std::slice::from_ref(&path), &[], VersionPolicy::new(Version::new(2, 2, 3)));
+    assert!(project.files.is_empty());
+    assert!(project.diagnostics.iter().any(|d| d.kind == DiagnosticKind::FileRead
+        && if let DiagnosticLocation::Path(location) = &d.location {
+            location == &canonical
+        } else {
+            false
+        }));
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn arbitrary_unicode_and_malformed_strings_never_panic_or_make_invalid_spans() {
+    let examples = [
+        "🦀",
+        "\"unterminated",
+        "/* unterminated",
+        "\u{0000}",
+        "α{β}",
+        "0x",
+        "a//🦀\n;",
+        "\"🦀\"",
+        "_0x",
+    ];
+    for source in examples {
+        let outcome = parse(source);
+        assert_spans(source, &outcome);
+    }
+}
+
+#[test]
+fn typed_ast_distinguishes_definition_and_direction_kinds() {
+    let outcome = parse("template T() { output signal x; signal input y; }");
+    assert!(outcome.diagnostics.is_empty());
+    let Item::Definition(definition) = &outcome.ast.items[0] else {
+        panic!("definition");
+    };
+    let DefinitionKind::Template { custom, external, parallel } = definition.kind else {
+        panic!("template kind");
+    };
+    assert!(!custom && !external && !parallel);
+    let Statement::Declaration(first) = &definition.body.statements[0] else {
+        panic!("first declaration");
+    };
+    let Statement::Declaration(second) = &definition.body.statements[1] else {
+        panic!("second declaration");
+    };
+    use circomspect_parser::new_frontend::{DeclarationKind, DirectionSyntax};
+    let DeclarationKind::Signal { direction: DirectionSyntax::Before(before), tags: first_tags } =
+        &first.kind
+    else {
+        panic!("direction-first signal");
+    };
+    let DeclarationKind::Signal { direction: DirectionSyntax::After(after), tags: second_tags } =
+        &second.kind
+    else {
+        panic!("direction-after signal");
+    };
+    assert!(first_tags.is_empty() && second_tags.is_empty());
+    assert_eq!(before.span.start(), 15);
+    assert_eq!(after.span.start(), 39);
 }

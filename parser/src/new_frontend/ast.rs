@@ -1,4 +1,5 @@
 use std::ops::Range;
+use std::path::PathBuf;
 
 /// Identifies one source file within a parsed project.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -59,8 +60,20 @@ pub enum SyntaxKind {
     Template,
     Bus,
     Main,
+    Parameters,
+    Arguments,
+    Inputs,
+    PublicList,
     Block,
     Declaration,
+    TupleDeclaration,
+    SignalHeader,
+    BusHeader,
+    DirectionFirstSignalHeader,
+    DirectionFirstBusHeader,
+    Direction,
+    Tags,
+    Modifier,
     Assignment,
     Constraint,
     Conditional,
@@ -70,6 +83,7 @@ pub enum SyntaxKind {
     Log,
     ExpressionStatement,
     Name,
+    Identifier,
     Number,
     String,
     Call,
@@ -105,12 +119,6 @@ impl SyntaxNode {
     ) -> Self {
         Self { kind, span: Span::from_lexer(source, start, end), text, children }
     }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SourceAst {
-    pub source: SourceId,
-    pub items: Vec<SyntaxNode>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -156,18 +164,31 @@ pub enum DiagnosticKind {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SyntaxDiagnostic {
     pub kind: DiagnosticKind,
-    pub span: Span,
+    pub location: DiagnosticLocation,
     pub message: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DiagnosticLocation {
+    Source(Span),
+    Path(PathBuf),
 }
 
 impl SyntaxDiagnostic {
     pub(crate) fn new(kind: DiagnosticKind, span: Span, message: impl Into<String>) -> Self {
-        Self { kind, span, message: message.into() }
+        Self { kind, location: DiagnosticLocation::Source(span), message: message.into() }
     }
-}
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ParseOutcome {
-    pub ast: SourceAst,
-    pub diagnostics: Vec<SyntaxDiagnostic>,
+    pub(crate) fn at_path(kind: DiagnosticKind, path: PathBuf, message: impl Into<String>) -> Self {
+        Self { kind, location: DiagnosticLocation::Path(path), message: message.into() }
+    }
+
+    #[must_use]
+    pub fn span(&self) -> Option<Span> {
+        if let DiagnosticLocation::Source(span) = &self.location {
+            Some(*span)
+        } else {
+            None
+        }
+    }
 }
