@@ -1,6 +1,7 @@
 //! Directional fixed-point solver with explicit incomplete results.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::ops::Deref;
 
 use crate::graph::{FlowGraph, GraphError};
 use crate::lattice::Lattice;
@@ -38,7 +39,38 @@ impl<S> Default for NodeFacts<S> {
     }
 }
 
-pub type CompleteFacts<N, S> = BTreeMap<N, NodeFacts<S>>;
+type FactMap<N, S> = BTreeMap<N, NodeFacts<S>>;
+
+/// Facts from a completed fixed point. Only the solver can construct this token.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CertifiedFacts<N, S>(FactMap<N, S>);
+
+impl<N, S> Deref for CertifiedFacts<N, S> {
+    type Target = FactMap<N, S>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+/// Read-only facts whose dependency closure may still contain blockers.
+///
+/// ```compile_fail
+/// use circomspect_abstract_interpretation::solver::{CertifiedFacts, ProvisionalFacts};
+/// fn issue_warning(_: &CertifiedFacts<u8, u8>) {}
+/// fn reject(provisional: &ProvisionalFacts<u8, u8>) { issue_warning(provisional); }
+/// fn main() {}
+/// ```
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProvisionalFacts<N, S>(FactMap<N, S>);
+
+impl<N, S> Deref for ProvisionalFacts<N, S> {
+    type Target = FactMap<N, S>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 /// A dependency that prevents certification of the whole result.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -51,8 +83,8 @@ pub enum Blocker<N, E, R> {
 /// Only `Complete` can be consumed as certified facts by a warning rule.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SolveResult<N, E, S, R> {
-    Complete(CompleteFacts<N, S>),
-    Incomplete { provisional_facts: CompleteFacts<N, S>, blockers: BTreeSet<Blocker<N, E, R>> },
+    Complete(CertifiedFacts<N, S>),
+    Incomplete { provisional_facts: ProvisionalFacts<N, S>, blockers: BTreeSet<Blocker<N, E, R>> },
 }
 
 pub type SolveOutcome<G, A> = Result<
@@ -177,7 +209,7 @@ impl<N: Copy + Ord, E: Copy + Ord> ValidatedGraph<N, E> {
 }
 
 struct Working<N: Copy + Ord, E: Copy + Ord, S: Lattice, R: Clone + Ord> {
-    facts: CompleteFacts<N, S>,
+    facts: FactMap<N, S>,
     edge_facts: BTreeMap<E, Option<S>>,
     queue: BTreeSet<N>,
     blockers: BTreeSet<Blocker<N, E, R>>,
@@ -191,14 +223,20 @@ impl<N: Copy + Ord, E: Copy + Ord, S: Lattice, R: Clone + Ord> Working<N, E, S, 
         for node in self.queue {
             self.blockers.insert(Blocker::PendingNode(node));
         }
-        SolveResult::Incomplete { provisional_facts: self.facts, blockers: self.blockers }
+        SolveResult::Incomplete {
+            provisional_facts: ProvisionalFacts(self.facts),
+            blockers: self.blockers,
+        }
     }
 
     fn finish(self) -> SolveResult<N, E, S, R> {
         if self.blockers.is_empty() {
-            SolveResult::Complete(self.facts)
+            SolveResult::Complete(CertifiedFacts(self.facts))
         } else {
-            SolveResult::Incomplete { provisional_facts: self.facts, blockers: self.blockers }
+            SolveResult::Incomplete {
+                provisional_facts: ProvisionalFacts(self.facts),
+                blockers: self.blockers,
+            }
         }
     }
 }

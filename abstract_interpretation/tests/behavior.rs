@@ -5,7 +5,7 @@ use circomspect_abstract_interpretation::graph::{
 };
 use circomspect_abstract_interpretation::lattice::{Lattice, Set};
 use circomspect_abstract_interpretation::solver::{
-    solve, Backward, Blocker, CompleteFacts, DataflowAnalysis, Forward, SolveResult, Transfer,
+    solve, Backward, Blocker, CertifiedFacts, DataflowAnalysis, Forward, SolveResult, Transfer,
     TransferOutcome,
 };
 
@@ -43,7 +43,7 @@ impl Transfer<Analysis, Set<u8>, &'static str> for Operation {
     }
 }
 
-fn values(facts: &CompleteFacts<NodeId, Set<u8>>, node: usize) -> BTreeSet<u8> {
+fn values(facts: &CertifiedFacts<NodeId, Set<u8>>, node: usize) -> BTreeSet<u8> {
     facts[&NodeId::new(node)]
         .output
         .as_ref()
