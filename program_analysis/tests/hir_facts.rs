@@ -1,6 +1,8 @@
 use abstract_interpretation::graph::FlowGraph;
 use circomspect_program_analysis::hir_cfg::{build_cfg, CfgNodeKind};
-use circomspect_program_analysis::hir_facts::{analyze, AnalysisError, FieldContext, Incidence, Range};
+use circomspect_program_analysis::hir_facts::{
+    analyze, AnalysisError, FactBlocker, FieldContext, Incidence, Range,
+};
 use parser::hir::{
     lower_project, AccessPath, ControlGuard, DefinitionRef, Effect, ExprKind, HirProject,
 };
@@ -120,6 +122,35 @@ fn exhausted_budget_never_certifies_a_provisional_zero() {
 }
 
 #[test]
+fn pending_alternative_branch_never_certifies_provisional_must() {
+    let (hir, definition) =
+        fixture("template Check(){signal output x; if(0 << 1){x <== 1;}else{x <-- 1;}}");
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let DefinitionRef::Template(id) = definition else { panic!("template fixture") };
+    let body = hir.block(hir.template(id).unwrap().body).unwrap();
+    let Some(Effect::If { then_block, .. }) =
+        body.effects.iter().find(|effect| matches!(effect, Effect::If { .. }))
+    else {
+        panic!("if effect")
+    };
+    let x = hir
+        .block(*then_block)
+        .unwrap()
+        .effects
+        .iter()
+        .find_map(|effect| {
+            let Effect::ConstraintAssignment { target, .. } = effect else { return None };
+            Some(target.clone())
+        })
+        .unwrap();
+    for budget in 0..=cfg.nodes().len() * 4 {
+        let facts = analyze(&hir, &cfg, &field, Some(budget)).unwrap();
+        assert_ne!(facts.incidence(&x).certified(), Some(&Incidence::Must), "budget {budget}");
+    }
+}
+
+#[test]
 fn branch_must_constraint_needs_proven_compile_time_choice() {
     let (hir, definition) = fixture(
         "template Check(n) { signal output y; if (n) { y <== 7; } else { y <-- 7; } y <-- 1; }",
@@ -157,6 +188,21 @@ fn deferred_control_blocks_branch_constraints_but_not_independent_sibling() {
     let y = assigned_path(&hir, definition, "y");
     assert!(facts.incidence(&x).unavailable().is_some());
     assert_eq!(facts.incidence(&y).certified(), Some(&Incidence::Must));
+}
+
+#[test]
+fn loop_backedge_cannot_hide_deferred_control_dependence() {
+    let (hir, definition) = fixture(
+        "template Check(n){signal output y; for(var i=0;i<17;i++){i=16; if(n){y <== 7;}} \
+         y <-- 1;}",
+    );
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let y = last_assigned_path(&hir, definition, "y");
+    assert!(facts.incidence(&y).unavailable().is_some_and(|blockers| {
+        blockers.iter().any(|blocker| matches!(blocker, FactBlocker::DeferredControl(_)))
+    }));
 }
 
 #[test]
@@ -454,6 +500,23 @@ fn deferred_guard_blocks_only_values_derived_from_its_assignments() {
         .unwrap();
     assert_eq!(facts.range(clean).certified(), Some(&Range::Exact(field.canonical(7.into()))));
     assert!(facts.range(x).unavailable().is_some());
+}
+
+#[test]
+fn deferred_ternary_does_not_certify_even_matching_arm_values() {
+    let (hir, definition) = fixture("function Check(n){return n ? 1 : 1;}");
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let expression = hir
+        .expressions()
+        .iter()
+        .find_map(|expr| match &expr.kind {
+            ExprKind::Ternary { .. } => Some(expr.id),
+            _ => None,
+        })
+        .unwrap();
+    assert!(facts.range(expression).unavailable().is_some());
 }
 
 #[test]

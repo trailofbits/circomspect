@@ -272,8 +272,12 @@ mod tests {
                 Some(expr.id)
             })
             .unwrap();
-        let node =
-            CfgNode { id: NodeId::new(0), kind: CfgNodeKind::Evaluate(expression), origin: None };
+        let node = CfgNode {
+            id: NodeId::new(0),
+            kind: CfgNodeKind::Evaluate(expression),
+            origin: None,
+            deferred_controls: BTreeSet::new(),
+        };
         let analysis = LivenessAnalysis::new(&hir, &field, hir.definition("T").unwrap());
         for left in &states {
             for right in &states {

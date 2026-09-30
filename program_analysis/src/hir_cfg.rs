@@ -1,6 +1,6 @@
 //! Immutable control flow graphs over the checked HIR.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use abstract_interpretation::graph::{EdgeId, EdgeRef, FlowGraph, GraphError, IndexedGraph, NodeId};
 use parser::hir::{
@@ -41,6 +41,7 @@ pub struct CfgNode {
     pub id: NodeId,
     pub kind: CfgNodeKind,
     pub origin: Option<Origin>,
+    pub deferred_controls: BTreeSet<NodeId>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -119,6 +120,7 @@ struct Builder<'a> {
     nodes: Vec<CfgNode>,
     edges: Vec<(NodeId, NodeId, CfgEdge)>,
     conditions: BTreeMap<NodeId, (ExprId, ControlGuard)>,
+    active_deferred: Vec<NodeId>,
     exit: NodeId,
 }
 
@@ -128,7 +130,8 @@ impl Builder<'_> {
         if let CfgNodeKind::Branch { condition, guard } = &kind {
             self.conditions.insert(id, (*condition, *guard));
         }
-        self.nodes.push(CfgNode { id, kind, origin });
+        let deferred_controls = self.active_deferred.iter().copied().collect();
+        self.nodes.push(CfgNode { id, kind, origin, deferred_controls });
         id
     }
 
@@ -155,6 +158,7 @@ impl Builder<'_> {
         origin: Origin,
     ) -> Result<Tails, BuildError> {
         let expr = self.hir.expression(id).ok_or(BuildError::MissingExpression(id))?;
+        let mut value_control = None;
         match &expr.kind {
             ExprKind::Number(_) | ExprKind::Opaque(_) => {}
             ExprKind::Access(path) => {
@@ -206,13 +210,27 @@ impl Builder<'_> {
                     Some(branch_origin),
                 );
                 self.link(tails, branch);
+                if guard == ControlGuard::DeferredScalar {
+                    self.active_deferred.push(branch);
+                }
                 let yes_tail = self.evaluate(vec![(branch, EdgeKind::True)], *yes, origin)?;
                 let no_tail = self.evaluate(vec![(branch, EdgeKind::False)], *no, origin)?;
+                if guard == ControlGuard::DeferredScalar {
+                    self.active_deferred.pop();
+                    value_control = Some(branch);
+                }
                 tails = [yes_tail, no_tail].concat();
             }
         }
         let origin = Origin { expression: Some(id), span: expr.span, ..origin };
-        Ok(self.append(tails, CfgNodeKind::Evaluate(id), origin))
+        if let Some(branch) = value_control {
+            self.active_deferred.push(branch);
+        }
+        let tails = self.append(tails, CfgNodeKind::Evaluate(id), origin);
+        if value_control.is_some() {
+            self.active_deferred.pop();
+        }
+        Ok(tails)
     }
 
     fn block(&mut self, mut tails: Tails, id: BlockId) -> Result<Tails, BuildError> {
@@ -248,48 +266,10 @@ impl Builder<'_> {
                 }
                 Ok(self.append(tails, CfgNodeKind::Declaration, origin))
             }
-            Effect::VariableAssignment { target, value, .. } => {
-                let tails = self.evaluate_target(tails, target, origin)?;
-                let tails = self.evaluate(tails, *value, origin)?;
-                Ok(self.append(
-                    tails,
-                    CfgNodeKind::Assignment { target: target.clone(), value: *value },
-                    origin,
-                ))
-            }
-            Effect::ComponentInstantiation { target, value, .. } => {
-                let tails = self.evaluate_target(tails, target, origin)?;
-                let tails = self.evaluate(tails, *value, origin)?;
-                Ok(self.append(
-                    tails,
-                    CfgNodeKind::Instantiate { target: target.clone(), value: *value },
-                    origin,
-                ))
-            }
-            Effect::WitnessAssignment { target, value, .. }
-            | Effect::ConstraintAssignment { target, value, .. } => {
-                let tails = self.evaluate_target(tails, target, origin)?;
-                let tails = self.evaluate(tails, *value, origin)?;
-                let effect_origin = Origin { expression: Some(*value), ..origin };
-                let tails = self.append(
-                    tails,
-                    CfgNodeKind::Witness { target: target.clone(), value: *value },
-                    effect_origin,
-                );
-                if let Effect::ConstraintAssignment { .. } = effect {
-                    Ok(self.append(
-                        tails,
-                        CfgNodeKind::Constraint {
-                            target: Some(target.clone()),
-                            left: *value,
-                            right: None,
-                        },
-                        effect_origin,
-                    ))
-                } else {
-                    Ok(tails)
-                }
-            }
+            Effect::VariableAssignment { .. }
+            | Effect::ComponentInstantiation { .. }
+            | Effect::WitnessAssignment { .. }
+            | Effect::ConstraintAssignment { .. } => self.assignment_effect(tails, effect, origin),
             Effect::EqualityConstraint { left, right, .. } => {
                 let tails = self.evaluate(tails, *left, origin)?;
                 let tails = self.evaluate(tails, *right, origin)?;
@@ -343,6 +323,58 @@ impl Builder<'_> {
         }
     }
 
+    fn assignment_effect(
+        &mut self,
+        tails: Tails,
+        effect: &Effect,
+        origin: Origin,
+    ) -> Result<Tails, BuildError> {
+        let (target, value) = match effect {
+            Effect::VariableAssignment { target, value, .. }
+            | Effect::ComponentInstantiation { target, value, .. }
+            | Effect::WitnessAssignment { target, value, .. }
+            | Effect::ConstraintAssignment { target, value, .. } => (target, *value),
+            _ => return Err(BuildError::UnexpectedEffect),
+        };
+        let tails = self.evaluate_target(tails, target, origin)?;
+        let tails = self.evaluate(tails, value, origin)?;
+        let effect_origin = Origin { expression: Some(value), ..origin };
+        match effect {
+            Effect::VariableAssignment { .. } => Ok(self.append(
+                tails,
+                CfgNodeKind::Assignment { target: target.clone(), value },
+                effect_origin,
+            )),
+            Effect::ComponentInstantiation { .. } => Ok(self.append(
+                tails,
+                CfgNodeKind::Instantiate { target: target.clone(), value },
+                effect_origin,
+            )),
+            Effect::WitnessAssignment { .. } => Ok(self.append(
+                tails,
+                CfgNodeKind::Witness { target: target.clone(), value },
+                effect_origin,
+            )),
+            Effect::ConstraintAssignment { .. } => {
+                let tails = self.append(
+                    tails,
+                    CfgNodeKind::Witness { target: target.clone(), value },
+                    effect_origin,
+                );
+                Ok(self.append(
+                    tails,
+                    CfgNodeKind::Constraint {
+                        target: Some(target.clone()),
+                        left: value,
+                        right: None,
+                    },
+                    effect_origin,
+                ))
+            }
+            _ => Err(BuildError::UnexpectedEffect),
+        }
+    }
+
     fn if_effect(
         &mut self,
         tails: Tails,
@@ -359,12 +391,18 @@ impl Builder<'_> {
             Some(branch_origin),
         );
         self.link(tails, branch);
+        if *guard == ControlGuard::DeferredScalar {
+            self.active_deferred.push(branch);
+        }
         let then_tails = self.block(vec![(branch, EdgeKind::True)], *then_block)?;
         let else_tails = if let Some(other) = else_block {
             self.block(vec![(branch, EdgeKind::False)], *other)?
         } else {
             vec![(branch, EdgeKind::False)]
         };
+        if *guard == ControlGuard::DeferredScalar {
+            self.active_deferred.pop();
+        }
         Ok([then_tails, else_tails].concat())
     }
 
@@ -405,9 +443,15 @@ impl Builder<'_> {
         let branch_origin = self.expression_origin(condition, origin)?;
         let branch = self.node(CfgNodeKind::Branch { condition, guard }, Some(branch_origin));
         self.link(evaluated, branch);
+        if guard == ControlGuard::DeferredScalar {
+            self.active_deferred.push(branch);
+        }
         let mut body_tails = self.block(vec![(branch, EdgeKind::True)], body)?;
         if let Some(step) = step {
             body_tails = self.block(body_tails, step)?;
+        }
+        if guard == ControlGuard::DeferredScalar {
+            self.active_deferred.pop();
         }
         self.link(body_tails.into_iter().map(|(id, _)| (id, EdgeKind::Loop)).collect(), header);
         Ok(vec![(branch, EdgeKind::False)])
@@ -573,6 +617,7 @@ pub fn build_cfg(hir: &HirProject, definition: DefinitionRef) -> Result<Definiti
         nodes: Vec::new(),
         edges: Vec::new(),
         conditions: BTreeMap::new(),
+        active_deferred: Vec::new(),
         exit: NodeId::new(1),
     };
     let entry = builder.node(CfgNodeKind::Entry, None);
