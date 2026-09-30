@@ -2,7 +2,7 @@
 name = "circomspect-program-analysis"
 version = "0.8.2"
 edition = "2021"
-rust-version = "1.65"
+rust-version = "1.74"
 license = "LGPL-3.0-only"
 authors = ["Trail of Bits"]
 description = "Support crate for the Circomspect static analyzer"

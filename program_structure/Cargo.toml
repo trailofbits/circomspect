@@ -2,7 +2,7 @@
 name = "circomspect-program-structure"
 version = "2.1.4"
 edition = "2021"
-rust-version = "1.65"
+rust-version = "1.74"
 license = "LGPL-3.0-only"
 description = "Support crate for the Circomspect static analyzer"
 repository = "https://github.com/trailofbits/circomspect"
