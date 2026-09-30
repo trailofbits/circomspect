@@ -48,17 +48,17 @@ impl Statement {
                 for name in names.iter() {
                     // Since we disregard accesses, components are treated as signals.
                     if matches!(var_type, Signal(_, _) | Component | AnonymousComponent) {
-                        result = result || env.set_degree(name, &Linear.into());
+                        result |= env.set_degree(name, &Linear.into());
                     }
                     env.set_type(name, var_type);
                 }
                 result
             }
             Substitution { var, rhe, .. } => {
-                result = result || rhe.propagate_degrees(env);
+                result |= rhe.propagate_degrees(env);
                 if env.is_local(var) {
                     if let Some(range) = rhe.degree() {
-                        result = result || env.set_degree(var, range);
+                        result |= env.set_degree(var, range);
                     }
                 }
                 result
@@ -67,7 +67,7 @@ impl Statement {
                 use LogArgument::*;
                 for arg in args {
                     if let Expr(value) = arg {
-                        result = result || value.propagate_degrees(env);
+                        result |= value.propagate_degrees(env);
                     }
                 }
                 result
@@ -76,8 +76,8 @@ impl Statement {
             Return { value, .. } => value.propagate_degrees(env),
             Assert { arg, .. } => arg.propagate_degrees(env),
             ConstraintEquality { lhe, rhe, .. } => {
-                result = result || lhe.propagate_degrees(env);
-                result = result || rhe.propagate_degrees(env);
+                result |= lhe.propagate_degrees(env);
+                result |= rhe.propagate_degrees(env);
                 result
             }
         }
@@ -91,7 +91,7 @@ impl Statement {
             Declaration { dimensions, .. } => {
                 let mut result = false;
                 for size in dimensions {
-                    result = result || size.propagate_values(env);
+                    result |= size.propagate_values(env);
                 }
                 result
             }
@@ -102,7 +102,7 @@ impl Statement {
                 if !matches!(rhe, Update { .. }) {
                     if let Some(value) = rhe.value() {
                         env.add_variable(var, value);
-                        result = result || meta.value_knowledge_mut().set_reduces_to(value.clone());
+                        result |= meta.value_knowledge_mut().set_reduces_to(value.clone());
                     }
                 }
                 trace!("Substitution returned {result}");
@@ -113,7 +113,7 @@ impl Statement {
                 use LogArgument::*;
                 for arg in args {
                     if let Expr(value) = arg {
-                        result = result || value.propagate_values(env);
+                        result |= value.propagate_values(env);
                     }
                 }
                 result
@@ -122,7 +122,7 @@ impl Statement {
             Return { value, .. } => value.propagate_values(env),
             Assert { arg, .. } => arg.propagate_values(env),
             ConstraintEquality { lhe, rhe, .. } => {
-                lhe.propagate_values(env) || rhe.propagate_values(env)
+                lhe.propagate_values(env) | rhe.propagate_values(env)
             }
         }
     }

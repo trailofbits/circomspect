@@ -466,7 +466,7 @@ impl Cfg {
             // Rerun degree propagation if a single child node was updated.
             rerun = false;
             for basic_block in self.iter_mut() {
-                rerun = rerun || basic_block.propagate_degrees(&mut env);
+                rerun |= basic_block.propagate_degrees(&mut env);
             }
             // Bail out if analysis takes more than 10 seconds.
             if start.elapsed() > MAX_ANALYSIS_DURATION {
@@ -486,7 +486,7 @@ impl Cfg {
             // Rerun value propagation if a single child node was updated.
             rerun = false;
             for basic_block in self.iter_mut() {
-                rerun = rerun || basic_block.propagate_values(&mut env);
+                rerun |= basic_block.propagate_values(&mut env);
             }
             // Bail out if analysis takes more than 10 seconds.
             if start.elapsed() > MAX_ANALYSIS_DURATION {

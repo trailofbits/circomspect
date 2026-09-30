@@ -145,19 +145,19 @@ impl DegreeMeta for Expression {
         use Expression::*;
         match self {
             InfixOp { meta, lhe, rhe, infix_op } => {
-                result = result || lhe.propagate_degrees(env);
-                result = result || rhe.propagate_degrees(env);
+                result |= lhe.propagate_degrees(env);
+                result |= rhe.propagate_degrees(env);
                 let range = infix_op.propagate_degrees(lhe.degree(), rhe.degree());
                 if let Some(range) = range {
-                    result = result || meta.degree_knowledge_mut().set_degree(&range);
+                    result |= meta.degree_knowledge_mut().set_degree(&range);
                 }
                 result
             }
             PrefixOp { meta, rhe, prefix_op, .. } => {
-                result = result || rhe.propagate_degrees(env);
+                result |= rhe.propagate_degrees(env);
                 let range = prefix_op.propagate_degrees(rhe.degree());
                 if let Some(range) = range {
-                    result = result || meta.degree_knowledge_mut().set_degree(&range);
+                    result |= meta.degree_knowledge_mut().set_degree(&range);
                 }
                 result
             }
@@ -166,9 +166,9 @@ impl DegreeMeta for Expression {
                 // desugared using an if-statement and the maximum degree in
                 // each case will be the maximum of the individual if- and
                 // else-case degrees.
-                result = result || cond.propagate_degrees(env);
-                result = result || if_true.propagate_degrees(env);
-                result = result || if_false.propagate_degrees(env);
+                result |= cond.propagate_degrees(env);
+                result |= if_true.propagate_degrees(env);
+                result |= if_false.propagate_degrees(env);
                 let Some(range) = cond.degree() else {
                     return result;
                 };
@@ -177,20 +177,20 @@ impl DegreeMeta for Expression {
                     if let Some(range) =
                         DegreeRange::iter_opt([if_true.degree(), if_false.degree()])
                     {
-                        result = result || meta.degree_knowledge_mut().set_degree(&range);
+                        result |= meta.degree_knowledge_mut().set_degree(&range);
                     }
                 }
                 result
             }
             Variable { meta, name } => {
                 if let Some(range) = env.degree(name) {
-                    result = result || meta.degree_knowledge_mut().set_degree(range);
+                    result |= meta.degree_knowledge_mut().set_degree(range);
                 }
                 result
             }
             Call { meta, args, .. } => {
                 for arg in args.iter_mut() {
-                    result = result || arg.propagate_degrees(env);
+                    result |= arg.propagate_degrees(env);
                 }
                 // If one or more non-constant arguments is passed to the function we cannot
                 // say anything about the degree of the output. If the function only takes
@@ -202,18 +202,18 @@ impl DegreeMeta for Expression {
                         false
                     }
                 }) {
-                    result = result || meta.degree_knowledge_mut().set_degree(&Constant.into())
+                    result |= meta.degree_knowledge_mut().set_degree(&Constant.into())
                 }
                 result
             }
             InlineArray { meta, values } => {
                 // The degree range of an array is the infimum of the ranges of all elements.
                 for value in values.iter_mut() {
-                    result = result || value.propagate_degrees(env);
+                    result |= value.propagate_degrees(env);
                 }
                 let range = DegreeRange::iter_opt(values.iter().map(|value| value.degree()));
                 if let Some(range) = range {
-                    result = result || meta.degree_knowledge_mut().set_degree(&range);
+                    result |= meta.degree_knowledge_mut().set_degree(&range);
                 }
                 result
             }
@@ -221,33 +221,33 @@ impl DegreeMeta for Expression {
                 // Accesses are ignored when determining the degree of a variable.
                 for access in access.iter_mut() {
                     if let AccessType::ArrayAccess(index) = access {
-                        result = result || index.propagate_degrees(env);
+                        result |= index.propagate_degrees(env);
                     }
                 }
                 if let Some(range) = env.degree(var) {
-                    result = result || meta.degree_knowledge_mut().set_degree(range);
+                    result |= meta.degree_knowledge_mut().set_degree(range);
                 }
                 result
             }
             Update { meta, var, access, rhe, .. } => {
                 // Accesses are ignored when determining the degree of a variable.
-                result = result || rhe.propagate_degrees(env);
+                result |= rhe.propagate_degrees(env);
                 for access in access.iter_mut() {
                     if let AccessType::ArrayAccess(index) = access {
-                        result = result || index.propagate_degrees(env);
+                        result |= index.propagate_degrees(env);
                     }
                 }
                 if env.degree(var).is_none() {
                     // This is the first assignment to the array. The degree is given by the RHS.
                     if let Some(range) = rhe.degree() {
-                        result = result || meta.degree_knowledge_mut().set_degree(range);
+                        result |= meta.degree_knowledge_mut().set_degree(range);
                     }
                 } else {
                     // The array has been assigned to previously. The degree is the infimum of
                     // the degrees of `var` and the RHS.
                     let range = DegreeRange::iter_opt([env.degree(var), rhe.degree()]);
                     if let Some(range) = range {
-                        result = result || meta.degree_knowledge_mut().set_degree(&range);
+                        result |= meta.degree_knowledge_mut().set_degree(&range);
                     }
                 }
                 result
@@ -256,7 +256,7 @@ impl DegreeMeta for Expression {
                 // The degree range of a phi expression is the infimum of the ranges of all the arguments.
                 let range = DegreeRange::iter_opt(args.iter().map(|arg| env.degree(arg)));
                 if let Some(range) = range {
-                    result = result || meta.degree_knowledge_mut().set_degree(&range);
+                    result |= meta.degree_knowledge_mut().set_degree(&range);
                 }
                 result
             }
@@ -535,16 +535,16 @@ impl ValueMeta for Expression {
         use ValueReduction::*;
         match self {
             InfixOp { meta, lhe, infix_op, rhe, .. } => {
-                let mut result = lhe.propagate_values(env) || rhe.propagate_values(env);
+                let mut result = lhe.propagate_values(env) | rhe.propagate_values(env);
                 if let Some(value) = infix_op.propagate_values(lhe.value(), rhe.value(), env) {
-                    result = result || meta.value_knowledge_mut().set_reduces_to(value)
+                    result |= meta.value_knowledge_mut().set_reduces_to(value)
                 }
                 result
             }
             PrefixOp { meta, prefix_op, rhe } => {
                 let mut result = rhe.propagate_values(env);
                 if let Some(value) = prefix_op.propagate_values(rhe.value(), env) {
-                    result = result || meta.value_knowledge_mut().set_reduces_to(value)
+                    result |= meta.value_knowledge_mut().set_reduces_to(value)
                 }
                 result
             }
@@ -559,7 +559,7 @@ impl ValueMeta for Expression {
                         Some(value),
                         _,
                     ) if *cond => {
-                        result = result || meta.value_knowledge_mut().set_reduces_to(value.clone())
+                        result |= meta.value_knowledge_mut().set_reduces_to(value.clone())
                     }
                     (
                         // The case false? _: value
@@ -567,7 +567,7 @@ impl ValueMeta for Expression {
                         _,
                         Some(value),
                     ) if !cond => {
-                        result = result || meta.value_knowledge_mut().set_reduces_to(value.clone())
+                        result |= meta.value_knowledge_mut().set_reduces_to(value.clone())
                     }
                     (
                         // The case true? value: _
@@ -575,7 +575,7 @@ impl ValueMeta for Expression {
                         Some(value),
                         _,
                     ) if !cond.is_zero() => {
-                        result = result || meta.value_knowledge_mut().set_reduces_to(value.clone())
+                        result |= meta.value_knowledge_mut().set_reduces_to(value.clone())
                     }
                     (
                         // The case false? _: value
@@ -583,7 +583,7 @@ impl ValueMeta for Expression {
                         _,
                         Some(value),
                     ) if cond.is_zero() => {
-                        result = result || meta.value_knowledge_mut().set_reduces_to(value.clone())
+                        result |= meta.value_knowledge_mut().set_reduces_to(value.clone())
                     }
                     _ => {}
                 }
@@ -601,7 +601,7 @@ impl ValueMeta for Expression {
                 // TODO: Handle function calls.
                 let mut result = false;
                 for arg in args {
-                    result = result || arg.propagate_values(env);
+                    result |= arg.propagate_values(env);
                 }
                 result
             }
@@ -609,7 +609,7 @@ impl ValueMeta for Expression {
                 // TODO: Handle inline arrays.
                 let mut result = false;
                 for value in values {
-                    result = result || value.propagate_values(env);
+                    result |= value.propagate_values(env);
                 }
                 result
             }
@@ -618,7 +618,7 @@ impl ValueMeta for Expression {
                 let mut result = false;
                 for access in access.iter_mut() {
                     if let AccessType::ArrayAccess(index) = access {
-                        result = result || index.propagate_values(env);
+                        result |= index.propagate_values(env);
                     }
                 }
                 result
@@ -628,7 +628,7 @@ impl ValueMeta for Expression {
                 let mut result = rhe.propagate_values(env);
                 for access in access.iter_mut() {
                     if let AccessType::ArrayAccess(index) = access {
-                        result = result || index.propagate_values(env);
+                        result |= index.propagate_values(env);
                     }
                 }
                 result
@@ -1005,6 +1005,7 @@ fn vec_to_display<T: fmt::Display>(elems: &[T], sep: &str) -> String {
 #[cfg(test)]
 mod tests {
     use crate::constants::{UsefulConstants, Curve};
+    use crate::ir::degree_meta::{Degree, DegreeEnvironment, DegreeRange};
 
     use super::*;
 
@@ -1050,5 +1051,39 @@ mod tests {
         };
         expr.propagate_values(&mut env.clone());
         assert_eq!(expr.value(), Some(&FieldElement { value: 2u64.into() }));
+    }
+
+    #[test]
+    fn propagate_values_visits_both_operands_in_one_pass() {
+        let constants = UsefulConstants::new(&Curve::default());
+        let mut env = ValueEnvironment::new(&constants);
+        let name = VariableName::from_string("v");
+        env.add_variable(&name, &ValueReduction::FieldElement { value: 3u64.into() });
+        let mut expression = Expression::InfixOp {
+            meta: Meta::default(),
+            infix_op: ExpressionInfixOpcode::Add,
+            lhe: Box::new(Expression::Number(Meta::default(), 7u64.into())),
+            rhe: Box::new(Expression::Variable { meta: Meta::default(), name }),
+        };
+
+        assert!(expression.propagate_values(&mut env));
+        assert_eq!(expression.value(), Some(&ValueReduction::FieldElement { value: 10u64.into() }));
+    }
+
+    #[test]
+    fn propagate_degrees_visits_both_operands_in_one_pass() {
+        let name = VariableName::from_string("v");
+        let mut env = DegreeEnvironment::new();
+        env.set_degree(&name, &DegreeRange::new(Degree::Linear, Degree::Linear));
+        let mut expression = Expression::InfixOp {
+            meta: Meta::default(),
+            infix_op: ExpressionInfixOpcode::Add,
+            lhe: Box::new(Expression::Number(Meta::default(), 7u64.into())),
+            rhe: Box::new(Expression::Variable { meta: Meta::default(), name }),
+        };
+
+        assert!(expression.propagate_degrees(&env));
+        assert_eq!(expression.degree().map(DegreeRange::start), Some(Degree::Linear));
+        assert_eq!(expression.degree().map(DegreeRange::end), Some(Degree::Linear));
     }
 }

@@ -133,7 +133,7 @@ impl BasicBlock {
         trace!("propagating degree ranges for basic block {}", self.index());
         let mut result = false;
         for stmt in self.iter_mut() {
-            result = result || stmt.propagate_degrees(env);
+            result |= stmt.propagate_degrees(env);
         }
         result
     }
@@ -142,7 +142,7 @@ impl BasicBlock {
         trace!("propagating values for basic block {}", self.index());
         let mut result = false;
         for stmt in self.iter_mut() {
-            result = result || stmt.propagate_values(env);
+            result |= stmt.propagate_values(env);
         }
         result
     }
@@ -243,5 +243,44 @@ impl fmt::Debug for BasicBlock {
             writeln!(f, "| {line:width$} |")?;
         }
         writeln!(f, "{}", &border)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use crate::constants::{Curve, UsefulConstants};
+    use crate::ir::value_meta::{ValueEnvironment, ValueMeta, ValueReduction};
+    use crate::ir::{Expression, Meta, Statement};
+
+    use super::BasicBlock;
+
+    #[test]
+    fn value_propagation_visits_every_statement_in_one_pass() {
+        let statement = Statement::Assert {
+            meta: Meta::default(),
+            arg: Expression::Number(Meta::default(), 1u64.into()),
+        };
+        let mut block = BasicBlock::from_raw_parts(
+            0,
+            Meta::default(),
+            0,
+            vec![statement.clone(), statement],
+            HashSet::new(),
+            HashSet::new(),
+        );
+        let constants = UsefulConstants::new(&Curve::default());
+        let mut env = ValueEnvironment::new(&constants);
+
+        assert!(block.propagate_values(&mut env));
+        let mut values = Vec::new();
+        for statement in block.iter() {
+            if let Statement::Assert { arg, .. } = statement {
+                values.push(arg.value().cloned());
+            }
+        }
+        let one = Some(ValueReduction::FieldElement { value: 1u64.into() });
+        assert_eq!(values, vec![one.clone(), one]);
     }
 }
