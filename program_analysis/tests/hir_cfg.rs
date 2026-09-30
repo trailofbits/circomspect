@@ -67,7 +67,7 @@ fn symbolic_target_index_is_evaluated_before_witness_and_constraint() {
     let (project, definition) =
         fixture("template Check() { signal input i; signal output a[2]; a[i] <== 1; }");
     let cfg = build_cfg(&project.hir, definition).unwrap();
-    let positions: Vec<_> = cfg
+    let mut positions: Vec<_> = cfg
         .nodes()
         .iter()
         .filter_map(|id| {
@@ -80,6 +80,9 @@ fn symbolic_target_index_is_evaluated_before_witness_and_constraint() {
             }
         })
         .collect();
+    let assignment_index =
+        positions.iter().find(|entry| entry.0 == "witness").unwrap().2.effect_index;
+    positions.retain(|entry| entry.2.effect_index == assignment_index);
     assert_eq!(
         positions.iter().map(|entry| entry.0).collect::<Vec<_>>(),
         ["eval", "eval", "witness", "constraint"]
@@ -96,6 +99,44 @@ fn foreign_definition_returns_a_typed_error() {
     let (other, _) = fixture("template Check() { signal x; }");
     assert!(matches!(build_cfg(&other.hir, definition), Err(BuildError::ForeignDefinition)));
     assert!(build_cfg(&first.hir, definition).is_ok());
+}
+
+#[test]
+fn declaration_dimensions_are_evaluated_before_declaration() {
+    let (project, definition) = fixture("template Check(){var n=2; signal output a[n];}");
+    let cfg = build_cfg(&project.hir, definition).unwrap();
+    let declarations: Vec<_> = cfg
+        .nodes()
+        .iter()
+        .filter_map(|id| {
+            let node = cfg.node(*id).unwrap();
+            let CfgNodeKind::Declaration = node.kind else { return None };
+            Some((*id, node.origin.unwrap()))
+        })
+        .collect();
+    let a = declarations
+        .iter()
+        .find(|(_, origin)| {
+            let block = project.hir.block(origin.block).unwrap();
+            let parser::hir::Effect::Declaration { symbol, .. } =
+                &block.effects[origin.effect_index]
+            else {
+                return false;
+            };
+            project.hir.symbol(*symbol).unwrap().name == "a"
+        })
+        .unwrap();
+    let dimension = cfg
+        .nodes()
+        .iter()
+        .filter_map(|id| {
+            let node = cfg.node(*id).unwrap();
+            let CfgNodeKind::Evaluate(expression) = node.kind else { return None };
+            (node.origin.unwrap().effect_index == a.1.effect_index).then_some((*id, expression))
+        })
+        .next()
+        .unwrap();
+    assert!(dimension.0 < a.0);
 }
 
 #[test]

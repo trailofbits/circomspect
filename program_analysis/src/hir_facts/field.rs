@@ -1,5 +1,6 @@
 use num_bigint::BigInt;
 use num_traits::{Signed, Zero};
+use program_structure::utils::constants::Curve;
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct FieldValue(BigInt);
@@ -13,22 +14,32 @@ impl FieldValue {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FieldContext {
+    curve: Curve,
     modulus: BigInt,
 }
 
 impl FieldContext {
-    /// Construct a field context with a positive modulus greater than one.
-    pub fn new(modulus: BigInt) -> Option<Self> {
-        (modulus > BigInt::from(1)).then_some(Self { modulus })
+    /// Select the same field as the compiler configuration.
+    #[must_use]
+    pub fn for_curve(curve: Curve) -> Self {
+        let digits: &[u8] = match curve {
+            Curve::Bn254 => {
+                b"21888242871839275222246405745257275088548364400416034343698204186575808495617"
+            }
+            Curve::Bls12_381 => {
+                b"52435875175126190479447740508185965837690552500527637822603658699938581184513"
+            }
+            Curve::Goldilocks => b"18446744069414584321",
+        };
+        let modulus = digits
+            .iter()
+            .fold(BigInt::zero(), |value, digit| value * 10 + BigInt::from(digit - b'0'));
+        Self { curve, modulus }
     }
 
     #[must_use]
-    pub fn bn254() -> Self {
-        let modulus =
-            b"21888242871839275222246405745257275088548364400416034343698204186575808495617"
-                .iter()
-                .fold(BigInt::zero(), |value, digit| value * 10 + BigInt::from(digit - b'0'));
-        Self { modulus }
+    pub fn curve(&self) -> &Curve {
+        &self.curve
     }
 
     #[must_use]

@@ -35,9 +35,6 @@ impl AccessKey {
         if self.root != other.root || self.instance != other.instance {
             return false;
         }
-        if self.steps.len() != other.steps.len() {
-            return false;
-        }
         for (left, right) in self.steps.iter().zip(&other.steps) {
             match (left, right) {
                 (AccessKeyStep::Index(IndexKey::Symbolic(_)), AccessKeyStep::Index(_))

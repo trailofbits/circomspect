@@ -20,6 +20,11 @@ pub enum ForwardState {
     },
 }
 
+// The CFG fixes the finite set of constraint-site IDs. Each variable maps to
+// one canonical value or unknown and can lose precision only once at a join.
+// May-sites grow by union; must-sites shrink by intersection. Thus this
+// product domain has finite height for each definition.
+
 impl ForwardState {
     pub fn boundary() -> Self {
         Self::Reached {
@@ -151,9 +156,12 @@ impl Transfer<ForwardAnalysis<'_>, ForwardState, String> for CfgNode {
                     .symbol(target.root)
                     .is_some_and(|symbol| symbol.kind == SymbolKind::Variable)
                 {
-                    if let Some(value) =
+                    let value = if target.steps.is_empty() {
                         eval_expression(analysis.hir, analysis.field, *value, variables)
-                    {
+                    } else {
+                        None
+                    };
+                    if let Some(value) = value {
                         variables.insert(target.root, value);
                     } else {
                         variables.remove(&target.root);
@@ -261,5 +269,58 @@ pub fn eval_expression(
         | ExprKind::Array(_)
         | ExprKind::Tuple(_)
         | ExprKind::Opaque(_) => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn states() -> Vec<ForwardState> {
+        let mut values = vec![ForwardState::Unreachable];
+        for may_bits in 0..4_u8 {
+            for must_bits in 0..4_u8 {
+                if must_bits & !may_bits != 0 {
+                    continue;
+                }
+                let may_constraints =
+                    (0..2).filter(|bit| may_bits & (1 << bit) != 0).map(NodeId::new).collect();
+                let must_constraints =
+                    (0..2).filter(|bit| must_bits & (1 << bit) != 0).map(NodeId::new).collect();
+                values.push(ForwardState::Reached {
+                    variables: BTreeMap::new(),
+                    may_constraints,
+                    must_constraints,
+                });
+            }
+        }
+        values
+    }
+
+    #[test]
+    fn production_may_must_state_obeys_lattice_laws() {
+        let values = states();
+        for a in &values {
+            assert!(ForwardState::bottom().leq(a));
+            for b in &values {
+                let mut joined = a.clone();
+                let changed = joined.join_assign(b);
+                assert_eq!(changed, joined != *a);
+                assert!(a.leq(&joined));
+                assert!(b.leq(&joined));
+                let mut reverse = b.clone();
+                reverse.join_assign(a);
+                assert_eq!(joined, reverse);
+                for c in &values {
+                    let mut left = joined.clone();
+                    left.join_assign(c);
+                    let mut right = b.clone();
+                    right.join_assign(c);
+                    let mut other = a.clone();
+                    other.join_assign(&right);
+                    assert_eq!(left, other);
+                }
+            }
+        }
     }
 }

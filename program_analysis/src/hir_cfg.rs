@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use abstract_interpretation::graph::{EdgeId, EdgeRef, FlowGraph, GraphError, IndexedGraph, NodeId};
 use parser::hir::{
     AccessPath, AccessStep, BlockId, DefinitionRef, Effect, ExprId, ExprKind, HirProject,
-    IncompleteReason,
+    IncompleteReason, SymbolId,
 };
 use parser::new_frontend::Span;
 
@@ -95,6 +95,7 @@ pub enum BuildError {
     ForeignDefinition,
     MissingBlock(BlockId),
     MissingExpression(ExprId),
+    MissingSymbol(SymbolId),
     InvalidGraph(GraphError<NodeId, EdgeId>),
 }
 
@@ -211,7 +212,15 @@ impl Builder<'_> {
         origin: Origin,
     ) -> Result<Tails, BuildError> {
         match effect {
-            Effect::Declaration { .. } => Ok(self.append(tails, CfgNodeKind::Declaration, origin)),
+            Effect::Declaration { symbol, .. } => {
+                let declared =
+                    self.hir.symbol(*symbol).ok_or(BuildError::MissingSymbol(*symbol))?;
+                let mut tails = tails;
+                for &dimension in &declared.dimensions {
+                    tails = self.evaluate(tails, dimension, origin)?;
+                }
+                Ok(self.append(tails, CfgNodeKind::Declaration, origin))
+            }
             Effect::VariableAssignment { target, value, .. } => {
                 let tails = self.evaluate_target(tails, target, origin)?;
                 let tails = self.evaluate(tails, *value, origin)?;
