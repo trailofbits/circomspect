@@ -18,6 +18,8 @@ mod reference_checker;
 mod syntax_sugar_traits;
 mod syntax_sugar_remover;
 
+pub mod new_frontend;
+
 pub use parser_logic::parse_definition;
 
 use include_logic::FileStack;
