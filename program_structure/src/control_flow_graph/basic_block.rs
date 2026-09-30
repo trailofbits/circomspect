@@ -238,11 +238,11 @@ impl fmt::Debug for BasicBlock {
         let width = lines.iter().map(|line| line.len()).max().unwrap_or_default();
         let border = format!("+{}+", (0..width + 2).map(|_| '-').collect::<String>());
 
-        writeln!(f, "{}", &border)?;
+        writeln!(f, "{}", border)?;
         for line in lines {
             writeln!(f, "| {line:width$} |")?;
         }
-        writeln!(f, "{}", &border)
+        writeln!(f, "{}", border)
     }
 }
 

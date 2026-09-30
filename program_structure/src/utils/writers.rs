@@ -196,7 +196,7 @@ impl SarifWriter {
             reports.to_sarif(file_library).context("failed to convert reports to Sarif format")?;
         let json = serde_json::to_string_pretty(&sarif)?;
         let mut sarif_file = File::create(&self.sarif_file)?;
-        writeln!(sarif_file, "{}", &json)
+        writeln!(sarif_file, "{}", json)
             .with_context(|| format!("could not write to {}", self.sarif_file.display()))?;
         Ok(())
     }
