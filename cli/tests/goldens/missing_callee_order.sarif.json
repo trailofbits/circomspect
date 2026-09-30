@@ -1,0 +1,112 @@
+{
+  "runs": [
+    {
+      "results": [
+        {
+          "level": "error",
+          "locations": [
+            {
+              "id": 0,
+              "message": {
+                "text": "Unresolved call to `MissingFunction`."
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixtures/unresolved_library.circom"
+                },
+                "region": {
+                  "endColumn": 44,
+                  "endLine": 4,
+                  "startColumn": 12,
+                  "startLine": 4
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "The call target `MissingFunction` is not defined as a function or template."
+          },
+          "relatedLocations": [],
+          "rule": {
+            "id": "CS0019"
+          },
+          "ruleId": "CS0019"
+        },
+        {
+          "level": "error",
+          "locations": [
+            {
+              "id": 0,
+              "message": {
+                "text": "Unresolved call to `MissingInner`."
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixtures/unresolved_library.circom"
+                },
+                "region": {
+                  "endColumn": 43,
+                  "endLine": 4,
+                  "startColumn": 28,
+                  "startLine": 4
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "The call target `MissingInner` is not defined as a function or template."
+          },
+          "relatedLocations": [],
+          "rule": {
+            "id": "CS0019"
+          },
+          "ruleId": "CS0019"
+        },
+        {
+          "level": "error",
+          "locations": [
+            {
+              "id": 0,
+              "message": {
+                "text": "Unresolved call to `MissingTemplate`."
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixtures/unresolved_library.circom"
+                },
+                "region": {
+                  "endColumn": 40,
+                  "endLine": 8,
+                  "startColumn": 23,
+                  "startLine": 8
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "The call target `MissingTemplate` is not defined as a function or template."
+          },
+          "relatedLocations": [],
+          "rule": {
+            "id": "CS0019"
+          },
+          "ruleId": "CS0019"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "downloadUri": "https://github.com/trailofbits/circomspect",
+          "name": "Circomspect",
+          "organization": "Trail of Bits",
+          "rules": [
+            {
+              "id": "CS0019",
+              "name": "unresolved-call"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

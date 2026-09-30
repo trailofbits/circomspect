@@ -1,0 +1,22 @@
+error: The call target `MissingFunction` is not defined as a function or template.
+  ┌─ <fixture>:4:12
+  │
+4 │     return MissingFunction(MissingInner(x));
+  │            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Unresolved call to `MissingFunction`.
+
+error: The call target `MissingInner` is not defined as a function or template.
+  ┌─ <fixture>:4:28
+  │
+4 │     return MissingFunction(MissingInner(x));
+  │                            ^^^^^^^^^^^^^^^ Unresolved call to `MissingInner`.
+
+error: The call target `MissingTemplate` is not defined as a function or template.
+  ┌─ <fixture>:8:23
+  │
+8 │     component child = MissingTemplate();
+  │                       ^^^^^^^^^^^^^^^^^ Unresolved call to `MissingTemplate`.
+
+circomspect: analyzing function 'UsesMissingFunction'
+circomspect: analyzing template 'UsesMissingTemplate'
+circomspect: Result written to `<sarif>`.
+circomspect: 3 issues found.

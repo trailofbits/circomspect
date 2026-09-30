@@ -1,0 +1,17 @@
+error: Unrecognized token `;` found. Expected one of `!`, `(`, `-`, `[`, `_`, `parallel`, `~`, r#`0x[0-9A-Fa-f]+`#, r#`[$_]*[a-zA-Z][a-zA-Z$_0-9]*`# or r#`[0-9]+`#.
+   ┌─ <fixture>:10:17
+   │
+10 │     var value = ;
+   │                 ^ This token is invalid or unexpected here.
+
+error: Unrecognized token `;` found. Expected one of `!`, `(`, `-`, `[`, `_`, `parallel`, `~`, r#`0x[0-9A-Fa-f]+`#, r#`[$_]*[a-zA-Z][a-zA-Z$_0-9]*`# or r#`[0-9]+`#.
+   ┌─ <fixture>:20:17
+   │
+20 │     var value = ;
+   │                 ^ This token is invalid or unexpected here.
+
+circomspect: analyzing template 'AfterError'
+circomspect: analyzing template 'BeforeError'
+circomspect: analyzing template 'BetweenErrors'
+circomspect: Result written to `<sarif>`.
+circomspect: 2 issues found.

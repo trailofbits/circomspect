@@ -1,0 +1,52 @@
+{
+  "runs": [
+    {
+      "results": [
+        {
+          "level": "error",
+          "locations": [
+            {
+              "id": 0,
+              "message": {
+                "text": "This token is invalid or unexpected here."
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixtures/lexical_error_library.circom"
+                },
+                "region": {
+                  "endColumn": 18,
+                  "endLine": 4,
+                  "startColumn": 17,
+                  "startLine": 4
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Unrecognized token `@` found. Expected one of `!`, `(`, `-`, `[`, `_`, `parallel`, `~`, r#`0x[0-9A-Fa-f]+`#, r#`[$_]*[a-zA-Z][a-zA-Z$_0-9]*`# or r#`[0-9]+`#."
+          },
+          "relatedLocations": [],
+          "rule": {
+            "id": "P1000"
+          },
+          "ruleId": "P1000"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "downloadUri": "https://github.com/trailofbits/circomspect",
+          "name": "Circomspect",
+          "organization": "Trail of Bits",
+          "rules": [
+            {
+              "id": "P1000",
+              "name": "parse-fail"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

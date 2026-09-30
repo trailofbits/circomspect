@@ -1,0 +1,86 @@
+{
+  "runs": [
+    {
+      "results": [
+        {
+          "level": "error",
+          "locations": [
+            {
+              "id": 0,
+              "message": {
+                "text": "File included here."
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixtures/missing_include.circom"
+                },
+                "region": {
+                  "endColumn": 28,
+                  "endLine": 2,
+                  "startColumn": 1,
+                  "startLine": 2
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Failed to open file `not_found.circom`."
+          },
+          "relatedLocations": [],
+          "rule": {
+            "id": "P1000"
+          },
+          "ruleId": "P1000"
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "id": 0,
+              "message": {
+                "text": "This signal does not occur in a constraint."
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixtures/missing_include.circom"
+                },
+                "region": {
+                  "endColumn": 22,
+                  "endLine": 5,
+                  "startColumn": 5,
+                  "startLine": 5
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "The signal `out` is not constrained by the template."
+          },
+          "relatedLocations": [],
+          "rule": {
+            "id": "CA01"
+          },
+          "ruleId": "CA01"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "downloadUri": "https://github.com/trailofbits/circomspect",
+          "name": "Circomspect",
+          "organization": "Trail of Bits",
+          "rules": [
+            {
+              "id": "P1000",
+              "name": "parse-fail"
+            },
+            {
+              "id": "CA01",
+              "name": "unconstrained-signal"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

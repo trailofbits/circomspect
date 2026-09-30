@@ -1,0 +1,15 @@
+error: Failed to open file `not_found.circom`.
+  ┌─ <fixture>:2:1
+  │
+2 │ include "not_found.circom";
+  │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^ File included here.
+
+circomspect: analyzing template 'StillAvailable'
+warning: The signal `out` is not constrained by the template.
+  ┌─ <fixture>:5:5
+  │
+5 │     signal output out;
+  │     ^^^^^^^^^^^^^^^^^ This signal does not occur in a constraint.
+
+circomspect: Result written to `<sarif>`.
+circomspect: 2 issues found.

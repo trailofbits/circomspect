@@ -1,0 +1,3 @@
+circomspect: analyzing function 'UsesMissingFunction'
+circomspect: analyzing template 'UsesMissingTemplate'
+circomspect: No issues found.

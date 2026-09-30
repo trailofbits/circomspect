@@ -1,0 +1,5 @@
+error: The file `<fixture>` requires version 2.2.0, which is not supported by Circomspect (version 2.1.4).
+
+circomspect: analyzing template 'LibraryItem'
+circomspect: Result written to `<sarif>`.
+circomspect: 1 issue found.

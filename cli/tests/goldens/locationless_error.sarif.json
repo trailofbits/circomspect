@@ -1,0 +1,34 @@
+{
+  "runs": [
+    {
+      "results": [
+        {
+          "level": "error",
+          "locations": [],
+          "message": {
+            "text": "The file `/Users/fredrikdahlgren/.codex/worktrees/circomspect-phase0/circomspect/cli/tests/fixtures/unsupported_version.circom` requires version 2.2.0, which is not supported by Circomspect (version 2.1.4)."
+          },
+          "relatedLocations": [],
+          "rule": {
+            "id": "P1003"
+          },
+          "ruleId": "P1003"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "downloadUri": "https://github.com/trailofbits/circomspect",
+          "name": "Circomspect",
+          "organization": "Trail of Bits",
+          "rules": [
+            {
+              "id": "P1003",
+              "name": "compiler-version-error"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}
