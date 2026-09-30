@@ -4,6 +4,7 @@ use std::fmt::Display;
 use std::str::FromStr;
 
 use codespan_reporting::diagnostic::{Diagnostic, Label};
+use serde::{Serialize, Serializer};
 
 use super::report_code::ReportCode;
 use super::file_definition::{FileID, FileLocation};
@@ -13,7 +14,7 @@ pub type DiagnosticCode = String;
 pub type ReportLabel = Label<FileID>;
 type ReportNote = String;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize)]
 pub enum MessageCategory {
     Error,
     Warning,
@@ -82,15 +83,37 @@ impl MessageCategory {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
 pub struct Report {
     category: MessageCategory,
     message: String,
     primary_file_ids: Vec<FileID>,
+    #[serde(with = "label_serde")]
     primary: Vec<ReportLabel>,
+    #[serde(with = "label_serde")]
     secondary: Vec<ReportLabel>,
     notes: Vec<ReportNote>,
     code: ReportCode,
+}
+
+pub mod label_serde {
+    use super::*;
+
+    // Serialize the `ReportLabel` (which is `Label<FileID>`)
+    pub fn serialize<S>(label: &Vec<ReportLabel>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if label.is_empty() {
+            return serializer.serialize_str("");
+        }
+
+        let start = label[0].range.start as i32;
+        let end = label[0].range.end as i32;
+
+        serializer.serialize_str(format!("{start},{end}").as_str())
+    }
+
 }
 
 impl Report {

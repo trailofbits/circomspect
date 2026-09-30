@@ -15,7 +15,7 @@ mod errors;
 mod include_logic;
 mod parser_logic;
 mod syntax_sugar_traits;
-mod syntax_sugar_remover;
+pub mod syntax_sugar_remover;
 
 pub use parser_logic::parse_definition;
 

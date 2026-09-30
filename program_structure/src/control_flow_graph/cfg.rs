@@ -1,7 +1,7 @@
 use log::debug;
 use std::collections::HashSet;
 use std::fmt;
-use std::time::{Instant, Duration};
+use web_time::{Instant, Duration};
 
 use crate::constants::UsefulConstants;
 use crate::file_definition::FileID;

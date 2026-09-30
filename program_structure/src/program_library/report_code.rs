@@ -1,6 +1,8 @@
+use serde::Serialize;
+
 const DOC_URL: &str = "https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md";
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Serialize)]
 pub enum ReportCode {
     AssertWrongType,
     ParseFail,

@@ -17,7 +17,7 @@ use crate::syntax_sugar_traits::ContainsExpression;
 
 /// This functions desugars all anonymous components and tuples.
 #[must_use]
-pub(crate) fn remove_syntactic_sugar(
+pub fn remove_syntactic_sugar(
     templates: &HashMap<String, TemplateData>,
     functions: &HashMap<String, FunctionData>,
     file_library: &FileLibrary,
