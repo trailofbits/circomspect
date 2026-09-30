@@ -146,23 +146,30 @@ pub fn find_unconstrained_less_than(cfg: &Cfg) -> ReportCollection {
     // Generate a report for each input to `LessThan` where the input size is
     // not constrained to be positive using `Num2Bits`.
     let mut reports = ReportCollection::new();
-    let max_value = BigInt::from(cfg.constants().prime_size() - 1);
+    let max_num2bits_size = BigInt::from(cfg.constants().prime_size() - 1);
+    let max_safe_constant = cfg.constants().prime() / 2;
+    let zero = BigInt::from(0);
     for (value, data) in constraints {
         // Check if the the value is used as input for `LessThan`.
         if data.less_than.is_empty() {
             continue;
         }
-        // A compile-time constant is fixed by the circuit source and cannot
-        // be chosen adversarially by the prover, so it does not need to be
-        // range-checked using `Num2Bits`.
-        if value.is_constant() {
+        // Values above half the prime may represent negative inputs to LessThan.
+        let is_safe_constant = match value.value() {
+            Some(ValueReduction::Boolean { .. }) => true,
+            Some(ValueReduction::FieldElement { value }) => {
+                value >= &zero && value <= &max_safe_constant
+            }
+            None => false,
+        };
+        if is_safe_constant {
             continue;
         }
         // Check if the value is constrained to be positive.
         let mut is_positive = false;
         for bit_size in &data.bit_sizes {
             if let Some(ValueReduction::FieldElement { value }) = bit_size.value() {
-                if value < &max_value {
+                if value < &max_num2bits_size {
                     is_positive = true;
                     break;
                 }
@@ -388,6 +395,51 @@ mod tests {
               lt.in[0] <== small;
               lt.in[1] <== 50 + 5;
 
+              ok <== lt.out;
+            }
+        "#;
+        validate_reports(src, 1);
+    }
+
+    #[test]
+    fn test_witness_assignment_is_not_a_constant_constraint() {
+        let src = r#"
+            template Test() {
+              signal assigned;
+              signal output ok;
+              assigned <-- 5;
+
+              component lt = LessThan(8);
+              lt.in[0] <== assigned;
+              lt.in[1] <== 2;
+              ok <== lt.out;
+            }
+        "#;
+        validate_reports(src, 1);
+
+        let src = r#"
+            template Test() {
+              signal assigned;
+              signal output ok;
+              assigned <== 5;
+
+              component lt = LessThan(8);
+              lt.in[0] <== assigned;
+              lt.in[1] <== 2;
+              ok <== lt.out;
+            }
+        "#;
+        validate_reports(src, 0);
+    }
+
+    #[test]
+    fn test_out_of_range_constant_is_reported() {
+        let src = r#"
+            template Test() {
+              signal output ok;
+              component lt = LessThan(8);
+              lt.in[0] <== 0;
+              lt.in[1] <== -1;
               ok <== lt.out;
             }
         "#;
