@@ -322,6 +322,7 @@ impl Block {
 pub struct Main {
     pub target: CallTarget,
     pub arguments: Vec<ExprId>,
+    pub parallel: bool,
     pub span: Span,
 }
 
@@ -344,6 +345,9 @@ pub enum SemanticCode {
     MissingBusType,
     InvalidAssignment,
     InvalidSignalAccess,
+    InvalidTag,
+    InputTagAccess,
+    InvalidTagAfterArray,
     InvalidArrayAccess,
     AnonymousInput,
     ForbiddenDeclaration,
@@ -371,6 +375,9 @@ impl SemanticCode {
             Self::MissingBusType => "CS0022",
             Self::InvalidAssignment => "T2000",
             Self::InvalidSignalAccess => "T2046",
+            Self::InvalidTag => "T2048",
+            Self::InputTagAccess => "T2048-C",
+            Self::InvalidTagAfterArray => "T2049",
             Self::InvalidArrayAccess => "T2032",
             Self::AnonymousInput => "TAC01",
             Self::ForbiddenDeclaration => "T2016",

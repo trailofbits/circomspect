@@ -3,6 +3,7 @@ use circomspect_parser::hir::{
     IncompleteLocation, IncompleteReason, Knownness, SemanticCode, Severity,
 };
 use circomspect_parser::new_frontend::{load_sources, Version, VersionPolicy};
+use proptest::prelude::*;
 use std::fs;
 use std::path::PathBuf;
 
@@ -26,6 +27,30 @@ fn lower(sources: &[(&str, &str)], version: Version) -> circomspect_parser::hir:
 fn effect_for<'a>(result: &'a circomspect_parser::hir::LoweredProject, name: &str) -> &'a [Effect] {
     let definition = result.hir.templates().iter().find(|item| item.name == name).unwrap();
     &result.hir.block(definition.body).unwrap().effects
+}
+
+fn max_port_steps(result: &circomspect_parser::hir::LoweredProject) -> usize {
+    result
+        .hir
+        .expressions()
+        .iter()
+        .filter_map(|expression| match &expression.kind {
+            ExprKind::Access(path) => Some(
+                path.steps.iter().filter(|step| matches!(step, AccessStep::Port { .. })).count(),
+            ),
+            _ => None,
+        })
+        .max()
+        .unwrap_or(0)
+}
+
+fn has_tag_access(result: &circomspect_parser::hir::LoweredProject) -> bool {
+    result.hir.expressions().iter().any(|expression| match &expression.kind {
+        ExprKind::Access(path) => {
+            path.steps.iter().any(|step| matches!(step, AccessStep::Tag { .. }))
+        }
+        _ => false,
+    })
 }
 
 #[test]
@@ -71,13 +96,13 @@ fn duplicate_global_names_are_ambiguous() {
 
 #[test]
 fn forward_ports_resolve_but_internal_signals_do_not() {
-    let result = lower(
-        &[("main.circom", "template Use() { component c = Later(); signal output out; out <== c.visible; out <== c.hidden; } template Later() { signal output visible; signal hidden; }")],
-        Version::new(2, 2, 3),
+    let source = concat!(
+        "template Use() { component c = Later(); signal output out; ",
+        "out <== c.visible; out <== c.hidden; } ",
+        "template Later() { signal output visible; signal hidden; }"
     );
-    assert!(result.hir.expressions().iter().any(|expression| {
-        matches!(&expression.kind, ExprKind::Access(path) if path.steps.iter().any(|step| matches!(step, AccessStep::Port { .. })))
-    }));
+    let result = lower(&[("main.circom", source)], Version::new(2, 2, 3));
+    assert!(max_port_steps(&result) > 0);
     assert_eq!(
         result
             .diagnostics
@@ -119,10 +144,11 @@ fn effect_for_function<'a>(
 
 #[test]
 fn named_anonymous_inputs_keep_checked_destination_and_operator() {
-    let result = lower(
-        &[("anonymous.circom", "template Child() { signal input in; signal output out; out <== in; } template Use() { signal output out; out <== Child()(in <== 1); }")],
-        Version::new(2, 2, 3),
+    let source = concat!(
+        "template Child() { signal input in; signal output out; out <== in; } ",
+        "template Use() { signal output out; out <== Child()(in <== 1); }"
     );
+    let result = lower(&[("anonymous.circom", source)], Version::new(2, 2, 3));
     assert!(result.syntax_diagnostics.is_empty(), "{:?}", result.syntax_diagnostics);
     assert!(result.diagnostics.is_empty(), "{:?}", result.diagnostics);
     assert!(effect_for(&result, "Use")
@@ -142,10 +168,11 @@ fn named_anonymous_inputs_keep_checked_destination_and_operator() {
 
 #[test]
 fn named_anonymous_input_near_misses_are_located() {
-    let result = lower(
-        &[("anonymous.circom", "template Child() { signal input in; } template Use() { signal output out; out <== Child()(nope <== 1); out <== Child()(in <-- 1); }")],
-        Version::new(2, 2, 3),
+    let source = concat!(
+        "template Child() { signal input in; } template Use() { signal output out; ",
+        "out <== Child()(nope <== 1); out <== Child()(in <-- 1); }"
     );
+    let result = lower(&[("anonymous.circom", source)], Version::new(2, 2, 3));
     assert_eq!(
         result.diagnostics.iter().filter(|item| item.code == SemanticCode::AnonymousInput).count(),
         2
@@ -279,10 +306,20 @@ fn bus_type_errors_distinguish_missing_and_wrong_kind() {
 
 #[test]
 fn component_input_assignment_targets_port_and_output_is_rejected() {
-    let source = "template Child(){signal input in; signal output out;} template Use(){signal input x; component c = Child(); c.in <== x; c.out <== x;}";
+    let source = concat!(
+        "template Child(){signal input in; signal output out;} ",
+        "template Use(){signal input x; component c = Child(); c.in <== x; c.out <== x;}"
+    );
     let result = lower(&[("ports.circom", source)], Version::new(2, 2, 3));
     let effects = effect_for(&result, "Use");
-    assert!(effects.iter().any(|effect| matches!(effect, Effect::ConstraintAssignment { target, .. } if matches!(target.steps.last(), Some(AccessStep::Port { .. })))));
+    assert!(effects.iter().any(|effect| {
+        match effect {
+            Effect::ConstraintAssignment { target, .. } => {
+                matches!(target.steps.last(), Some(AccessStep::Port { .. }))
+            }
+            _ => false,
+        }
+    }));
     assert_eq!(
         result
             .diagnostics
@@ -301,7 +338,7 @@ fn tag_assignment_does_not_turn_signal_into_compile_time_value() {
     let result = lower(&[("tags.circom", source)], Version::new(2, 2, 3));
     let signal = result.hir.symbols().iter().find(|item| item.name == "s").unwrap();
     assert_eq!(signal.knownness, Knownness::WitnessDependent);
-    assert!(result.hir.expressions().iter().any(|expr| matches!(&expr.kind, ExprKind::Access(path) if path.steps.iter().any(|step| matches!(step, AccessStep::Tag { .. })))));
+    assert!(has_tag_access(&result));
     assert!(result
         .diagnostics
         .iter()
@@ -349,7 +386,11 @@ fn diagnostic_fingerprint(
 
 #[test]
 fn missing_targets_have_exact_order_level_and_name_spans() {
-    let source = "function F(){return MissingA();} template T(){component c=MissingT(); signal output out; out <== MissingB(MissingC()); out <== MissingAnon()(1);} component main=MissingMain();";
+    let source = concat!(
+        "function F(){return MissingA();} template T(){component c=MissingT(); ",
+        "signal output out; out <== MissingB(MissingC()); ",
+        "out <== MissingAnon()(1);} component main=MissingMain();"
+    );
     let result = lower(&[("missing.circom", source)], Version::new(2, 2, 3));
     assert!(result.syntax_diagnostics.is_empty(), "{:?}", result.syntax_diagnostics);
     let expected: Vec<_> =
@@ -366,7 +407,12 @@ fn missing_targets_have_exact_order_level_and_name_spans() {
 
 #[test]
 fn wrong_kind_targets_have_exact_directional_codes_and_spans() {
-    let source = "function F(){return 1;} template T(){} bus B(){signal x;} function Use(){return T()+B();} template Main(){F a; T b; component cf=F(); component cb=B(); signal output out; out <== F()(1);} component main=F();";
+    let source = concat!(
+        "function F(){return 1;} template T(){} bus B(){signal x;} ",
+        "function Use(){return T()+B();} template Main(){F a; T b; ",
+        "component cf=F(); component cb=B(); signal output out; ",
+        "out <== F()(1);} component main=F();"
+    );
     let result = lower(&[("wrong.circom", source)], Version::new(2, 2, 3));
     assert!(result.syntax_diagnostics.is_empty(), "{:?}", result.syntax_diagnostics);
     let at =
@@ -391,7 +437,10 @@ fn wrong_kind_targets_have_exact_directional_codes_and_spans() {
 
 #[test]
 fn duplicate_names_across_include_and_damaged_neighbor_do_not_choose_winner() {
-    let root = "include \"lib.circom\"; function Bad( { return 0; } function F(){return 1;} function Use(){return F();}";
+    let root = concat!(
+        "include \"lib.circom\"; function Bad( { return 0; } ",
+        "function F(){return 1;} function Use(){return F();}"
+    );
     let library = "function F(){return 2;}";
     let result = lower(&[("root.circom", root), ("lib.circom", library)], Version::new(2, 2, 3));
     assert!(!result.syntax_diagnostics.is_empty());
@@ -491,14 +540,20 @@ fn unresolved_anonymous_target_does_not_cascade_input_errors() {
 
 #[test]
 fn anonymous_inputs_reject_duplicate_and_missing_ports() {
-    let duplicate = "template Child(){signal input in;} template T(){signal output out; out <== Child()(in <== 1, in <== 2);}";
+    let duplicate = concat!(
+        "template Child(){signal input in;} template T(){signal output out; ",
+        "out <== Child()(in <== 1, in <== 2);}"
+    );
     let result = lower(&[("duplicate_input.circom", duplicate)], Version::new(2, 2, 3));
     let second = duplicate.rfind("in <== 2").unwrap();
     assert_eq!(
         diagnostic_fingerprint(&result),
         vec![(SemanticCode::AnonymousInput, Severity::Error, 0, second, second + "in <== 2".len()),]
     );
-    let missing = "template Child(){signal input a; signal input b;} template T(){signal output out; out <== Child()(a <== 1);}";
+    let missing = concat!(
+        "template Child(){signal input a; signal input b;} ",
+        "template T(){signal output out; out <== Child()(a <== 1);}"
+    );
     let result = lower(&[("missing_input.circom", missing)], Version::new(2, 2, 3));
     assert_eq!(result.diagnostics.len(), 1);
     assert_eq!(result.diagnostics[0].code, SemanticCode::AnonymousInput);
@@ -508,7 +563,10 @@ fn anonymous_inputs_reject_duplicate_and_missing_ports() {
 
 #[test]
 fn wrong_arity_and_witness_template_argument_are_opaque() {
-    let source = "function F(x){return x;} function G(){return F();} template Child(n){} template T(){signal input x; component c=Child(x);}";
+    let source = concat!(
+        "function F(x){return x;} function G(){return F();} template Child(n){} ",
+        "template T(){signal input x; component c=Child(x);}"
+    );
     let result = lower(&[("calls.circom", source)], Version::new(2, 2, 3));
     assert_eq!(
         result.diagnostics.iter().filter(|item| item.code == SemanticCode::WrongArity).count(),
@@ -553,7 +611,10 @@ fn branch_knownness_joins_witness_and_constant_arms() {
 
 #[test]
 fn array_rank_is_checked_before_field_resolution() {
-    let source = "template Child(){signal input in;} template T(){component c[2]; c=Child(); signal x; x[0] <== 1; c.in <== 1;}";
+    let source = concat!(
+        "template Child(){signal input in;} template T(){component c[2]; c=Child(); ",
+        "signal x; x[0] <== 1; c.in <== 1;}"
+    );
     let result = lower(&[("rank.circom", source)], Version::new(2, 2, 3));
     assert_eq!(
         result
@@ -563,17 +624,18 @@ fn array_rank_is_checked_before_field_resolution() {
             .count(),
         2
     );
-    assert!(result.hir.expressions().iter().all(|item| {
-        !matches!(&item.kind, ExprKind::Access(path) if path.steps.iter().any(|step| matches!(step, AccessStep::Port { .. })))
-    }));
+    assert_eq!(max_port_steps(&result), 0);
 }
 
 #[test]
 fn forward_nested_bus_field_resolves_without_expanding_arrays() {
-    let source = "template Early(){Outer b; signal output out; out <== b.nested.leaf;} bus Outer(){Inner nested;} bus Inner(){signal leaf;}";
+    let source = concat!(
+        "template Early(){Outer b; signal output out; out <== b.nested.leaf;} ",
+        "bus Outer(){Inner nested;} bus Inner(){signal leaf;}"
+    );
     let result = lower(&[("forward_bus.circom", source)], Version::new(2, 2, 3));
     assert!(result.diagnostics.is_empty(), "{:?}", result.diagnostics);
-    assert!(result.hir.expressions().iter().any(|item| matches!(&item.kind, ExprKind::Access(path) if path.steps.iter().filter(|step| matches!(step, AccessStep::Port { .. })).count() == 2)));
+    assert_eq!(max_port_steps(&result), 2);
 }
 
 #[test]
@@ -600,4 +662,295 @@ fn missing_root_file_has_path_scoped_incomplete_coverage() {
     assert_eq!(result.incomplete.len(), 1);
     assert_eq!(result.incomplete[0].location, IncompleteLocation::Path(missing));
     assert_eq!(result.incomplete[0].reason, IncompleteReason::Include);
+}
+
+#[test]
+fn loop_condition_changed_to_witness_is_opaque() {
+    let source = concat!(
+        "template T(){signal input x; var n=1; while(n<3){n=x; x===x;} ",
+        "for(var i=0;i<2;i++){i=x; x===x;}}"
+    );
+    let result = lower(&[("loop_knownness.circom", source)], Version::new(2, 2, 3));
+    let effects = effect_for(&result, "T");
+    assert_eq!(
+        effects
+            .iter()
+            .filter(|effect| matches!(effect, Effect::While { .. } | Effect::For { .. }))
+            .count(),
+        0
+    );
+    assert_eq!(
+        effects
+            .iter()
+            .filter(|effect| matches!(
+                effect,
+                Effect::Opaque { reason: IncompleteReason::NonCompileTime, .. }
+            ))
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn forward_port_with_wrong_bus_arity_does_not_resolve_field() {
+    let source = concat!(
+        "template Early(){Outer b; signal output out; out <== b.nested.leaf;} ",
+        "bus Outer(){Inner(1,2) nested;} bus Inner(n){signal leaf;}"
+    );
+    let result = lower(&[("stale_bus.circom", source)], Version::new(2, 2, 3));
+    assert_eq!(
+        result.diagnostics.iter().filter(|item| item.code == SemanticCode::WrongArity).count(),
+        1
+    );
+    assert!(max_port_steps(&result) < 2);
+    assert!(result.incomplete.iter().any(|item| item.reason == IncompleteReason::UnknownType));
+}
+
+#[test]
+fn duplicate_local_declaration_is_opaque_and_keeps_first_binding() {
+    let source = "function F(){var x=1; var x=2; return x;}";
+    let result = lower(&[("duplicate_local.circom", source)], Version::new(2, 2, 3));
+    assert_eq!(result.diagnostics.len(), 1);
+    assert_eq!(result.diagnostics[0].code, SemanticCode::DuplicateSymbol);
+    assert_eq!(&source[result.diagnostics[0].span.start()..result.diagnostics[0].span.end()], "x");
+    let effects = effect_for_function(&result, "F");
+    assert_eq!(
+        effects.iter().filter(|effect| matches!(effect, Effect::Declaration { .. })).count(),
+        1
+    );
+    assert!(effects.iter().any(|effect| {
+        matches!(effect, Effect::Opaque {
+            reason: IncompleteReason::AmbiguousReference(name), ..
+        } if name == "x")
+    }));
+}
+
+#[test]
+fn whole_array_tag_resolves_but_indexed_tag_is_invalid() {
+    let source =
+        "template T(){signal input {binary} s[2]; var good=s.binary; var bad=s[0].binary;}";
+    let result = lower(&[("array_tag.circom", source)], Version::new(2, 2, 3));
+    assert_eq!(result.diagnostics.len(), 1, "{:?}", result.diagnostics);
+    assert_eq!(result.diagnostics[0].code, SemanticCode::InvalidTagAfterArray);
+    assert_eq!(
+        &source[result.diagnostics[0].span.start()..result.diagnostics[0].span.end()],
+        ".binary"
+    );
+    assert!(has_tag_access(&result));
+}
+
+#[test]
+fn duplicate_template_ports_cannot_be_selected_by_access_or_anonymous_input() {
+    let source = concat!(
+        "template Child(){signal input x; signal input x;} ",
+        "template Use(){component c=Child(); c.x <== 1; var a=Child()(x <== 2);}"
+    );
+    let result = lower(&[("duplicate_ports.circom", source)], Version::new(2, 2, 3));
+    assert!(result.diagnostics.iter().any(|item| item.code == SemanticCode::DuplicateSymbol));
+    assert_eq!(max_port_steps(&result), 0);
+    let anonymous = result
+        .hir
+        .expressions()
+        .iter()
+        .find(|item| matches!(item.kind, ExprKind::AnonymousComponent { .. }))
+        .unwrap();
+    let ExprKind::AnonymousComponent { inputs, .. } = &anonymous.kind else { unreachable!() };
+    assert!(inputs.iter().all(|input| input.resolved_port().is_none()));
+    assert_eq!(anonymous.knownness, Knownness::Opaque);
+}
+
+#[test]
+fn preindexed_parameter_name_does_not_hide_shadowed_bus_argument() {
+    let source = concat!(
+        "bus Inner(n){signal leaf;} template Early(){component c=Later(1); ",
+        "signal output o; o <== c.b.leaf;} template Later(n){signal input x; ",
+        "var n=x; Inner(n) output b;}"
+    );
+    let result = lower(&[("shadowed_bus.circom", source)], Version::new(2, 2, 3));
+    assert!(max_port_steps(&result) < 2);
+    assert!(result.incomplete.iter().any(|item| item.reason == IncompleteReason::UnknownType));
+}
+
+#[test]
+fn locally_proven_bus_argument_recovers_after_conservative_preindex() {
+    let source = concat!(
+        "bus Inner(n){signal leaf;} template T(){var n=1; Inner(n) output b; ",
+        "signal output o; o <== b.leaf;}"
+    );
+    let result = lower(&[("local_bus_arg.circom", source)], Version::new(2, 2, 3));
+    assert!(result.diagnostics.is_empty(), "{:?}", result.diagnostics);
+    assert!(max_port_steps(&result) > 0);
+}
+
+#[test]
+fn unshadowed_parameter_bus_port_resolves_forward() {
+    let source = concat!(
+        "bus Inner(n){signal leaf;} template Early(){component c=Later(1); ",
+        "signal output o; o <== c.b.leaf;} ",
+        "template Later(n){Inner(n) output b;}"
+    );
+    let result = lower(&[("parameter_bus.circom", source)], Version::new(2, 2, 3));
+    assert!(result.diagnostics.is_empty(), "{:?}", result.diagnostics);
+    assert_eq!(max_port_steps(&result), 2);
+}
+
+#[test]
+fn unresolved_function_call_keeps_inline_array_type_unknown() {
+    let source = "template T(){var a=[Unknown()];}";
+    let result = lower(&[("unknown_array_call.circom", source)], Version::new(2, 2, 2));
+    assert_eq!(result.diagnostics.len(), 1);
+    assert_eq!(result.diagnostics[0].code, SemanticCode::MissingCall);
+    assert!(result.incomplete.iter().any(|item| {
+        item.reason == IncompleteReason::UnknownType
+            && matches!(&item.location, IncompleteLocation::Source(span)
+                if &source[span.start()..span.end()] == "[Unknown()]")
+    }));
+    let nested = "template T(){var a=[Unknown()+1];}";
+    let nested_result = lower(&[("nested_unknown_array.circom", nested)], Version::new(2, 2, 2));
+    assert!(nested_result.incomplete.iter().any(|item| {
+        item.reason == IncompleteReason::UnknownType
+            && matches!(&item.location, IncompleteLocation::Source(span)
+                if &nested[span.start()..span.end()] == "[Unknown()+1]")
+    }));
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(32))]
+    #[test]
+    fn duplicates_remain_ambiguous(indices in proptest::collection::vec(0u8..6, 1..8)) {
+        let mut source = String::new();
+        let mut counts = [0usize; 6];
+        for index in &indices {
+            source.push_str(&format!("function F{index}(){{return 1;}} "));
+            counts[usize::from(*index)] += 1;
+        }
+        source.push_str("function Unique(){return 2;}");
+        let result = lower(&[("generated.circom", &source)], Version::new(2, 2, 3));
+        let duplicate_declarations: usize = counts.iter().filter(|count| **count > 1).sum();
+        prop_assert_eq!(result.diagnostics.len(), duplicate_declarations);
+        prop_assert!(result.hir.definition("Unique").is_some());
+        for (index, count) in counts.iter().enumerate() {
+            let name = format!("F{index}");
+            prop_assert_eq!(result.hir.definitions_named(&name).len(), *count);
+            prop_assert_eq!(result.hir.definition(&name).is_some(), *count == 1);
+        }
+    }
+}
+
+#[test]
+fn indexed_writes_and_reads_propagate_witness_knownness() {
+    let source = concat!(
+        "template T(){signal input i; var a[2]=[1,2]; a[0]=i; a[1]=1; ",
+        "signal first[a[0]]; var b[2]=[1,2]; b[i]=3; signal second[b[0]]; ",
+        "var c[2]=[1,2]; signal third[c[i]]; var d[2]; d[0]=1; signal fourth[d[1]];}"
+    );
+    let result = lower(&[("indexed_knownness.circom", source)], Version::new(2, 2, 3));
+    assert_eq!(
+        result
+            .diagnostics
+            .iter()
+            .filter(|item| item.code == SemanticCode::NonConstantArrayLength)
+            .count(),
+        3
+    );
+    assert!(result.incomplete.iter().any(|item| {
+        item.reason == IncompleteReason::NonCompileTime
+            && matches!(&item.location, IncompleteLocation::Source(span)
+                if &source[span.start()..span.end()] == "d[1]")
+    }));
+}
+
+#[test]
+fn parallel_component_and_main_keep_modifier() {
+    let source = concat!(
+        "template Child(){} template T(){component c=parallel Child();} ",
+        "component main=parallel T();"
+    );
+    let result = lower(&[("parallel.circom", source)], Version::new(2, 2, 3));
+    assert!(result.syntax_diagnostics.is_empty(), "{:?}", result.syntax_diagnostics);
+    assert!(result
+        .hir
+        .expressions()
+        .iter()
+        .any(|item| { matches!(item.kind, ExprKind::Parallel(_)) }));
+    assert_eq!(result.hir.mains.len(), 1);
+    assert!(result.hir.mains[0].parallel);
+}
+
+#[test]
+fn invalid_call_rhs_never_creates_constraint_effect() {
+    let source = concat!(
+        "template T(){signal output out; out <== Missing(); ",
+        "out <== 1; Missing() === 2;}"
+    );
+    let result = lower(&[("invalid_rhs.circom", source)], Version::new(2, 2, 3));
+    assert_eq!(
+        result.diagnostics.iter().filter(|item| item.code == SemanticCode::MissingCall).count(),
+        2
+    );
+    let effects = effect_for(&result, "T");
+    assert_eq!(
+        effects.iter().filter(|item| matches!(item, Effect::ConstraintAssignment { .. })).count(),
+        1
+    );
+    assert_eq!(
+        effects.iter().filter(|item| matches!(item, Effect::EqualityConstraint { .. })).count(),
+        0
+    );
+    assert_eq!(effects.iter().filter(|item| matches!(item, Effect::Opaque { .. })).count(), 2);
+}
+
+#[test]
+fn invalid_nested_index_and_missing_anonymous_input_cannot_certify_constraint() {
+    let source = concat!(
+        "template Child(){signal input a; signal input b;} ",
+        "template T(){signal s[2]; signal output out; ",
+        "out <== s[Missing()]; out <== Child()(a <== 1);}"
+    );
+    let result = lower(&[("invalid_nested.circom", source)], Version::new(2, 2, 3));
+    assert!(result.diagnostics.iter().any(|item| item.code == SemanticCode::MissingCall));
+    assert!(result.diagnostics.iter().any(|item| item.code == SemanticCode::AnonymousInput));
+    let effects = effect_for(&result, "T");
+    assert_eq!(
+        effects.iter().filter(|item| matches!(item, Effect::ConstraintAssignment { .. })).count(),
+        0
+    );
+}
+
+#[test]
+fn colliding_bus_tag_and_field_is_not_falsely_resolved_as_tag() {
+    let source = "bus B(){signal x;} template T(){B {x} b; var value=b.x;}";
+    let result = lower(&[("bus_tag_collision.circom", source)], Version::new(2, 2, 3));
+    assert!(result.syntax_diagnostics.is_empty(), "{:?}", result.syntax_diagnostics);
+    assert!(result
+        .incomplete
+        .iter()
+        .any(|item| { item.reason == IncompleteReason::AmbiguousReference("x".into()) }));
+    assert!(result.hir.expressions().iter().all(|item| {
+        !matches!(&item.kind, ExprKind::Access(path)
+            if path.steps.iter().any(|step| matches!(step, AccessStep::Tag { .. })))
+    }));
+}
+
+#[test]
+fn invalid_assignment_index_cannot_certify_constraint() {
+    let source = "template T(){signal output out[2]; out[Missing()] <== 1;}";
+    let result = lower(&[("invalid_lhs_index.circom", source)], Version::new(2, 2, 3));
+    assert!(result.diagnostics.iter().any(|item| item.code == SemanticCode::MissingCall));
+    let effects = effect_for(&result, "T");
+    assert!(effects.iter().all(|item| !matches!(item, Effect::ConstraintAssignment { .. })));
+}
+
+#[test]
+fn external_component_input_tag_has_its_own_diagnostic_code() {
+    let source = concat!(
+        "template Child(){signal input {binary} x;} ",
+        "template T(){component c=Child(); var t=c.x.binary;}"
+    );
+    let result = lower(&[("external_tag.circom", source)], Version::new(2, 2, 3));
+    assert_eq!(result.diagnostics.len(), 1);
+    assert_eq!(result.diagnostics[0].code, SemanticCode::InputTagAccess);
+    assert_eq!(result.diagnostics[0].severity, Severity::Error);
+    let span = result.diagnostics[0].span;
+    assert_eq!(&source[span.start()..span.end()], "binary");
 }

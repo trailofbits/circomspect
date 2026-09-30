@@ -50,6 +50,16 @@ impl Scopes {
     }
 }
 
+struct AccessState {
+    ty: ValueType,
+    terminal: SymbolId,
+    remaining_dimensions: usize,
+    component_input: bool,
+    component_output: bool,
+    indexed_current: bool,
+    steps: Vec<AccessStep>,
+}
+
 struct Lowerer<'a> {
     source: &'a LoadedProject,
     hir: HirProject,
@@ -269,8 +279,19 @@ impl Lowerer<'_> {
             for item in &file.outcome.ast.items {
                 let Item::Definition(definition) = item else { continue };
                 let Some(reference) = self.definition_at(definition.span) else { continue };
+                let mut known_parameters: BTreeSet<String> = match reference {
+                    DefinitionRef::Function(id) => &self.hir.functions[id.index].parameters,
+                    DefinitionRef::Template(id) => &self.hir.templates[id.index].parameters,
+                    DefinitionRef::Bus(id) => &self.hir.buses[id.index].parameters,
+                }
+                .iter()
+                .map(|id| self.hir.symbols[id.index].name.clone())
+                .collect();
                 for statement in &definition.body.statements {
-                    let Statement::Declaration(declaration) = statement else { continue };
+                    let Statement::Declaration(declaration) = statement else {
+                        known_parameters.clear();
+                        continue;
+                    };
                     let (kind, direction, tags, bus_type) = match &declaration.kind {
                         DeclarationKind::Signal { direction, tags } => {
                             (SymbolKind::Signal, Self::direction(*direction), tags.as_slice(), None)
@@ -278,7 +299,10 @@ impl Lowerer<'_> {
                         DeclarationKind::Bus { direction, tags, .. } => {
                             (SymbolKind::Bus, Self::direction(*direction), tags.as_slice(), None)
                         }
-                        DeclarationKind::Variable | DeclarationKind::Component => continue,
+                        DeclarationKind::Variable | DeclarationKind::Component => {
+                            Self::remove_shadowed_parameters(&mut known_parameters, declaration);
+                            continue;
+                        }
                     };
                     let visible = match reference {
                         DefinitionRef::Bus(_) => true,
@@ -286,10 +310,18 @@ impl Lowerer<'_> {
                         DefinitionRef::Function(_) => false,
                     };
                     if !visible {
+                        Self::remove_shadowed_parameters(&mut known_parameters, declaration);
                         continue;
                     }
                     let bus_type = match &declaration.kind {
-                        DeclarationKind::Bus { type_name, .. } => Some(self.resolve_bus(type_name)),
+                        DeclarationKind::Bus { type_name, arguments, .. } => {
+                            Some(self.preindex_bus_type(
+                                type_name,
+                                arguments.values(),
+                                &known_parameters,
+                                declaration.span,
+                            ))
+                        }
                         _ => bus_type,
                     };
                     for declared in &declaration.symbols {
@@ -316,8 +348,72 @@ impl Lowerer<'_> {
                             DefinitionRef::Function(_) => {}
                         }
                     }
+                    Self::remove_shadowed_parameters(&mut known_parameters, declaration);
                 }
             }
+        }
+    }
+
+    fn remove_shadowed_parameters(names: &mut BTreeSet<String>, declaration: &Declaration) {
+        for symbol in &declaration.symbols {
+            names.remove(&symbol.name.name);
+        }
+    }
+
+    fn preindex_bus_type(
+        &mut self,
+        name: &Identifier,
+        arguments: &[Expression],
+        parameters: &BTreeSet<String>,
+        span: Span,
+    ) -> BusTarget {
+        let target = self.resolve_bus(name);
+        let BusTarget::Bus(id) = target else { return target };
+        let expected = self.hir.buses[id.index].parameters.len();
+        if expected != arguments.len() {
+            self.diagnostic(
+                SemanticCode::WrongArity,
+                Severity::Error,
+                span,
+                format!("bus expects {expected} arguments, found {}", arguments.len()),
+            );
+            self.incomplete(span, IncompleteReason::Unsupported("wrong bus argument arity".into()));
+            return BusTarget::Opaque {
+                reason: IncompleteReason::Unsupported("wrong bus argument arity".into()),
+            };
+        }
+        if arguments.iter().all(|argument| Self::syntactic_compile_time(argument, parameters)) {
+            BusTarget::Bus(id)
+        } else {
+            BusTarget::Opaque { reason: IncompleteReason::UnknownType }
+        }
+    }
+
+    fn syntactic_compile_time(expression: &Expression, parameters: &BTreeSet<String>) -> bool {
+        match expression {
+            Expression::Number { .. } => true,
+            Expression::Name { identifier, access, .. } => {
+                access.is_empty() && parameters.contains(&identifier.name)
+            }
+            Expression::Unary { operand, .. } | Expression::Group { expression: operand, .. } => {
+                Self::syntactic_compile_time(operand, parameters)
+            }
+            Expression::Binary { left, right, .. } => {
+                Self::syntactic_compile_time(left, parameters)
+                    && Self::syntactic_compile_time(right, parameters)
+            }
+            Expression::Ternary { condition, yes, no, .. } => {
+                Self::syntactic_compile_time(condition, parameters)
+                    && Self::syntactic_compile_time(yes, parameters)
+                    && Self::syntactic_compile_time(no, parameters)
+            }
+            Expression::Array { elements, .. } | Expression::Tuple { elements, .. } => {
+                elements.iter().all(|element| Self::syntactic_compile_time(element, parameters))
+            }
+            Expression::Call { .. }
+            | Expression::AnonymousCall(_)
+            | Expression::Parallel { .. }
+            | Expression::Error { .. } => false,
         }
     }
 
@@ -560,6 +656,11 @@ impl Lowerer<'_> {
                         self.invalid_assignment(span, "postfix update requires a variable")
                     ];
                 }
+                if !Self::symbolic_indices(&path).all(|id| self.expression_is_checked(id)) {
+                    return vec![self.opaque(span, IncompleteReason::UnknownType)];
+                }
+                let knownness = self.access_knownness(&path);
+                self.hir.symbols[path.terminal.index].knownness = knownness;
                 vec![Effect::Update { target: path, operator: *operator, span }]
             }
             Statement::Constraint { left, right, .. } => {
@@ -577,10 +678,14 @@ impl Lowerer<'_> {
                 }
                 let left = self.lower_expression(left);
                 let right = self.lower_expression(right);
+                if !self.expression_is_checked(left) || !self.expression_is_checked(right) {
+                    return vec![self.opaque(span, IncompleteReason::UnknownType)];
+                }
                 vec![Effect::EqualityConstraint { left, right, span }]
             }
             _ => {
-                vec![self.opaque(span, IncompleteReason::Unsupported("local statement form".into()))]
+                let reason = IncompleteReason::Unsupported("local statement form".into());
+                vec![self.opaque(span, reason)]
             }
         }
     }
@@ -610,9 +715,10 @@ impl Lowerer<'_> {
                 let body = self.lower_branch(body);
                 let after_body = self.snapshot_knownness();
                 let step = self.lower_branch(step);
+                let stable_condition = self.loop_condition_is_stable(condition, &before_loop);
                 self.join_knownness(&before_loop, &after_body);
                 self.scopes.leave();
-                if !self.knownness(condition).is_compile_time() {
+                if !self.knownness(condition).is_compile_time() || !stable_condition {
                     return vec![self.opaque(span, IncompleteReason::NonCompileTime)];
                 }
                 vec![Effect::For { initializer: initializer_block, condition, step, body, span }]
@@ -621,8 +727,9 @@ impl Lowerer<'_> {
                 let before = self.snapshot_knownness();
                 let condition = self.lower_expression(condition);
                 let body = self.lower_branch(body);
+                let stable_condition = self.loop_condition_is_stable(condition, &before);
                 self.join_knownness(&before, &before);
-                if !self.knownness(condition).is_compile_time() {
+                if !self.knownness(condition).is_compile_time() || !stable_condition {
                     return vec![self.opaque(span, IncompleteReason::NonCompileTime)];
                 }
                 vec![Effect::While { condition, body, span }]
@@ -681,6 +788,93 @@ impl Lowerer<'_> {
         self.hir.symbols.iter().map(|symbol| symbol.knownness).collect()
     }
 
+    fn symbolic_indices(path: &AccessPath) -> impl Iterator<Item = ExprId> + '_ {
+        path.steps.iter().filter_map(|step| match step {
+            AccessStep::Index { index: ArrayIndex::Symbolic(id), .. } => Some(*id),
+            AccessStep::Index { index: ArrayIndex::Constant(_), .. }
+            | AccessStep::Port { .. }
+            | AccessStep::Tag { .. } => None,
+        })
+    }
+
+    fn access_knownness(&self, path: &AccessPath) -> Knownness {
+        let mut knownness = self.hir.symbols[path.terminal.index].knownness;
+        for id in Self::symbolic_indices(path) {
+            knownness = knownness.join(self.knownness(id));
+        }
+        knownness
+    }
+
+    fn expression_is_checked(&self, id: ExprId) -> bool {
+        let Some(expression) = self.hir.expression(id) else { return false };
+        match &expression.kind {
+            ExprKind::Number(_) => true,
+            ExprKind::Access(path) => {
+                Self::symbolic_indices(path).all(|id| self.expression_is_checked(id))
+            }
+            ExprKind::Call { target, arguments } => {
+                matches!(target, CallTarget::Function(_) | CallTarget::Template(_))
+                    && arguments.iter().all(|id| self.expression_is_checked(*id))
+            }
+            ExprKind::AnonymousComponent { component, arguments, inputs } => {
+                let target = self.hir.components[component.index].target.as_ref();
+                expression.knownness != Knownness::Opaque
+                    && matches!(target, Some(CallTarget::Template(_)))
+                    && arguments.iter().all(|id| self.expression_is_checked(*id))
+                    && inputs.iter().all(|input| {
+                        matches!(input.target, AnonymousInputTarget::Port(_))
+                            && self.expression_is_checked(input.value)
+                    })
+            }
+            ExprKind::Array(values) | ExprKind::Tuple(values) => {
+                values.iter().all(|id| self.expression_is_checked(*id))
+            }
+            ExprKind::Unary { operand, .. } | ExprKind::Parallel(operand) => {
+                self.expression_is_checked(*operand)
+            }
+            ExprKind::Binary { left, right, .. } => {
+                self.expression_is_checked(*left) && self.expression_is_checked(*right)
+            }
+            ExprKind::Ternary { condition, yes, no } => {
+                self.expression_is_checked(*condition)
+                    && self.expression_is_checked(*yes)
+                    && self.expression_is_checked(*no)
+            }
+            ExprKind::Opaque(_) => false,
+        }
+    }
+
+    fn loop_condition_is_stable(&self, condition: ExprId, before: &[Knownness]) -> bool {
+        let mut pending = vec![condition];
+        while let Some(id) = pending.pop() {
+            let Some(expression) = self.hir.expression(id) else { return false };
+            match &expression.kind {
+                ExprKind::Access(path) => {
+                    let Some(initial) = before.get(path.terminal.index) else { return false };
+                    if self.hir.symbols[path.terminal.index].knownness != *initial {
+                        return false;
+                    }
+                    pending.extend(Self::symbolic_indices(path));
+                }
+                ExprKind::Unary { operand, .. } | ExprKind::Parallel(operand) => {
+                    pending.push(*operand);
+                }
+                ExprKind::Binary { left, right, .. } => pending.extend([*left, *right]),
+                ExprKind::Ternary { condition, yes, no } => {
+                    pending.extend([*condition, *yes, *no]);
+                }
+                ExprKind::Array(elements) | ExprKind::Tuple(elements) => {
+                    pending.extend(elements.iter().copied());
+                }
+                ExprKind::Number(_) => {}
+                ExprKind::Call { .. }
+                | ExprKind::AnonymousComponent { .. }
+                | ExprKind::Opaque(_) => return false,
+            }
+        }
+        true
+    }
+
     fn restore_knownness(&mut self, snapshot: &[Knownness]) {
         for (symbol, knownness) in self.hir.symbols.iter_mut().zip(snapshot) {
             symbol.knownness = *knownness;
@@ -704,7 +898,7 @@ impl Lowerer<'_> {
         self.opaque(span, IncompleteReason::InvalidAssignment)
     }
 
-    fn declare(&mut self, name: &Identifier, kind: SymbolKind) -> SymbolId {
+    fn declare(&mut self, name: &Identifier, kind: SymbolKind) -> Option<SymbolId> {
         if self.scopes.current(&name.name).is_some() {
             self.diagnostic(
                 SemanticCode::DuplicateSymbol,
@@ -712,7 +906,7 @@ impl Lowerer<'_> {
                 name.span,
                 format!("duplicate local symbol `{}`", name.name),
             );
-            self.incomplete(name.span, IncompleteReason::AmbiguousReference(name.name.clone()));
+            return None;
         } else if let Some(outer) = self.scopes.outer(&name.name) {
             if kind == SymbolKind::Variable
                 && matches!(
@@ -729,10 +923,8 @@ impl Lowerer<'_> {
             }
         }
         let id = self.hir.add_symbol(name.name.clone(), kind, name.span);
-        if self.scopes.current(&name.name).is_none() {
-            self.scopes.insert(name.name.clone(), id);
-        }
-        id
+        self.scopes.insert(name.name.clone(), id);
+        Some(id)
     }
 
     fn lower_declaration(&mut self, declaration: &Declaration) -> Vec<Effect> {
@@ -801,7 +993,12 @@ impl Lowerer<'_> {
             self.predeclared_ports.get(&Self::span_key(declared.name.span)).copied()
         });
         let mut bus_type = if let Some(symbol) = predeclared {
-            self.hir.symbols[symbol.index].bus_type.clone()
+            match self.hir.symbols[symbol.index].bus_type.clone() {
+                Some(BusTarget::Opaque { reason: IncompleteReason::UnknownType }) => {
+                    Some(self.resolve_bus(type_name))
+                }
+                other => other,
+            }
         } else {
             Some(self.resolve_bus(type_name))
         };
@@ -840,10 +1037,15 @@ impl Lowerer<'_> {
         let symbol = if let Some(symbol) =
             self.predeclared_ports.get(&Self::span_key(declared.name.span)).copied()
         {
-            self.bind_predeclared(&declared.name, symbol);
-            symbol
+            self.bind_predeclared(&declared.name, symbol).then_some(symbol)
         } else {
             self.declare(&declared.name, kind)
+        };
+        let Some(symbol) = symbol else {
+            return vec![self.opaque(
+                declared.span,
+                IncompleteReason::AmbiguousReference(declared.name.name.clone()),
+            )];
         };
         self.hir.symbols[symbol.index].bus_type = bus_type;
         self.hir.symbols[symbol.index].bus_arguments = bus_arguments.to_vec();
@@ -876,6 +1078,13 @@ impl Lowerer<'_> {
             if elements.len() == declaration.symbols.len() {
                 for (declared, element) in declaration.symbols.iter().zip(elements) {
                     if let Some(symbol) = self.scopes.resolve(&declared.name.name) {
+                        if self.hir.symbols[symbol.index].span != declared.name.span {
+                            effects.push(self.opaque(
+                                declared.span,
+                                IncompleteReason::AmbiguousReference(declared.name.name.clone()),
+                            ));
+                            continue;
+                        }
                         effects.push(self.assignment_for_symbol(
                             symbol,
                             *operator,
@@ -899,7 +1108,7 @@ impl Lowerer<'_> {
         effects
     }
 
-    fn bind_predeclared(&mut self, name: &Identifier, symbol: SymbolId) {
+    fn bind_predeclared(&mut self, name: &Identifier, symbol: SymbolId) -> bool {
         if self.scopes.current(&name.name).is_some() {
             self.diagnostic(
                 SemanticCode::DuplicateSymbol,
@@ -907,8 +1116,10 @@ impl Lowerer<'_> {
                 name.span,
                 format!("duplicate local symbol `{}`", name.name),
             );
+            false
         } else {
             self.scopes.insert(name.name.clone(), symbol);
+            true
         }
     }
 
@@ -973,6 +1184,11 @@ impl Lowerer<'_> {
         value: ExprId,
         span: Span,
     ) -> Effect {
+        if !self.expression_is_checked(value)
+            || !Self::symbolic_indices(&path).all(|id| self.expression_is_checked(id))
+        {
+            return self.opaque(span, IncompleteReason::UnknownType);
+        }
         match (kind, operator) {
             (SymbolKind::Variable, AssignmentOperator::Assign)
             | (SymbolKind::Variable, AssignmentOperator::Add)
@@ -993,10 +1209,10 @@ impl Lowerer<'_> {
                     let current = self.hir.symbols[path.terminal.index].knownness;
                     let next = self.knownness(value);
                     self.hir.symbols[path.terminal.index].knownness =
-                        if operator == AssignmentOperator::Assign {
+                        if operator == AssignmentOperator::Assign && path.steps.is_empty() {
                             next
                         } else {
-                            current.join(next)
+                            current.join(next).join(self.access_knownness(&path))
                         };
                 }
                 if kind == SymbolKind::Component
@@ -1024,16 +1240,18 @@ impl Lowerer<'_> {
 
     fn lower_component_value(&mut self, symbol: SymbolId, value: &Expression) -> ExprId {
         let call = match value {
-            Expression::Call { name, arguments, span } => Some((name, arguments.as_slice(), *span)),
+            Expression::Call { name, arguments, span } => {
+                Some((name, arguments.as_slice(), *span, false))
+            }
             Expression::Parallel { operand, .. } => match operand.as_ref() {
                 Expression::Call { name, arguments, span } => {
-                    Some((name, arguments.as_slice(), *span))
+                    Some((name, arguments.as_slice(), *span, true))
                 }
                 _ => None,
             },
             _ => None,
         };
-        let Some((name, arguments, span)) = call else {
+        let Some((name, arguments, span, parallel)) = call else {
             self.diagnostic(
                 SemanticCode::InvalidAssignment,
                 Severity::Error,
@@ -1067,7 +1285,13 @@ impl Lowerer<'_> {
             CallTarget::Template(id) => ValueType::Component(id),
             _ => ValueType::Unknown,
         };
-        self.add_expression(ExprKind::Call { target, arguments }, Knownness::Opaque, span, ty)
+        let call =
+            self.add_expression(ExprKind::Call { target, arguments }, Knownness::Opaque, span, ty);
+        if parallel {
+            self.add_expression(ExprKind::Parallel(call), Knownness::Opaque, value.span(), ty)
+        } else {
+            call
+        }
     }
 
     fn lower_access(&mut self, expression: &Expression) -> Option<AccessPath> {
@@ -1085,79 +1309,129 @@ impl Lowerer<'_> {
             );
             return None;
         };
-        let mut ty = self.symbol_type(root);
-        let mut terminal = root;
-        let mut remaining_dimensions = self.hir.symbols[root.index].rank;
-        let mut external_input = false;
-        let mut external_output = false;
-        let mut steps = Vec::new();
+        let mut state = AccessState {
+            ty: self.symbol_type(root),
+            terminal: root,
+            remaining_dimensions: self.hir.symbols[root.index].rank,
+            component_input: false,
+            component_output: false,
+            indexed_current: false,
+            steps: Vec::new(),
+        };
         for part in access {
-            match part {
+            let valid = match part {
                 Access::Index { expression, span } => {
-                    if remaining_dimensions == 0 {
-                        self.diagnostic(
-                            SemanticCode::InvalidArrayAccess,
-                            Severity::Error,
-                            *span,
-                            "index applied to a scalar or beyond declared array rank".into(),
-                        );
-                        self.incomplete(*span, IncompleteReason::InvalidAssignment);
-                        return None;
-                    }
-                    let id = self.lower_expression(expression);
-                    let index = match &self.hir.expressions[id.index].kind {
-                        ExprKind::Number(value) => ArrayIndex::Constant(value.clone()),
-                        _ => ArrayIndex::Symbolic(id),
-                    };
-                    steps.push(AccessStep::Index { index, span: *span });
-                    remaining_dimensions = remaining_dimensions.saturating_sub(1);
+                    self.apply_access_index(&mut state, expression, *span)
                 }
-                Access::Field { field, span } => {
-                    if remaining_dimensions != 0 {
-                        self.diagnostic(
-                            SemanticCode::InvalidArrayAccess,
-                            Severity::Error,
-                            *span,
-                            "field access requires a fully indexed array".into(),
-                        );
-                        self.incomplete(*span, IncompleteReason::InvalidAssignment);
-                        return None;
-                    }
-                    let from_component = matches!(ty, ValueType::Component(_));
-                    let (step, symbol, next) = self.resolve_field(
-                        ty,
-                        terminal,
-                        field,
-                        remaining_dimensions,
-                        external_input,
-                    )?;
-                    if from_component {
-                        if let AccessStep::Port { port, .. } = &step {
-                            external_input |=
-                                self.hir.ports[port.index].direction == Some(PortDirection::Input);
-                            external_output |=
-                                self.hir.ports[port.index].direction == Some(PortDirection::Output);
-                        }
-                    }
-                    steps.push(match step {
-                        AccessStep::Port { port, .. } => AccessStep::Port { port, span: *span },
-                        AccessStep::Tag { symbol, .. } => AccessStep::Tag { symbol, span: *span },
-                        AccessStep::Index { .. } => return None,
-                    });
-                    terminal = symbol;
-                    ty = next;
-                    remaining_dimensions = self.hir.symbols[terminal.index].rank;
-                }
+                Access::Field { field, span } => self.apply_access_field(&mut state, field, *span),
+            };
+            if !valid {
+                return None;
             }
         }
         Some(AccessPath {
             root,
-            steps,
-            terminal,
-            component_input: external_input,
-            component_output: external_output,
+            steps: state.steps,
+            terminal: state.terminal,
+            component_input: state.component_input,
+            component_output: state.component_output,
             span: *span,
         })
+    }
+
+    fn apply_access_index(
+        &mut self,
+        state: &mut AccessState,
+        expression: &Expression,
+        span: Span,
+    ) -> bool {
+        if state.remaining_dimensions == 0 {
+            self.diagnostic(
+                SemanticCode::InvalidArrayAccess,
+                Severity::Error,
+                span,
+                "index applied to a scalar or beyond declared array rank".into(),
+            );
+            self.incomplete(span, IncompleteReason::InvalidAssignment);
+            return false;
+        }
+        let id = self.lower_expression(expression);
+        let index = match &self.hir.expressions[id.index].kind {
+            ExprKind::Number(value) => ArrayIndex::Constant(value.clone()),
+            _ => ArrayIndex::Symbolic(id),
+        };
+        state.steps.push(AccessStep::Index { index, span });
+        state.remaining_dimensions -= 1;
+        state.indexed_current = true;
+        true
+    }
+
+    fn apply_access_field(
+        &mut self,
+        state: &mut AccessState,
+        field: &Identifier,
+        span: Span,
+    ) -> bool {
+        let is_tag = self.hir.symbols[state.terminal.index]
+            .tags
+            .iter()
+            .any(|tag| self.hir.symbols[tag.index].name == field.name);
+        if is_tag {
+            if let ValueType::Bus(id) = state.ty {
+                let collides = self.hir.buses[id.index].ports.iter().any(|port| {
+                    let symbol = self.hir.ports[port.index].symbol;
+                    self.hir.symbols[symbol.index].name == field.name
+                });
+                if collides {
+                    self.incomplete(span, IncompleteReason::AmbiguousReference(field.name.clone()));
+                    return false;
+                }
+            }
+        }
+        if is_tag && state.indexed_current {
+            self.diagnostic(
+                SemanticCode::InvalidTagAfterArray,
+                Severity::Error,
+                span,
+                "tag access after array indexing is invalid".into(),
+            );
+            self.incomplete(span, IncompleteReason::InvalidAssignment);
+            return false;
+        }
+        if state.remaining_dimensions != 0 && !is_tag {
+            self.diagnostic(
+                SemanticCode::InvalidArrayAccess,
+                Severity::Error,
+                span,
+                "field access requires a fully indexed array".into(),
+            );
+            self.incomplete(span, IncompleteReason::InvalidAssignment);
+            return false;
+        }
+        let from_component = matches!(state.ty, ValueType::Component(_));
+        let Some((step, symbol, next)) =
+            self.resolve_field(state.ty, state.terminal, field, state.component_input)
+        else {
+            return false;
+        };
+        if from_component {
+            if let AccessStep::Port { port, .. } = &step {
+                state.component_input |=
+                    self.hir.ports[port.index].direction == Some(PortDirection::Input);
+                state.component_output |=
+                    self.hir.ports[port.index].direction == Some(PortDirection::Output);
+            }
+        }
+        state.steps.push(match step {
+            AccessStep::Port { port, .. } => AccessStep::Port { port, span },
+            AccessStep::Tag { symbol, .. } => AccessStep::Tag { symbol, span },
+            AccessStep::Index { .. } => return false,
+        });
+        state.terminal = symbol;
+        state.ty = next;
+        state.remaining_dimensions = self.hir.symbols[symbol.index].rank;
+        state.indexed_current = false;
+        true
     }
 
     fn symbol_type(&self, symbol: SymbolId) -> ValueType {
@@ -1185,7 +1459,6 @@ impl Lowerer<'_> {
         ty: ValueType,
         current: SymbolId,
         field: &Identifier,
-        remaining_dimensions: usize,
         external_input: bool,
     ) -> Option<(AccessStep, SymbolId, ValueType)> {
         let tag = self.hir.symbols[current.index]
@@ -1194,9 +1467,9 @@ impl Lowerer<'_> {
             .find(|tag| self.hir.symbols[tag.index].name == field.name)
             .copied();
         if let Some(symbol) = tag {
-            if remaining_dimensions != 0 || external_input {
+            if external_input {
                 self.diagnostic(
-                    SemanticCode::InvalidSignalAccess,
+                    SemanticCode::InputTagAccess,
                     Severity::Error,
                     field.span,
                     format!("tag `{}` cannot be accessed here", field.name),
@@ -1212,13 +1485,21 @@ impl Lowerer<'_> {
             ValueType::Plain | ValueType::Unknown => None,
         };
         if let Some(ports) = ports {
-            let result = ports
+            let matching: Vec<_> = ports
                 .iter()
-                .find(|port| {
+                .filter(|port| {
                     self.hir.symbols[self.hir.ports[port.index].symbol.index].name == field.name
                 })
-                .copied();
-            if let Some(port) = result {
+                .copied()
+                .collect();
+            if matching.len() > 1 {
+                self.incomplete(
+                    field.span,
+                    IncompleteReason::AmbiguousReference(field.name.clone()),
+                );
+                return None;
+            }
+            if let Some(port) = matching.first().copied() {
                 let symbol = self.hir.ports[port.index].symbol;
                 return Some((
                     AccessStep::Port { port, span: field.span },
@@ -1236,8 +1517,13 @@ impl Lowerer<'_> {
         } else if ty == ValueType::Unknown {
             self.incomplete(field.span, IncompleteReason::UnknownType);
         } else {
+            let code = if self.hir.symbols[current.index].kind == SymbolKind::Signal {
+                SemanticCode::InvalidTag
+            } else {
+                SemanticCode::InvalidSignalAccess
+            };
             self.diagnostic(
-                SemanticCode::InvalidSignalAccess,
+                code,
                 Severity::Error,
                 field.span,
                 format!("`{}` is not a declared field or tag", field.name),
@@ -1302,7 +1588,7 @@ impl Lowerer<'_> {
                 ValueType::Unknown,
             );
         }
-        let knownness = self.hir.symbols[path.terminal.index].knownness;
+        let knownness = self.access_knownness(&path);
         if knownness == Knownness::Opaque {
             self.incomplete(span, IncompleteReason::UnknownType);
         }
@@ -1322,19 +1608,23 @@ impl Lowerer<'_> {
                 reason: IncompleteReason::Unsupported("wrong argument arity".into()),
             };
         }
-        self.add_expression(
-            ExprKind::Call { target, arguments },
-            Knownness::Opaque,
-            span,
-            ValueType::Plain,
-        )
+        let ty = if matches!(target, CallTarget::Function(_)) {
+            ValueType::Plain
+        } else {
+            ValueType::Unknown
+        };
+        self.add_expression(ExprKind::Call { target, arguments }, Knownness::Opaque, span, ty)
     }
 
     fn lower_collection(&mut self, values: &[Expression], span: Span, array: bool) -> ExprId {
         let elements: Vec<_> = values.iter().map(|value| self.lower_expression(value)).collect();
         let knownness =
             elements.iter().fold(Knownness::Constant, |acc, id| acc.join(self.knownness(*id)));
-        let ty = self.array_type(&elements);
+        let ty = if elements.iter().all(|id| self.expression_is_checked(*id)) {
+            self.array_type(&elements)
+        } else {
+            ValueType::Unknown
+        };
         if array {
             self.array_types.insert(Self::span_key(span), ty);
             self.add_expression(ExprKind::Array(elements), knownness, span, ty)
@@ -1486,7 +1776,7 @@ impl Lowerer<'_> {
                 span,
             };
         };
-        let port = {
+        let ports: Vec<_> = {
             let inputs = self.hir.templates[template.index]
                 .ports
                 .iter()
@@ -1494,14 +1784,28 @@ impl Lowerer<'_> {
             if let Some(name) = name {
                 inputs
                     .into_iter()
-                    .find(|port| {
+                    .filter(|port| {
                         self.hir.symbols[self.hir.ports[port.index].symbol.index].name == name.name
                     })
                     .copied()
+                    .collect()
             } else {
-                inputs.into_iter().nth(position).copied()
+                inputs.into_iter().nth(position).copied().into_iter().collect()
             }
         };
+        if ports.len() > 1 {
+            let reason = IncompleteReason::AmbiguousReference(
+                name.map_or_else(|| position.to_string(), |name| name.name.clone()),
+            );
+            self.incomplete(span, reason.clone());
+            return AnonymousInputEffect {
+                target: AnonymousInputTarget::Opaque(reason),
+                operator,
+                value,
+                span,
+            };
+        }
+        let port = ports.first().copied();
         let target = if operator != InputAssignmentOperator::Constraint {
             self.diagnostic(
                 SemanticCode::AnonymousInput,
@@ -1535,6 +1839,22 @@ impl Lowerer<'_> {
         inputs: &mut [AnonymousInputEffect],
         span: Span,
     ) -> bool {
+        let mut names = BTreeSet::new();
+        for port in &self.hir.templates[template.index].ports {
+            if self.hir.ports[port.index].direction != Some(PortDirection::Input) {
+                continue;
+            }
+            let symbol = self.hir.ports[port.index].symbol;
+            if !names.insert(self.hir.symbols[symbol.index].name.as_str()) {
+                self.incomplete(
+                    span,
+                    IncompleteReason::AmbiguousReference(
+                        self.hir.symbols[symbol.index].name.clone(),
+                    ),
+                );
+                return false;
+            }
+        }
         let mut used = BTreeSet::new();
         for input in inputs.iter_mut() {
             let AnonymousInputTarget::Port(port) = input.target else { continue };
@@ -1573,16 +1893,18 @@ impl Lowerer<'_> {
             for item in &file.outcome.ast.items {
                 let Item::Main { instance, span, .. } = item else { continue };
                 let call = match instance {
-                    Expression::Call { name, arguments, .. } => Some((name, arguments.as_slice())),
+                    Expression::Call { name, arguments, .. } => {
+                        Some((name, arguments.as_slice(), false))
+                    }
                     Expression::Parallel { operand, .. } => match operand.as_ref() {
                         Expression::Call { name, arguments, .. } => {
-                            Some((name, arguments.as_slice()))
+                            Some((name, arguments.as_slice(), true))
                         }
                         _ => None,
                     },
                     _ => None,
                 };
-                if let Some((name, arguments)) = call {
+                if let Some((name, arguments, parallel)) = call {
                     self.scopes.enter();
                     let arguments: Vec<_> =
                         arguments.iter().map(|value| self.lower_expression(value)).collect();
@@ -1597,7 +1919,7 @@ impl Lowerer<'_> {
                     } else if !valid_arguments {
                         target = CallTarget::Opaque { reason: IncompleteReason::NonCompileTime };
                     }
-                    self.hir.mains.push(Main { target, arguments, span: *span });
+                    self.hir.mains.push(Main { target, arguments, parallel, span: *span });
                 } else {
                     self.diagnostic(
                         SemanticCode::WrongTemplate,
