@@ -194,6 +194,9 @@ impl Builder<'_> {
     fn block(&mut self, mut tails: Tails, id: BlockId) -> Result<Tails, BuildError> {
         let block = self.hir.block(id).ok_or(BuildError::MissingBlock(id))?;
         for (effect_index, effect) in block.effects.iter().enumerate() {
+            if tails.is_empty() {
+                break;
+            }
             let origin = Origin {
                 block: id,
                 effect_index,

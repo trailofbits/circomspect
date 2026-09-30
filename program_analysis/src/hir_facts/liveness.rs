@@ -5,7 +5,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use abstract_interpretation::graph::NodeId;
 use abstract_interpretation::lattice::Lattice;
 use abstract_interpretation::solver::{DataflowAnalysis, Transfer, TransferOutcome};
-use parser::hir::{ExprId, HirProject};
+use parser::hir::{DefinitionRef, ExprId, HirProject, SymbolId};
+use parser::new_frontend::PortDirection;
 
 use crate::hir_cfg::{CfgEdge, CfgNode, CfgNodeKind, DefinitionCfg, EdgeKind};
 
@@ -62,6 +63,28 @@ impl Lattice for LiveState {
 pub struct LivenessAnalysis<'a> {
     pub hir: &'a HirProject,
     pub field: &'a FieldContext,
+    pub observable_outputs: BTreeSet<SymbolId>,
+}
+
+impl LivenessAnalysis<'_> {
+    pub fn new<'a>(
+        hir: &'a HirProject,
+        field: &'a FieldContext,
+        definition: DefinitionRef,
+    ) -> LivenessAnalysis<'a> {
+        let ports = match definition {
+            DefinitionRef::Function(_) => &[][..],
+            DefinitionRef::Template(id) => hir.template(id).map_or(&[][..], |item| &item.ports),
+            DefinitionRef::Bus(id) => hir.bus(id).map_or(&[][..], |item| &item.ports),
+        };
+        let observable_outputs = ports
+            .iter()
+            .filter_map(|id| hir.port(*id))
+            .filter(|port| port.direction == Some(PortDirection::Output))
+            .map(|port| port.symbol)
+            .collect();
+        LivenessAnalysis { hir, field, observable_outputs }
+    }
 }
 
 impl DataflowAnalysis<DefinitionCfg> for LivenessAnalysis<'_> {
@@ -89,7 +112,15 @@ impl Transfer<LivenessAnalysis<'_>, LiveState, String> for CfgNode {
             CfgNodeKind::Evaluate(expression) => {
                 complete &= collect(analysis, *expression, live, &empty);
             }
-            CfgNodeKind::Witness { target, .. } | CfgNodeKind::Assignment { target, .. } => {
+            CfgNodeKind::Witness { target, .. } => {
+                let key = key_for_path(analysis.hir, analysis.field, target, &empty);
+                if analysis.observable_outputs.contains(&target.root) || target.component_input {
+                    live.insert(key);
+                } else if key.exact_alias(&key) {
+                    live.remove(&key);
+                }
+            }
+            CfgNodeKind::Assignment { target, .. } => {
                 let key = key_for_path(analysis.hir, analysis.field, target, &empty);
                 if key.exact_alias(&key) {
                     live.remove(&key);
@@ -242,7 +273,7 @@ mod tests {
             .unwrap();
         let node =
             CfgNode { id: NodeId::new(0), kind: CfgNodeKind::Evaluate(expression), origin: None };
-        let analysis = LivenessAnalysis { hir: &hir, field: &field };
+        let analysis = LivenessAnalysis::new(&hir, &field, hir.definition("T").unwrap());
         for left in &states {
             for right in &states {
                 if !left.leq(right) {

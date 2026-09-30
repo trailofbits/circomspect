@@ -151,3 +151,21 @@ fn conditional_has_distinct_true_false_paths() {
     assert!(cfg.edges().iter().any(|id| cfg.edge(*id).unwrap().payload.kind == EdgeKind::True));
     assert!(cfg.edges().iter().any(|id| cfg.edge(*id).unwrap().payload.kind == EdgeKind::False));
 }
+
+#[test]
+fn effects_after_return_do_not_enter_the_cfg() {
+    let (project, definition) = fixture("function Check(){var x=1; return x; var y=0; y++;}");
+    let cfg = build_cfg(&project.hir, definition).unwrap();
+    assert!(!cfg.nodes().iter().any(|id| {
+        let Some(node) = cfg.node(*id) else { return false };
+        matches!(&node.kind, CfgNodeKind::Opaque(_))
+    }));
+    let return_edges: Vec<_> = cfg
+        .edges()
+        .iter()
+        .filter_map(|id| cfg.edge(*id))
+        .filter(|edge| edge.payload.kind == EdgeKind::Return)
+        .collect();
+    assert_eq!(return_edges.len(), 1);
+    assert_eq!(return_edges[0].target, cfg.exit);
+}

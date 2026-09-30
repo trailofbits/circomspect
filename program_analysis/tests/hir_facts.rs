@@ -235,6 +235,43 @@ fn aggregate_equality_does_not_hide_child_constraint() {
 }
 
 #[test]
+fn aggregate_values_do_not_certify_scalar_range_or_degree() {
+    let (hir, definition) = fixture(
+        "bus B(){signal x;} template Check(){B input source; B output target; target <== source;}",
+    );
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let aggregate = hir
+        .expressions()
+        .iter()
+        .find_map(|expression| {
+            let ExprKind::Access(path) = &expression.kind else { return None };
+            hir.symbol(path.root)
+                .is_some_and(|symbol| symbol.name == "source")
+                .then_some(expression.id)
+        })
+        .unwrap();
+    assert!(facts.range(aggregate).unavailable().is_some());
+    assert!(facts.degree(aggregate).unavailable().is_some());
+
+    let (hir, definition) =
+        fixture("template Check(){signal input a[2]; signal output b[2]; b <== a;}");
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let aggregate = hir
+        .expressions()
+        .iter()
+        .find_map(|expression| {
+            let ExprKind::Access(path) = &expression.kind else { return None };
+            hir.symbol(path.root).is_some_and(|symbol| symbol.name == "a").then_some(expression.id)
+        })
+        .unwrap();
+    assert!(facts.range(aggregate).unavailable().is_some());
+    assert!(facts.degree(aggregate).unavailable().is_some());
+}
+
+#[test]
 fn constraint_dependencies_follow_intermediate_variables() {
     let (hir, definition) =
         fixture("template Check(){signal input x; var t=x; signal output y; y <== t;}");
@@ -242,7 +279,7 @@ fn constraint_dependencies_follow_intermediate_variables() {
     let field = FieldContext::for_curve(Curve::Bn254);
     let facts = analyze(&hir, &cfg, &field, None).unwrap();
     let x = expression_path(&hir, "x", 0);
-    assert_ne!(facts.incidence(&x).certified(), Some(&Incidence::Zero));
+    assert_eq!(facts.incidence(&x).certified(), Some(&Incidence::May));
 
     let (hir, definition) =
         fixture("template Check(){signal input x; var t=x; signal output y; y <-- t;}");
@@ -275,6 +312,48 @@ fn backward_liveness_tracks_reads_before_assignment() {
         })
         .unwrap();
     assert_eq!(facts.live_before(read, &x).certified(), Some(&true));
+}
+
+#[test]
+fn template_output_is_live_at_exit_while_unused_local_is_dead() {
+    let (hir, definition) = fixture("template Check(){var t=7; signal output y; y <-- 7;}");
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let output = assigned_path(&hir, definition, "y");
+    let t = hir.symbols().iter().find(|symbol| symbol.name == "t").unwrap();
+    let local_assignment = cfg
+        .nodes()
+        .iter()
+        .copied()
+        .find(|id| {
+            let Some(node) = cfg.node(*id) else { return false };
+            matches!(&node.kind, CfgNodeKind::Assignment { target, .. } if target.root == t.id)
+        })
+        .unwrap();
+    let output_assignment = cfg
+        .nodes()
+        .iter()
+        .copied()
+        .find(|id| {
+            let Some(node) = cfg.node(*id) else { return false };
+            matches!(&node.kind, CfgNodeKind::Witness { target, .. } if target.root == output.root)
+        })
+        .unwrap();
+    assert_eq!(facts.live_before(output_assignment, &output).certified(), Some(&true));
+    let DefinitionRef::Template(id) = definition else { panic!("template fixture") };
+    let body = hir.block(hir.template(id).unwrap().body).unwrap();
+    let local = body
+        .effects
+        .iter()
+        .find_map(|effect| match effect {
+            Effect::VariableAssignment { target, .. } if target.root == t.id => {
+                Some(target.clone())
+            }
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(facts.live_before(local_assignment, &local).certified(), Some(&false));
 }
 
 #[test]

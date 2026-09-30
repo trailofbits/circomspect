@@ -121,14 +121,19 @@ pub fn analyze<'a>(
     }
     let forward = solve::<_, _, Forward>(cfg, &ForwardAnalysis { hir, field }, budget)
         .map_err(AnalysisError::InvalidGraph)?;
-    let backward = solve::<_, _, Backward>(cfg, &LivenessAnalysis { hir, field }, budget)
-        .map_err(AnalysisError::InvalidGraph)?;
+    let backward =
+        solve::<_, _, Backward>(cfg, &LivenessAnalysis::new(hir, field, cfg.definition), budget)
+            .map_err(AnalysisError::InvalidGraph)?;
     Ok(AnalysisFacts { hir, cfg, field, forward, backward })
 }
 
 impl AnalysisFacts<'_> {
     /// A compile-time exact value or the full canonical field range.
     pub fn range(&self, expression: ExprId) -> Fact<FieldRange> {
+        let scalar_blockers = self.scalar_blockers(expression);
+        if !scalar_blockers.is_empty() {
+            return Fact::blocked(scalar_blockers);
+        }
         let mut result = FieldRange::Unreachable;
         let mut observed = false;
         for node in self.cfg.nodes() {
@@ -159,7 +164,8 @@ impl AnalysisFacts<'_> {
 
     /// Upper bound on witness polynomial degree; unknown operations are unbounded.
     pub fn degree(&self, expression: ExprId) -> Fact<DegreeUpper> {
-        let blockers = self.expression_blockers(expression);
+        let mut blockers = self.expression_blockers(expression);
+        blockers.extend(self.scalar_blockers(expression));
         if !blockers.is_empty() {
             return Fact::blocked(blockers);
         }
@@ -275,6 +281,30 @@ impl AnalysisFacts<'_> {
                 }
             }
         }
+        blockers
+    }
+
+    fn scalar_blockers(&self, expression: ExprId) -> BTreeSet<FactBlocker> {
+        let mut blockers = BTreeSet::new();
+        let Some(expr) = self.hir.expression(expression) else {
+            blockers.insert(FactBlocker::OpaqueExpression(expression));
+            return blockers;
+        };
+        if let ExprKind::Array(_) | ExprKind::Tuple(_) = &expr.kind {
+            blockers.insert(FactBlocker::AggregateAccess);
+        }
+        expression.visit_accesses(self.hir, &mut |path| {
+            let index_count = path
+                .steps
+                .iter()
+                .filter(|step| matches!(step, parser::hir::AccessStep::Index { .. }))
+                .count();
+            if self.hir.symbol(path.terminal).is_some_and(|symbol| {
+                symbol.rank > index_count || symbol.kind == parser::hir::SymbolKind::Bus
+            }) {
+                blockers.insert(FactBlocker::AggregateAccess);
+            }
+        });
         blockers
     }
 
