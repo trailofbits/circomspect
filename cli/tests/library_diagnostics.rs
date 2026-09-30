@@ -278,6 +278,21 @@ fn function_cannot_be_used_as_main_template() {
 }
 
 #[test]
+fn component_initializer_requires_template_but_parameters_can_call_functions() {
+    let path = fixture("function_as_component.circom");
+    let output = run(&[path.to_str().expect("fixture path is not UTF-8"), "--level", "error"]);
+    let stdout = String::from_utf8(output.stdout).expect("CLI output is not UTF-8");
+
+    assert!(!output.status.success(), "{stdout}");
+    assert_eq!(stdout.matches("error:").count(), 2, "{stdout}");
+    assert!(stdout.contains("OnlyFunction"), "{stdout}");
+    assert!(stdout.contains("template is required"), "{stdout}");
+    assert!(stdout.contains("function_as_component.circom:17:"), "{stdout}");
+    assert!(stdout.contains("analyzing template 'UsesValidTargets'"), "{stdout}");
+    assert!(stdout.contains("analyzing template 'UsesParallelWrongTarget'"), "{stdout}");
+}
+
+#[test]
 fn wrong_main_target_has_a_source_location_in_sarif() {
     let source = fixture("function_as_main.circom");
     let sarif = std::env::temp_dir().join(format!("circomspect-main-{}.sarif", std::process::id()));

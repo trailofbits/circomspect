@@ -107,30 +107,50 @@ impl ContainsExpression for Expression {
     }
 }
 
+/// Visits every statement in a body, including nested blocks and branches.
+pub(crate) trait ContainsStatement {
+    fn visit_statements(&self, visitor: &mut impl FnMut(&Statement));
+}
+
+impl ContainsStatement for Statement {
+    fn visit_statements(&self, visitor: &mut impl FnMut(&Statement)) {
+        use Statement::*;
+
+        visitor(self);
+        match self {
+            IfThenElse { if_case, else_case, .. } => {
+                if_case.visit_statements(visitor);
+                if let Some(else_case) = else_case {
+                    else_case.visit_statements(visitor);
+                }
+            }
+            While { stmt, .. } => stmt.visit_statements(visitor),
+            InitializationBlock { initializations: stmts, .. } | Block { stmts, .. } => {
+                for statement in stmts {
+                    statement.visit_statements(visitor);
+                }
+            }
+            Return { .. }
+            | Declaration { .. }
+            | Substitution { .. }
+            | MultiSubstitution { .. }
+            | ConstraintEquality { .. }
+            | LogCall { .. }
+            | Assert { .. } => {}
+        }
+    }
+}
+
 impl ContainsExpression for Statement {
     fn visit_expressions(&self, visitor: &mut impl FnMut(&Expression)) {
         use Access::*;
         use LogArgument::*;
         use Statement::*;
 
-        match self {
-            IfThenElse { cond, if_case, else_case, .. } => {
-                cond.visit_expressions(visitor);
-                if_case.visit_expressions(visitor);
-                if let Some(else_case) = else_case {
-                    else_case.visit_expressions(visitor);
-                }
-            }
-            While { cond, stmt, .. } => {
-                cond.visit_expressions(visitor);
-                stmt.visit_expressions(visitor);
-            }
+        self.visit_statements(&mut |statement| match statement {
+            IfThenElse { cond, .. } | While { cond, .. } => cond.visit_expressions(visitor),
             Return { value, .. } => value.visit_expressions(visitor),
-            InitializationBlock { initializations, .. } => {
-                for initialization in initializations {
-                    initialization.visit_expressions(visitor);
-                }
-            }
+            InitializationBlock { .. } | Block { .. } => {}
             Declaration { dimensions, .. } => {
                 for dimension in dimensions {
                     dimension.visit_expressions(visitor);
@@ -155,12 +175,7 @@ impl ContainsExpression for Statement {
                     }
                 }
             }
-            Block { stmts, .. } => {
-                for statement in stmts {
-                    statement.visit_expressions(visitor);
-                }
-            }
             Assert { arg, .. } => arg.visit_expressions(visitor),
-        }
+        });
     }
 }
