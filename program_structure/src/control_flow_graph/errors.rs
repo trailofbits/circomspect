@@ -1,4 +1,4 @@
-use thiserror::Error;
+use std::fmt::{Display, Formatter};
 
 use crate::report_code::ReportCode;
 use crate::report::Report;
@@ -6,13 +6,18 @@ use crate::file_definition::{FileID, FileLocation};
 use crate::ir::errors::IRError;
 
 /// Error enum for CFG generation errors.
-#[derive(Debug, Error)]
+#[derive(Debug)]
 pub enum CFGError {
-    #[error("The variable `{name}` is read before it is declared/written.")]
-    UndefinedVariableError { name: String, file_id: Option<FileID>, file_location: FileLocation },
-    #[error("The variable name `{name}` contains invalid characters.")]
-    InvalidVariableNameError { name: String, file_id: Option<FileID>, file_location: FileLocation },
-    #[error("The declaration of the variable `{name}` shadows a previous declaration.")]
+    UndefinedVariableError {
+        name: String,
+        file_id: Option<FileID>,
+        file_location: FileLocation,
+    },
+    InvalidVariableNameError {
+        name: String,
+        file_id: Option<FileID>,
+        file_location: FileLocation,
+    },
     ShadowingVariableWarning {
         name: String,
         primary_file_id: Option<FileID>,
@@ -20,13 +25,39 @@ pub enum CFGError {
         secondary_file_id: Option<FileID>,
         secondary_location: FileLocation,
     },
-    #[error("Multiple parameters with the same name `{name}` in function or template definition.")]
     ParameterNameCollisionError {
         name: String,
         file_id: Option<FileID>,
         file_location: FileLocation,
     },
 }
+
+impl Display for CFGError {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UndefinedVariableError { name, .. } => {
+                write!(formatter, "The variable `{name}` is read before it is declared/written.")
+            }
+            Self::InvalidVariableNameError { name, .. } => {
+                write!(formatter, "The variable name `{name}` contains invalid characters.")
+            }
+            Self::ShadowingVariableWarning { name, .. } => write!(
+                formatter,
+                "The declaration of the variable `{name}` shadows a previous declaration."
+            ),
+            Self::ParameterNameCollisionError { name, .. } => write!(
+                formatter,
+                concat!(
+                    "Multiple parameters with the same name `{}` ",
+                    "in function or template definition."
+                ),
+                name
+            ),
+        }
+    }
+}
+
+impl std::error::Error for CFGError {}
 
 pub type CFGResult<T> = Result<T, CFGError>;
 

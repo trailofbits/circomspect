@@ -315,13 +315,13 @@ pub enum Expression {
 #[derive(Clone)]
 pub enum Access {
     ComponentAccess(String),
-    ArrayAccess(Expression),
+    ArrayAccess(Box<Expression>),
 }
 pub fn build_component_access(acc: String) -> Access {
     Access::ComponentAccess(acc)
 }
 pub fn build_array_access(expr: Expression) -> Access {
-    Access::ArrayAccess(expr)
+    Access::ArrayAccess(Box::new(expr))
 }
 
 #[derive(Copy, Clone, Eq, PartialEq)]
@@ -365,7 +365,7 @@ pub enum ExpressionPrefixOpcode {
 #[derive(Clone)]
 pub enum LogArgument {
     LogStr(String),
-    LogExp(Expression),
+    LogExp(Box<Expression>),
 }
 
 pub fn build_log_string(acc: String) -> LogArgument {
@@ -373,7 +373,7 @@ pub fn build_log_string(acc: String) -> LogArgument {
 }
 
 pub fn build_log_expression(expr: Expression) -> LogArgument {
-    LogArgument::LogExp(expr)
+    LogArgument::LogExp(Box::new(expr))
 }
 
 // Knowledge buckets

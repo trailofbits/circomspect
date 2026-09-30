@@ -131,7 +131,7 @@ impl AnalysisRunner {
     }
 
     fn analyze_template<W: LogWriter + ReportWriter>(&mut self, name: &str, writer: &mut W) {
-        writer.write_message(&format!("analyzing template '{name}'"));
+        writer.write_message(format!("analyzing template '{name}'"));
 
         // We take ownership of the CFG and any previously generated reports
         // here to avoid holding multiple mutable and immutable references to
@@ -161,7 +161,7 @@ impl AnalysisRunner {
     }
 
     fn analyze_function<W: LogWriter + ReportWriter>(&mut self, name: &str, writer: &mut W) {
-        writer.write_message(&format!("analyzing function '{name}'"));
+        writer.write_message(format!("analyzing function '{name}'"));
 
         // We take ownership of the CFG and any previously generated reports
         // here to avoid holding multiple mutable and immutable references to

@@ -103,7 +103,6 @@ impl std::hash::Hash for Meta {
     {
         self.location.hash(state);
         self.file_id.hash(state);
-        state.finish();
     }
 }
 

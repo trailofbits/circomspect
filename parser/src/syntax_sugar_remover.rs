@@ -96,10 +96,10 @@ fn remove_anonymous_from_statement(
     match stmt {
         Statement::MultiSubstitution { meta, lhe, op, rhe } => {
             if lhe.contains_anonymous_component(None) {
-                return Err(AnonymousComponentError::boxed_report(
+                Err(AnonymousComponentError::boxed_report(
                     lhe.meta(),
                     "An anonymous component cannot occur as the left-hand side of an assignment",
-                ));
+                ))
             } else {
                 let (mut stmts, declarations, new_rhe) =
                     remove_anonymous_from_expression(templates, file_library, rhe, var_access)?;
@@ -158,10 +158,10 @@ fn remove_anonymous_from_statement(
         }
         Statement::While { meta, cond, stmt } => {
             if cond.contains_anonymous_component(None) {
-                return Err(AnonymousComponentError::boxed_report(
+                Err(AnonymousComponentError::boxed_report(
                     cond.meta(),
                     "Anonymous components cannot be used inside conditions.",
-                ));
+                ))
             } else {
                 let id_var_while = "anon_var_".to_string()
                     + &file_library.get_line(meta.start, meta.get_file_id()).unwrap().to_string()
@@ -635,15 +635,15 @@ fn remove_tuples_from_statement(stmt: Statement) -> Result<Statement, Box<Report
                 }
                 (lhe, rhe) => {
                     if lhe.is_tuple() || lhe.is_variable() {
-                        return Err(TupleError::boxed_report(
+                        Err(TupleError::boxed_report(
                             rhe.meta(),
                             "This expression must be a tuple or an anonymous component.",
-                        ));
+                        ))
                     } else {
-                        return Err(TupleError::boxed_report(
+                        Err(TupleError::boxed_report(
                             lhe.meta(),
                             "This expression must be a tuple, a component, a signal or a variable.",
-                        ));
+                        ))
                     }
                 }
             }
@@ -688,7 +688,7 @@ fn remove_tuples_from_statement(stmt: Statement) -> Result<Statement, Box<Report
                         new_args.push(LogArgument::LogStr(str));
                     }
                     LogArgument::LogExp(exp) => {
-                        let mut sep_args = separate_tuple_for_log_call(vec![exp]);
+                        let mut sep_args = separate_tuple_for_log_call(vec![*exp]);
                         new_args.append(&mut sep_args);
                     }
                 }
@@ -777,7 +777,7 @@ fn separate_tuple_for_log_call(values: Vec<Expression>) -> Vec<LogArgument> {
             new_values.append(&mut sep_values);
             new_values.push(LogArgument::LogStr(")".to_string()));
         } else {
-            new_values.push(LogArgument::LogExp(value));
+            new_values.push(LogArgument::LogExp(Box::new(value)));
         }
     }
     new_values

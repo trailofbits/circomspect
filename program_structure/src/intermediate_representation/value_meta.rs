@@ -138,7 +138,7 @@ mod tests {
     #[test]
     fn test_value_knowledge() {
         let mut value = ValueKnowledge::new();
-        assert!(matches!(value.get_reduces_to(), None));
+        assert!(value.get_reduces_to().is_none());
 
         let number = ValueReduction::FieldElement { value: BigInt::from(1) };
         assert!(value.set_reduces_to(number));

@@ -58,7 +58,7 @@ impl NonStrictBinaryConversionWarning {
 }
 
 /// If the size in bits of the input `x` to the Circomlib circuit `NumBits` is
-/// >= than the size of the prime there will be two valid bit-representations of
+/// at least as large as the size of the prime there will be two valid bit-representations of
 /// the input: One representation of `x` and one of `p + x`. This is typically
 /// not expected by developers and may lead to issues.
 pub fn find_nonstrict_binary_conversion(cfg: &Cfg) -> ReportCollection {

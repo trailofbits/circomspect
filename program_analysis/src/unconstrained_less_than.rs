@@ -245,7 +245,7 @@ fn update_inputs(
         let index_access = component_access.pop();
         let signal_access = component_access.pop();
         let component = VariableAccess::new(var, &component_access);
-        if let Some(Component::LessThan { .. }) = components.get(&component) {
+        if let Some(Component::LessThan) = components.get(&component) {
             let (Some(ComponentAccess(signal_name)), Some(ArrayAccess(_))) =
                 (signal_access, index_access)
             else {

@@ -139,7 +139,7 @@ impl TryFrom<&Parameters> for DeclarationEnvironment {
 /// There are a number of different cases to consider.
 ///
 /// 1. The variable `x` has multiple declarations, where (at least) one
-/// declaration of `x` shadows another declaration. E.g.
+///    declaration of `x` shadows another declaration. E.g.
 ///
 /// ```rs
 /// function f(x) {
@@ -155,7 +155,7 @@ impl TryFrom<&Parameters> for DeclarationEnvironment {
 /// declaration and the second occurrence of `x` must be renamed.
 ///
 /// 2. The variable `x` has multiple declarations but no declaration of `x`
-/// shadows another declaration. E.g.
+///    shadows another declaration. E.g.
 ///
 /// ```rs
 /// function g(m) {
@@ -174,7 +174,7 @@ impl TryFrom<&Parameters> for DeclarationEnvironment {
 /// global uniqueness.
 ///
 /// 3. The variable `x` is only declared once. In this case the variable name is
-/// already unique and `x` should not be renamed.
+///    already unique and `x` should not be renamed.
 pub fn ensure_unique_variables(
     stmt: &mut Statement,
     param_data: &Parameters,
