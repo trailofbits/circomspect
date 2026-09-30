@@ -105,6 +105,7 @@ pub struct Block {
 pub enum Statement {
     Block(Block),
     Declaration(Declaration),
+    /// `target` is the assigned lvalue for every operator, including reverse spellings.
     Assignment {
         target: Expression,
         operator: AssignmentOperator,
@@ -190,9 +191,16 @@ pub enum LogArgument {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Declaration {
     pub kind: DeclarationKind,
+    pub symbol_syntax: SymbolSyntax,
     pub symbols: Vec<DeclaredSymbol>,
     pub tuple_initialization: Option<(AssignmentOperator, Expression)>,
     pub span: Span,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SymbolSyntax {
+    List,
+    Tuple,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -711,6 +719,11 @@ fn declaration_header(mut node: SyntaxNode) -> Result<DeclarationKind, SyntaxDia
 
 fn declaration(node: SyntaxNode) -> Result<Declaration, SyntaxDiagnostic> {
     let span = node.span;
+    let symbol_syntax = if node.kind == SyntaxKind::TupleDeclaration {
+        SymbolSyntax::Tuple
+    } else {
+        SymbolSyntax::List
+    };
     let mut children = node.children.into_iter();
     let kind = match node.text.as_deref() {
         Some("var") => DeclarationKind::Variable,
@@ -740,7 +753,7 @@ fn declaration(node: SyntaxNode) -> Result<Declaration, SyntaxDiagnostic> {
             "declaration requires at least one symbol",
         ));
     }
-    Ok(Declaration { kind, symbols, tuple_initialization, span })
+    Ok(Declaration { kind, symbol_syntax, symbols, tuple_initialization, span })
 }
 
 fn assignment(node: SyntaxNode) -> Result<Statement, SyntaxDiagnostic> {
@@ -751,7 +764,14 @@ fn assignment(node: SyntaxNode) -> Result<Statement, SyntaxDiagnostic> {
         return Ok(Statement::PostfixUpdate { target, operator, span });
     }
     let operator = operator(&node)?;
-    let (target, value) = two_children(node)?;
+    let (left, right) = two_children(node)?;
+    let (target, value) = if operator == AssignmentOperator::ReverseWitness
+        || operator == AssignmentOperator::ReverseConstraint
+    {
+        (right, left)
+    } else {
+        (left, right)
+    };
     Ok(Statement::Assignment {
         target: expression(target)?,
         operator,

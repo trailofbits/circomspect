@@ -111,6 +111,40 @@ fn version_policy_is_distinct_from_source_pragma() {
 }
 
 #[test]
+fn custom_templates_pragma_enforces_its_declared_minimum() {
+    let old = parse("pragma circom 2.0.5; pragma custom_templates;");
+    assert!(old
+        .diagnostics
+        .iter()
+        .any(|diagnostic| { diagnostic.kind == DiagnosticKind::FeatureVersion }));
+    let supported = parse("pragma circom 2.0.6; pragma custom_templates;");
+    assert!(supported.diagnostics.is_empty(), "{:?}", supported.diagnostics);
+}
+
+#[test]
+fn reverse_assignment_keeps_the_assigned_variable_as_target() {
+    let source = "template T() { var a; var b; a --> b; a ==> b; }";
+    let outcome = parse(source);
+    assert!(outcome.diagnostics.is_empty(), "{:?}", outcome.diagnostics);
+    let Item::Definition(definition) = &outcome.ast.items[0] else {
+        panic!("definition");
+    };
+    for statement in &definition.body.statements[2..] {
+        let Statement::Assignment { target, value, .. } = statement else {
+            panic!("reverse assignment");
+        };
+        let Expression::Name { identifier: target, .. } = target else {
+            panic!("target");
+        };
+        let Expression::Name { identifier: value, .. } = value else {
+            panic!("value");
+        };
+        assert_eq!(target.name, "b");
+        assert_eq!(value.name, "a");
+    }
+}
+
+#[test]
 fn inline_array_bus_types_remain_pending_without_name_resolution() {
     let source = include_str!("../../tests/conformance/cases/inline_array_buses_valid.circom")
         .replacen("pragma circom 2.2.3", "pragma circom 2.2.2", 1);
@@ -211,6 +245,7 @@ fn include_loader_keeps_definitions_after_missing_and_cyclic_includes() {
     fs::write(&second, "include \"a.circom\"; function B() { return 2; }")
         .expect("write second source");
     let project = load_sources(&[first], &[], VersionPolicy::new(Version::new(2, 2, 3)));
+    assert_eq!(project.policy, VersionPolicy::new(Version::new(2, 2, 3)));
     assert_eq!(project.files.len(), 2);
     assert!(project.diagnostics.iter().any(|d| d.kind == DiagnosticKind::MissingInclude));
     assert!(project.diagnostics.iter().any(|d| d.kind == DiagnosticKind::CyclicInclude));

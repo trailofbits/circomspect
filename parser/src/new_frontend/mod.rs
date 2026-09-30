@@ -22,7 +22,7 @@ pub use typed::{
     Block, Declaration, DeclarationKind, DeclaredSymbol, Definition, DefinitionKind,
     DirectionSyntax, Expression, Identifier, InputAssignmentOperator, Item, LogArgument,
     ParseOutcome, PendingFeatureCheck, PendingFeatureKind, PortDirection, PostfixOperator, Pragma,
-    SourceAst, SpannedDirection, Statement, UnaryOperator,
+    SourceAst, SpannedDirection, Statement, SymbolSyntax, UnaryOperator,
 };
 pub use walk::{SyntaxCategory, WalkSyntax};
 
@@ -216,9 +216,11 @@ fn validate_feature_node(
         node.kind == SyntaxKind::Array && node.children.iter().any(contains_anonymous_call);
     let minimum = if anonymous_array { Some(Version::new(2, 2, 3)) } else { minimum_version(node) };
     if let Some(minimum) = minimum {
-        let custom_pragma_too_old = node.kind == SyntaxKind::Modifier
-            && node.text.as_deref() == Some("custom")
-            && declared.is_some_and(|version| version < minimum);
+        let custom_templates = (node.kind == SyntaxKind::Modifier
+            && node.text.as_deref() == Some("custom"))
+            || (node.kind == SyntaxKind::Pragma && node.text.is_none());
+        let custom_pragma_too_old =
+            custom_templates && declared.is_some_and(|version| version < minimum);
         if target < minimum || custom_pragma_too_old {
             diagnostics.push(SyntaxDiagnostic::new(
                 DiagnosticKind::FeatureVersion,

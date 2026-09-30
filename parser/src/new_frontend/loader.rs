@@ -14,8 +14,9 @@ pub struct SourceFile {
     pub outcome: ParseOutcome,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct LoadedProject {
+    pub policy: VersionPolicy,
     pub files: Vec<SourceFile>,
     pub diagnostics: Vec<SyntaxDiagnostic>,
 }
@@ -136,7 +137,7 @@ pub fn load_sources(
     let mut loader = Loader {
         include_dirs,
         policy,
-        project: LoadedProject::default(),
+        project: LoadedProject { policy, files: Vec::new(), diagnostics: Vec::new() },
         visited: HashSet::new(),
         active: HashSet::new(),
     };

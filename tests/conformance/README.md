@@ -81,10 +81,10 @@ signal orders, bus header orders with and without arguments, tags, arrays,
 tuple initialization, and both omitted-parentheses definition forms. The
 2.2.3 inline-array cases contain buses and anonymous components.
 
-The matrix asserts source spans and compiler syntax classes now. After the
-owned frontend lands, Phase 1 must additionally assert AST node kinds and
-nested spans for every row; compiler acceptance alone cannot prove the new
-parser preserves the intended structure. The compiler's parser also reports
+The matrix asserts source spans and compiler syntax classes. The owned
+frontend test additionally checks typed AST variants, operators, declaration
+details, and nested expression or statement shape for every row. The
+compiler's parser also reports
 some errors by semantic or project-level checks, so the recorded class should
 not be inferred solely from its exit status or a `P` code prefix.
 

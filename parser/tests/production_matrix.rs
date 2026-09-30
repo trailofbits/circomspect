@@ -5,6 +5,9 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+#[path = "support/matrix_assertions.rs"]
+mod matrix_assertions;
+
 fn corpus_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/conformance")
 }
@@ -73,6 +76,11 @@ fn owned_parser_agrees_with_pinned_compiler_syntax_matrix() {
         if !found {
             failures.push(format!("{id}: no {category:?} AST node covers {start}..{end}"));
         }
+        if let Err(error) =
+            matrix_assertions::assert_expectation(&outcome.ast, &row["ast_expectation"], start..end)
+        {
+            failures.push(format!("{id}: {error}"));
+        }
         let source = case_source(rejected);
         let rejected =
             parse_source(SourceId::new(0), &source, VersionPolicy::new(Version::new(2, 2, 3)));
@@ -86,4 +94,19 @@ fn owned_parser_agrees_with_pinned_compiler_syntax_matrix() {
         failures.len(),
         failures.join("\n")
     );
+}
+
+#[test]
+fn typed_expectations_reject_wrong_operator_and_precedence() {
+    let source = "function F() { return 1 + 2 * 3; }";
+    let ast = parse_source(SourceId::new(0), source, VersionPolicy::new(Version::new(2, 2, 3))).ast;
+    let focal = source.find('+').expect("addition operator");
+    let wrong_operator = serde_json::json!({"kind": "binary", "operator": "subtract"});
+    assert!(matrix_assertions::assert_expectation(&ast, &wrong_operator, focal..focal + 1).is_err());
+    let wrong_shape = serde_json::json!({
+        "kind": "binary",
+        "operator": "add",
+        "shape": "multiply(add(1,2),3)"
+    });
+    assert!(matrix_assertions::assert_expectation(&ast, &wrong_shape, focal..focal + 1).is_err());
 }

@@ -1,6 +1,6 @@
 use circomspect_parser::new_frontend::{
-    load_sources, parse_source, DiagnosticKind, DiagnosticLocation, SourceId, Version,
-    VersionPolicy, WalkSyntax,
+    load_sources, parse_source, tokenize, DiagnosticKind, DiagnosticLocation, SourceId, Span,
+    Version, VersionPolicy, WalkSyntax,
 };
 use proptest::prelude::*;
 
@@ -9,6 +9,7 @@ fn source_chunk() -> impl Strategy<Value = String> {
         Just("function F() {".to_owned()),
         Just("template T() {".to_owned()),
         Just("pragma circom 2.2.3;".to_owned()),
+        Just("template T() { var a = [b]; }".to_owned()),
         Just("/*".to_owned()),
         Just("//".to_owned()),
         Just("\"".to_owned()),
@@ -19,6 +20,14 @@ fn source_chunk() -> impl Strategy<Value = String> {
     ]
 }
 
+fn valid_span(source: &str, span: Span) -> bool {
+    source.is_char_boundary(span.start())
+        && source.is_char_boundary(span.end())
+        && span.start() <= span.end()
+        && span.end() <= source.len()
+        && span.source() == SourceId::new(7)
+}
+
 proptest! {
     #![proptest_config(ProptestConfig { cases: 512, .. ProptestConfig::default() })]
 
@@ -27,27 +36,30 @@ proptest! {
         chunks in prop::collection::vec(source_chunk(), 0..50),
     ) {
         let source = chunks.concat();
+        let lexed = tokenize(SourceId::new(7), &source);
         let outcome = parse_source(SourceId::new(7), &source,
-            VersionPolicy::new(Version::new(2, 2, 3)));
+            VersionPolicy::new(Version::new(2, 2, 2)));
         let mut valid = true;
         outcome.ast.walk_syntax(None, &mut |_, span, parent| {
-            valid &= source.is_char_boundary(span.start());
-            valid &= source.is_char_boundary(span.end());
-            valid &= span.start() <= span.end();
-            valid &= span.end() <= source.len();
-            valid &= span.source() == SourceId::new(7);
+            valid &= valid_span(&source, span);
             if let Some(parent) = parent {
                 valid &= span.start() >= parent.start();
                 valid &= span.end() <= parent.end();
             }
         });
         prop_assert!(valid);
+        for token in lexed.tokens {
+            prop_assert!(valid_span(&source, token.span));
+        }
+        for trivia in lexed.trivia {
+            prop_assert!(valid_span(&source, trivia.span));
+        }
+        for check in &outcome.pending_feature_checks {
+            prop_assert!(valid_span(&source, check.span));
+        }
         for diagnostic in &outcome.diagnostics {
             if let Some(span) = diagnostic.span() {
-                prop_assert!(source.is_char_boundary(span.start()));
-                prop_assert!(source.is_char_boundary(span.end()));
-                prop_assert!(span.end() <= source.len());
-                prop_assert_eq!(span.source(), SourceId::new(7));
+                prop_assert!(valid_span(&source, span));
             }
         }
     }
