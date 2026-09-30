@@ -82,6 +82,7 @@ pub enum SyntaxKind {
     Assert,
     Log,
     ExpressionStatement,
+    RecoveredStatement,
     Name,
     Identifier,
     Number,

@@ -285,6 +285,13 @@ fn validate_version(
 }
 
 fn validate_node(node: &SyntaxNode, diagnostics: &mut Vec<SyntaxDiagnostic>) {
+    if node.kind == SyntaxKind::RecoveredStatement {
+        diagnostics.push(SyntaxDiagnostic::new(
+            DiagnosticKind::Syntax,
+            node.span,
+            "invalid statement; parsing continued at the next statement or block boundary",
+        ));
+    }
     if node.kind == SyntaxKind::ExpressionStatement {
         let valid =
             node.children.first().is_some_and(|child| child.kind == SyntaxKind::AnonymousCall);

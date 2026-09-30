@@ -102,13 +102,48 @@ fn typed_expectations_reject_wrong_operator_and_precedence() {
     let ast = parse_source(SourceId::new(0), source, VersionPolicy::new(Version::new(2, 2, 3))).ast;
     let focal = source.find('+').expect("addition operator");
     let wrong_operator = serde_json::json!({"kind": "binary", "operator": "subtract"});
-    assert!(matrix_assertions::assert_expectation(&ast, &wrong_operator, focal..focal + 1).is_err());
+    let operator_result =
+        matrix_assertions::assert_expectation(&ast, &wrong_operator, focal..focal + 1);
+    assert!(operator_result.is_err());
     let wrong_shape = serde_json::json!({
         "kind": "binary",
         "operator": "add",
         "shape": "multiply(add(1,2),3)"
     });
     assert!(matrix_assertions::assert_expectation(&ast, &wrong_shape, focal..focal + 1).is_err());
+}
+
+#[test]
+fn owned_parser_agrees_with_every_determinate_compiler_case() {
+    let root = corpus_root();
+    let manifest: Value = serde_json::from_str(
+        &std::fs::read_to_string(root.join("manifest.json")).expect("manifest"),
+    )
+    .expect("valid manifest");
+    let mut failures = Vec::new();
+    for case in manifest["cases"].as_array().expect("cases") {
+        let expected = required(case, "expected_syntax");
+        if expected == "indeterminate" {
+            continue;
+        }
+        let source = case_source(case);
+        let outcome =
+            parse_source(SourceId::new(0), &source, VersionPolicy::new(Version::new(2, 2, 3)));
+        let accepted = outcome.diagnostics.is_empty();
+        if (expected == "accept") != accepted {
+            failures.push(format!(
+                "{}: expected {expected}, diagnostics {:?}",
+                required(case, "id"),
+                outcome.diagnostics
+            ));
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} syntax disagreements:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
 }
 
 fn predecessor(version: &str) -> Option<Version> {
@@ -123,6 +158,15 @@ fn predecessor(version: &str) -> Option<Version> {
         "2.0.0" => None,
         other => panic!("unreviewed Circom release in matrix: {other}"),
     }
+}
+
+fn corpus_version(version: &str) -> Version {
+    let mut parts = version.split('.');
+    let major = parts.next().expect("major version").parse().expect("numeric major version");
+    let minor = parts.next().expect("minor version").parse().expect("numeric minor version");
+    let patch = parts.next().expect("patch version").parse().expect("numeric patch version");
+    assert!(parts.next().is_none(), "too many version components");
+    Version::new(major, minor, patch)
 }
 
 #[test]
@@ -149,7 +193,8 @@ fn matrix_features_enforce_target_version_without_locking_to_source_pragma() {
         };
         let id = required(row, "id");
         let case = cases.get(required(row, "accept_case")).expect("accepted case");
-        let source = case_source(case).replacen(
+        let accepted_source = case_source(case);
+        let source = accepted_source.replacen(
             "pragma circom 2.2.3;",
             &format!("pragma circom {}.{}.{};", target.major, target.minor, target.patch),
             1,
@@ -188,6 +233,30 @@ fn matrix_features_enforce_target_version_without_locking_to_source_pragma() {
             }
         } else if !definite {
             failures.push(format!("{id}: no feature-version diagnostic at {target:?}"));
+        }
+        let minimum = corpus_version(required(row, "min_version"));
+        let minimum_source = accepted_source.replacen(
+            "pragma circom 2.2.3;",
+            &format!("pragma circom {}.{}.{};", minimum.major, minimum.minor, minimum.patch),
+            1,
+        );
+        let minimum_outcome =
+            parse_source(SourceId::new(0), &minimum_source, VersionPolicy::new(minimum));
+        if minimum_outcome.diagnostics.iter().any(|diagnostic| {
+            diagnostic.kind == DiagnosticKind::FeatureVersion
+                && diagnostic
+                    .span()
+                    .is_some_and(|span| span.start() < focal_end && span.end() > focal_start)
+        }) {
+            failures.push(format!("{id}: feature rejected at its declared minimum {minimum:?}"));
+        }
+        if id == "inline_array_buses"
+            && minimum_outcome
+                .pending_feature_checks
+                .iter()
+                .any(|check| check.span.start() <= focal_start && check.span.end() >= focal_end)
+        {
+            failures.push(format!("{id}: bus-array check remains pending at {minimum:?}"));
         }
     }
     assert!(

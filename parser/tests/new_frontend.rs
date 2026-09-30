@@ -68,6 +68,128 @@ fn malformed_definition_does_not_hide_later_library_definition() {
 }
 
 #[test]
+fn malformed_statement_preserves_later_statements_and_definitions() {
+    let source = "function F() { var a = ; var b = 1; return b; } function G() { return 2; }";
+    let outcome = parse(source);
+    assert!(outcome
+        .diagnostics
+        .iter()
+        .any(|diagnostic| { diagnostic.kind == DiagnosticKind::Syntax }));
+    let Item::Definition(first) = &outcome.ast.items[0] else {
+        panic!("first definition");
+    };
+    assert_eq!(first.name.name, "F");
+    let Statement::Error { span } = &first.body.statements[0] else {
+        panic!("error statement");
+    };
+    assert_eq!(&source[span.start()..span.end()], "var a = ;");
+    let Statement::Declaration(_) = &first.body.statements[1] else {
+        panic!("later declaration");
+    };
+    let Statement::Return { .. } = &first.body.statements[2] else {
+        panic!("later return");
+    };
+    assert!(has_definition(&outcome, "G"));
+    assert_spans(source, &outcome);
+}
+
+#[test]
+fn nested_statement_recovery_stops_at_semicolon_inside_its_block() {
+    let source = "function F() { if (1) { var a = ; var b = 2; } return 3; }";
+    let outcome = parse(source);
+    assert!(outcome
+        .diagnostics
+        .iter()
+        .any(|diagnostic| { diagnostic.kind == DiagnosticKind::Syntax }));
+    let Item::Definition(definition) = &outcome.ast.items[0] else {
+        panic!("definition");
+    };
+    let Statement::If { then_branch, .. } = &definition.body.statements[0] else {
+        panic!("conditional");
+    };
+    let Statement::Block(block) = then_branch.as_ref() else {
+        panic!("nested block");
+    };
+    let Statement::Error { .. } = &block.statements[0] else {
+        panic!("nested error");
+    };
+    let Statement::Declaration(_) = &block.statements[1] else {
+        panic!("nested declaration");
+    };
+    let Statement::Return { .. } = &definition.body.statements[1] else {
+        panic!("outer return");
+    };
+    assert_spans(source, &outcome);
+}
+
+#[test]
+fn malformed_final_statement_recovers_at_enclosing_brace() {
+    let source = "function F() { var a = } function G() { return 2; }";
+    let outcome = parse(source);
+    assert!(outcome
+        .diagnostics
+        .iter()
+        .any(|diagnostic| { diagnostic.kind == DiagnosticKind::Syntax }));
+    let Item::Definition(first) = &outcome.ast.items[0] else {
+        panic!("first definition");
+    };
+    assert_eq!(first.name.name, "F");
+    let Statement::Error { .. } = &first.body.statements[0] else {
+        panic!("error statement");
+    };
+    assert!(has_definition(&outcome, "G"));
+
+    let nested = "function F() { if (1) { var a = } return 3; } function G() { return 2; }";
+    let outcome = parse(nested);
+    assert!(outcome
+        .diagnostics
+        .iter()
+        .any(|diagnostic| { diagnostic.kind == DiagnosticKind::Syntax }));
+    let Item::Definition(first) = &outcome.ast.items[0] else {
+        panic!("first definition");
+    };
+    let Statement::If { then_branch, .. } = &first.body.statements[0] else {
+        panic!("conditional");
+    };
+    let Statement::Block(block) = then_branch.as_ref() else {
+        panic!("nested block");
+    };
+    let Statement::Error { .. } = &block.statements[0] else {
+        panic!("nested error");
+    };
+    let Statement::Return { .. } = &first.body.statements[1] else {
+        panic!("outer return");
+    };
+    assert!(has_definition(&outcome, "G"));
+    assert_spans(nested, &outcome);
+}
+
+#[test]
+fn repeated_malformed_statements_each_emit_diagnostics() {
+    let source = "function F() { var a = ; var b = ; return 3; }";
+    let outcome = parse(source);
+    let errors = outcome
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.kind == DiagnosticKind::Syntax)
+        .count();
+    assert!(errors >= 2, "{:?}", outcome.diagnostics);
+    let Item::Definition(first) = &outcome.ast.items[0] else {
+        panic!("definition");
+    };
+    let Statement::Error { .. } = &first.body.statements[0] else {
+        panic!("first error");
+    };
+    let Statement::Error { .. } = &first.body.statements[1] else {
+        panic!("second error");
+    };
+    let Statement::Return { .. } = &first.body.statements[2] else {
+        panic!("later return");
+    };
+    assert_spans(source, &outcome);
+}
+
+#[test]
 fn recovers_at_unambiguous_definition_boundary_without_closing_brace() {
     let source = "function Bad() { var x = ;\nfunction Good() { return 1; }";
     let outcome = parse(source);

@@ -890,7 +890,7 @@ fn statement(node: SyntaxNode) -> Result<Statement, SyntaxDiagnostic> {
             }
             Ok(Statement::AnonymousCall { call: anonymous_call(call)?, span })
         }
-        SyntaxKind::Error => Ok(Statement::Error { span }),
+        SyntaxKind::Error | SyntaxKind::RecoveredStatement => Ok(Statement::Error { span }),
         _ => Err(malformed(&node, "expected statement")),
     }
 }

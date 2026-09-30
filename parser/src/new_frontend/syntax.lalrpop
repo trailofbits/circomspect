@@ -56,10 +56,17 @@ Name: SyntaxNode = {
 Block: SyntaxNode = {
     <s:@L> "{" <stmts:BlockStatement*> "}" <e:@R>
         => node(SyntaxKind::Block, source, s, e, stmts),
+    <s:@L> "{" <mut stmts:BlockStatement*> <error_start:@L> ! <error_end:@R> "}" <e:@R>
+        => {
+            stmts.push(node(SyntaxKind::RecoveredStatement, source,
+                error_start, error_end, vec![]));
+            node(SyntaxKind::Block, source, s, e, stmts)
+        },
 };
 BlockStatement: SyntaxNode = {
     <decl:Declaration> ";" => decl,
     Statement,
+    <s:@L> ! ";" <e:@R> => node(SyntaxKind::RecoveredStatement, source, s, e, vec![]),
 };
 
 Declaration: SyntaxNode = {
