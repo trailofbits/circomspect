@@ -25,7 +25,7 @@ enum ValueType {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ShapeCheck {
     Valid,
-    Invalid,
+    Invalid(SemanticCode),
     Unknown,
 }
 

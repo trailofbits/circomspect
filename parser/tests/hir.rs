@@ -236,22 +236,26 @@ fn bus_inline_array_version_check_resolves_through_include() {
     assert_eq!(version_errors[0].severity, Severity::Error);
     assert_eq!(&root[version_errors[0].span.start()..version_errors[0].span.end()], "[b]");
     let current = lower(sources, Version::new(2, 2, 3));
-    assert!(current.diagnostics.is_empty(), "{:?}", current.diagnostics);
+    assert_eq!(current.diagnostics.len(), 1);
+    assert_eq!(current.diagnostics[0].code, SemanticCode::WrongBusAssignment);
 
     let ordinary =
         lower(&[("plain.circom", "template T(){var a = [1,2];}")], Version::new(2, 2, 2));
-    assert!(ordinary.diagnostics.is_empty(), "{:?}", ordinary.diagnostics);
+    assert_eq!(ordinary.diagnostics.len(), 1);
+    assert_eq!(ordinary.diagnostics[0].code, SemanticCode::WrongAssignmentRank);
 }
 
 #[test]
 fn local_bus_and_anonymous_array_version_boundaries_are_distinct() {
     let local = "bus B(){signal x;} template T(){B b; var a=[b];}";
     let old = lower(&[("local.circom", local)], Version::new(2, 2, 2));
-    assert_eq!(old.diagnostics.len(), 1);
-    assert_eq!(old.diagnostics[0].code, SemanticCode::FeatureVersion);
-    assert_eq!(&local[old.diagnostics[0].span.start()..old.diagnostics[0].span.end()], "[b]");
+    assert_eq!(old.diagnostics.len(), 2);
+    let version =
+        old.diagnostics.iter().find(|item| item.code == SemanticCode::FeatureVersion).unwrap();
+    assert_eq!(&local[version.span.start()..version.span.end()], "[b]");
     let current = lower(&[("local.circom", local)], Version::new(2, 2, 3));
-    assert!(current.diagnostics.is_empty(), "{:?}", current.diagnostics);
+    assert_eq!(current.diagnostics.len(), 1);
+    assert_eq!(current.diagnostics[0].code, SemanticCode::WrongBusAssignment);
 
     let anonymous = "template Child(){signal input in;} template T(){var a=[Child()(1)];}";
     let old = lower(&[("anonymous_array.circom", anonymous)], Version::new(2, 2, 2));
@@ -1043,16 +1047,28 @@ fn anonymous_input_with_invalid_public_shape_remains_opaque() {
 #[test]
 fn incompatible_assignments_do_not_generate_constraints() {
     let cases = [
-        ("bus B(){signal x;} template T(){B b; b<==1;}", "b<==1"),
-        ("bus B(){signal x;} template T(){B b; signal output out; out<==b;}", "out<==b"),
-        ("bus B(){signal x;} bus C(){signal x;} template T(){B b; C c; b<==c;}", "b<==c"),
-        ("template T(){signal a[2]; signal output out; out<==a;}", "out<==a"),
+        ("bus B(){signal x;} template T(){B b; b<==1;}", "b<==1", SemanticCode::WrongBusAssignment),
+        (
+            "bus B(){signal x;} template T(){B b; signal output out; out<==b;}",
+            "out<==b",
+            SemanticCode::WrongBusAssignment,
+        ),
+        (
+            "bus B(){signal x;} bus C(){signal x;} template T(){B b; C c; b<==c;}",
+            "b<==c",
+            SemanticCode::WrongBusAssignment,
+        ),
+        (
+            "template T(){signal a[2]; signal output out; out<==a;}",
+            "out<==a",
+            SemanticCode::WrongAssignmentRank,
+        ),
     ];
-    for (source, assignment) in cases {
+    for (source, assignment, code) in cases {
         let result = lower(&[("mismatch.circom", source)], Version::new(2, 2, 3));
         assert_eq!(result.diagnostics.len(), 1, "{:?}", result.diagnostics);
         let diagnostic = &result.diagnostics[0];
-        assert_eq!(diagnostic.code, SemanticCode::InvalidAssignment);
+        assert_eq!(diagnostic.code, code);
         assert_eq!(diagnostic.severity, Severity::Error);
         assert_eq!(&source[diagnostic.span.start()..diagnostic.span.end()], assignment);
         assert!(effect_for(&result, "T")
@@ -1088,7 +1104,7 @@ fn incompatible_anonymous_input_is_not_checked() {
     let start = source.find("b<==1").unwrap();
     assert_eq!(
         diagnostic_fingerprint(&result),
-        vec![(SemanticCode::InvalidAssignment, Severity::Error, 0, start, start + 5)]
+        vec![(SemanticCode::WrongBusAssignment, Severity::Error, 0, start, start + 5)]
     );
     let anonymous = result
         .hir
@@ -1127,4 +1143,125 @@ fn matching_bus_equality_remains_a_checked_constraint() {
     assert!(effect_for(&result, "T")
         .iter()
         .any(|item| matches!(item, Effect::EqualityConstraint { .. })));
+}
+
+#[test]
+fn bus_and_array_indices_cannot_certify_accesses() {
+    let invalid = [
+        (
+            "bus B(){signal x;} template T(){signal a[2]; B b; a[b]<==1;}",
+            "b",
+            SemanticCode::InvalidArrayIndexBus,
+        ),
+        (
+            "template T(){signal a[2]; signal i[2]; a[i]<==1;}",
+            "i",
+            SemanticCode::InvalidArrayIndexDimension,
+        ),
+    ];
+    for (source, index, code) in invalid {
+        let result = lower(&[("index.circom", source)], Version::new(2, 2, 3));
+        assert!(effect_for(&result, "T")
+            .iter()
+            .all(|item| !matches!(item, Effect::ConstraintAssignment { .. })));
+        assert_eq!(result.diagnostics.len(), 1, "{:?}", result.diagnostics);
+        let diagnostic = &result.diagnostics[0];
+        assert_eq!(diagnostic.code, code);
+        assert_eq!(diagnostic.severity, Severity::Error);
+        assert_eq!(&source[diagnostic.span.start()..diagnostic.span.end()], index);
+    }
+    let valid = "template T(){signal a[2]; signal input i; var j=0; a[i]<==1; a[j]<==2;}";
+    let result = lower(&[("valid_index.circom", valid)], Version::new(2, 2, 3));
+    assert!(result.diagnostics.is_empty(), "{:?}", result.diagnostics);
+    assert_eq!(
+        effect_for(&result, "T")
+            .iter()
+            .filter(|item| matches!(item, Effect::ConstraintAssignment { .. }))
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn variable_assignments_require_compatible_shapes() {
+    let invalid = [
+        ("bus B(){signal x;} template T(){B b; var v=b;}", SemanticCode::WrongBusAssignment),
+        ("template T(){var a[2]; a=1;}", SemanticCode::WrongAssignmentRank),
+    ];
+    for (source, code) in invalid {
+        let result = lower(&[("variable_shape.circom", source)], Version::new(2, 2, 3));
+        assert_eq!(result.diagnostics.len(), 1, "{:?}", result.diagnostics);
+        assert_eq!(result.diagnostics[0].code, code);
+        assert!(effect_for(&result, "T")
+            .iter()
+            .all(|item| !matches!(item, Effect::VariableAssignment { .. })));
+    }
+    let valid = "template T(){var n=1; var a[2]=[1,2]; n=3; a=[4,5];}";
+    let result = lower(&[("valid_variable.circom", valid)], Version::new(2, 2, 3));
+    assert!(result.diagnostics.is_empty(), "{:?}", result.diagnostics);
+    assert_eq!(
+        effect_for(&result, "T")
+            .iter()
+            .filter(|item| matches!(item, Effect::VariableAssignment { .. }))
+            .count(),
+        4
+    );
+}
+
+#[test]
+fn array_condition_is_opaque_but_scalar_condition_is_checked() {
+    let invalid = "function F(){if([1,2]){return 1;} return 0;}";
+    let result = lower(&[("array_condition.circom", invalid)], Version::new(2, 2, 3));
+    assert!(effect_for_function(&result, "F")
+        .iter()
+        .all(|item| !matches!(item, Effect::If { .. })));
+    let valid = "function F(){if(1){return 1;} return 0;}";
+    let result = lower(&[("scalar_condition.circom", valid)], Version::new(2, 2, 3));
+    assert!(effect_for_function(&result, "F").iter().any(|item| matches!(item, Effect::If { .. })));
+}
+
+#[test]
+fn array_assertion_is_opaque_but_scalar_assertion_is_checked() {
+    let invalid = "template T(){assert([1,2]);}";
+    let result = lower(&[("array_assert.circom", invalid)], Version::new(2, 2, 3));
+    assert!(effect_for(&result, "T").iter().all(|item| !matches!(item, Effect::Assert { .. })));
+    let valid = "template T(){assert(1);}";
+    let result = lower(&[("scalar_assert.circom", valid)], Version::new(2, 2, 3));
+    assert!(effect_for(&result, "T").iter().any(|item| matches!(item, Effect::Assert { .. })));
+}
+
+#[test]
+fn function_call_return_shape_is_unknown_until_proven() {
+    let cases = [
+        "function F(){return [1,2];} template T(){signal output o; o<==F();}",
+        "function F(){return 1;} template T(){signal output o; o<==F();}",
+    ];
+    for source in cases {
+        let result = lower(&[("function_shape.circom", source)], Version::new(2, 2, 3));
+        assert!(effect_for(&result, "T")
+            .iter()
+            .all(|item| !matches!(item, Effect::ConstraintAssignment { .. })));
+        assert!(result
+            .hir
+            .expressions()
+            .iter()
+            .any(|item| { matches!(item.call_target(), Some(CallTarget::Function(_))) }));
+    }
+}
+
+#[test]
+fn bus_argument_does_not_leave_a_checked_function_call() {
+    let source =
+        concat!("bus B(){signal x;} function F(x){return x;} ", "template T(){B b; var v=F(b);}");
+    let result = lower(&[("bus_argument.circom", source)], Version::new(2, 2, 3));
+    let start = source.rfind("F(b)").unwrap() + 2;
+    assert_eq!(
+        diagnostic_fingerprint(&result),
+        vec![(SemanticCode::InvalidCallArgument, Severity::Error, 0, start, start + 1)]
+    );
+    assert!(result
+        .hir
+        .expressions()
+        .iter()
+        .any(|item| { matches!(item.call_target(), Some(CallTarget::Opaque { .. })) }));
 }

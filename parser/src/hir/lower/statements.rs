@@ -81,6 +81,9 @@ impl Lowerer<'_> {
                 self.restore_knownness(&before);
                 let else_block = else_branch.as_ref().map(|branch| self.lower_branch(branch));
                 self.join_knownness(&after_then, &before);
+                if !self.scalar_arithmetic_operand(condition) {
+                    return vec![self.opaque(span, IncompleteReason::UnknownType)];
+                }
                 if !self.knownness(condition).is_compile_time() {
                     return vec![self.opaque(span, IncompleteReason::NonCompileTime)];
                 }
@@ -98,6 +101,9 @@ impl Lowerer<'_> {
                 let stable_condition = self.loop_condition_is_stable(condition, &before_loop);
                 self.join_knownness(&before_loop, &after_body);
                 self.scopes.leave();
+                if !self.scalar_arithmetic_operand(condition) {
+                    return vec![self.opaque(span, IncompleteReason::UnknownType)];
+                }
                 if !self.knownness(condition).is_compile_time() || !stable_condition {
                     return vec![self.opaque(span, IncompleteReason::NonCompileTime)];
                 }
@@ -109,6 +115,9 @@ impl Lowerer<'_> {
                 let body = self.lower_branch(body);
                 let stable_condition = self.loop_condition_is_stable(condition, &before);
                 self.join_knownness(&before, &before);
+                if !self.scalar_arithmetic_operand(condition) {
+                    return vec![self.opaque(span, IncompleteReason::UnknownType)];
+                }
                 if !self.knownness(condition).is_compile_time() || !stable_condition {
                     return vec![self.opaque(span, IncompleteReason::NonCompileTime)];
                 }
@@ -140,7 +149,11 @@ impl Lowerer<'_> {
                 vec![Effect::Return { value: self.lower_expression(value), span }]
             }
             Statement::Assert { condition, .. } => {
-                vec![Effect::Assert { condition: self.lower_expression(condition), span }]
+                let condition = self.lower_expression(condition);
+                if !self.scalar_arithmetic_operand(condition) {
+                    return vec![self.opaque(span, IncompleteReason::UnknownType)];
+                }
+                vec![Effect::Assert { condition, span }]
             }
             Statement::Log { arguments, .. } => {
                 let values = arguments
@@ -547,7 +560,7 @@ impl Lowerer<'_> {
         span: Span,
     ) -> Effect {
         let Some(path) = self.lower_access(target) else {
-            return self.invalid_assignment(span, "invalid assignment target");
+            return self.opaque(span, IncompleteReason::InvalidAssignment);
         };
         let kind = self.hir.symbols[path.terminal.index].kind;
         let value = if kind == SymbolKind::Component {
@@ -574,17 +587,23 @@ impl Lowerer<'_> {
         {
             return self.opaque(span, IncompleteReason::UnknownType);
         }
-        if matches!(kind, SymbolKind::Signal | SymbolKind::Bus) {
+        if matches!(
+            kind,
+            SymbolKind::Variable | SymbolKind::Signal | SymbolKind::Bus | SymbolKind::Tag
+        ) {
             let Some(rank) = self.access_rank(&path) else {
                 return self.opaque(span, IncompleteReason::UnknownType);
             };
             match self.check_value_shape(self.access_type(&path), rank, value) {
                 ShapeCheck::Valid => {}
-                ShapeCheck::Invalid => {
-                    return self.invalid_assignment(
+                ShapeCheck::Invalid(code) => {
+                    self.diagnostic(
+                        code,
+                        Severity::Error,
                         span,
-                        "assignment value has incompatible type or array rank",
+                        "assignment value has incompatible type or array rank".into(),
                     );
+                    return self.opaque(span, IncompleteReason::InvalidAssignment);
                 }
                 ShapeCheck::Unknown => return self.opaque(span, IncompleteReason::UnknownType),
             }

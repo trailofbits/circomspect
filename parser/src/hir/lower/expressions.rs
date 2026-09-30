@@ -67,6 +67,9 @@ impl Lowerer<'_> {
             return false;
         }
         let id = self.lower_expression(expression);
+        if !self.valid_index_expression(id, expression.span()) {
+            return false;
+        }
         let index = match &self.hir.expressions[id.index].kind {
             ExprKind::Number(value) => ArrayIndex::Constant(value.clone()),
             _ => ArrayIndex::Symbolic(id),
@@ -75,6 +78,41 @@ impl Lowerer<'_> {
         state.remaining_dimensions -= 1;
         state.indexed_current = true;
         true
+    }
+
+    fn valid_index_expression(&mut self, id: ExprId, span: Span) -> bool {
+        if !self.expression_is_checked(id) {
+            self.incomplete(span, IncompleteReason::UnknownType);
+            return false;
+        }
+        match (self.expression_type(id), self.expression_rank(id)) {
+            (ValueType::Plain, Some(0)) => true,
+            (ValueType::Bus(_), _) => {
+                self.diagnostic(
+                    SemanticCode::InvalidArrayIndexBus,
+                    Severity::Error,
+                    span,
+                    "array index must be a single arithmetic expression, found bus".into(),
+                );
+                self.incomplete(span, IncompleteReason::InvalidAssignment);
+                false
+            }
+            (ValueType::Plain | ValueType::Component(_), Some(_)) => {
+                self.diagnostic(
+                    SemanticCode::InvalidArrayIndexDimension,
+                    Severity::Error,
+                    span,
+                    "array index must be a single arithmetic expression".into(),
+                );
+                self.incomplete(span, IncompleteReason::InvalidAssignment);
+                false
+            }
+            (ValueType::Plain | ValueType::Component(_) | ValueType::Unknown, None)
+            | (ValueType::Unknown, Some(_)) => {
+                self.incomplete(span, IncompleteReason::UnknownType);
+                false
+            }
+        }
     }
 
     pub(super) fn apply_access_field(
@@ -323,12 +361,28 @@ impl Lowerer<'_> {
                 reason: IncompleteReason::Unsupported("wrong argument arity".into()),
             };
         }
-        let ty = if matches!(target, CallTarget::Function(_)) {
-            ValueType::Plain
-        } else {
-            ValueType::Unknown
-        };
-        self.add_expression(ExprKind::Call { target, arguments }, Knownness::Opaque, span, ty)
+        for argument in &arguments {
+            if matches!(
+                self.expression_type(*argument),
+                ValueType::Bus(_) | ValueType::Component(_)
+            ) {
+                let argument_span = self.hir.expressions[argument.index].span;
+                self.diagnostic(
+                    SemanticCode::InvalidCallArgument,
+                    Severity::Error,
+                    argument_span,
+                    "function argument cannot be a bus or component".into(),
+                );
+                self.incomplete(argument_span, IncompleteReason::InvalidAssignment);
+                target = CallTarget::Opaque { reason: IncompleteReason::InvalidAssignment };
+            }
+        }
+        self.add_expression(
+            ExprKind::Call { target, arguments },
+            Knownness::Opaque,
+            span,
+            ValueType::Unknown,
+        )
     }
 
     pub(super) fn lower_collection(
@@ -451,10 +505,8 @@ impl Lowerer<'_> {
     pub(super) fn expression_rank(&self, id: ExprId) -> Option<usize> {
         let expression = self.hir.expression(id)?;
         match &expression.kind {
-            ExprKind::Number(_)
-            | ExprKind::Call { .. }
-            | ExprKind::Unary { .. }
-            | ExprKind::Binary { .. } => Some(0),
+            ExprKind::Number(_) | ExprKind::Unary { .. } | ExprKind::Binary { .. } => Some(0),
+            ExprKind::Call { .. } => None,
             ExprKind::Access(path) => self.access_rank(path),
             ExprKind::Array(elements) => {
                 let Some(first) = elements.first() else { return Some(1) };
@@ -490,11 +542,21 @@ impl Lowerer<'_> {
             return ShapeCheck::Unknown;
         }
         let Some(actual_rank) = actual_rank else { return ShapeCheck::Unknown };
-        if expected_type == actual_type && expected_rank == actual_rank {
-            ShapeCheck::Valid
-        } else {
-            ShapeCheck::Invalid
+        if matches!(actual_type, ValueType::Component(_)) {
+            return ShapeCheck::Invalid(SemanticCode::WrongAssignmentExpression);
         }
+        if expected_type != actual_type {
+            return match (expected_type, actual_type) {
+                (ValueType::Bus(_), ValueType::Bus(_)) if expected_rank != actual_rank => {
+                    ShapeCheck::Invalid(SemanticCode::WrongBusArrayAssignment)
+                }
+                _ => ShapeCheck::Invalid(SemanticCode::WrongBusAssignment),
+            };
+        }
+        if expected_rank != actual_rank {
+            return ShapeCheck::Invalid(SemanticCode::WrongAssignmentRank);
+        }
+        ShapeCheck::Valid
     }
 
     pub(super) fn scalar_arithmetic_operand(&self, id: ExprId) -> bool {
@@ -709,9 +771,9 @@ impl Lowerer<'_> {
         let rank = self.hir.symbols[symbol.index].rank;
         match self.check_value_shape(expected_type, rank, value) {
             ShapeCheck::Valid => AnonymousInputTarget::Port(port),
-            ShapeCheck::Invalid => {
+            ShapeCheck::Invalid(code) => {
                 self.diagnostic(
-                    SemanticCode::InvalidAssignment,
+                    code,
                     Severity::Error,
                     span,
                     "anonymous input value has incompatible type or array rank".into(),
