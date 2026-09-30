@@ -8,7 +8,7 @@ use parser::new_frontend::{BinaryOperator, PostfixOperator, UnaryOperator};
 
 use crate::hir_cfg::{CfgEdge, CfgNode, CfgNodeKind, DefinitionCfg, EdgeKind};
 
-use super::access::{key_for_path, AccessKey};
+use super::access::{key_for_path, AccessKey, MayAccessSet};
 use super::domains::DegreeUpper;
 use super::field::{FieldContext, FieldValue};
 use super::walk::VisitAccesses;
@@ -18,10 +18,11 @@ pub enum ForwardState {
     Unreachable,
     Reached {
         variables: BTreeMap<SymbolId, FieldValue>,
-        dependencies: BTreeMap<SymbolId, BTreeSet<AccessKey>>,
+        dependencies: BTreeMap<SymbolId, MayAccessSet>,
         degrees: BTreeMap<SymbolId, DegreeUpper>,
         may_constraints: BTreeSet<NodeId>,
         must_constraints: BTreeSet<NodeId>,
+        must_touches: BTreeSet<AccessKey>,
         must_fixed: BTreeSet<(AccessKey, FieldValue)>,
     },
 }
@@ -39,6 +40,7 @@ impl ForwardState {
             degrees: BTreeMap::new(),
             may_constraints: BTreeSet::new(),
             must_constraints: BTreeSet::new(),
+            must_touches: BTreeSet::new(),
             must_fixed: BTreeSet::new(),
         }
     }
@@ -48,7 +50,7 @@ impl ForwardState {
         Some(variables)
     }
 
-    pub fn dependencies(&self) -> Option<&BTreeMap<SymbolId, BTreeSet<AccessKey>>> {
+    pub fn dependencies(&self) -> Option<&BTreeMap<SymbolId, MayAccessSet>> {
         let Self::Reached { dependencies, .. } = self else { return None };
         Some(dependencies)
     }
@@ -66,6 +68,11 @@ impl ForwardState {
     pub fn fixed_equations(&self) -> Option<&BTreeSet<(AccessKey, FieldValue)>> {
         let Self::Reached { must_fixed, .. } = self else { return None };
         Some(must_fixed)
+    }
+
+    pub fn must_touches(&self) -> Option<&BTreeSet<AccessKey>> {
+        let Self::Reached { must_touches, .. } = self else { return None };
+        Some(must_touches)
     }
 }
 
@@ -85,6 +92,7 @@ impl Lattice for ForwardState {
                     degrees: left_degrees,
                     may_constraints: left_may,
                     must_constraints: left_must,
+                    must_touches: left_touches,
                     must_fixed: left_fixed,
                 },
                 Self::Reached {
@@ -93,18 +101,20 @@ impl Lattice for ForwardState {
                     degrees: right_degrees,
                     may_constraints: right_may,
                     must_constraints: right_must,
+                    must_touches: right_touches,
                     must_fixed: right_fixed,
                 },
             ) => {
                 right.iter().all(|(key, value)| left.get(key) == Some(value))
                     && right_dependencies.iter().all(|(key, right)| {
-                        left_dependencies.get(key).is_some_and(|left| left.is_subset(right))
+                        left_dependencies.get(key).is_some_and(|left| left.leq(right))
                     })
                     && right_degrees
                         .iter()
                         .all(|(key, right)| left_degrees.get(key).is_some_and(|left| left <= right))
                     && left_may.is_subset(right_may)
                     && left_must.is_superset(right_must)
+                    && left_touches.is_superset(right_touches)
                     && left_fixed.is_superset(right_fixed)
             }
         }
@@ -126,6 +136,7 @@ impl Lattice for ForwardState {
                 degrees: left_degrees,
                 may_constraints: left_may,
                 must_constraints: left_must,
+                must_touches: left_touches,
                 must_fixed: left_fixed,
             },
             Self::Reached {
@@ -134,6 +145,7 @@ impl Lattice for ForwardState {
                 degrees: right_degrees,
                 may_constraints: right_may,
                 must_constraints: right_must,
+                must_touches: right_touches,
                 must_fixed: right_fixed,
             },
         ) = (&mut *self, other)
@@ -143,7 +155,7 @@ impl Lattice for ForwardState {
         left.retain(|key, value| right.get(key) == Some(value));
         left_dependencies.retain(|key, left| {
             let Some(right) = right_dependencies.get(key) else { return false };
-            left.extend(right.iter().cloned());
+            left.join_assign(right);
             true
         });
         left_degrees.retain(|key, left| {
@@ -153,6 +165,7 @@ impl Lattice for ForwardState {
         });
         left_may.extend(right_may);
         left_must.retain(|site| right_must.contains(site));
+        left_touches.retain(|key| right_touches.contains(key));
         left_fixed.retain(|equation| right_fixed.contains(equation));
         *self != old
     }
@@ -224,11 +237,42 @@ fn fixed_equation(
         .or_else(|| fixed_side(analysis, right, left, variables))
 }
 
+fn constraint_touches(
+    analysis: &ForwardAnalysis<'_>,
+    kind: &CfgNodeKind,
+    values: &BTreeMap<SymbolId, FieldValue>,
+) -> BTreeSet<AccessKey> {
+    let CfgNodeKind::Constraint { target, left, right } = kind else { return BTreeSet::new() };
+    let mut touched = BTreeSet::new();
+    if let Some(path) = target {
+        let key = key_for_path(analysis.hir, analysis.field, path, values);
+        if key.exact_alias(&key) {
+            touched.insert(key);
+        }
+    }
+    for expression in [Some(*left), *right].into_iter().flatten() {
+        let Some(ExprKind::Access(path)) =
+            analysis.hir.expression(expression).map(|expr| &expr.kind)
+        else {
+            continue;
+        };
+        if analysis.hir.symbol(path.root).is_some_and(|symbol| symbol.kind == SymbolKind::Variable)
+        {
+            continue;
+        }
+        let key = key_for_path(analysis.hir, analysis.field, path, values);
+        if key.exact_alias(&key) {
+            touched.insert(key);
+        }
+    }
+    touched
+}
+
 pub fn expression_dependencies(
     analysis: &ForwardAnalysis<'_>,
     expression: ExprId,
     values: &BTreeMap<SymbolId, FieldValue>,
-    variables: &BTreeMap<SymbolId, BTreeSet<AccessKey>>,
+    variables: &BTreeMap<SymbolId, MayAccessSet>,
 ) -> Option<BTreeSet<AccessKey>> {
     let mut accesses = BTreeSet::new();
     let mut complete = true;
@@ -321,7 +365,7 @@ fn assign_dependencies(
     target: &AccessPath,
     value: ExprId,
     variables: &BTreeMap<SymbolId, FieldValue>,
-    dependencies: &mut BTreeMap<SymbolId, BTreeSet<AccessKey>>,
+    dependencies: &mut BTreeMap<SymbolId, MayAccessSet>,
 ) {
     let dependency = if target.steps.is_empty() {
         expression_dependencies(analysis, value, variables, dependencies)
@@ -329,7 +373,7 @@ fn assign_dependencies(
         None
     };
     if let Some(dependency) = dependency {
-        dependencies.insert(target.root, dependency);
+        dependencies.insert(target.root, MayAccessSet::from_keys(dependency));
     } else {
         dependencies.remove(&target.root);
     }
@@ -375,6 +419,7 @@ impl Transfer<ForwardAnalysis<'_>, ForwardState, String> for CfgNode {
             degrees,
             may_constraints,
             must_constraints,
+            must_touches,
             must_fixed,
         } = &mut output
         else {
@@ -421,6 +466,7 @@ impl Transfer<ForwardAnalysis<'_>, ForwardState, String> for CfgNode {
             CfgNodeKind::Constraint { target, left, right } => {
                 may_constraints.insert(self.id);
                 must_constraints.insert(self.id);
+                must_touches.extend(constraint_touches(analysis, &self.kind, variables));
                 if let Some((key, value)) =
                     fixed_equation(analysis, target.as_ref(), *left, *right, variables)
                 {
@@ -719,6 +765,7 @@ mod tests {
                     degrees: BTreeMap::new(),
                     may_constraints,
                     must_constraints,
+                    must_touches: BTreeSet::new(),
                     must_fixed: BTreeSet::new(),
                 });
             }
@@ -750,6 +797,146 @@ mod tests {
                     assert_eq!(left, other);
                 }
             }
+        }
+    }
+
+    #[test]
+    fn symbolic_index_dependency_transfer_respects_precision_order() {
+        let directory = std::env::temp_dir()
+            .join(format!("circomspect-phase4-index-law-{}", std::process::id()));
+        fs::create_dir_all(&directory).unwrap();
+        let source = directory.join("case.circom");
+        fs::write(
+            &source,
+            "template T(){signal input a[2]; var i=0; var t=a[i]; signal output y; y<==t;}",
+        )
+        .unwrap();
+        let loaded =
+            load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
+        let hir = lower_project(&loaded).hir;
+        let cfg = crate::hir_cfg::build_cfg(&hir, hir.definition("T").unwrap()).unwrap();
+        let field = FieldContext::for_curve(Curve::Bn254);
+        let i = hir.symbols().iter().find(|symbol| symbol.name == "i").unwrap().id;
+        let t = hir.symbols().iter().find(|symbol| symbol.name == "t").unwrap().id;
+        let assignment = cfg
+            .nodes()
+            .iter()
+            .filter_map(|id| cfg.node(*id))
+            .find(|node| match &node.kind {
+                CfgNodeKind::Assignment { target, .. } => target.root == t,
+                _ => false,
+            })
+            .unwrap();
+        let mut precise = ForwardState::boundary();
+        let ForwardState::Reached { variables, dependencies, .. } = &mut precise else {
+            panic!("reached")
+        };
+        variables.insert(i, field.canonical(0.into()));
+        dependencies.insert(i, MayAccessSet::default());
+        let mut unknown = ForwardState::boundary();
+        let ForwardState::Reached { dependencies, .. } = &mut unknown else { panic!("reached") };
+        dependencies.insert(i, MayAccessSet::default());
+        assert!(precise.leq(&unknown));
+        let analysis = ForwardAnalysis { hir: &hir, field: &field };
+        let TransferOutcome::Known(precise) = assignment.apply(&analysis, &precise) else {
+            panic!("known assignment")
+        };
+        let TransferOutcome::Known(unknown) = assignment.apply(&analysis, &unknown) else {
+            panic!("known assignment")
+        };
+        assert!(precise.leq(&unknown));
+        let precise = precise.dependencies().unwrap().get(&t).unwrap();
+        let unknown = unknown.dependencies().unwrap().get(&t).unwrap();
+        assert!(precise.leq(unknown));
+    }
+
+    fn transfer_state(outcome: TransferOutcome<ForwardState, String>) -> ForwardState {
+        match outcome {
+            TransferOutcome::Known(state) | TransferOutcome::Opaque { provisional: state, .. } => {
+                state
+            }
+        }
+    }
+
+    fn check_transfer_order<'a, T>(
+        transfer: &T,
+        analysis: &ForwardAnalysis<'a>,
+        states: &[ForwardState],
+    ) where
+        T: Transfer<ForwardAnalysis<'a>, ForwardState, String>,
+    {
+        for left in states {
+            for right in states {
+                if !left.leq(right) {
+                    continue;
+                }
+                let left_after = transfer_state(transfer.apply(analysis, left));
+                let right_after = transfer_state(transfer.apply(analysis, right));
+                assert!(left_after.leq(&right_after), "{left:?} <= {right:?}");
+            }
+        }
+    }
+
+    fn variable_states(
+        symbol: SymbolId,
+        dependency: AccessKey,
+        field: &FieldContext,
+    ) -> Vec<ForwardState> {
+        let mut states = vec![ForwardState::Unreachable, ForwardState::boundary()];
+        for value in [None, Some(0), Some(1)] {
+            for dependencies in
+                [None, Some(BTreeSet::new()), Some(BTreeSet::from([dependency.clone()]))]
+            {
+                for degree in [None, Some(DegreeUpper::Constant), Some(DegreeUpper::Linear)] {
+                    let mut state = ForwardState::boundary();
+                    let ForwardState::Reached { variables, dependencies: facts, degrees, .. } =
+                        &mut state
+                    else {
+                        panic!("reached")
+                    };
+                    if let Some(value) = value {
+                        variables.insert(symbol, field.canonical(value.into()));
+                    }
+                    if let Some(dependencies) = &dependencies {
+                        facts.insert(symbol, MayAccessSet::from_keys(dependencies.clone()));
+                    }
+                    if let Some(degree) = degree {
+                        degrees.insert(symbol, degree);
+                    }
+                    states.push(state);
+                }
+            }
+        }
+        states
+    }
+
+    #[test]
+    fn production_forward_node_and_edge_transfers_are_monotone() {
+        let directory = std::env::temp_dir()
+            .join(format!("circomspect-phase4-transfer-laws-{}", std::process::id()));
+        fs::create_dir_all(&directory).unwrap();
+        let source = directory.join("case.circom");
+        fs::write(
+            &source,
+            "template T(){signal input x; var t=x; t++; signal output y; \
+             y<==t; if(1){y===1;}else{y===2;}}",
+        )
+        .unwrap();
+        let loaded =
+            load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
+        let hir = lower_project(&loaded).hir;
+        let cfg = crate::hir_cfg::build_cfg(&hir, hir.definition("T").unwrap()).unwrap();
+        let field = FieldContext::for_curve(Curve::Bn254);
+        let t = hir.symbols().iter().find(|symbol| symbol.name == "t").unwrap().id;
+        let x = hir.symbols().iter().find(|symbol| symbol.name == "x").unwrap().id;
+        let key = AccessKey { root: x, instance: None, steps: Vec::new() };
+        let states = variable_states(t, key, &field);
+        let analysis = ForwardAnalysis { hir: &hir, field: &field };
+        for id in cfg.nodes() {
+            check_transfer_order(cfg.node(*id).unwrap(), &analysis, &states);
+        }
+        for id in cfg.edges() {
+            check_transfer_order(cfg.edge(*id).unwrap().payload, &analysis, &states);
         }
     }
 }

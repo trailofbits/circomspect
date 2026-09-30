@@ -443,7 +443,8 @@ impl AnalysisFacts<'_> {
         let Some((may, must)) = state.constraints() else {
             return Fact::known(Incidence::Zero);
         };
-        let must_match = must.iter().any(|site| self.site_touches(*site, &query, true));
+        let must_match = state.must_touches().is_some_and(|keys| keys.contains(&query))
+            || must.iter().any(|site| self.site_touches(*site, &query, true));
         let may_match = may.iter().any(|site| self.site_touches(*site, &query, false));
         let value = if must_match {
             Incidence::Must

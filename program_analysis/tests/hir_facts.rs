@@ -177,6 +177,22 @@ fn branch_must_constraint_needs_proven_compile_time_choice() {
 }
 
 #[test]
+fn different_sites_on_every_arm_prove_incidence_independent_of_fixed_value() {
+    let field = FieldContext::for_curve(Curve::Bn254);
+    for (otherwise, fixed) in [("1", Some(field.canonical(1.into()))), ("2", None)] {
+        let source = format!(
+            "template Check(){{signal input x; if(0 << 1){{x===1;}}else{{x==={otherwise};}}}}"
+        );
+        let (hir, definition) = fixture(&source);
+        let cfg = build_cfg(&hir, definition).unwrap();
+        let facts = analyze(&hir, &cfg, &field, None).unwrap();
+        let x = expression_path(&hir, "x", 0);
+        assert_eq!(facts.incidence(&x).certified(), Some(&Incidence::Must));
+        assert_eq!(facts.constraint_fixed(&x).certified(), Some(&fixed));
+    }
+}
+
+#[test]
 fn deferred_control_blocks_branch_constraints_but_not_independent_sibling() {
     let (hir, definition) = fixture(
         "template Check(n){signal output x; signal output y; signal output z; \

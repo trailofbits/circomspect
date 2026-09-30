@@ -126,6 +126,9 @@ impl Transfer<LivenessAnalysis<'_>, LiveState, String> for CfgNode {
                     live.remove(&key);
                 }
             }
+            CfgNodeKind::Update { target, .. } => {
+                live.insert(key_for_path(analysis.hir, analysis.field, target, &empty));
+            }
             CfgNodeKind::Constraint { target, left, right } => {
                 if let Some(target) = target {
                     live.insert(key_for_path(analysis.hir, analysis.field, target, &empty));
@@ -155,7 +158,6 @@ impl Transfer<LivenessAnalysis<'_>, LiveState, String> for CfgNode {
             CfgNodeKind::Entry
             | CfgNodeKind::Exit
             | CfgNodeKind::LoopHeader
-            | CfgNodeKind::Update { .. }
             | CfgNodeKind::Declaration
             | CfgNodeKind::Log => {}
         }
@@ -208,6 +210,7 @@ impl Transfer<LivenessAnalysis<'_>, LiveState, String> for CfgEdge {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use abstract_interpretation::graph::FlowGraph;
     use parser::hir::{lower_project, ExprKind};
     use parser::new_frontend::{load_sources, Version, VersionPolicy};
     use program_structure::utils::constants::Curve;
@@ -291,6 +294,82 @@ mod tests {
                     panic!("known read")
                 };
                 assert!(left_after.leq(&right_after));
+            }
+        }
+    }
+
+    #[test]
+    fn backward_assignment_kills_and_update_reads_while_transfers_remain_monotone() {
+        let directory = std::env::temp_dir()
+            .join(format!("circomspect-phase4-live-update-{}", std::process::id()));
+        fs::create_dir_all(&directory).unwrap();
+        let source = directory.join("case.circom");
+        fs::write(&source, "function T(){var t=1; t++; return t;}").unwrap();
+        let loaded =
+            load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
+        let hir = lower_project(&loaded).hir;
+        let definition = hir.definition("T").unwrap();
+        let cfg = crate::hir_cfg::build_cfg(&hir, definition).unwrap();
+        let field = FieldContext::for_curve(Curve::Bn254);
+        let path = hir
+            .expressions()
+            .iter()
+            .find_map(|expr| match &expr.kind {
+                ExprKind::Access(path) => Some(path),
+                _ => None,
+            })
+            .unwrap();
+        let key = key_for_path(&hir, &field, path, &BTreeMap::new());
+        let states = [
+            LiveState::Unreachable,
+            LiveState::Reached(BTreeSet::new()),
+            LiveState::Reached(BTreeSet::from([key.clone()])),
+        ];
+        let analysis = LivenessAnalysis::new(&hir, &field, definition);
+        let empty = &states[1];
+        let live = &states[2];
+        for id in cfg.nodes() {
+            let node = cfg.node(*id).unwrap();
+            let result = node.apply(
+                &analysis,
+                if let CfgNodeKind::Assignment { .. } = node.kind { live } else { empty },
+            );
+            if let CfgNodeKind::Assignment { .. } = node.kind {
+                assert_eq!(result, TransferOutcome::Known(empty.clone()));
+            }
+            if let CfgNodeKind::Update { .. } = node.kind {
+                assert_eq!(result, TransferOutcome::Known(live.clone()));
+            }
+            for left in &states {
+                for right in &states {
+                    if !left.leq(right) {
+                        continue;
+                    }
+                    let TransferOutcome::Known(left) = node.apply(&analysis, left) else {
+                        panic!("known transfer")
+                    };
+                    let TransferOutcome::Known(right) = node.apply(&analysis, right) else {
+                        panic!("known transfer")
+                    };
+                    assert!(left.leq(&right));
+                }
+            }
+        }
+        for id in cfg.edges() {
+            let edge = cfg.edge(*id).unwrap();
+            for left in &states {
+                for right in &states {
+                    if !left.leq(right) {
+                        continue;
+                    }
+                    let TransferOutcome::Known(left) = edge.payload.apply(&analysis, left) else {
+                        panic!("known edge")
+                    };
+                    let TransferOutcome::Known(right) = edge.payload.apply(&analysis, right) else {
+                        panic!("known edge")
+                    };
+                    assert!(left.leq(&right));
+                }
             }
         }
     }
