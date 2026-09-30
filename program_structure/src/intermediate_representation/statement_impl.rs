@@ -95,11 +95,11 @@ impl Statement {
                 }
                 result
             }
-            Substitution { meta, var, rhe, .. } => {
+            Substitution { meta, var, op, rhe, .. } => {
                 let mut result = rhe.propagate_values(env);
 
                 // TODO: Handle array values.
-                if !matches!(rhe, Update { .. }) {
+                if *op != AssignOp::AssignSignal && !matches!(rhe, Update { .. }) {
                     if let Some(value) = rhe.value() {
                         env.add_variable(var, value);
                         result = result || meta.value_knowledge_mut().set_reduces_to(value.clone());
