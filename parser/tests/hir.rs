@@ -1246,6 +1246,20 @@ fn parameter_dependent_branches_keep_their_blocks() {
 }
 
 #[test]
+fn resolved_function_guard_defers_shape_only_for_compile_time_arguments() {
+    let source = concat!(
+        "function Id(x){return x;}",
+        "template Good(n){signal output o;if(Id(n)){o<==1;}else{o<==2;}}",
+        "template Bad(){signal input x;signal output o;if(Id(x)){o<==1;}}"
+    );
+    let result = lower(&[("call_guard.circom", source)], Version::new(2, 2, 3));
+    assert!(effect_for(&result, "Good")
+        .iter()
+        .any(|effect| matches!(effect, Effect::If { guard: ControlGuard::DeferredScalar, .. })));
+    assert!(effect_for(&result, "Bad").iter().all(|effect| !matches!(effect, Effect::If { .. })));
+}
+
+#[test]
 fn invalid_parameter_shape_does_not_become_control() {
     let invalid = "function F(n){if(n+[1,2]){return 1;}return 0;}";
     let result = lower(&[("invalid_guard.circom", invalid)], Version::new(2, 2, 3));
@@ -1278,6 +1292,22 @@ fn witness_control_preserves_only_constraint_free_branches() {
     assert!(effects
         .iter()
         .any(|effect| matches!(effect, Effect::If { guard: ControlGuard::WitnessOnly, .. })));
+    assert!(effects.iter().any(|effect| matches!(
+        effect,
+        Effect::Opaque { reason: IncompleteReason::NonCompileTime, .. }
+    )));
+}
+
+#[test]
+fn witness_control_rejects_anonymous_component_hidden_in_assignment() {
+    let source = concat!(
+        "template Child(){signal input in;signal output out;out<==in;}",
+        "template Parent(){signal input gate;signal output out;",
+        "if(gate){out <-- Child()(in <== 1);}}"
+    );
+    let result = lower(&[("anonymous_guard.circom", source)], Version::new(2, 2, 3));
+    let effects = effect_for(&result, "Parent");
+    assert!(effects.iter().all(|effect| !matches!(effect, Effect::If { .. })));
     assert!(effects.iter().any(|effect| matches!(
         effect,
         Effect::Opaque { reason: IncompleteReason::NonCompileTime, .. }
