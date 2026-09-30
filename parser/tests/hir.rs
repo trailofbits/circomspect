@@ -954,3 +954,36 @@ fn external_component_input_tag_has_its_own_diagnostic_code() {
     let span = result.diagnostics[0].span;
     assert_eq!(&source[span.start()..span.end()], "binary");
 }
+
+#[test]
+fn invalid_dimension_makes_local_declaration_and_access_opaque() {
+    let source =
+        concat!("template T(){signal input x; signal a[x]; signal output o; ", "o<==a[0];}");
+    let result = lower(&[("invalid_shape.circom", source)], Version::new(2, 2, 3));
+    assert!(result.diagnostics.iter().any(|item| {
+        item.code == SemanticCode::NonConstantArrayLength
+            && &source[item.span.start()..item.span.end()] == "x"
+    }));
+    let symbol = result.hir.symbols().iter().find(|item| item.name == "a").unwrap();
+    assert!(!symbol.shape_checked);
+    let effects = effect_for(&result, "T");
+    assert!(effects.iter().all(|item| { !matches!(item, Effect::ConstraintAssignment { .. }) }));
+}
+
+#[test]
+fn invalid_forward_port_dimension_does_not_resolve_checked_access() {
+    let source = concat!(
+        "bus Inner(){signal leaf;} template Early(){component c=Later(); ",
+        "signal output o; o<==c.b[0].leaf;} template Later(){signal input x; ",
+        "Inner() output b[x];}"
+    );
+    let result = lower(&[("forward_shape.circom", source)], Version::new(2, 2, 3));
+    assert!(result
+        .diagnostics
+        .iter()
+        .any(|item| { item.code == SemanticCode::NonConstantArrayLength }));
+    assert!(max_port_steps(&result) < 2);
+    assert!(effect_for(&result, "Early")
+        .iter()
+        .all(|item| !matches!(item, Effect::ConstraintAssignment { .. })));
+}

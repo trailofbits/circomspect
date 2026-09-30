@@ -111,7 +111,7 @@ impl Lowerer<'_> {
         self.hir.expression(id).map_or(Knownness::Opaque, |expr| expr.knownness)
     }
 
-    fn expect_compile_time(&mut self, expression: ExprId, span: Span, dimension: bool) {
+    fn expect_compile_time(&mut self, expression: ExprId, span: Span, dimension: bool) -> bool {
         let knownness = self.knownness(expression);
         if knownness == Knownness::WitnessDependent && dimension {
             self.diagnostic(
@@ -124,6 +124,7 @@ impl Lowerer<'_> {
         if !knownness.is_compile_time() {
             self.incomplete(span, IncompleteReason::NonCompileTime);
         }
+        knownness.is_compile_time()
     }
 
     fn index_definitions(&mut self) {
@@ -332,6 +333,10 @@ impl Lowerer<'_> {
                         );
                         self.hir.symbols[symbol.index].bus_type = bus_type.clone();
                         self.hir.symbols[symbol.index].rank = declared.dimensions.len();
+                        self.hir.symbols[symbol.index].shape_checked = declared
+                            .dimensions
+                            .iter()
+                            .all(|value| Self::syntactic_compile_time(value, &known_parameters));
                         let port = self.hir.add_port(symbol, direction, declared.span);
                         for tag in tags {
                             let tag_id =
@@ -1050,11 +1055,13 @@ impl Lowerer<'_> {
         self.hir.symbols[symbol.index].bus_type = bus_type;
         self.hir.symbols[symbol.index].bus_arguments = bus_arguments.to_vec();
         self.hir.symbols[symbol.index].rank = declared.dimensions.len();
+        let mut valid_shape = true;
         for dimension in &declared.dimensions {
             let id = self.lower_expression(dimension);
-            self.expect_compile_time(id, dimension.span(), true);
+            valid_shape &= self.expect_compile_time(id, dimension.span(), true);
             self.hir.symbols[symbol.index].dimensions.push(id);
         }
+        self.hir.symbols[symbol.index].shape_checked = valid_shape;
         if kind == SymbolKind::Component {
             self.components.insert(symbol, self.hir.add_component(symbol, declared.span));
         }
@@ -1063,6 +1070,9 @@ impl Lowerer<'_> {
                 let id = self.hir.add_symbol(tag.name.clone(), SymbolKind::Tag, tag.span);
                 self.hir.symbols[symbol.index].tags.push(id);
             }
+        }
+        if !valid_shape {
+            return vec![self.opaque(declared.span, IncompleteReason::NonCompileTime)];
         }
         let mut effects = vec![Effect::Declaration { symbol, span: declared.span }];
         if let Some((operator, value)) = &declared.initialization {
@@ -1309,6 +1319,10 @@ impl Lowerer<'_> {
             );
             return None;
         };
+        if !self.hir.symbols[root.index].shape_checked {
+            self.incomplete(*span, IncompleteReason::UnknownType);
+            return None;
+        }
         let mut state = AccessState {
             ty: self.symbol_type(root),
             terminal: root,
@@ -1501,6 +1515,10 @@ impl Lowerer<'_> {
             }
             if let Some(port) = matching.first().copied() {
                 let symbol = self.hir.ports[port.index].symbol;
+                if !self.hir.symbols[symbol.index].shape_checked {
+                    self.incomplete(field.span, IncompleteReason::UnknownType);
+                    return None;
+                }
                 return Some((
                     AccessStep::Port { port, span: field.span },
                     symbol,
