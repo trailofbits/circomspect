@@ -412,37 +412,51 @@ impl Lowerer<'_> {
         match expression {
             Expression::Unary { operator, operand, .. } => {
                 let operand = self.lower_expression(operand);
-                if !self.scalar_arithmetic_operand(operand) {
+                let shape = self.scalar_shape(operand);
+                if shape == ScalarShape::Invalid {
                     return self.opaque_expression(span);
                 }
+                let ty = if shape == ScalarShape::Deferred {
+                    ValueType::Unknown
+                } else {
+                    ValueType::Plain
+                };
                 self.add_expression(
                     ExprKind::Unary { operator: *operator, operand },
                     self.knownness(operand),
                     span,
-                    ValueType::Plain,
+                    ty,
                 )
             }
             Expression::Binary { operator, left, right, .. } => {
                 let left = self.lower_expression(left);
                 let right = self.lower_expression(right);
-                if !self.scalar_arithmetic_operand(left) || !self.scalar_arithmetic_operand(right) {
+                let shape = self.scalar_shape(left).join(self.scalar_shape(right));
+                if shape == ScalarShape::Invalid {
                     return self.opaque_expression(span);
                 }
+                let ty = if shape == ScalarShape::Deferred {
+                    ValueType::Unknown
+                } else {
+                    ValueType::Plain
+                };
                 self.add_expression(
                     ExprKind::Binary { operator: *operator, left, right },
                     self.knownness(left).join(self.knownness(right)),
                     span,
-                    ValueType::Plain,
+                    ty,
                 )
             }
             Expression::Ternary { condition, yes, no, .. } => {
                 let condition = self.lower_expression(condition);
                 let yes = self.lower_expression(yes);
                 let no = self.lower_expression(no);
-                if !self.scalar_arithmetic_operand(condition) {
+                if self.scalar_shape(condition) == ScalarShape::Invalid {
                     return self.opaque_expression(span);
                 }
-                let ty = if self.expression_type(yes) == self.expression_type(no) {
+                let ty = if self.scalar_shape(condition) == ScalarShape::Deferred {
+                    ValueType::Unknown
+                } else if self.expression_type(yes) == self.expression_type(no) {
                     self.expression_type(yes)
                 } else {
                     ValueType::Unknown
@@ -563,6 +577,37 @@ impl Lowerer<'_> {
         self.expression_is_checked(id)
             && self.expression_type(id) == ValueType::Plain
             && self.expression_rank(id) == Some(0)
+    }
+
+    pub(super) fn scalar_shape(&self, id: ExprId) -> ScalarShape {
+        if !self.expression_is_checked(id) {
+            return ScalarShape::Invalid;
+        }
+        let Some(expression) = self.hir.expression(id) else {
+            return ScalarShape::Invalid;
+        };
+        match &expression.kind {
+            ExprKind::Access(path)
+                if expression.knownness == Knownness::ParameterDependent
+                    && self.hir.symbols[path.terminal.index].kind == SymbolKind::Parameter =>
+            {
+                ScalarShape::Deferred
+            }
+            ExprKind::Unary { operand, .. } => self.scalar_shape(*operand),
+            ExprKind::Binary { left, right, .. } => {
+                self.scalar_shape(*left).join(self.scalar_shape(*right))
+            }
+            ExprKind::Ternary { condition, yes, no } => self
+                .scalar_shape(*condition)
+                .join(self.scalar_shape(*yes))
+                .join(self.scalar_shape(*no)),
+            _ if self.expression_type(id) == ValueType::Plain
+                && self.expression_rank(id) == Some(0) =>
+            {
+                ScalarShape::Checked
+            }
+            _ => ScalarShape::Invalid,
+        }
     }
 
     pub(super) fn compatible_equality_operands(&self, left: ExprId, right: ExprId) -> bool {

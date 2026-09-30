@@ -165,6 +165,14 @@ pub enum Knownness {
     Opaque,
 }
 
+/// Evidence available for a control-flow condition before parameter specialization.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ControlGuard {
+    CheckedCompileTime,
+    DeferredScalar,
+    WitnessOnly,
+}
+
 impl Knownness {
     #[must_use]
     pub const fn is_compile_time(self) -> bool {
@@ -288,22 +296,82 @@ impl Expr {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Effect {
-    Declaration { symbol: SymbolId, span: Span },
-    VariableAssignment { target: AccessPath, value: ExprId, span: Span },
-    ComponentInstantiation { target: AccessPath, value: ExprId, span: Span },
-    WitnessAssignment { target: AccessPath, value: ExprId, span: Span },
-    ConstraintAssignment { target: AccessPath, value: ExprId, span: Span },
-    EqualityConstraint { left: ExprId, right: ExprId, span: Span },
-    Update { target: AccessPath, operator: PostfixOperator, span: Span },
-    If { condition: ExprId, then_block: BlockId, else_block: Option<BlockId>, span: Span },
-    While { condition: ExprId, body: BlockId, span: Span },
-    For { initializer: BlockId, condition: ExprId, step: BlockId, body: BlockId, span: Span },
-    Return { value: ExprId, span: Span },
-    Assert { condition: ExprId, span: Span },
-    Log { values: Vec<ExprId>, span: Span },
-    AnonymousComponent { expression: ExprId, span: Span },
+    Declaration {
+        symbol: SymbolId,
+        span: Span,
+    },
+    VariableAssignment {
+        target: AccessPath,
+        value: ExprId,
+        span: Span,
+    },
+    ComponentInstantiation {
+        target: AccessPath,
+        value: ExprId,
+        span: Span,
+    },
+    WitnessAssignment {
+        target: AccessPath,
+        value: ExprId,
+        span: Span,
+    },
+    ConstraintAssignment {
+        target: AccessPath,
+        value: ExprId,
+        span: Span,
+    },
+    EqualityConstraint {
+        left: ExprId,
+        right: ExprId,
+        span: Span,
+    },
+    Update {
+        target: AccessPath,
+        operator: PostfixOperator,
+        span: Span,
+    },
+    If {
+        condition: ExprId,
+        guard: ControlGuard,
+        then_block: BlockId,
+        else_block: Option<BlockId>,
+        span: Span,
+    },
+    While {
+        condition: ExprId,
+        guard: ControlGuard,
+        body: BlockId,
+        span: Span,
+    },
+    For {
+        initializer: BlockId,
+        condition: ExprId,
+        guard: ControlGuard,
+        step: BlockId,
+        body: BlockId,
+        span: Span,
+    },
+    Return {
+        value: ExprId,
+        span: Span,
+    },
+    Assert {
+        condition: ExprId,
+        span: Span,
+    },
+    Log {
+        values: Vec<ExprId>,
+        span: Span,
+    },
+    AnonymousComponent {
+        expression: ExprId,
+        span: Span,
+    },
     Block(BlockId),
-    Opaque { reason: IncompleteReason, span: Span },
+    Opaque {
+        reason: IncompleteReason,
+        span: Span,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

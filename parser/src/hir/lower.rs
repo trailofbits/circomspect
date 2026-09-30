@@ -2,10 +2,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::{
     AccessPath, AccessStep, AnonymousInputEffect, AnonymousInputTarget, ArrayIndex, BlockId, Bus,
-    BusId, BusTarget, CallTarget, ComponentId, DefinitionKind, DefinitionRef, Effect, ExprId,
-    ExprKind, HirProject, IncompleteLocation, IncompleteReason, IncompleteRegion, Knownness,
-    LoweredProject, Main, PortSchema, SemanticCode, SemanticDiagnostic, Severity, SymbolId,
-    SymbolKind, Template, TemplateId, Function, FunctionId,
+    BusId, BusTarget, CallTarget, ComponentId, ControlGuard, DefinitionKind, DefinitionRef, Effect,
+    ExprId, ExprKind, HirProject, IncompleteLocation, IncompleteReason, IncompleteRegion,
+    Knownness, LoweredProject, Main, PortSchema, SemanticCode, SemanticDiagnostic, Severity,
+    SymbolId, SymbolKind, Template, TemplateId, Function, FunctionId,
 };
 use crate::new_frontend::{
     Access, AnonymousCallExpr, AnonymousInput, AssignmentOperator, Declaration, DeclarationKind,
@@ -27,6 +27,23 @@ enum ShapeCheck {
     Valid,
     Invalid(SemanticCode),
     Unknown,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ScalarShape {
+    Checked,
+    Deferred,
+    Invalid,
+}
+
+impl ScalarShape {
+    fn join(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::Invalid, _) | (_, Self::Invalid) => Self::Invalid,
+            (Self::Deferred, _) | (_, Self::Deferred) => Self::Deferred,
+            (Self::Checked, Self::Checked) => Self::Checked,
+        }
+    }
 }
 
 #[derive(Default)]

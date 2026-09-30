@@ -80,14 +80,19 @@ impl Lowerer<'_> {
                 let after_then = self.snapshot_knownness();
                 self.restore_knownness(&before);
                 let else_block = else_branch.as_ref().map(|branch| self.lower_branch(branch));
-                self.join_knownness(&after_then, &before);
-                if !self.scalar_arithmetic_operand(condition) {
-                    return vec![self.opaque(span, IncompleteReason::UnknownType)];
-                }
-                if !self.knownness(condition).is_compile_time() {
-                    return vec![self.opaque(span, IncompleteReason::NonCompileTime)];
-                }
-                vec![Effect::If { condition, then_block, else_block, span }]
+                let after_else = self.snapshot_knownness();
+                self.join_knownness(&after_then, &after_else);
+                let guard = match self.control_guard(condition) {
+                    Ok(ControlGuard::WitnessOnly)
+                        if !self.branch_is_witness_only(then_block)
+                            || else_block.is_some_and(|id| !self.branch_is_witness_only(id)) =>
+                    {
+                        return vec![self.opaque(span, IncompleteReason::NonCompileTime)];
+                    }
+                    Ok(guard) => guard,
+                    Err(reason) => return vec![self.opaque(span, reason)],
+                };
+                vec![Effect::If { condition, guard, then_block, else_block, span }]
             }
             Statement::For { initializer, condition, step, body, .. } => {
                 self.scopes.enter();
@@ -101,13 +106,24 @@ impl Lowerer<'_> {
                 let stable_condition = self.loop_condition_is_stable(condition, &before_loop);
                 self.join_knownness(&before_loop, &after_body);
                 self.scopes.leave();
-                if !self.scalar_arithmetic_operand(condition) {
-                    return vec![self.opaque(span, IncompleteReason::UnknownType)];
-                }
-                if !self.knownness(condition).is_compile_time() || !stable_condition {
+                let guard = match self.control_guard(condition) {
+                    Ok(ControlGuard::WitnessOnly) => {
+                        return vec![self.opaque(span, IncompleteReason::NonCompileTime)];
+                    }
+                    Ok(guard) => guard,
+                    Err(reason) => return vec![self.opaque(span, reason)],
+                };
+                if !stable_condition {
                     return vec![self.opaque(span, IncompleteReason::NonCompileTime)];
                 }
-                vec![Effect::For { initializer: initializer_block, condition, step, body, span }]
+                vec![Effect::For {
+                    initializer: initializer_block,
+                    condition,
+                    guard,
+                    step,
+                    body,
+                    span,
+                }]
             }
             Statement::While { condition, body, .. } => {
                 let before = self.snapshot_knownness();
@@ -115,19 +131,62 @@ impl Lowerer<'_> {
                 let body = self.lower_branch(body);
                 let stable_condition = self.loop_condition_is_stable(condition, &before);
                 self.join_knownness(&before, &before);
-                if !self.scalar_arithmetic_operand(condition) {
-                    return vec![self.opaque(span, IncompleteReason::UnknownType)];
-                }
-                if !self.knownness(condition).is_compile_time() || !stable_condition {
+                let guard = match self.control_guard(condition) {
+                    Ok(ControlGuard::WitnessOnly) => {
+                        return vec![self.opaque(span, IncompleteReason::NonCompileTime)];
+                    }
+                    Ok(guard) => guard,
+                    Err(reason) => return vec![self.opaque(span, reason)],
+                };
+                if !stable_condition {
                     return vec![self.opaque(span, IncompleteReason::NonCompileTime)];
                 }
-                vec![Effect::While { condition, body, span }]
+                vec![Effect::While { condition, guard, body, span }]
             }
             _ => {
                 vec![self
                     .opaque(span, IncompleteReason::Unsupported("control statement form".into()))]
             }
         }
+    }
+
+    fn control_guard(&self, condition: ExprId) -> Result<ControlGuard, IncompleteReason> {
+        let shape = self.scalar_shape(condition);
+        if shape == ScalarShape::Invalid {
+            return Err(IncompleteReason::UnknownType);
+        }
+        match self.knownness(condition) {
+            Knownness::Constant | Knownness::ParameterDependent => match shape {
+                ScalarShape::Checked => Ok(ControlGuard::CheckedCompileTime),
+                ScalarShape::Deferred => Ok(ControlGuard::DeferredScalar),
+                ScalarShape::Invalid => Err(IncompleteReason::UnknownType),
+            },
+            Knownness::WitnessDependent => Ok(ControlGuard::WitnessOnly),
+            Knownness::Opaque => Err(IncompleteReason::UnknownType),
+        }
+    }
+
+    fn branch_is_witness_only(&self, block: BlockId) -> bool {
+        self.hir.blocks[block.index].effects.iter().all(|effect| match effect {
+            Effect::Declaration { symbol, .. } => {
+                self.hir.symbols[symbol.index].kind == SymbolKind::Variable
+            }
+            Effect::VariableAssignment { .. }
+            | Effect::WitnessAssignment { .. }
+            | Effect::Update { .. }
+            | Effect::Return { .. }
+            | Effect::Assert { .. }
+            | Effect::Log { .. } => true,
+            Effect::Block(child) => self.branch_is_witness_only(*child),
+            Effect::ComponentInstantiation { .. }
+            | Effect::ConstraintAssignment { .. }
+            | Effect::EqualityConstraint { .. }
+            | Effect::If { .. }
+            | Effect::While { .. }
+            | Effect::For { .. }
+            | Effect::AnonymousComponent { .. }
+            | Effect::Opaque { .. } => false,
+        })
     }
 
     pub(super) fn lower_terminal_statement(&mut self, statement: &Statement) -> Vec<Effect> {
