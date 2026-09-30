@@ -6,7 +6,7 @@
           "level": "error",
           "locations": [],
           "message": {
-            "text": "The file `/Users/fredrikdahlgren/.codex/worktrees/circomspect-phase0/circomspect/cli/tests/fixtures/unsupported_version.circom` requires version 2.2.0, which is not supported by Circomspect (version 2.1.4)."
+            "text": "The file `/fixtures/unsupported_version.circom` requires version 2.2.0, which is not supported by Circomspect (version 2.1.4)."
           },
           "relatedLocations": [],
           "rule": {
