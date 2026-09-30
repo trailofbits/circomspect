@@ -4,8 +4,15 @@ use program_structure::expression_builders::*;
 use program_structure::ast::*;
 use program_structure::ast_shortcuts::{self, Symbol, TupleInit};
 use std::str::FromStr;
+use lalrpop_util::ErrorRecovery;
 
-grammar;
+grammar<'err>(errors: &'err mut Vec<ErrorRecovery<usize, Token<'input>, &'static str>>);
+
+match {
+    _
+} else {
+    r"(?s:.)" => "INVALID"
+}
 
 // ====================================================================
 // Body
@@ -46,8 +53,22 @@ ParseInclude : Include = {
 // Parsing function and template definitions
 // Parsing the declaration of the main component
 pub ParseAst : AST = {
-    <s:@L> <version: ParsePragma?> <custom_gates: ParseCustomGates?> <includes: ParseInclude*> <definitions: ParseDefinition*> <main: ParseMainComponent?> <e:@R>
-    => AST::new(Meta::new(s,e), version, custom_gates.is_some(), includes, definitions, main),
+    <s:@L> <version: ParsePragma?> <custom_gates: ParseCustomGates?>
+    <includes: ParseInclude*> <definitions: ParseRecoveringDefinition*>
+    <main: ParseMainComponent?> <e:@R> => AST::new(
+        Meta::new(s,e), version, custom_gates.is_some(), includes,
+        definitions.into_iter().flatten().collect(), main,
+    ),
+};
+
+ParseRecoveringDefinition : Option<Definition> = {
+    <definition: ParseDefinition> => Some(definition),
+    ! => { errors.push(<>); None },
+};
+
+// Keep the fallback lexer token out of the program grammar so it triggers recovery.
+pub ParseInvalidToken : () = {
+    "INVALID" => (),
 };
 
 // ====================================================================

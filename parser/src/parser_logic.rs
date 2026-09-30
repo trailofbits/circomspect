@@ -3,6 +3,7 @@ use super::lang;
 
 use program_structure::ast::AST;
 use program_structure::report::Report;
+use program_structure::report::ReportCollection;
 use program_structure::file_definition::FileID;
 
 pub fn preprocess(expr: &str, file_id: FileID) -> Result<String, Box<Report>> {
@@ -75,45 +76,60 @@ pub fn preprocess(expr: &str, file_id: FileID) -> Result<String, Box<Report>> {
     Ok(pp)
 }
 
-pub fn parse_file(src: &str, file_id: FileID) -> Result<AST, Box<Report>> {
+pub fn parse_file(src: &str, file_id: FileID) -> Result<(AST, ReportCollection), Box<Report>> {
+    let src = preprocess(src, file_id)?;
+    let mut errors = Vec::new();
+    let mut ast = lang::ParseAstParser::new()
+        .parse(&mut errors, &src)
+        .map_err(|error| Box::new(parse_error_report(error, file_id)))?;
+    for include in &mut ast.includes {
+        include.meta.set_file_id(file_id);
+    }
+    let reports =
+        errors.into_iter().map(|error| parse_error_report(error.error, file_id)).collect();
+    Ok((ast, reports))
+}
+
+fn parse_error_report(
+    parse_error: lalrpop_util::ParseError<usize, lang::Token<'_>, &'static str>,
+    file_id: FileID,
+) -> Report {
     use lalrpop_util::ParseError::*;
-    lang::ParseAstParser::new()
-        .parse(&preprocess(src, file_id)?)
-        .map(|mut ast| {
-            // Set file ID for better error reporting.
-            for include in &mut ast.includes {
-                include.meta.set_file_id(file_id);
-            }
-            ast
-        })
-        .map_err(|parse_error| match parse_error {
-            InvalidToken { location } => ParsingError {
-                file_id,
-                message: "Invalid token found.".to_string(),
-                location: location..location,
-            },
-            UnrecognizedToken { ref token, ref expected } => ParsingError {
-                file_id,
-                message: format!(
-                    "Unrecognized token `{}` found.{}",
-                    token.1,
-                    format_expected(expected)
-                ),
-                location: token.0..token.2,
-            },
-            ExtraToken { ref token } => ParsingError {
-                file_id,
-                message: format!("Extra token `{}` found.", token.2),
-                location: token.0..token.2,
-            },
-            _ => ParsingError { file_id, message: format!("{parse_error}"), location: 0..0 },
-        })
-        .map_err(|error| Box::new(error.into_report()))
+    let error = match parse_error {
+        InvalidToken { location } => ParsingError {
+            file_id,
+            message: "Invalid token found.".to_string(),
+            location: location..location,
+        },
+        UnrecognizedEof { location, ref expected } => ParsingError {
+            file_id,
+            message: format!("Unexpected end of file.{}", format_expected(expected)),
+            location: location..location,
+        },
+        UnrecognizedToken { ref token, ref expected } => ParsingError {
+            file_id,
+            message: format!(
+                "Unrecognized token `{}` found.{}",
+                token.1,
+                format_expected(expected)
+            ),
+            location: token.0..token.2,
+        },
+        ExtraToken { ref token } => ParsingError {
+            file_id,
+            message: format!("Extra token `{}` found.", token.2),
+            location: token.0..token.2,
+        },
+        User { error } => ParsingError { file_id, message: error.to_string(), location: 0..0 },
+    };
+    error.into_report()
 }
 
 pub fn parse_string(src: &str) -> Option<AST> {
     let src = preprocess(src, 0).ok()?;
-    lang::ParseAstParser::new().parse(&src).ok()
+    let mut errors = Vec::new();
+    let ast = lang::ParseAstParser::new().parse(&mut errors, &src).ok()?;
+    errors.is_empty().then_some(ast)
 }
 
 /// Parse a single (function or template) definition for testing purposes.
@@ -152,6 +168,12 @@ fn format_expected(tokens: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::parse_string;
+
+    #[test]
+    fn parse_string_rejects_recovered_errors() {
+        assert!(parse_string("template Broken() { var value = ; }").is_none());
+        assert!(parse_string("template Broken() { var value = @; }").is_none());
+    }
 
     #[test]
     fn test_parse_string() {

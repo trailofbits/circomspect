@@ -158,7 +158,8 @@ pub fn parse_file(
     let file_id = file_library.add_file(path_str, file_content.clone(), is_user_input);
 
     debug!("parsing file `{}`", file_path.display());
-    let program = parser_logic::parse_file(&file_content, file_id)?;
+    let (program, mut parse_reports) = parser_logic::parse_file(&file_content, file_id)?;
+    reports.append(&mut parse_reports);
     match check_compiler_version(file_path, file_id, program.compiler_version, compiler_version) {
         Ok(warnings) => reports.extend(warnings),
         Err(error) => reports.push(*error),

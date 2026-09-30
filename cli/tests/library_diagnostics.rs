@@ -40,6 +40,57 @@ fn syntax_error_in_one_file_does_not_hide_another_library_definition() {
 }
 
 #[test]
+fn syntax_errors_do_not_hide_valid_definitions_in_the_same_library() {
+    let path = fixture("recoverable_library.circom");
+    let output = run(&[path.to_str().expect("fixture path is not UTF-8")]);
+    let stdout = String::from_utf8(output.stdout).expect("CLI output is not UTF-8");
+
+    assert!(!output.status.success(), "{stdout}");
+    assert!(stdout.contains("analyzing template 'BeforeError'"), "{stdout}");
+    assert!(stdout.contains("analyzing template 'BetweenErrors'"), "{stdout}");
+    assert!(stdout.contains("analyzing template 'AfterError'"), "{stdout}");
+    assert!(!stdout.contains("analyzing template 'BrokenFirst'"), "{stdout}");
+    assert!(!stdout.contains("analyzing template 'BrokenSecond'"), "{stdout}");
+    assert_eq!(stdout.matches("error:").count(), 2, "{stdout}");
+}
+
+#[test]
+fn invalid_token_does_not_hide_valid_definition_in_the_same_library() {
+    let path = fixture("lexical_error_library.circom");
+    let output = run(&[path.to_str().expect("fixture path is not UTF-8")]);
+    let stdout = String::from_utf8(output.stdout).expect("CLI output is not UTF-8");
+
+    assert!(!output.status.success(), "{stdout}");
+    assert!(stdout.contains("lexical_error_library.circom:4:"), "{stdout}");
+    assert!(stdout.contains("analyzing template 'AfterInvalidToken'"), "{stdout}");
+    assert!(!stdout.contains("analyzing template 'BrokenToken'"), "{stdout}");
+}
+
+#[test]
+fn syntax_error_keeps_includes_available_to_later_definitions() {
+    let path = fixture("recoverable_include.circom");
+    let output = run(&[path.to_str().expect("fixture path is not UTF-8"), "--level", "error"]);
+    let stdout = String::from_utf8(output.stdout).expect("CLI output is not UTF-8");
+
+    assert!(!output.status.success(), "{stdout}");
+    assert_eq!(stdout.matches("error:").count(), 1, "{stdout}");
+    assert!(stdout.contains("analyzing template 'UsesIncludedTemplate'"), "{stdout}");
+    assert!(!stdout.contains("MissingTemplate"), "{stdout}");
+}
+
+#[test]
+fn unclosed_definition_does_not_hide_the_next_definition() {
+    let path = fixture("unclosed_definition.circom");
+    let output = run(&[path.to_str().expect("fixture path is not UTF-8")]);
+    let stdout = String::from_utf8(output.stdout).expect("CLI output is not UTF-8");
+
+    assert!(!output.status.success(), "{stdout}");
+    assert!(stdout.contains("unclosed_definition.circom:6:"), "{stdout}");
+    assert!(stdout.contains("analyzing template 'AfterUnclosed'"), "{stdout}");
+    assert!(!stdout.contains("analyzing template 'Unclosed'"), "{stdout}");
+}
+
+#[test]
 fn missing_input_file_is_visible() {
     let path = std::env::temp_dir()
         .join(format!("circomspect-nonexistent-input-{}.circom", std::process::id()));
