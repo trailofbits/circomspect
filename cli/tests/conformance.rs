@@ -131,6 +131,25 @@ fn production_matrix_has_existing_cases_and_valid_spans() {
         assert!(ids.insert(id), "duplicate production ID: {id}");
         assert!(!required_string(row, "grammar").is_empty());
         assert!(required_string(row, "min_version").starts_with("2."));
+        let expectation = &row["ast_expectation"];
+        let kind = required_string(expectation, "kind");
+        for key in ["operator", "modifier", "direction", "initializer", "shape"] {
+            if let Some(value) = expectation.get(key) {
+                assert!(!value.as_str().unwrap_or("").is_empty(), "{id}: invalid {key}");
+            }
+        }
+        if ["binary", "unary", "assignment", "postfix_update"].contains(&kind) {
+            required_string(expectation, "operator");
+        }
+        if id.starts_with("precedence_")
+            || id.starts_with("associativity_")
+            || id == "ternary_arm_boundary"
+            || id == "dangling_else"
+            || id == "nested_if_no_else"
+            || id == "top_level_order"
+        {
+            required_string(expectation, "shape");
+        }
         let accepted = cases
             .get(required_string(row, "accept_case"))
             .unwrap_or_else(|| panic!("{id}: missing accepted case"));

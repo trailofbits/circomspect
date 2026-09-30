@@ -12,7 +12,11 @@
         "end": 13,
         "text": "pragma circom"
       },
-      "focal_kind": "top"
+      "focal_kind": "top",
+      "ast_expectation": {
+        "kind": "pragma",
+        "modifier": "version"
+      }
     },
     {
       "id": "pragma_custom",
@@ -25,7 +29,11 @@
         "end": 44,
         "text": "pragma custom_templates"
       },
-      "focal_kind": "top"
+      "focal_kind": "top",
+      "ast_expectation": {
+        "kind": "pragma",
+        "modifier": "custom_templates"
+      }
     },
     {
       "id": "include_path",
@@ -38,7 +46,10 @@
         "end": 28,
         "text": "include"
       },
-      "focal_kind": "top"
+      "focal_kind": "top",
+      "ast_expectation": {
+        "kind": "include"
+      }
     },
     {
       "id": "main_plain",
@@ -51,7 +62,11 @@
         "end": 82,
         "text": "component main"
       },
-      "focal_kind": "top"
+      "focal_kind": "top",
+      "ast_expectation": {
+        "kind": "main",
+        "modifier": "public=none"
+      }
     },
     {
       "id": "main_public",
@@ -64,7 +79,11 @@
         "end": 114,
         "text": "{public [in]}"
       },
-      "focal_kind": "top"
+      "focal_kind": "top",
+      "ast_expectation": {
+        "kind": "main",
+        "modifier": "public=in"
+      }
     },
     {
       "id": "function_definition",
@@ -77,7 +96,11 @@
         "end": 31,
         "text": "function F"
       },
-      "focal_kind": "top"
+      "focal_kind": "top",
+      "ast_expectation": {
+        "kind": "function_definition",
+        "modifier": "parameters=1;parentheses=present"
+      }
     },
     {
       "id": "template_definition",
@@ -90,7 +113,11 @@
         "end": 34,
         "text": "template Main"
       },
-      "focal_kind": "top"
+      "focal_kind": "top",
+      "ast_expectation": {
+        "kind": "template_definition",
+        "modifier": "custom=false;external=false;parallel=false;parentheses=present"
+      }
     },
     {
       "id": "template_parallel",
@@ -103,7 +130,11 @@
         "end": 38,
         "text": "parallel"
       },
-      "focal_kind": "top"
+      "focal_kind": "top",
+      "ast_expectation": {
+        "kind": "template_definition",
+        "modifier": "custom=false;external=false;parallel=true;parentheses=present"
+      }
     },
     {
       "id": "template_custom",
@@ -116,7 +147,11 @@
         "end": 66,
         "text": "custom Main"
       },
-      "focal_kind": "top"
+      "focal_kind": "top",
+      "ast_expectation": {
+        "kind": "template_definition",
+        "modifier": "custom=true;external=false;parallel=false;parentheses=present"
+      }
     },
     {
       "id": "template_extern_c",
@@ -129,7 +164,11 @@
         "end": 38,
         "text": "extern_c"
       },
-      "focal_kind": "top"
+      "focal_kind": "top",
+      "ast_expectation": {
+        "kind": "template_definition",
+        "modifier": "custom=false;external=true;parallel=false;parentheses=present"
+      }
     },
     {
       "id": "template_without_parentheses",
@@ -142,7 +181,11 @@
         "end": 34,
         "text": "template Main"
       },
-      "focal_kind": "top"
+      "focal_kind": "top",
+      "ast_expectation": {
+        "kind": "template_definition",
+        "modifier": "custom=false;external=false;parallel=false;parentheses=omitted"
+      }
     },
     {
       "id": "bus_without_parentheses",
@@ -155,7 +198,11 @@
         "end": 26,
         "text": "bus B"
       },
-      "focal_kind": "top"
+      "focal_kind": "top",
+      "ast_expectation": {
+        "kind": "bus_definition",
+        "modifier": "parameters=0;parentheses=omitted"
+      }
     },
     {
       "id": "library_without_main",
@@ -168,7 +215,11 @@
         "end": 31,
         "text": "function F"
       },
-      "focal_kind": "top"
+      "focal_kind": "top",
+      "ast_expectation": {
+        "kind": "source_ast",
+        "modifier": "main=absent;definitions=1"
+      }
     },
     {
       "id": "bus_definition",
@@ -181,7 +232,11 @@
         "end": 26,
         "text": "bus B"
       },
-      "focal_kind": "top"
+      "focal_kind": "top",
+      "ast_expectation": {
+        "kind": "bus_definition",
+        "modifier": "parameters=0;parentheses=present"
+      }
     },
     {
       "id": "definition_empty_args",
@@ -194,7 +249,11 @@
         "end": 33,
         "text": "F()"
       },
-      "focal_kind": "top"
+      "focal_kind": "top",
+      "ast_expectation": {
+        "kind": "function_definition",
+        "modifier": "parameters=0;parentheses=present"
+      }
     },
     {
       "id": "definition_named_args",
@@ -207,7 +266,11 @@
         "end": 36,
         "text": "F(x,y)"
       },
-      "focal_kind": "top"
+      "focal_kind": "top",
+      "ast_expectation": {
+        "kind": "function_definition",
+        "modifier": "parameters=2;parentheses=present"
+      }
     },
     {
       "id": "var_simple",
@@ -220,7 +283,13 @@
         "end": 110,
         "text": "var v"
       },
-      "focal_kind": "decl"
+      "focal_kind": "decl",
+      "ast_expectation": {
+        "kind": "variable_declaration",
+        "modifier": "symbols=1;dims=0",
+        "direction": "unspecified",
+        "initializer": "none"
+      }
     },
     {
       "id": "var_initialized",
@@ -233,7 +302,13 @@
         "end": 114,
         "text": "v = 1"
       },
-      "focal_kind": "decl"
+      "focal_kind": "decl",
+      "ast_expectation": {
+        "kind": "variable_declaration",
+        "modifier": "symbols=1;dims=0",
+        "direction": "unspecified",
+        "initializer": "assign"
+      }
     },
     {
       "id": "var_array",
@@ -246,7 +321,13 @@
         "end": 113,
         "text": "v[2]"
       },
-      "focal_kind": "decl"
+      "focal_kind": "decl",
+      "ast_expectation": {
+        "kind": "variable_declaration",
+        "modifier": "symbols=1;dims=1",
+        "direction": "unspecified",
+        "initializer": "none"
+      }
     },
     {
       "id": "var_multiple",
@@ -259,7 +340,13 @@
         "end": 112,
         "text": "v,w"
       },
-      "focal_kind": "decl"
+      "focal_kind": "decl",
+      "ast_expectation": {
+        "kind": "variable_declaration",
+        "modifier": "symbols=2;dims=0",
+        "direction": "unspecified",
+        "initializer": "none"
+      }
     },
     {
       "id": "var_tuple",
@@ -272,7 +359,13 @@
         "end": 114,
         "text": "(v,w)"
       },
-      "focal_kind": "decl"
+      "focal_kind": "decl",
+      "ast_expectation": {
+        "kind": "variable_declaration",
+        "modifier": "symbols=2;tuple=true",
+        "direction": "unspecified",
+        "initializer": "tuple_assign"
+      }
     },
     {
       "id": "component_simple",
@@ -285,7 +378,13 @@
         "end": 116,
         "text": "component c"
       },
-      "focal_kind": "decl"
+      "focal_kind": "decl",
+      "ast_expectation": {
+        "kind": "component_declaration",
+        "modifier": "symbols=1;dims=0",
+        "direction": "unspecified",
+        "initializer": "assign"
+      }
     },
     {
       "id": "component_tuple",
@@ -298,7 +397,13 @@
         "end": 120,
         "text": "(v,w)"
       },
-      "focal_kind": "decl"
+      "focal_kind": "decl",
+      "ast_expectation": {
+        "kind": "component_declaration",
+        "modifier": "symbols=2;tuple=true",
+        "direction": "unspecified",
+        "initializer": "tuple_assign"
+      }
     },
     {
       "id": "signal_plain",
@@ -311,7 +416,13 @@
         "end": 113,
         "text": "signal v"
       },
-      "focal_kind": "decl"
+      "focal_kind": "decl",
+      "ast_expectation": {
+        "kind": "signal_declaration",
+        "modifier": "symbols=1;dims=0",
+        "direction": "unspecified",
+        "initializer": "none"
+      }
     },
     {
       "id": "signal_input_after",
@@ -324,7 +435,13 @@
         "end": 117,
         "text": "signal input"
       },
-      "focal_kind": "decl"
+      "focal_kind": "decl",
+      "ast_expectation": {
+        "kind": "signal_declaration",
+        "modifier": "symbols=1;dims=0",
+        "direction": "input_after",
+        "initializer": "none"
+      }
     },
     {
       "id": "signal_output_after",
@@ -337,7 +454,13 @@
         "end": 118,
         "text": "signal output"
       },
-      "focal_kind": "decl"
+      "focal_kind": "decl",
+      "ast_expectation": {
+        "kind": "signal_declaration",
+        "modifier": "symbols=1;dims=0",
+        "direction": "output_after",
+        "initializer": "none"
+      }
     },
     {
       "id": "signal_input_before",
@@ -350,7 +473,13 @@
         "end": 117,
         "text": "input signal"
       },
-      "focal_kind": "decl"
+      "focal_kind": "decl",
+      "ast_expectation": {
+        "kind": "signal_declaration",
+        "modifier": "symbols=1;dims=0",
+        "direction": "input_before",
+        "initializer": "none"
+      }
     },
     {
       "id": "signal_output_before",
@@ -363,7 +492,13 @@
         "end": 118,
         "text": "output signal"
       },
-      "focal_kind": "decl"
+      "focal_kind": "decl",
+      "ast_expectation": {
+        "kind": "signal_declaration",
+        "modifier": "symbols=1;dims=0",
+        "direction": "output_before",
+        "initializer": "none"
+      }
     },
     {
       "id": "signal_tags",
@@ -376,7 +511,13 @@
         "end": 127,
         "text": "{binary}"
       },
-      "focal_kind": "decl"
+      "focal_kind": "decl",
+      "ast_expectation": {
+        "kind": "signal_declaration",
+        "modifier": "symbols=1;tags=binary",
+        "direction": "output_after",
+        "initializer": "none"
+      }
     },
     {
       "id": "signal_constraint_init",
@@ -389,7 +530,13 @@
         "end": 117,
         "text": "v <=="
       },
-      "focal_kind": "decl"
+      "focal_kind": "decl",
+      "ast_expectation": {
+        "kind": "signal_declaration",
+        "modifier": "symbols=1;dims=0",
+        "direction": "unspecified",
+        "initializer": "constraint"
+      }
     },
     {
       "id": "signal_witness_init",
@@ -402,7 +549,13 @@
         "end": 117,
         "text": "v <--"
       },
-      "focal_kind": "decl"
+      "focal_kind": "decl",
+      "ast_expectation": {
+        "kind": "signal_declaration",
+        "modifier": "symbols=1;dims=0",
+        "direction": "unspecified",
+        "initializer": "witness"
+      }
     },
     {
       "id": "signal_tuple",
@@ -415,7 +568,13 @@
         "end": 117,
         "text": "(v,w)"
       },
-      "focal_kind": "decl"
+      "focal_kind": "decl",
+      "ast_expectation": {
+        "kind": "signal_declaration",
+        "modifier": "symbols=2;tuple=true",
+        "direction": "unspecified",
+        "initializer": "tuple_constraint"
+      }
     },
     {
       "id": "component_tuple_constraint",
@@ -428,7 +587,13 @@
         "end": 124,
         "text": "<=="
       },
-      "focal_kind": "decl"
+      "focal_kind": "decl",
+      "ast_expectation": {
+        "kind": "component_declaration",
+        "modifier": "symbols=2;tuple=true",
+        "direction": "unspecified",
+        "initializer": "tuple_constraint"
+      }
     },
     {
       "id": "var_tuple_witness",
@@ -441,7 +606,13 @@
         "end": 118,
         "text": "<--"
       },
-      "focal_kind": "decl"
+      "focal_kind": "decl",
+      "ast_expectation": {
+        "kind": "variable_declaration",
+        "modifier": "symbols=2;tuple=true",
+        "direction": "unspecified",
+        "initializer": "tuple_witness"
+      }
     },
     {
       "id": "bus_after",
@@ -454,7 +625,13 @@
         "end": 108,
         "text": "B v"
       },
-      "focal_kind": "decl"
+      "focal_kind": "decl",
+      "ast_expectation": {
+        "kind": "bus_declaration",
+        "modifier": "symbols=1;arguments=0;parentheses=omitted",
+        "direction": "unspecified",
+        "initializer": "none"
+      }
     },
     {
       "id": "bus_before",
@@ -467,7 +644,13 @@
         "end": 112,
         "text": "input B"
       },
-      "focal_kind": "decl"
+      "focal_kind": "decl",
+      "ast_expectation": {
+        "kind": "bus_declaration",
+        "modifier": "symbols=1;arguments=0;parentheses=omitted",
+        "direction": "input_before",
+        "initializer": "none"
+      }
     },
     {
       "id": "bus_args_after",
@@ -480,7 +663,13 @@
         "end": 114,
         "text": "B() input"
       },
-      "focal_kind": "decl"
+      "focal_kind": "decl",
+      "ast_expectation": {
+        "kind": "bus_declaration",
+        "modifier": "symbols=1;arguments=0;parentheses=present",
+        "direction": "input_after",
+        "initializer": "none"
+      }
     },
     {
       "id": "bus_args_before",
@@ -493,7 +682,13 @@
         "end": 114,
         "text": "input B()"
       },
-      "focal_kind": "decl"
+      "focal_kind": "decl",
+      "ast_expectation": {
+        "kind": "bus_declaration",
+        "modifier": "symbols=1;arguments=0;parentheses=present",
+        "direction": "input_before",
+        "initializer": "none"
+      }
     },
     {
       "id": "bus_tags",
@@ -506,7 +701,13 @@
         "end": 122,
         "text": "{binary}"
       },
-      "focal_kind": "decl"
+      "focal_kind": "decl",
+      "ast_expectation": {
+        "kind": "bus_declaration",
+        "modifier": "symbols=1;tags=binary;parentheses=omitted",
+        "direction": "output_before",
+        "initializer": "none"
+      }
     },
     {
       "id": "bus_multiple",
@@ -519,7 +720,13 @@
         "end": 110,
         "text": "v,w"
       },
-      "focal_kind": "decl"
+      "focal_kind": "decl",
+      "ast_expectation": {
+        "kind": "bus_declaration",
+        "modifier": "symbols=2;arguments=0;parentheses=omitted",
+        "direction": "unspecified",
+        "initializer": "none"
+      }
     },
     {
       "id": "bus_constraint_init",
@@ -532,7 +739,13 @@
         "end": 112,
         "text": "v <=="
       },
-      "focal_kind": "decl"
+      "focal_kind": "decl",
+      "ast_expectation": {
+        "kind": "bus_declaration",
+        "modifier": "symbols=1;arguments=0;parentheses=omitted",
+        "direction": "unspecified",
+        "initializer": "constraint"
+      }
     },
     {
       "id": "bus_witness_init",
@@ -545,7 +758,13 @@
         "end": 112,
         "text": "v <--"
       },
-      "focal_kind": "decl"
+      "focal_kind": "decl",
+      "ast_expectation": {
+        "kind": "bus_declaration",
+        "modifier": "symbols=1;arguments=0;parentheses=omitted",
+        "direction": "unspecified",
+        "initializer": "witness"
+      }
     },
     {
       "id": "block",
@@ -558,7 +777,10 @@
         "end": 157,
         "text": "{ x = 2; }"
       },
-      "focal_kind": "stmt"
+      "focal_kind": "stmt",
+      "ast_expectation": {
+        "kind": "block"
+      }
     },
     {
       "id": "if_plain",
@@ -571,7 +793,11 @@
         "end": 153,
         "text": "if (1)"
       },
-      "focal_kind": "stmt"
+      "focal_kind": "stmt",
+      "ast_expectation": {
+        "kind": "if",
+        "modifier": "else=absent"
+      }
     },
     {
       "id": "if_else",
@@ -584,7 +810,11 @@
         "end": 165,
         "text": "else"
       },
-      "focal_kind": "stmt"
+      "focal_kind": "stmt",
+      "ast_expectation": {
+        "kind": "if",
+        "modifier": "else=present"
+      }
     },
     {
       "id": "dangling_else",
@@ -597,7 +827,12 @@
         "end": 172,
         "text": "else"
       },
-      "focal_kind": "stmt"
+      "focal_kind": "stmt",
+      "ast_expectation": {
+        "kind": "if",
+        "modifier": "else=absent",
+        "shape": "if(1,if(0,assign,assign),none)"
+      }
     },
     {
       "id": "for_declaration",
@@ -610,7 +845,11 @@
         "end": 155,
         "text": "for (var"
       },
-      "focal_kind": "stmt"
+      "focal_kind": "stmt",
+      "ast_expectation": {
+        "kind": "for",
+        "modifier": "initializer=variable_declaration"
+      }
     },
     {
       "id": "for_substitution",
@@ -623,7 +862,11 @@
         "end": 153,
         "text": "for (x"
       },
-      "focal_kind": "stmt"
+      "focal_kind": "stmt",
+      "ast_expectation": {
+        "kind": "for",
+        "modifier": "initializer=assignment"
+      }
     },
     {
       "id": "while",
@@ -636,7 +879,10 @@
         "end": 152,
         "text": "while"
       },
-      "focal_kind": "stmt"
+      "focal_kind": "stmt",
+      "ast_expectation": {
+        "kind": "while"
+      }
     },
     {
       "id": "constraint_equality",
@@ -649,7 +895,11 @@
         "end": 152,
         "text": "==="
       },
-      "focal_kind": "stmt"
+      "focal_kind": "stmt",
+      "ast_expectation": {
+        "kind": "constraint",
+        "operator": "==="
+      }
     },
     {
       "id": "assert",
@@ -662,7 +912,10 @@
         "end": 153,
         "text": "assert"
       },
-      "focal_kind": "stmt"
+      "focal_kind": "stmt",
+      "ast_expectation": {
+        "kind": "assert"
+      }
     },
     {
       "id": "log_empty",
@@ -675,7 +928,11 @@
         "end": 152,
         "text": "log()"
       },
-      "focal_kind": "stmt"
+      "focal_kind": "stmt",
+      "ast_expectation": {
+        "kind": "log",
+        "modifier": "arguments=0"
+      }
     },
     {
       "id": "log_expression",
@@ -688,7 +945,11 @@
         "end": 153,
         "text": "log(x)"
       },
-      "focal_kind": "stmt"
+      "focal_kind": "stmt",
+      "ast_expectation": {
+        "kind": "log",
+        "modifier": "arguments=1;first=expression"
+      }
     },
     {
       "id": "log_string",
@@ -701,7 +962,11 @@
         "end": 154,
         "text": "\"x\""
       },
-      "focal_kind": "stmt"
+      "focal_kind": "stmt",
+      "ast_expectation": {
+        "kind": "log",
+        "modifier": "arguments=2;first=string"
+      }
     },
     {
       "id": "anonymous_statement",
@@ -714,7 +979,11 @@
         "end": 157,
         "text": "Child()(x)"
       },
-      "focal_kind": "stmt"
+      "focal_kind": "stmt",
+      "ast_expectation": {
+        "kind": "anonymous_call_statement",
+        "modifier": "inputs=1;named=false"
+      }
     },
     {
       "id": "substitution",
@@ -727,7 +996,11 @@
         "end": 152,
         "text": "x = 2"
       },
-      "focal_kind": "stmt"
+      "focal_kind": "stmt",
+      "ast_expectation": {
+        "kind": "assignment",
+        "operator": "assign"
+      }
     },
     {
       "id": "reverse_witness",
@@ -740,7 +1013,11 @@
         "end": 152,
         "text": "-->"
       },
-      "focal_kind": "stmt"
+      "focal_kind": "stmt",
+      "ast_expectation": {
+        "kind": "assignment",
+        "operator": "reverse_witness"
+      }
     },
     {
       "id": "reverse_constraint",
@@ -753,7 +1030,11 @@
         "end": 152,
         "text": "==>"
       },
-      "focal_kind": "stmt"
+      "focal_kind": "stmt",
+      "ast_expectation": {
+        "kind": "assignment",
+        "operator": "reverse_constraint"
+      }
     },
     {
       "id": "postfix_increment",
@@ -766,7 +1047,11 @@
         "end": 150,
         "text": "++"
       },
-      "focal_kind": "stmt"
+      "focal_kind": "stmt",
+      "ast_expectation": {
+        "kind": "postfix_update",
+        "operator": "increment"
+      }
     },
     {
       "id": "postfix_decrement",
@@ -779,7 +1064,11 @@
         "end": 150,
         "text": "--"
       },
-      "focal_kind": "stmt"
+      "focal_kind": "stmt",
+      "ast_expectation": {
+        "kind": "postfix_update",
+        "operator": "decrement"
+      }
     },
     {
       "id": "return",
@@ -792,7 +1081,10 @@
         "end": 42,
         "text": "return"
       },
-      "focal_kind": "function"
+      "focal_kind": "function",
+      "ast_expectation": {
+        "kind": "return"
+      }
     },
     {
       "id": "compound_intdiv",
@@ -805,7 +1097,11 @@
         "end": 151,
         "text": "\\="
       },
-      "focal_kind": "stmt"
+      "focal_kind": "stmt",
+      "ast_expectation": {
+        "kind": "assignment",
+        "operator": "integer_divide"
+      }
     },
     {
       "id": "compound_pow",
@@ -818,7 +1114,11 @@
         "end": 152,
         "text": "**="
       },
-      "focal_kind": "stmt"
+      "focal_kind": "stmt",
+      "ast_expectation": {
+        "kind": "assignment",
+        "operator": "power"
+      }
     },
     {
       "id": "compound_add",
@@ -831,7 +1131,11 @@
         "end": 151,
         "text": "+="
       },
-      "focal_kind": "stmt"
+      "focal_kind": "stmt",
+      "ast_expectation": {
+        "kind": "assignment",
+        "operator": "add"
+      }
     },
     {
       "id": "compound_sub",
@@ -844,7 +1148,11 @@
         "end": 151,
         "text": "-="
       },
-      "focal_kind": "stmt"
+      "focal_kind": "stmt",
+      "ast_expectation": {
+        "kind": "assignment",
+        "operator": "subtract"
+      }
     },
     {
       "id": "compound_mul",
@@ -857,7 +1165,11 @@
         "end": 151,
         "text": "*="
       },
-      "focal_kind": "stmt"
+      "focal_kind": "stmt",
+      "ast_expectation": {
+        "kind": "assignment",
+        "operator": "multiply"
+      }
     },
     {
       "id": "compound_div",
@@ -870,7 +1182,11 @@
         "end": 151,
         "text": "/="
       },
-      "focal_kind": "stmt"
+      "focal_kind": "stmt",
+      "ast_expectation": {
+        "kind": "assignment",
+        "operator": "divide"
+      }
     },
     {
       "id": "compound_mod",
@@ -883,7 +1199,11 @@
         "end": 151,
         "text": "%="
       },
-      "focal_kind": "stmt"
+      "focal_kind": "stmt",
+      "ast_expectation": {
+        "kind": "assignment",
+        "operator": "modulo"
+      }
     },
     {
       "id": "compound_shl",
@@ -896,7 +1216,11 @@
         "end": 152,
         "text": "<<="
       },
-      "focal_kind": "stmt"
+      "focal_kind": "stmt",
+      "ast_expectation": {
+        "kind": "assignment",
+        "operator": "shift_left"
+      }
     },
     {
       "id": "compound_shr",
@@ -909,7 +1233,11 @@
         "end": 152,
         "text": ">>="
       },
-      "focal_kind": "stmt"
+      "focal_kind": "stmt",
+      "ast_expectation": {
+        "kind": "assignment",
+        "operator": "shift_right"
+      }
     },
     {
       "id": "compound_and",
@@ -922,7 +1250,11 @@
         "end": 151,
         "text": "&="
       },
-      "focal_kind": "stmt"
+      "focal_kind": "stmt",
+      "ast_expectation": {
+        "kind": "assignment",
+        "operator": "bit_and"
+      }
     },
     {
       "id": "compound_or",
@@ -935,7 +1267,11 @@
         "end": 151,
         "text": "|="
       },
-      "focal_kind": "stmt"
+      "focal_kind": "stmt",
+      "ast_expectation": {
+        "kind": "assignment",
+        "operator": "bit_or"
+      }
     },
     {
       "id": "compound_xor",
@@ -948,7 +1284,11 @@
         "end": 151,
         "text": "^="
       },
-      "focal_kind": "stmt"
+      "focal_kind": "stmt",
+      "ast_expectation": {
+        "kind": "assignment",
+        "operator": "bit_xor"
+      }
     },
     {
       "id": "assign_var",
@@ -961,7 +1301,11 @@
         "end": 150,
         "text": "="
       },
-      "focal_kind": "stmt"
+      "focal_kind": "stmt",
+      "ast_expectation": {
+        "kind": "assignment",
+        "operator": "assign"
+      }
     },
     {
       "id": "assign_witness",
@@ -974,7 +1318,11 @@
         "end": 152,
         "text": "<--"
       },
-      "focal_kind": "stmt"
+      "focal_kind": "stmt",
+      "ast_expectation": {
+        "kind": "assignment",
+        "operator": "witness"
+      }
     },
     {
       "id": "assign_constraint",
@@ -987,7 +1335,11 @@
         "end": 152,
         "text": "<=="
       },
-      "focal_kind": "stmt"
+      "focal_kind": "stmt",
+      "ast_expectation": {
+        "kind": "assignment",
+        "operator": "constraint"
+      }
     },
     {
       "id": "op_bool_or",
@@ -1000,7 +1352,11 @@
         "end": 202,
         "text": "||"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "binary",
+        "operator": "boolean_or"
+      }
     },
     {
       "id": "op_bool_and",
@@ -1013,7 +1369,11 @@
         "end": 202,
         "text": "&&"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "binary",
+        "operator": "boolean_and"
+      }
     },
     {
       "id": "op_eq",
@@ -1026,7 +1386,11 @@
         "end": 202,
         "text": "=="
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "binary",
+        "operator": "equal"
+      }
     },
     {
       "id": "op_neq",
@@ -1039,7 +1403,11 @@
         "end": 202,
         "text": "!="
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "binary",
+        "operator": "not_equal"
+      }
     },
     {
       "id": "op_lt",
@@ -1052,7 +1420,11 @@
         "end": 201,
         "text": "<"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "binary",
+        "operator": "less"
+      }
     },
     {
       "id": "op_gt",
@@ -1065,7 +1437,11 @@
         "end": 201,
         "text": ">"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "binary",
+        "operator": "greater"
+      }
     },
     {
       "id": "op_le",
@@ -1078,7 +1454,11 @@
         "end": 202,
         "text": "<="
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "binary",
+        "operator": "less_equal"
+      }
     },
     {
       "id": "op_ge",
@@ -1091,7 +1471,11 @@
         "end": 202,
         "text": ">="
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "binary",
+        "operator": "greater_equal"
+      }
     },
     {
       "id": "op_bit_or",
@@ -1104,7 +1488,11 @@
         "end": 201,
         "text": "|"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "binary",
+        "operator": "bit_or"
+      }
     },
     {
       "id": "op_bit_xor",
@@ -1117,7 +1505,11 @@
         "end": 201,
         "text": "^"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "binary",
+        "operator": "bit_xor"
+      }
     },
     {
       "id": "op_bit_and",
@@ -1130,7 +1522,11 @@
         "end": 201,
         "text": "&"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "binary",
+        "operator": "bit_and"
+      }
     },
     {
       "id": "op_shl",
@@ -1143,7 +1539,11 @@
         "end": 202,
         "text": "<<"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "binary",
+        "operator": "shift_left"
+      }
     },
     {
       "id": "op_shr",
@@ -1156,7 +1556,11 @@
         "end": 202,
         "text": ">>"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "binary",
+        "operator": "shift_right"
+      }
     },
     {
       "id": "op_add",
@@ -1169,7 +1573,11 @@
         "end": 201,
         "text": "+"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "binary",
+        "operator": "add"
+      }
     },
     {
       "id": "op_sub",
@@ -1182,7 +1590,11 @@
         "end": 201,
         "text": "-"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "binary",
+        "operator": "subtract"
+      }
     },
     {
       "id": "op_mul",
@@ -1195,7 +1607,11 @@
         "end": 201,
         "text": "*"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "binary",
+        "operator": "multiply"
+      }
     },
     {
       "id": "op_div",
@@ -1208,7 +1624,11 @@
         "end": 201,
         "text": "/"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "binary",
+        "operator": "divide"
+      }
     },
     {
       "id": "op_intdiv",
@@ -1221,7 +1641,11 @@
         "end": 201,
         "text": "\\"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "binary",
+        "operator": "integer_divide"
+      }
     },
     {
       "id": "op_mod",
@@ -1234,7 +1658,11 @@
         "end": 201,
         "text": "%"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "binary",
+        "operator": "modulo"
+      }
     },
     {
       "id": "op_pow",
@@ -1247,7 +1675,11 @@
         "end": 202,
         "text": "**"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "binary",
+        "operator": "power"
+      }
     },
     {
       "id": "unary_not",
@@ -1260,7 +1692,11 @@
         "end": 199,
         "text": "!"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "unary",
+        "operator": "boolean_not"
+      }
     },
     {
       "id": "unary_complement",
@@ -1273,7 +1709,11 @@
         "end": 199,
         "text": "~"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "unary",
+        "operator": "complement"
+      }
     },
     {
       "id": "unary_neg",
@@ -1286,7 +1726,11 @@
         "end": 199,
         "text": "-"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "unary",
+        "operator": "negate"
+      }
     },
     {
       "id": "ternary",
@@ -1299,7 +1743,10 @@
         "end": 201,
         "text": "?"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "ternary"
+      }
     },
     {
       "id": "parallel_expr",
@@ -1312,7 +1759,10 @@
         "end": 206,
         "text": "parallel"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "parallel"
+      }
     },
     {
       "id": "call_empty",
@@ -1325,7 +1775,11 @@
         "end": 201,
         "text": "F()"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "call",
+        "modifier": "arguments=0"
+      }
     },
     {
       "id": "call_args",
@@ -1338,7 +1792,11 @@
         "end": 202,
         "text": "F(1)"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "call",
+        "modifier": "arguments=1"
+      }
     },
     {
       "id": "anonymous_positional",
@@ -1351,7 +1809,11 @@
         "end": 208,
         "text": "Child()(1)"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "anonymous_call",
+        "modifier": "inputs=1;named=false"
+      }
     },
     {
       "id": "anonymous_named",
@@ -1364,7 +1826,12 @@
         "end": 212,
         "text": "in <=="
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "anonymous_call",
+        "modifier": "inputs=1;named=true",
+        "operator": "constraint"
+      }
     },
     {
       "id": "inline_array",
@@ -1377,7 +1844,11 @@
         "end": 203,
         "text": "[1,2]"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "array",
+        "modifier": "elements=2"
+      }
     },
     {
       "id": "tuple",
@@ -1390,7 +1861,11 @@
         "end": 203,
         "text": "(1,2)"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "tuple",
+        "modifier": "elements=2"
+      }
     },
     {
       "id": "variable",
@@ -1403,7 +1878,11 @@
         "end": 199,
         "text": "a"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "name",
+        "modifier": "access=none"
+      }
     },
     {
       "id": "array_access",
@@ -1416,7 +1895,11 @@
         "end": 202,
         "text": "[0]"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "name",
+        "modifier": "access=index"
+      }
     },
     {
       "id": "field_access",
@@ -1429,7 +1912,11 @@
         "end": 201,
         "text": ".x"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "name",
+        "modifier": "access=field"
+      }
     },
     {
       "id": "discard",
@@ -1442,7 +1929,11 @@
         "end": 199,
         "text": "_"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "name",
+        "modifier": "identifier=_"
+      }
     },
     {
       "id": "decimal",
@@ -1455,7 +1946,11 @@
         "end": 201,
         "text": "123"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "number",
+        "modifier": "radix=decimal"
+      }
     },
     {
       "id": "hex",
@@ -1468,7 +1963,11 @@
         "end": 202,
         "text": "0xAB"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "number",
+        "modifier": "radix=hexadecimal"
+      }
     },
     {
       "id": "parenthesized",
@@ -1481,7 +1980,10 @@
         "end": 201,
         "text": "(1)"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "group"
+      }
     },
     {
       "id": "precedence_bool",
@@ -1494,7 +1996,12 @@
         "end": 202,
         "text": "||"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "binary",
+        "shape": "boolean_or(1,boolean_and(2,3))",
+        "operator": "boolean_or"
+      }
     },
     {
       "id": "precedence_comparison",
@@ -1507,7 +2014,12 @@
         "end": 202,
         "text": "=="
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "binary",
+        "shape": "equal(1,bit_or(2,3))",
+        "operator": "equal"
+      }
     },
     {
       "id": "precedence_bitwise",
@@ -1520,7 +2032,12 @@
         "end": 201,
         "text": "|"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "binary",
+        "shape": "bit_or(1,bit_xor(2,bit_and(3,4)))",
+        "operator": "bit_or"
+      }
     },
     {
       "id": "precedence_shift",
@@ -1533,7 +2050,12 @@
         "end": 202,
         "text": "<<"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "binary",
+        "shape": "shift_left(1,add(2,3))",
+        "operator": "shift_left"
+      }
     },
     {
       "id": "precedence_additive",
@@ -1546,7 +2068,12 @@
         "end": 201,
         "text": "+"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "binary",
+        "shape": "add(1,multiply(2,3))",
+        "operator": "add"
+      }
     },
     {
       "id": "precedence_power",
@@ -1559,7 +2086,12 @@
         "end": 206,
         "text": "**"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "binary",
+        "shape": "multiply(1,power(2,3))",
+        "operator": "multiply"
+      }
     },
     {
       "id": "associativity_sub",
@@ -1572,7 +2104,12 @@
         "end": 202,
         "text": "-"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "binary",
+        "shape": "subtract(subtract(10,3),2)",
+        "operator": "subtract"
+      }
     },
     {
       "id": "associativity_pow",
@@ -1585,7 +2122,12 @@
         "end": 202,
         "text": "**"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "binary",
+        "shape": "power(power(2,3),2)",
+        "operator": "power"
+      }
     },
     {
       "id": "ternary_arm_boundary",
@@ -1598,7 +2140,11 @@
         "end": 201,
         "text": "?"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "ternary",
+        "shape": "ternary(1,2,boolean_or(3,4))"
+      }
     },
     {
       "id": "top_level_order",
@@ -1611,7 +2157,11 @@
         "end": 46,
         "text": "include \"included.circom\""
       },
-      "focal_kind": "top"
+      "focal_kind": "top",
+      "ast_expectation": {
+        "kind": "item_order",
+        "shape": "pragma,include,function,main"
+      }
     },
     {
       "id": "nested_if_no_else",
@@ -1624,7 +2174,12 @@
         "end": 160,
         "text": "if (0)"
       },
-      "focal_kind": "stmt"
+      "focal_kind": "stmt",
+      "ast_expectation": {
+        "kind": "if",
+        "modifier": "else=absent",
+        "shape": "if(1,if(0,assign,none),none)"
+      }
     },
     {
       "id": "signal_multiple",
@@ -1637,7 +2192,13 @@
         "end": 115,
         "text": "v,w"
       },
-      "focal_kind": "decl"
+      "focal_kind": "decl",
+      "ast_expectation": {
+        "kind": "signal_declaration",
+        "modifier": "symbols=2;dims=0",
+        "direction": "unspecified",
+        "initializer": "none"
+      }
     },
     {
       "id": "component_multiple",
@@ -1650,7 +2211,13 @@
         "end": 118,
         "text": "v,w"
       },
-      "focal_kind": "decl"
+      "focal_kind": "decl",
+      "ast_expectation": {
+        "kind": "component_declaration",
+        "modifier": "symbols=2;dims=0",
+        "direction": "unspecified",
+        "initializer": "none"
+      }
     },
     {
       "id": "bus_with_parameter",
@@ -1663,7 +2230,13 @@
         "end": 66,
         "text": "B(2) v"
       },
-      "focal_kind": "top"
+      "focal_kind": "top",
+      "ast_expectation": {
+        "kind": "bus_declaration",
+        "modifier": "symbols=1;arguments=1;parentheses=present",
+        "direction": "unspecified",
+        "initializer": "none"
+      }
     },
     {
       "id": "bus_before_parameter",
@@ -1676,7 +2249,13 @@
         "end": 70,
         "text": "input B(2)"
       },
-      "focal_kind": "top"
+      "focal_kind": "top",
+      "ast_expectation": {
+        "kind": "bus_declaration",
+        "modifier": "symbols=1;arguments=1;parentheses=present",
+        "direction": "input_before",
+        "initializer": "none"
+      }
     },
     {
       "id": "tuple_var_constraint",
@@ -1689,7 +2268,13 @@
         "end": 118,
         "text": "<=="
       },
-      "focal_kind": "decl"
+      "focal_kind": "decl",
+      "ast_expectation": {
+        "kind": "variable_declaration",
+        "modifier": "symbols=2;tuple=true",
+        "direction": "unspecified",
+        "initializer": "tuple_constraint"
+      }
     },
     {
       "id": "tuple_signal_witness",
@@ -1702,7 +2287,13 @@
         "end": 121,
         "text": "<--"
       },
-      "focal_kind": "decl"
+      "focal_kind": "decl",
+      "ast_expectation": {
+        "kind": "signal_declaration",
+        "modifier": "symbols=2;tuple=true",
+        "direction": "unspecified",
+        "initializer": "tuple_witness"
+      }
     },
     {
       "id": "signal_tags_input",
@@ -1715,7 +2306,13 @@
         "end": 126,
         "text": "{binary}"
       },
-      "focal_kind": "decl"
+      "focal_kind": "decl",
+      "ast_expectation": {
+        "kind": "signal_declaration",
+        "modifier": "symbols=1;tags=binary",
+        "direction": "input_after",
+        "initializer": "none"
+      }
     },
     {
       "id": "bus_tags_type_last",
@@ -1728,7 +2325,13 @@
         "end": 122,
         "text": "{binary}"
       },
-      "focal_kind": "decl"
+      "focal_kind": "decl",
+      "ast_expectation": {
+        "kind": "bus_declaration",
+        "modifier": "symbols=1;tags=binary;parentheses=omitted",
+        "direction": "output_after",
+        "initializer": "none"
+      }
     },
     {
       "id": "anonymous_named_witness",
@@ -1741,7 +2344,12 @@
         "end": 212,
         "text": "<--"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "anonymous_call",
+        "modifier": "inputs=1;named=true",
+        "operator": "witness"
+      }
     },
     {
       "id": "anonymous_named_assignment",
@@ -1754,7 +2362,12 @@
         "end": 210,
         "text": "="
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "anonymous_call",
+        "modifier": "inputs=1;named=true",
+        "operator": "assign"
+      }
     },
     {
       "id": "multiple_array_dimensions",
@@ -1767,7 +2380,13 @@
         "end": 116,
         "text": "[2][3]"
       },
-      "focal_kind": "decl"
+      "focal_kind": "decl",
+      "ast_expectation": {
+        "kind": "variable_declaration",
+        "modifier": "symbols=1;dims=2",
+        "direction": "unspecified",
+        "initializer": "none"
+      }
     },
     {
       "id": "mixed_access",
@@ -1780,7 +2399,11 @@
         "end": 204,
         "text": ".x[0]"
       },
-      "focal_kind": "expr"
+      "focal_kind": "expr",
+      "ast_expectation": {
+        "kind": "name",
+        "modifier": "access=field,index"
+      }
     },
     {
       "id": "comment_line",
@@ -1793,7 +2416,11 @@
         "end": 36,
         "text": "// line comment"
       },
-      "focal_kind": "top"
+      "focal_kind": "top",
+      "ast_expectation": {
+        "kind": "trivia",
+        "modifier": "line_comment"
+      }
     },
     {
       "id": "comment_block",
@@ -1806,7 +2433,11 @@
         "end": 40,
         "text": "/* block comment */"
       },
-      "focal_kind": "top"
+      "focal_kind": "top",
+      "ast_expectation": {
+        "kind": "trivia",
+        "modifier": "block_comment"
+      }
     },
     {
       "id": "inline_array_buses",
@@ -1819,7 +2450,11 @@
         "end": 128,
         "text": "[a[2], a[0], a[1]]"
       },
-      "focal_kind": "existing"
+      "focal_kind": "existing",
+      "ast_expectation": {
+        "kind": "array",
+        "modifier": "elements=3;element_kind=name"
+      }
     },
     {
       "id": "inline_array_anonymous",
@@ -1832,7 +2467,11 @@
         "end": 203,
         "text": "[Inc()(x[0]), Inc()(x[1])]"
       },
-      "focal_kind": "existing"
+      "focal_kind": "existing",
+      "ast_expectation": {
+        "kind": "array",
+        "modifier": "elements=2;element_kind=anonymous_call"
+      }
     }
   ],
   "version_semantics": "min_version is the earliest supporting compiler release; pragma declares a minimum required compiler release and does not freeze grammar features"
