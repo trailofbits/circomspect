@@ -6,7 +6,8 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::new_frontend::{
-    BinaryOperator, PortDirection, PostfixOperator, Span, SyntaxDiagnostic, UnaryOperator,
+    BinaryOperator, InputAssignmentOperator, PortDirection, PostfixOperator, Span,
+    SyntaxDiagnostic, UnaryOperator,
 };
 
 pub use lower::lower_project;
@@ -88,7 +89,11 @@ pub struct Symbol {
     pub kind: SymbolKind,
     pub span: Span,
     pub dimensions: Vec<ExprId>,
+    pub rank: usize,
     pub bus_type: Option<BusTarget>,
+    pub bus_arguments: Vec<ExprId>,
+    pub tags: Vec<SymbolId>,
+    pub knownness: Knownness,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -174,14 +179,46 @@ pub enum ArrayIndex {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AccessStep {
     Index { index: ArrayIndex, span: Span },
-    Field { name: String, span: Span },
     Port { port: PortId, span: Span },
+    Tag { symbol: SymbolId, span: Span },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AnonymousInputTarget {
+    Port(PortId),
+    Opaque(IncompleteReason),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AnonymousInputEffect {
+    pub target: AnonymousInputTarget,
+    pub operator: InputAssignmentOperator,
+    pub value: ExprId,
+    pub span: Span,
+}
+
+impl AnonymousInputEffect {
+    #[must_use]
+    pub fn resolved_port(&self) -> Option<PortId> {
+        match self.target {
+            AnonymousInputTarget::Port(id) => Some(id),
+            AnonymousInputTarget::Opaque(_) => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn operator(&self) -> InputAssignmentOperator {
+        self.operator
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AccessPath {
     pub root: SymbolId,
     pub steps: Vec<AccessStep>,
+    pub terminal: SymbolId,
+    pub component_input: bool,
+    pub component_output: bool,
     pub span: Span,
 }
 
@@ -189,13 +226,31 @@ pub struct AccessPath {
 pub enum ExprKind {
     Number(String),
     Access(AccessPath),
-    Call { target: CallTarget, arguments: Vec<ExprId> },
-    AnonymousComponent { component: ComponentId, arguments: Vec<ExprId>, inputs: Vec<ExprId> },
+    Call {
+        target: CallTarget,
+        arguments: Vec<ExprId>,
+    },
+    AnonymousComponent {
+        component: ComponentId,
+        arguments: Vec<ExprId>,
+        inputs: Vec<AnonymousInputEffect>,
+    },
     Array(Vec<ExprId>),
     Tuple(Vec<ExprId>),
-    Unary { operator: UnaryOperator, operand: ExprId },
-    Binary { operator: BinaryOperator, left: ExprId, right: ExprId },
-    Ternary { condition: ExprId, yes: ExprId, no: ExprId },
+    Unary {
+        operator: UnaryOperator,
+        operand: ExprId,
+    },
+    Binary {
+        operator: BinaryOperator,
+        left: ExprId,
+        right: ExprId,
+    },
+    Ternary {
+        condition: ExprId,
+        yes: ExprId,
+        no: ExprId,
+    },
     Parallel(ExprId),
     Opaque(IncompleteReason),
 }
@@ -220,7 +275,7 @@ impl Expr {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Effect {
-    Declaration { symbol: SymbolId, value: Option<ExprId>, span: Span },
+    Declaration { symbol: SymbolId, span: Span },
     CompileTimeAssignment { target: AccessPath, value: ExprId, span: Span },
     WitnessAssignment { target: AccessPath, value: ExprId, span: Span },
     ConstraintAssignment { target: AccessPath, value: ExprId, span: Span },
@@ -283,9 +338,12 @@ pub enum SemanticCode {
     ParameterCollision,
     MissingBusType,
     InvalidAssignment,
+    InvalidSignalAccess,
+    InvalidArrayAccess,
+    AnonymousInput,
     UnknownSymbol,
     WrongArity,
-    NonCompileTime,
+    NonConstantArrayLength,
     FeatureVersion,
     Unsupported,
 }
@@ -304,9 +362,12 @@ impl SemanticCode {
             Self::ParameterCollision => "CS0002",
             Self::MissingBusType => "CS0022",
             Self::InvalidAssignment => "T2000",
+            Self::InvalidSignalAccess => "T2046",
+            Self::InvalidArrayAccess => "T2032",
+            Self::AnonymousInput => "TAC01",
             Self::UnknownSymbol => "T2021",
             Self::WrongArity => "T20465",
-            Self::NonCompileTime => "T20463",
+            Self::NonConstantArrayLength => "T20463",
             Self::FeatureVersion => "P1003",
             Self::Unsupported => "T2038",
         }
@@ -466,7 +527,23 @@ impl HirProject {
 
     fn add_symbol(&mut self, name: String, kind: SymbolKind, span: Span) -> SymbolId {
         let id = SymbolId::new(self.symbols.len(), self.key);
-        self.symbols.push(Symbol { id, name, kind, span, dimensions: Vec::new(), bus_type: None });
+        self.symbols.push(Symbol {
+            id,
+            name,
+            kind,
+            span,
+            dimensions: Vec::new(),
+            rank: 0,
+            bus_type: None,
+            bus_arguments: Vec::new(),
+            tags: Vec::new(),
+            knownness: match kind {
+                SymbolKind::Parameter => Knownness::ParameterDependent,
+                SymbolKind::Signal | SymbolKind::Bus => Knownness::WitnessDependent,
+                SymbolKind::Tag => Knownness::ParameterDependent,
+                SymbolKind::Variable | SymbolKind::Component => Knownness::Opaque,
+            },
+        });
         id
     }
 
