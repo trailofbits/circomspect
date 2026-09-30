@@ -11,7 +11,7 @@ use crate::hir_cfg::{CfgEdge, CfgNode, CfgNodeKind, DefinitionCfg, EdgeKind};
 use super::access::{key_for_path, AccessKey, MayAccessSet};
 use super::domains::DegreeUpper;
 use super::field::{FieldContext, FieldValue};
-use super::walk::VisitAccesses;
+use super::walk::{VisitAccesses, VisitDefiniteAccesses};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ForwardState {
@@ -251,19 +251,19 @@ fn constraint_touches(
         }
     }
     for expression in [Some(*left), *right].into_iter().flatten() {
-        let Some(ExprKind::Access(path)) =
-            analysis.hir.expression(expression).map(|expr| &expr.kind)
-        else {
-            continue;
-        };
-        if analysis.hir.symbol(path.root).is_some_and(|symbol| symbol.kind == SymbolKind::Variable)
-        {
-            continue;
-        }
-        let key = key_for_path(analysis.hir, analysis.field, path, values);
-        if key.exact_alias(&key) {
-            touched.insert(key);
-        }
+        expression.visit_definite_accesses(analysis.hir, &mut |path| {
+            if analysis
+                .hir
+                .symbol(path.root)
+                .is_some_and(|symbol| symbol.kind == SymbolKind::Variable)
+            {
+                return;
+            }
+            let key = key_for_path(analysis.hir, analysis.field, path, values);
+            if key.exact_alias(&key) {
+                touched.insert(key);
+            }
+        });
     }
     touched
 }

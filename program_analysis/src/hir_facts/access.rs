@@ -49,28 +49,6 @@ impl AccessKey {
         })
     }
 
-    fn widen_with(&self, other: &Self) -> Option<Self> {
-        if self.root != other.root
-            || self.instance != other.instance
-            || self.steps.len() != other.steps.len()
-        {
-            return None;
-        }
-        let mut steps = Vec::with_capacity(self.steps.len());
-        let mut widened = false;
-        for (left, right) in self.steps.iter().zip(&other.steps) {
-            if left == right {
-                steps.push(left.clone());
-            } else if let (AccessKeyStep::Index(_), AccessKeyStep::Index(_)) = (left, right) {
-                steps.push(AccessKeyStep::Index(IndexKey::Unknown));
-                widened = true;
-            } else {
-                return None;
-            }
-        }
-        widened.then_some(Self { root: self.root, instance: self.instance, steps })
-    }
-
     /// Alias conservatively at symbolic indices and compare every typed port.
     #[must_use]
     pub fn may_alias(&self, other: &Self) -> bool {
@@ -104,9 +82,9 @@ impl AccessKey {
 
 /// May-dependencies ordered by the locations each key can denote.
 ///
-/// The finite HIR access paths bound this domain. Symbolic indices are
-/// represented by one wildcard, so concrete index values cannot cause an
-/// infinite ascending chain in a loop.
+/// Every exact index is a value in the selected finite field. Symbolic indices
+/// share one wildcard per access shape. The local solver also has an update
+/// budget, so impractically long ascending chains return incomplete facts.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct MayAccessSet(BTreeSet<AccessKey>);
 
@@ -130,17 +108,8 @@ impl MayAccessSet {
                 *index = IndexKey::Unknown;
             }
         }
-        loop {
-            if self.0.iter().any(|existing| existing.covers(&key)) {
-                return;
-            }
-            let Some((existing, widened)) = self.0.iter().find_map(|existing| {
-                existing.widen_with(&key).map(|widened| (existing.clone(), widened))
-            }) else {
-                break;
-            };
-            self.0.remove(&existing);
-            key = widened;
+        if self.0.iter().any(|existing| existing.covers(&key)) {
+            return;
         }
         self.0.retain(|existing| !key.covers(existing));
         self.0.insert(key);
@@ -202,7 +171,7 @@ mod tests {
     use std::fs;
 
     #[test]
-    fn may_access_lattice_widens_concrete_indices_to_wildcards() {
+    fn may_access_lattice_preserves_exact_indices_and_orders_wildcards() {
         let field = FieldContext::for_curve(Curve::Bn254);
         let hir = component_paths("template Check(){signal input a[2];}").0;
         let root = hir.symbols().iter().find(|symbol| symbol.name == "a").unwrap().id;
@@ -220,7 +189,8 @@ mod tests {
         ];
         assert!(states[1].leq(&states[4]));
         assert!(!states[4].leq(&states[1]));
-        assert_eq!(states[3], states[4]);
+        assert!(!states[3].leq(&states[1]));
+        assert!(states[3].leq(&states[4]));
         for left in &states {
             for right in &states {
                 let mut joined = left.clone();

@@ -113,6 +113,7 @@ pub fn analyze<'a>(
     field: &'a FieldContext,
     budget: Option<usize>,
 ) -> Result<AnalysisFacts<'a>, AnalysisError> {
+    const DEFAULT_UPDATE_BUDGET: usize = 100_000;
     let owned = match cfg.definition {
         DefinitionRef::Function(id) => hir.function(id).is_some(),
         DefinitionRef::Template(id) => hir.template(id).is_some(),
@@ -121,6 +122,7 @@ pub fn analyze<'a>(
     if !owned {
         return Err(AnalysisError::ForeignProject);
     }
+    let budget = Some(budget.unwrap_or(DEFAULT_UPDATE_BUDGET));
     let forward = solve::<_, _, Forward>(cfg, &ForwardAnalysis { hir, field }, budget)
         .map_err(AnalysisError::InvalidGraph)?;
     let backward =

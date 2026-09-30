@@ -4,7 +4,8 @@ use circomspect_program_analysis::hir_facts::{
     analyze, AnalysisError, FactBlocker, FieldContext, Incidence, Range,
 };
 use parser::hir::{
-    lower_project, AccessPath, ControlGuard, DefinitionRef, Effect, ExprKind, HirProject,
+    lower_project, AccessPath, AccessStep, ArrayIndex, ControlGuard, DefinitionRef, Effect,
+    ExprKind, HirProject,
 };
 use parser::new_frontend::{load_sources, Version, VersionPolicy};
 use std::collections::BTreeSet;
@@ -190,6 +191,44 @@ fn different_sites_on_every_arm_prove_incidence_independent_of_fixed_value() {
         assert_eq!(facts.incidence(&x).certified(), Some(&Incidence::Must));
         assert_eq!(facts.constraint_fixed(&x).certified(), Some(&fixed));
     }
+}
+
+#[test]
+fn arithmetic_access_on_each_branch_proves_must_incidence() {
+    let (hir, definition) =
+        fixture("template Check(){signal input x; if(0 << 1){x+1===0;}else{x+2===0;}}");
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let x = expression_path(&hir, "x", 0);
+    assert_eq!(facts.incidence(&x).certified(), Some(&Incidence::Must));
+}
+
+#[test]
+fn two_exact_array_dependencies_do_not_mention_a_third_element() {
+    let (hir, definition) = fixture(
+        "template Check(){signal input a[3]; var t=a[0]; \
+         if(0 << 1){t=a[0];}else{t=a[1];} \
+         signal output y; y<==t; signal output z; z<--a[2];}",
+    );
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let third = hir
+        .expressions()
+        .iter()
+        .find_map(|expression| {
+            let ExprKind::Access(path) = &expression.kind else { return None };
+            let third = path.steps.iter().any(|step| match step {
+                AccessStep::Index { index: ArrayIndex::Constant(index), .. } => index == "2",
+                AccessStep::Index { .. } | AccessStep::Port { .. } | AccessStep::Tag { .. } => {
+                    false
+                }
+            });
+            third.then_some(path)
+        })
+        .unwrap();
+    assert_eq!(facts.incidence(third).certified(), Some(&Incidence::Zero));
 }
 
 #[test]
