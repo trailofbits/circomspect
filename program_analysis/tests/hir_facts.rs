@@ -531,6 +531,74 @@ fn cross_project_cfg_is_rejected_before_any_fact_can_certify() {
 }
 
 #[test]
+fn query_paths_from_other_definitions_or_projects_are_unavailable() {
+    let directory = std::env::temp_dir()
+        .join(format!("circomspect-phase4-foreign-query-{}", std::process::id()));
+    fs::create_dir_all(&directory).unwrap();
+    let source = directory.join("case.circom");
+    fs::write(
+        &source,
+        "template T(){signal output y; y<==1;} template U(){signal output z; z<--2;}",
+    )
+    .unwrap();
+    let loaded = load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
+    let first = lower_project(&loaded).hir;
+    let second = lower_project(&loaded).hir;
+    let cfg = build_cfg(&first, first.definition("T").unwrap()).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&first, &cfg, &field, None).unwrap();
+    let local = assigned_path(&first, first.definition("T").unwrap(), "y");
+    let other = assigned_path(&first, first.definition("U").unwrap(), "z");
+    let foreign = assigned_path(&second, second.definition("T").unwrap(), "y");
+    assert_eq!(facts.incidence(&local).certified(), Some(&Incidence::Must));
+    assert!(facts
+        .incidence(&other)
+        .unavailable()
+        .is_some_and(|blockers| blockers.contains(&FactBlocker::ForeignDefinition)));
+    assert!(facts
+        .incidence(&foreign)
+        .unavailable()
+        .is_some_and(|blockers| blockers.contains(&FactBlocker::ForeignQuery)));
+
+    let mut forged = local.clone();
+    forged.terminal = foreign.root;
+    assert!(facts.incidence(&forged).unavailable().is_some());
+    forged.terminal = other.root;
+    assert!(facts.incidence(&forged).unavailable().is_some());
+    forged = local.clone();
+    forged.steps.push(AccessStep::Index {
+        index: ArrayIndex::Symbolic(second.expressions()[0].id),
+        span: local.span,
+    });
+    assert!(facts.incidence(&forged).unavailable().is_some());
+}
+
+#[test]
+fn known_false_branch_does_not_block_independent_constraint_fact() {
+    let directory = std::env::temp_dir()
+        .join(format!("circomspect-phase4-unreachable-opaque-{}", std::process::id()));
+    fs::create_dir_all(&directory).unwrap();
+    let source = directory.join("case.circom");
+    fs::write(&source, "template Check(){signal output y; if(0){y<==Missing();} y<==1;}").unwrap();
+    let loaded = load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
+    let lowered = lower_project(&loaded);
+    assert!(lowered.syntax_diagnostics.is_empty());
+    let hir = lowered.hir;
+    let definition = hir.definition("Check").unwrap();
+    let cfg = build_cfg(&hir, definition).unwrap();
+    assert!(cfg.nodes().iter().filter_map(|id| cfg.node(*id)).any(|node| {
+        if let CfgNodeKind::Opaque(_) = &node.kind {
+            return true;
+        }
+        false
+    }));
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let y = last_assigned_path(&hir, definition, "y");
+    assert_eq!(facts.incidence(&y).certified(), Some(&Incidence::Must));
+}
+
+#[test]
 fn selected_curve_changes_canonical_field_value() {
     let goldilocks = FieldContext::for_curve(Curve::Goldilocks);
     let bn254 = FieldContext::for_curve(Curve::Bn254);

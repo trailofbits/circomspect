@@ -62,9 +62,16 @@ pub struct CfgEdge {
 
 pub struct DefinitionCfg {
     graph: IndexedGraph<CfgNode, CfgEdge>,
+    local_symbols: BTreeSet<SymbolId>,
     pub definition: DefinitionRef,
     pub entry: NodeId,
     pub exit: NodeId,
+}
+
+impl DefinitionCfg {
+    pub(crate) fn owns_symbol(&self, symbol: SymbolId) -> bool {
+        self.local_symbols.contains(&symbol)
+    }
 }
 
 impl FlowGraph for DefinitionCfg {
@@ -99,6 +106,7 @@ pub enum BuildError {
     MissingBlock(BlockId),
     MissingExpression(ExprId),
     MissingSymbol(SymbolId),
+    MissingPort(parser::hir::PortId),
     UnexpectedEffect,
     InvalidLoopPlan,
     InvalidGraph(GraphError<NodeId, EdgeId>),
@@ -121,6 +129,7 @@ struct Builder<'a> {
     edges: Vec<(NodeId, NodeId, CfgEdge)>,
     conditions: BTreeMap<NodeId, (ExprId, ControlGuard)>,
     active_deferred: Vec<NodeId>,
+    local_symbols: BTreeSet<SymbolId>,
     exit: NodeId,
 }
 
@@ -260,6 +269,7 @@ impl Builder<'_> {
             Effect::Declaration { symbol, .. } => {
                 let declared =
                     self.hir.symbol(*symbol).ok_or(BuildError::MissingSymbol(*symbol))?;
+                self.local_symbols.insert(*symbol);
                 let mut tails = tails;
                 for &dimension in &declared.dimensions {
                     tails = self.evaluate(tails, dimension, origin)?;
@@ -584,6 +594,32 @@ impl Builder<'_> {
     }
 }
 
+fn definition_symbols(
+    hir: &HirProject,
+    definition: DefinitionRef,
+) -> Result<(BlockId, BTreeSet<SymbolId>), BuildError> {
+    let (body, parameters, ports) = match definition {
+        DefinitionRef::Function(id) => {
+            let item = hir.function(id).ok_or(BuildError::ForeignDefinition)?;
+            (item.body, item.parameters.as_slice(), &[][..])
+        }
+        DefinitionRef::Template(id) => {
+            let item = hir.template(id).ok_or(BuildError::ForeignDefinition)?;
+            (item.body, item.parameters.as_slice(), item.ports.as_slice())
+        }
+        DefinitionRef::Bus(id) => {
+            let item = hir.bus(id).ok_or(BuildError::ForeignDefinition)?;
+            (item.body, item.parameters.as_slice(), item.ports.as_slice())
+        }
+    };
+    let mut symbols: BTreeSet<_> = parameters.iter().copied().collect();
+    for port in ports {
+        let port = hir.port(*port).ok_or(BuildError::MissingPort(*port))?;
+        symbols.insert(port.symbol);
+    }
+    Ok((body, symbols))
+}
+
 fn effect_span(effect: &Effect, block_span: Span) -> Span {
     match effect {
         Effect::Declaration { span, .. }
@@ -607,24 +643,22 @@ fn effect_span(effect: &Effect, block_span: Span) -> Span {
 
 /// Lower a checked HIR definition without changing the legacy analysis path.
 pub fn build_cfg(hir: &HirProject, definition: DefinitionRef) -> Result<DefinitionCfg, BuildError> {
-    let body = match definition {
-        DefinitionRef::Function(id) => hir.function(id).ok_or(BuildError::ForeignDefinition)?.body,
-        DefinitionRef::Template(id) => hir.template(id).ok_or(BuildError::ForeignDefinition)?.body,
-        DefinitionRef::Bus(id) => hir.bus(id).ok_or(BuildError::ForeignDefinition)?.body,
-    };
+    let (body, local_symbols) = definition_symbols(hir, definition)?;
     let mut builder = Builder {
         hir,
         nodes: Vec::new(),
         edges: Vec::new(),
         conditions: BTreeMap::new(),
         active_deferred: Vec::new(),
+        local_symbols,
         exit: NodeId::new(1),
     };
     let entry = builder.node(CfgNodeKind::Entry, None);
     let exit = builder.node(CfgNodeKind::Exit, None);
     let tails = builder.block(vec![(entry, EdgeKind::Normal)], body)?;
     builder.link(tails, exit);
+    let local_symbols = builder.local_symbols;
     let graph = IndexedGraph::new(builder.nodes, builder.edges, vec![entry], vec![exit])
         .map_err(BuildError::InvalidGraph)?;
-    Ok(DefinitionCfg { graph, definition, entry, exit })
+    Ok(DefinitionCfg { graph, local_symbols, definition, entry, exit })
 }

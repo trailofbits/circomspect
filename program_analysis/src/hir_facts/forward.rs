@@ -939,4 +939,42 @@ mod tests {
             check_transfer_order(cfg.edge(*id).unwrap().payload, &analysis, &states);
         }
     }
+
+    #[test]
+    fn compile_time_branch_edges_prune_monotonically() {
+        let directory = std::env::temp_dir()
+            .join(format!("circomspect-phase4-edge-laws-{}", std::process::id()));
+        fs::create_dir_all(&directory).unwrap();
+        let source = directory.join("case.circom");
+        fs::write(&source, "function T(){var t=0;if(t){return 1;}else{return 2;}}").unwrap();
+        let loaded =
+            load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
+        let hir = lower_project(&loaded).hir;
+        let cfg = crate::hir_cfg::build_cfg(&hir, hir.definition("T").unwrap()).unwrap();
+        let field = FieldContext::for_curve(Curve::Bn254);
+        let t = hir.symbols().iter().find(|symbol| symbol.name == "t").unwrap().id;
+        let key = AccessKey { root: t, instance: None, steps: Vec::new() };
+        let states = variable_states(t, key, &field);
+        let analysis = ForwardAnalysis { hir: &hir, field: &field };
+        let edges: Vec<_> = cfg
+            .edges()
+            .iter()
+            .filter_map(|id| cfg.edge(*id))
+            .filter(|edge| edge.payload.condition.is_some())
+            .collect();
+        assert_eq!(edges.len(), 2);
+        for edge in edges {
+            check_transfer_order(edge.payload, &analysis, &states);
+            for (value, taken) in [
+                (0, edge.payload.kind == EdgeKind::False),
+                (1, edge.payload.kind == EdgeKind::True),
+            ] {
+                let mut state = ForwardState::boundary();
+                let ForwardState::Reached { variables, .. } = &mut state else { panic!("reached") };
+                variables.insert(t, field.canonical(value.into()));
+                let result = transfer_state(edge.payload.apply(&analysis, &state));
+                assert_eq!(result != ForwardState::Unreachable, taken);
+            }
+        }
+    }
 }

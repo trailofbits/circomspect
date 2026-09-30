@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use abstract_interpretation::graph::{EdgeId, FlowGraph, GraphError, NodeId};
 use abstract_interpretation::solver::{solve, Backward, Blocker, Forward, SolveResult};
-use parser::hir::{AccessPath, DefinitionRef, ExprId, ExprKind, HirProject};
+use parser::hir::{AccessPath, AccessStep, ArrayIndex, DefinitionRef, ExprId, ExprKind, HirProject};
 
 use crate::hir_cfg::{CfgNodeKind, DefinitionCfg};
 use access::key_for_path;
@@ -78,6 +78,8 @@ pub enum FactBlocker {
     DeferredControl(NodeId),
     OpaqueExpression(ExprId),
     MissingExit,
+    ForeignQuery,
+    ForeignDefinition,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -571,6 +573,45 @@ impl AnalysisFacts<'_> {
 
     fn blockers_for(&self, path: &AccessPath) -> BTreeSet<FactBlocker> {
         let mut blockers = BTreeSet::new();
+        if self.hir.symbol(path.root).is_none() || self.hir.symbol(path.terminal).is_none() {
+            blockers.insert(FactBlocker::ForeignQuery);
+            return blockers;
+        }
+        if !self.cfg.owns_symbol(path.root) {
+            blockers.insert(FactBlocker::ForeignDefinition);
+            return blockers;
+        }
+        let mut terminal = path.root;
+        for step in &path.steps {
+            let valid = match step {
+                AccessStep::Index { index: ArrayIndex::Constant(value), .. } => {
+                    self.field.parse(value).is_some()
+                }
+                AccessStep::Index { index: ArrayIndex::Symbolic(id), .. } => {
+                    self.hir.expression(*id).is_some()
+                }
+                AccessStep::Port { port, .. } => {
+                    if let Some(port) = self.hir.port(*port) {
+                        terminal = port.symbol;
+                        true
+                    } else {
+                        false
+                    }
+                }
+                AccessStep::Tag { symbol, .. } => {
+                    terminal = *symbol;
+                    self.hir.symbol(*symbol).is_some()
+                }
+            };
+            if !valid {
+                blockers.insert(FactBlocker::ForeignQuery);
+                return blockers;
+            }
+        }
+        if terminal != path.terminal {
+            blockers.insert(FactBlocker::ForeignQuery);
+            return blockers;
+        }
         let query = key_for_path(self.hir, self.field, path, &BTreeMap::new());
         let potential_sites = self.potential_sites(&query);
         let queried_exit = BTreeSet::from([self.cfg.exit]);
