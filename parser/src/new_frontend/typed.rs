@@ -367,6 +367,17 @@ pub enum InputAssignmentOperator {
     Constraint,
 }
 
+impl InputAssignmentOperator {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Assign => "=",
+            Self::Witness => "<--",
+            Self::Constraint => "<==",
+        }
+    }
+}
+
 fn malformed(node: &SyntaxNode, message: &str) -> SyntaxDiagnostic {
     SyntaxDiagnostic::new(DiagnosticKind::Syntax, node.span, message)
 }
