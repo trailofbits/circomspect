@@ -1,0 +1,376 @@
+{
+  "compiler_version": "2.2.3",
+  "compiler_commit": "ad44e915a12bb047b05745c2884aad9cc8326bc6",
+  "cases": [
+    {
+      "id": "declarations_valid",
+      "feature": "declarations",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/declarations_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "declarations_invalid",
+      "feature": "declarations",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/declarations_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "includes_valid",
+      "feature": "includes",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/includes_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "includes_invalid",
+      "feature": "includes",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/includes_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1009"
+    },
+    {
+      "id": "functions_valid",
+      "feature": "functions",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/functions_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "functions_invalid",
+      "feature": "functions",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/functions_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "templates_valid",
+      "feature": "templates",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/templates_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "templates_invalid",
+      "feature": "templates",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/templates_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "custom_templates_valid",
+      "feature": "custom_templates",
+      "min_version": "2.0.6",
+      "curve": "bn128",
+      "source": "cases/custom_templates_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "custom_templates_invalid",
+      "feature": "custom_templates",
+      "min_version": "2.0.6",
+      "curve": "bn128",
+      "source": "cases/custom_templates_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "buses_valid",
+      "feature": "buses",
+      "min_version": "2.2.0",
+      "curve": "bn128",
+      "source": "cases/buses_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "buses_invalid",
+      "feature": "buses",
+      "min_version": "2.2.0",
+      "curve": "bn128",
+      "source": "cases/buses_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "tags_valid",
+      "feature": "tags",
+      "min_version": "2.1.0",
+      "curve": "bn128",
+      "source": "cases/tags_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "tags_invalid",
+      "feature": "tags",
+      "min_version": "2.1.0",
+      "curve": "bn128",
+      "source": "cases/tags_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "arrays_valid",
+      "feature": "arrays",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/arrays_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "arrays_invalid",
+      "feature": "arrays",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/arrays_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "tuples_valid",
+      "feature": "tuples",
+      "min_version": "2.1.0",
+      "curve": "bn128",
+      "source": "cases/tuples_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "tuples_invalid",
+      "feature": "tuples",
+      "min_version": "2.1.0",
+      "curve": "bn128",
+      "source": "cases/tuples_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "anonymous_components_valid",
+      "feature": "anonymous_components",
+      "min_version": "2.1.0",
+      "curve": "bn128",
+      "source": "cases/anonymous_components_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "anonymous_components_invalid",
+      "feature": "anonymous_components",
+      "min_version": "2.1.0",
+      "curve": "bn128",
+      "source": "cases/anonymous_components_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "inline_arrays_valid",
+      "feature": "inline_arrays",
+      "min_version": "2.1.0",
+      "curve": "bn128",
+      "source": "cases/inline_arrays_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "inline_arrays_invalid",
+      "feature": "inline_arrays",
+      "min_version": "2.1.0",
+      "curve": "bn128",
+      "source": "cases/inline_arrays_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "loops_valid",
+      "feature": "loops",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/loops_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "loops_invalid",
+      "feature": "loops",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/loops_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "operators_valid",
+      "feature": "operators",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/operators_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "operators_invalid",
+      "feature": "operators",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/operators_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1008"
+    },
+    {
+      "id": "declaration_order_valid",
+      "feature": "declaration_order",
+      "min_version": "2.2.0",
+      "curve": "bn128",
+      "source": "cases/declaration_order_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "declaration_order_invalid",
+      "feature": "declaration_order",
+      "min_version": "2.2.0",
+      "curve": "bn128",
+      "source": "cases/declaration_order_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "inline_array_buses_valid",
+      "feature": "inline_array_buses",
+      "min_version": "2.2.3",
+      "curve": "bn128",
+      "source": "cases/inline_array_buses_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "inline_array_buses_invalid",
+      "feature": "inline_array_buses",
+      "min_version": "2.2.3",
+      "curve": "bn128",
+      "source": "cases/inline_array_buses_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "inline_array_anonymous_valid",
+      "feature": "inline_array_anonymous",
+      "min_version": "2.2.3",
+      "curve": "bn128",
+      "source": "cases/inline_array_anonymous_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "inline_array_anonymous_invalid",
+      "feature": "inline_array_anonymous",
+      "min_version": "2.2.3",
+      "curve": "bn128",
+      "source": "cases/inline_array_anonymous_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "while_loops_valid",
+      "feature": "while_loops",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/while_loops_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "while_loops_invalid",
+      "feature": "while_loops",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/while_loops_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "conditionals_valid",
+      "feature": "conditionals",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/conditionals_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "conditionals_invalid",
+      "feature": "conditionals",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/conditionals_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "semantic_control",
+      "feature": "semantic_control",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/semantic_control.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "semantic_error",
+      "compiler_code": "T2021"
+    }
+  ]
+}
