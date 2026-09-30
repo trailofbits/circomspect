@@ -10,6 +10,7 @@ pub mod taint_analysis;
 pub mod analysis_context;
 pub mod analysis_runner;
 pub mod config;
+pub mod hir_cfg;
 
 // Intra-process analysis passes.
 mod bitwise_complement;
