@@ -1059,6 +1059,11 @@ fn incompatible_assignments_do_not_generate_constraints() {
             SemanticCode::WrongBusAssignment,
         ),
         (
+            "bus B(){signal x;} bus C(){signal x;} template T(){B b[2]; C c; b<==c;}",
+            "b<==c",
+            SemanticCode::WrongAssignmentRank,
+        ),
+        (
             "template T(){signal a[2]; signal output out; out<==a;}",
             "out<==a",
             SemanticCode::WrongAssignmentRank,

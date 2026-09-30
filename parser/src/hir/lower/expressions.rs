@@ -545,13 +545,13 @@ impl Lowerer<'_> {
         if matches!(actual_type, ValueType::Component(_)) {
             return ShapeCheck::Invalid(SemanticCode::WrongAssignmentExpression);
         }
+        if matches!((expected_type, actual_type), (ValueType::Bus(_), ValueType::Bus(_)))
+            && expected_rank != actual_rank
+        {
+            return ShapeCheck::Invalid(SemanticCode::WrongAssignmentRank);
+        }
         if expected_type != actual_type {
-            return match (expected_type, actual_type) {
-                (ValueType::Bus(_), ValueType::Bus(_)) if expected_rank != actual_rank => {
-                    ShapeCheck::Invalid(SemanticCode::WrongBusArrayAssignment)
-                }
-                _ => ShapeCheck::Invalid(SemanticCode::WrongBusAssignment),
-            };
+            return ShapeCheck::Invalid(SemanticCode::WrongBusAssignment);
         }
         if expected_rank != actual_rank {
             return ShapeCheck::Invalid(SemanticCode::WrongAssignmentRank);
