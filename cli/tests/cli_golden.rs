@@ -77,6 +77,9 @@ fn normalize_sarif(value: &mut Value, fixture_root: &Path) {
             let prefix = format!("file://{}/", fixture_root.display());
             if let Some(relative) = text.strip_prefix(&prefix) {
                 *text = format!("file:///fixtures/{relative}");
+            } else {
+                let root = fixture_root.display().to_string();
+                *text = text.replace(&root, "/fixtures");
             }
         }
         Value::Null | Value::Bool(_) | Value::Number(_) => {}
