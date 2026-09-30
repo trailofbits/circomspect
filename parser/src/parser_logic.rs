@@ -5,85 +5,119 @@ use program_structure::ast::AST;
 use program_structure::report::Report;
 use program_structure::report::ReportCollection;
 use program_structure::file_definition::FileID;
+use std::iter::Peekable;
 use std::ops::Range;
+use std::str::CharIndices;
 
 #[derive(Clone, Debug)]
 pub enum ParserUserError {
     VersionOverflow(Range<usize>),
 }
 
-pub fn preprocess(expr: &str, file_id: FileID) -> Result<String, Box<Report>> {
-    let mut pp = String::new();
-    let mut state = 0;
-    let mut loc = 0;
-    let mut block_start = 0;
+#[derive(Clone, Copy)]
+enum ScanState {
+    Code,
+    String,
+    LineComment,
+    BlockComment { start: usize },
+}
 
-    let mut it = expr.chars();
-    while let Some(c0) = it.next() {
-        loc += 1;
-        match (state, c0) {
-            (0, '/') => {
-                loc += 1;
-                match it.next() {
-                    Some('/') => {
-                        state = 1;
-                        pp.push(' ');
-                        pp.push(' ');
-                    }
-                    Some('*') => {
-                        block_start = loc;
-                        state = 2;
-                        pp.push(' ');
-                        pp.push(' ');
-                    }
-                    Some(c1) => {
-                        pp.push(c0);
-                        pp.push(c1);
-                    }
-                    None => {
-                        pp.push(c0);
-                        break;
-                    }
-                }
-            }
-            (0, _) => pp.push(c0),
-            (1, '\n') => {
-                pp.push(c0);
-                state = 0;
-            }
-            (2, '*') => {
-                loc += 1;
-                match it.next() {
-                    Some('/') => {
-                        pp.push(' ');
-                        pp.push(' ');
-                        state = 0;
-                    }
-                    Some(c) => {
-                        pp.push(' ');
-                        for _i in 0..c.len_utf8() {
-                            pp.push(' ');
-                        }
-                    }
-                    None => {
-                        let error =
-                            UnclosedCommentError { location: block_start..block_start, file_id };
-                        return Err(Box::new(error.into_report()));
-                    }
-                }
-            }
-            (_, c) => {
-                for _i in 0..c.len_utf8() {
-                    pp.push(' ');
-                }
-            }
+fn mask_char(output: &mut String, character: char) {
+    if character == '\n' {
+        output.push('\n');
+    } else {
+        for _ in 0..character.len_utf8() {
+            output.push(' ');
         }
     }
-    Ok(pp)
+}
+
+fn scan_code(
+    index: usize,
+    character: char,
+    chars: &mut Peekable<CharIndices<'_>>,
+    output: &mut String,
+) -> ScanState {
+    match (character, chars.peek()) {
+        ('"', _) => {
+            output.push(character);
+            ScanState::String
+        }
+        ('/', Some((_, '/'))) => {
+            output.push_str("  ");
+            let _ = chars.next();
+            ScanState::LineComment
+        }
+        ('/', Some((_, '*'))) => {
+            output.push_str("  ");
+            let _ = chars.next();
+            ScanState::BlockComment { start: index }
+        }
+        _ => {
+            output.push(character);
+            ScanState::Code
+        }
+    }
+}
+
+fn scan_block_comment(
+    start: usize,
+    character: char,
+    chars: &mut Peekable<CharIndices<'_>>,
+    output: &mut String,
+) -> ScanState {
+    if character == '*' {
+        if let Some((_, '/')) = chars.peek() {
+            output.push_str("  ");
+            let _ = chars.next();
+            return ScanState::Code;
+        }
+    }
+    mask_char(output, character);
+    ScanState::BlockComment { start }
+}
+
+pub fn preprocess(src: &str, file_id: FileID) -> (String, ReportCollection) {
+    let mut output = String::with_capacity(src.len());
+    let mut state = ScanState::Code;
+    let mut chars = src.char_indices().peekable();
+    while let Some((index, character)) = chars.next() {
+        state = match state {
+            ScanState::Code => scan_code(index, character, &mut chars, &mut output),
+            ScanState::String => {
+                output.push(character);
+                if character == '"' {
+                    ScanState::Code
+                } else {
+                    ScanState::String
+                }
+            }
+            ScanState::LineComment => {
+                mask_char(&mut output, character);
+                if character == '\n' {
+                    ScanState::Code
+                } else {
+                    ScanState::LineComment
+                }
+            }
+            ScanState::BlockComment { start } => {
+                scan_block_comment(start, character, &mut chars, &mut output)
+            }
+        };
+    }
+    let reports = match state {
+        ScanState::BlockComment { start } => {
+            let error = UnclosedCommentError { location: start..start + 2, file_id };
+            vec![error.into_report()]
+        }
+        ScanState::Code | ScanState::String | ScanState::LineComment => Vec::new(),
+    };
+    debug_assert_eq!(output.len(), src.len());
+    (output, reports)
 }
 
 pub fn parse_file(src: &str, file_id: FileID) -> Result<(AST, ReportCollection), Box<Report>> {
-    let src = preprocess(src, file_id)?;
+    let (src, mut reports) = preprocess(src, file_id);
     let mut errors = Vec::new();
     let mut ast = lang::ParseAstParser::new()
         .parse(&mut errors, &src)
@@ -91,8 +125,7 @@ pub fn parse_file(src: &str, file_id: FileID) -> Result<(AST, ReportCollection),
     for include in &mut ast.includes {
         include.meta.set_file_id(file_id);
     }
-    let reports =
-        errors.into_iter().map(|error| parse_error_report(error.error, file_id)).collect();
+    reports.extend(errors.into_iter().map(|error| parse_error_report(error.error, file_id)));
     Ok((ast, reports))
 }
 
@@ -136,7 +169,10 @@ fn parse_error_report(
 }
 
 pub fn parse_string(src: &str) -> Option<AST> {
-    let src = preprocess(src, 0).ok()?;
+    let (src, reports) = preprocess(src, 0);
+    if !reports.is_empty() {
+        return None;
+    }
     let mut errors = Vec::new();
     let ast = lang::ParseAstParser::new().parse(&mut errors, &src).ok()?;
     errors.is_empty().then_some(ast)
@@ -177,7 +213,23 @@ fn format_expected(tokens: &[String]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_string;
+    use super::{parse_string, preprocess};
+
+    #[test]
+    fn preprocess_preserves_byte_offsets_and_quoted_comment_markers() {
+        let source = "include \"a//b/*c\"; /* π */ template T() {}";
+        let (output, reports) = preprocess(source, 0);
+
+        assert!(reports.is_empty());
+        assert_eq!(output.len(), source.len());
+        assert!(output.contains("include \"a//b/*c\";"));
+        assert_eq!(output.find("template"), source.find("template"));
+    }
+
+    #[test]
+    fn parse_string_rejects_unclosed_comment() {
+        assert!(parse_string("template T() {} /* unfinished").is_none());
+    }
 
     #[test]
     fn parse_string_rejects_recovered_errors() {

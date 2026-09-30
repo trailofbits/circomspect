@@ -117,6 +117,43 @@ fn unclosed_definition_does_not_hide_the_next_definition() {
 }
 
 #[test]
+fn unclosed_comment_does_not_hide_preceding_definition() {
+    let path = fixture("unclosed_comment_library.circom");
+    let output = run(&[path.to_str().expect("fixture path is not UTF-8"), "--level", "error"]);
+    let stdout = String::from_utf8(output.stdout).expect("CLI output is not UTF-8");
+
+    assert!(!output.status.success(), "{stdout}");
+    assert!(stdout.contains("Unterminated comment"), "{stdout}");
+    assert!(stdout.contains("unclosed_comment_library.circom:9:1"), "{stdout}");
+    assert!(stdout.contains("analyzing template 'BeforeComment'"), "{stdout}");
+    assert!(!stdout.contains("analyzing template 'HiddenByComment'"), "{stdout}");
+}
+
+#[test]
+fn unclosed_comment_inside_definition_reports_both_syntax_errors() {
+    let path = fixture("unclosed_comment_in_definition.circom");
+    let output = run(&[path.to_str().expect("fixture path is not UTF-8"), "--level", "error"]);
+    let stdout = String::from_utf8(output.stdout).expect("CLI output is not UTF-8");
+
+    assert!(!output.status.success(), "{stdout}");
+    assert!(stdout.contains("Unterminated comment"), "{stdout}");
+    assert_eq!(stdout.matches("error:").count(), 2, "{stdout}");
+    assert!(stdout.contains("analyzing template 'BeforeBrokenComment'"), "{stdout}");
+    assert!(!stdout.contains("analyzing template 'BrokenByComment'"), "{stdout}");
+}
+
+#[test]
+fn comment_markers_inside_include_path_are_not_comments() {
+    let path = fixture("comment_in_include.circom");
+    let output = run(&[path.to_str().expect("fixture path is not UTF-8"), "--level", "error"]);
+    let stdout = String::from_utf8(output.stdout).expect("CLI output is not UTF-8");
+
+    assert!(output.status.success(), "{stdout}");
+    assert!(stdout.contains("analyzing template 'UsesIncluded'"), "{stdout}");
+    assert!(stdout.contains("No issues found."), "{stdout}");
+}
+
+#[test]
 fn missing_input_file_is_visible() {
     let path = std::env::temp_dir()
         .join(format!("circomspect-nonexistent-input-{}.circom", std::process::id()));
