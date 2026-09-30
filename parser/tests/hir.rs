@@ -1,6 +1,6 @@
 use circomspect_parser::hir::{
-    lower_project, AccessStep, BusTarget, CallTarget, DefinitionRef, Effect, ExprKind,
-    IncompleteLocation, IncompleteReason, Knownness, PortSchema, SemanticCode, Severity,
+    lower_project, AccessStep, BusTarget, CallTarget, ControlGuard, DefinitionRef, Effect,
+    ExprKind, IncompleteLocation, IncompleteReason, Knownness, PortSchema, SemanticCode, Severity,
 };
 use circomspect_parser::new_frontend::{load_sources, Version, VersionPolicy};
 use proptest::prelude::*;
@@ -1223,6 +1223,65 @@ fn array_condition_is_opaque_but_scalar_condition_is_checked() {
     let valid = "function F(){if(1){return 1;} return 0;}";
     let result = lower(&[("scalar_condition.circom", valid)], Version::new(2, 2, 3));
     assert!(effect_for_function(&result, "F").iter().any(|item| matches!(item, Effect::If { .. })));
+}
+
+#[test]
+fn parameter_dependent_branches_keep_their_blocks() {
+    let source = concat!(
+        "template T(n){signal output o;if(n){o<==1;}else{o<==2;}} ",
+        "function F(n){var x=0;if(n<2){x=1;}else{x=2;}return x;}"
+    );
+    let result = lower(&[("deferred_if.circom", source)], Version::new(2, 2, 3));
+    for effects in [effect_for(&result, "T"), effect_for_function(&result, "F")] {
+        let Some(Effect::If { condition, then_block, else_block: Some(else_block), guard, .. }) =
+            effects.iter().find(|effect| matches!(effect, Effect::If { .. }))
+        else {
+            panic!("parameter branch was discarded: {effects:?}");
+        };
+        assert_eq!(*guard, ControlGuard::DeferredScalar);
+        assert!(!result.hir.block(*then_block).unwrap().effects.is_empty());
+        assert!(!result.hir.block(*else_block).unwrap().effects.is_empty());
+        assert!(!matches!(result.hir.expression(*condition).unwrap().kind, ExprKind::Opaque(_)));
+    }
+}
+
+#[test]
+fn invalid_parameter_shape_does_not_become_control() {
+    let invalid = "function F(n){if(n+[1,2]){return 1;}return 0;}";
+    let result = lower(&[("invalid_guard.circom", invalid)], Version::new(2, 2, 3));
+    assert!(effect_for_function(&result, "F")
+        .iter()
+        .all(|effect| !matches!(effect, Effect::If { .. })));
+}
+
+#[test]
+fn parameter_dependent_loops_keep_their_control_edges() {
+    let source = "function F(n){var x=0;while(n){x++;}for(var i=0;i<n;i++){x++;}return x;}";
+    let result = lower(&[("deferred_loops.circom", source)], Version::new(2, 2, 3));
+    let effects = effect_for_function(&result, "F");
+    assert!(effects
+        .iter()
+        .any(|effect| matches!(effect, Effect::While { guard: ControlGuard::DeferredScalar, .. })));
+    assert!(effects
+        .iter()
+        .any(|effect| matches!(effect, Effect::For { guard: ControlGuard::DeferredScalar, .. })));
+}
+
+#[test]
+fn witness_control_preserves_only_constraint_free_branches() {
+    let source = concat!(
+        "template T(){signal input x;signal output y;var v=0;",
+        "if(x){v=1;}else{v=2;}if(x){y<==1;}}"
+    );
+    let result = lower(&[("witness_if.circom", source)], Version::new(2, 2, 3));
+    let effects = effect_for(&result, "T");
+    assert!(effects
+        .iter()
+        .any(|effect| matches!(effect, Effect::If { guard: ControlGuard::WitnessOnly, .. })));
+    assert!(effects.iter().any(|effect| matches!(
+        effect,
+        Effect::Opaque { reason: IncompleteReason::NonCompileTime, .. }
+    )));
 }
 
 #[test]
