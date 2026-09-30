@@ -41,6 +41,8 @@ The compiler is a development oracle and is not used by Circomspect at runtime.
 
 The version-specific entries follow the official [release history](https://github.com/iden3/circom/blob/ad44e915a12bb047b05745c2884aad9cc8326bc6/RELEASES.md)
 and [language documentation](https://docs.circom.io/circom-language/).
-This is a syntax inventory, not an exhaustive semantic test suite. Incomplete
+This is a category baseline. It does not cover every Circom 2.2.3 grammar
+alternative or operator; the parser phase will add a production- and
+operator-complete matrix. It is not an exhaustive semantic test suite. Incomplete
 libraries and missing `main` are analyzer-specific fixtures under `cli/tests`:
 the compiler requires a main program, so it cannot classify those inputs.
