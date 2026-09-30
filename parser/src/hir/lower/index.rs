@@ -1,5 +1,14 @@
 use crate::hir::lower::*;
 
+struct PortContext<'a> {
+    reference: DefinitionRef,
+    kind: SymbolKind,
+    direction: Option<PortDirection>,
+    tags: &'a [Identifier],
+    bus_type: Option<BusTarget>,
+    known_parameters: &'a BTreeSet<String>,
+}
+
 impl Lowerer<'_> {
     pub(super) fn index_definitions(&mut self) {
         for file in &self.source.files {
@@ -154,94 +163,112 @@ impl Lowerer<'_> {
             for item in &file.outcome.ast.items {
                 let Item::Definition(definition) = item else { continue };
                 let Some(reference) = self.definition_at(definition.span) else { continue };
-                let mut known_parameters: BTreeSet<String> = match reference {
-                    DefinitionRef::Function(id) => &self.hir.functions[id.index].parameters,
-                    DefinitionRef::Template(id) => &self.hir.templates[id.index].parameters,
-                    DefinitionRef::Bus(id) => &self.hir.buses[id.index].parameters,
-                }
-                .iter()
-                .map(|id| self.hir.symbols[id.index].name.clone())
-                .collect();
-                for statement in &definition.body.statements {
-                    let Statement::Declaration(declaration) = statement else {
-                        known_parameters.clear();
-                        continue;
-                    };
-                    let (kind, direction, tags, bus_type) = match &declaration.kind {
-                        DeclarationKind::Signal { direction, tags } => {
-                            (SymbolKind::Signal, Self::direction(*direction), tags.as_slice(), None)
-                        }
-                        DeclarationKind::Bus { direction, tags, .. } => {
-                            (SymbolKind::Bus, Self::direction(*direction), tags.as_slice(), None)
-                        }
-                        DeclarationKind::Variable | DeclarationKind::Component => {
-                            Self::remove_shadowed_parameters(&mut known_parameters, declaration);
-                            continue;
-                        }
-                    };
-                    let visible = match reference {
-                        DefinitionRef::Bus(_) => true,
-                        DefinitionRef::Template(_) => direction.is_some(),
-                        DefinitionRef::Function(_) => false,
-                    };
-                    if !visible {
-                        Self::remove_shadowed_parameters(&mut known_parameters, declaration);
-                        continue;
-                    }
-                    let bus_type = match &declaration.kind {
-                        DeclarationKind::Bus { type_name, arguments, .. } => {
-                            Some(self.preindex_bus_type(
-                                type_name,
-                                arguments.values(),
-                                &known_parameters,
-                                declaration.span,
-                            ))
-                        }
-                        _ => bus_type,
-                    };
-                    for declared in &declaration.symbols {
-                        let symbol = self.hir.add_symbol(
-                            declared.name.name.clone(),
-                            kind,
-                            declared.name.span,
-                        );
-                        self.hir.symbols[symbol.index].bus_type = bus_type.clone();
-                        self.hir.symbols[symbol.index].rank = declared.dimensions.len();
-                        self.hir.symbols[symbol.index].shape_checked = declared
-                            .dimensions
-                            .iter()
-                            .all(|value| Self::syntactic_compile_time(value, &known_parameters));
-                        let port = self.hir.add_port(symbol, direction, declared.span);
-                        let schema = if self.hir.symbols[symbol.index].shape_checked {
-                            match (kind, &bus_type) {
-                                (SymbolKind::Signal, _) => PortSchema::Checked(ValueType::Plain),
-                                (SymbolKind::Bus, Some(BusTarget::Bus(id))) => {
-                                    PortSchema::Checked(ValueType::Bus(*id))
-                                }
-                                _ => PortSchema::Opaque,
-                            }
-                        } else {
-                            PortSchema::Opaque
-                        };
-                        self.external_ports.insert(port, schema);
-                        for tag in tags {
-                            let tag_id =
-                                self.hir.add_symbol(tag.name.clone(), SymbolKind::Tag, tag.span);
-                            self.hir.symbols[symbol.index].tags.push(tag_id);
-                            self.hir.ports[port.index].tags.push(tag_id);
-                        }
-                        self.predeclared_ports.insert(Self::span_key(declared.name.span), symbol);
-                        match reference {
-                            DefinitionRef::Template(id) => {
-                                self.hir.templates[id.index].ports.push(port)
-                            }
-                            DefinitionRef::Bus(id) => self.hir.buses[id.index].ports.push(port),
-                            DefinitionRef::Function(_) => {}
-                        }
-                    }
-                    Self::remove_shadowed_parameters(&mut known_parameters, declaration);
-                }
+                self.index_definition_ports(definition, reference);
             }
+        }
+    }
+
+    fn index_definition_ports(&mut self, definition: &Definition, reference: DefinitionRef) {
+        let mut known_parameters = self.indexed_parameter_names(reference);
+        for statement in &definition.body.statements {
+            let Statement::Declaration(declaration) = statement else {
+                known_parameters.clear();
+                continue;
+            };
+            self.index_port_declaration(declaration, reference, &known_parameters);
+            Self::remove_shadowed_parameters(&mut known_parameters, declaration);
+        }
+    }
+
+    fn indexed_parameter_names(&self, reference: DefinitionRef) -> BTreeSet<String> {
+        let parameters = match reference {
+            DefinitionRef::Function(id) => &self.hir.functions[id.index].parameters,
+            DefinitionRef::Template(id) => &self.hir.templates[id.index].parameters,
+            DefinitionRef::Bus(id) => &self.hir.buses[id.index].parameters,
+        };
+        parameters.iter().map(|id| self.hir.symbols[id.index].name.clone()).collect()
+    }
+
+    fn index_port_declaration(
+        &mut self,
+        declaration: &Declaration,
+        reference: DefinitionRef,
+        known_parameters: &BTreeSet<String>,
+    ) {
+        let (kind, direction, tags) = match &declaration.kind {
+            DeclarationKind::Signal { direction, tags } => {
+                (SymbolKind::Signal, Self::direction(*direction), tags.as_slice())
+            }
+            DeclarationKind::Bus { direction, tags, .. } => {
+                (SymbolKind::Bus, Self::direction(*direction), tags.as_slice())
+            }
+            DeclarationKind::Variable | DeclarationKind::Component => return,
+        };
+        if !Self::public_port(reference, direction) {
+            return;
+        }
+        let bus_type = match &declaration.kind {
+            DeclarationKind::Bus { type_name, arguments, .. } => Some(self.preindex_bus_type(
+                type_name,
+                arguments.values(),
+                known_parameters,
+                declaration.span,
+            )),
+            DeclarationKind::Signal { .. }
+            | DeclarationKind::Variable
+            | DeclarationKind::Component => None,
+        };
+        let context = PortContext { reference, kind, direction, tags, bus_type, known_parameters };
+        for declared in &declaration.symbols {
+            self.index_one_port(declared, &context);
+        }
+    }
+
+    fn public_port(reference: DefinitionRef, direction: Option<PortDirection>) -> bool {
+        match reference {
+            DefinitionRef::Bus(_) => true,
+            DefinitionRef::Template(_) => direction.is_some(),
+            DefinitionRef::Function(_) => false,
+        }
+    }
+
+    fn index_one_port(&mut self, declared: &DeclaredSymbol, context: &PortContext<'_>) {
+        let symbol =
+            self.hir.add_symbol(declared.name.name.clone(), context.kind, declared.name.span);
+        let checked_shape = declared
+            .dimensions
+            .iter()
+            .all(|value| Self::syntactic_compile_time(value, context.known_parameters));
+        self.hir.symbols[symbol.index].bus_type = context.bus_type.clone();
+        self.hir.symbols[symbol.index].rank = declared.dimensions.len();
+        self.hir.symbols[symbol.index].shape_checked = checked_shape;
+        let schema = Self::port_schema(context.kind, checked_shape, &context.bus_type);
+        let port = self.hir.add_port(symbol, context.direction, schema, declared.span);
+        for tag in context.tags {
+            let tag_id = self.hir.add_symbol(tag.name.clone(), SymbolKind::Tag, tag.span);
+            self.hir.symbols[symbol.index].tags.push(tag_id);
+            self.hir.ports[port.index].tags.push(tag_id);
+        }
+        self.predeclared_ports.insert(Self::span_key(declared.name.span), symbol);
+        match context.reference {
+            DefinitionRef::Template(id) => self.hir.templates[id.index].ports.push(port),
+            DefinitionRef::Bus(id) => self.hir.buses[id.index].ports.push(port),
+            DefinitionRef::Function(_) => {}
+        }
+    }
+
+    fn port_schema(
+        kind: SymbolKind,
+        checked_shape: bool,
+        bus_type: &Option<BusTarget>,
+    ) -> PortSchema {
+        if !checked_shape {
+            return PortSchema::Opaque(IncompleteReason::UnknownType);
+        }
+        match (kind, bus_type) {
+            (SymbolKind::Signal, _) => PortSchema::Signal,
+            (SymbolKind::Bus, Some(BusTarget::Bus(id))) => PortSchema::Bus(*id),
+            _ => PortSchema::Opaque(IncompleteReason::UnknownType),
         }
     }
 

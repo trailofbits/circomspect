@@ -137,8 +137,16 @@ pub struct Port {
     pub id: PortId,
     pub symbol: SymbolId,
     pub direction: Option<PortDirection>,
+    pub schema: PortSchema,
     pub tags: Vec<SymbolId>,
     pub span: Span,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PortSchema {
+    Signal,
+    Bus(BusId),
+    Opaque(IncompleteReason),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -609,10 +617,11 @@ impl HirProject {
         &mut self,
         symbol: SymbolId,
         direction: Option<PortDirection>,
+        schema: PortSchema,
         span: Span,
     ) -> PortId {
         let id = PortId::new(self.ports.len(), self.key);
-        self.ports.push(Port { id, symbol, direction, tags: Vec::new(), span });
+        self.ports.push(Port { id, symbol, direction, schema, tags: Vec::new(), span });
         id
     }
 

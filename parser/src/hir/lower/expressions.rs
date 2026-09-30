@@ -212,10 +212,13 @@ impl Lowerer<'_> {
             }
             if let Some(port) = matching.first().copied() {
                 let symbol = self.hir.ports[port.index].symbol;
-                let Some(PortSchema::Checked(next)) = self.external_ports.get(&port).copied()
-                else {
-                    self.incomplete(field.span, IncompleteReason::UnknownType);
-                    return None;
+                let next = match &self.hir.ports[port.index].schema {
+                    PortSchema::Signal => ValueType::Plain,
+                    PortSchema::Bus(id) => ValueType::Bus(*id),
+                    PortSchema::Opaque(reason) => {
+                        self.incomplete(field.span, reason.clone());
+                        return None;
+                    }
                 };
                 return Some((AccessStep::Port { port, span: field.span }, symbol, next));
             }
@@ -407,9 +410,10 @@ impl Lowerer<'_> {
         for step in path.steps.iter().rev() {
             match step {
                 AccessStep::Port { port, .. } => {
-                    return match self.external_ports.get(port).copied() {
-                        Some(PortSchema::Checked(ty)) => ty,
-                        Some(PortSchema::Opaque) | None => ValueType::Unknown,
+                    return match &self.hir.ports[port.index].schema {
+                        PortSchema::Signal => ValueType::Plain,
+                        PortSchema::Bus(id) => ValueType::Bus(*id),
+                        PortSchema::Opaque(_) => ValueType::Unknown,
                     };
                 }
                 AccessStep::Tag { .. } => return ValueType::Plain,
@@ -545,11 +549,12 @@ impl Lowerer<'_> {
             self.incomplete(span, IncompleteReason::InvalidAssignment);
             AnonymousInputTarget::Opaque(IncompleteReason::InvalidAssignment)
         } else if let Some(port) = port {
-            match self.external_ports.get(&port).copied() {
-                Some(PortSchema::Checked(_)) => AnonymousInputTarget::Port(port),
-                Some(PortSchema::Opaque) | None => {
-                    self.incomplete(span, IncompleteReason::UnknownType);
-                    AnonymousInputTarget::Opaque(IncompleteReason::UnknownType)
+            match &self.hir.ports[port.index].schema {
+                PortSchema::Signal | PortSchema::Bus(_) => AnonymousInputTarget::Port(port),
+                PortSchema::Opaque(reason) => {
+                    let reason = reason.clone();
+                    self.incomplete(span, reason.clone());
+                    AnonymousInputTarget::Opaque(reason)
                 }
             }
         } else {

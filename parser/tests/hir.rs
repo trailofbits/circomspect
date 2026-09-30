@@ -1,6 +1,6 @@
 use circomspect_parser::hir::{
     lower_project, AccessStep, BusTarget, CallTarget, DefinitionRef, Effect, ExprKind,
-    IncompleteLocation, IncompleteReason, Knownness, SemanticCode, Severity,
+    IncompleteLocation, IncompleteReason, Knownness, PortSchema, SemanticCode, Severity,
 };
 use circomspect_parser::new_frontend::{load_sources, Version, VersionPolicy};
 use proptest::prelude::*;
@@ -1002,6 +1002,13 @@ fn external_port_schema_does_not_change_with_definition_order() {
         let result = lower(&[("order.circom", source)], Version::new(2, 2, 3));
         assert!(result.diagnostics.is_empty(), "{:?}", result.diagnostics);
         assert_eq!(max_port_steps(&result), 0);
+        let later = result.hir.templates().iter().find(|item| item.name == "Later").unwrap();
+        for port_id in &later.ports {
+            let port = result.hir.port(*port_id).unwrap();
+            assert!(matches!(port.schema, PortSchema::Opaque(_)));
+            let symbol = result.hir.symbol(port.symbol).unwrap();
+            assert!(symbol.shape_checked);
+        }
         assert!(effect_for(&result, "Early")
             .iter()
             .all(|item| !matches!(item, Effect::ConstraintAssignment { .. })));
