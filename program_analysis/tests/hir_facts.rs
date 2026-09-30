@@ -128,7 +128,7 @@ fn branch_must_constraint_needs_proven_compile_time_choice() {
     let field = FieldContext::for_curve(Curve::Bn254);
     let facts = analyze(&hir, &cfg, &field, None).unwrap();
     let path = last_assigned_path(&hir, definition, "y");
-    assert_eq!(facts.incidence(&path).certified(), Some(&Incidence::May));
+    assert!(facts.incidence(&path).unavailable().is_some());
     let DefinitionRef::Template(id) = definition else { panic!("template fixture") };
     let body = hir.block(hir.template(id).unwrap().body).unwrap();
     assert!(body.effects.iter().any(|effect| {
@@ -142,6 +142,21 @@ fn branch_must_constraint_needs_proven_compile_time_choice() {
     let facts = analyze(&hir, &cfg, &field, None).unwrap();
     let path = last_assigned_path(&hir, definition, "y");
     assert_eq!(facts.incidence(&path).certified(), Some(&Incidence::Must));
+}
+
+#[test]
+fn deferred_control_blocks_branch_constraints_but_not_independent_sibling() {
+    let (hir, definition) = fixture(
+        "template Check(n){signal output x; signal output y; signal output z; \
+         if(n){x <== 1;}else{x <== 2;} y <== 3; z <-- x;}",
+    );
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let x = expression_path(&hir, "x", 0);
+    let y = assigned_path(&hir, definition, "y");
+    assert!(facts.incidence(&x).unavailable().is_some());
+    assert_eq!(facts.incidence(&y).certified(), Some(&Incidence::Must));
 }
 
 #[test]
@@ -394,11 +409,9 @@ fn exhausted_budget_can_leave_an_independent_zero_certified() {
 }
 
 #[test]
-fn late_predecessor_changes_the_joined_range() {
+fn deferred_branch_values_stay_unavailable_even_when_both_arms_agree() {
     let field = FieldContext::for_curve(Curve::Bn254);
-    for (alternative, expected) in
-        [("1", Range::Exact(field.canonical(1.into()))), ("2", Range::Canonical)]
-    {
+    for alternative in ["1", "2"] {
         let source = format!(
             "function Check(n){{var x=0; if(n){{x=1;}}else{{x={alternative};}} return x;}}"
         );
@@ -408,8 +421,39 @@ fn late_predecessor_changes_the_joined_range() {
         let DefinitionRef::Function(id) = definition else { panic!("function fixture") };
         let body = hir.block(hir.function(id).unwrap().body).unwrap();
         let expression = body.expressions()[0];
-        assert_eq!(facts.range(expression).certified(), Some(&expected), "{source}");
+        assert!(facts.range(expression).unavailable().is_some(), "{source}");
     }
+}
+
+#[test]
+fn deferred_guard_blocks_only_values_derived_from_its_assignments() {
+    let (hir, definition) = fixture(
+        "function Check(n){var clean=7; var copied=clean; var x=0; \
+         if(n){x=1;}else{x=1;} return x;}",
+    );
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let clean = hir
+        .expressions()
+        .iter()
+        .find_map(|expression| {
+            let ExprKind::Access(path) = &expression.kind else { return None };
+            hir.symbol(path.root)
+                .is_some_and(|symbol| symbol.name == "clean")
+                .then_some(expression.id)
+        })
+        .unwrap();
+    let x = hir
+        .expressions()
+        .iter()
+        .find_map(|expression| {
+            let ExprKind::Access(path) = &expression.kind else { return None };
+            hir.symbol(path.root).is_some_and(|symbol| symbol.name == "x").then_some(expression.id)
+        })
+        .unwrap();
+    assert_eq!(facts.range(clean).certified(), Some(&Range::Exact(field.canonical(7.into()))));
+    assert!(facts.range(x).unavailable().is_some());
 }
 
 #[test]
@@ -428,9 +472,16 @@ fn fixed_bound_loop_canonicalizes_induction_indices() {
 #[test]
 fn proven_small_for_bounds_have_exact_constraint_incidence() {
     let field = FieldContext::for_curve(Curve::Bn254);
-    for (bound, expected) in [(0, Incidence::Zero), (1, Incidence::Must), (2, Incidence::Must)] {
+    for (initial, bound, expected) in [
+        (0, 0, Incidence::Zero),
+        (0, 1, Incidence::Must),
+        (0, 2, Incidence::Must),
+        (1, 2, Incidence::Must),
+        (2, 2, Incidence::Zero),
+        (15, 16, Incidence::Must),
+    ] {
         let source = format!(
-            "template Check(){{signal output y; for(var j=0;j<{bound};j++){{y <== 7;}} y <-- 2;}}"
+            "template Check(){{signal output y; for(var j={initial};j<{bound};j++){{y <== 7;}} y <-- 2;}}"
         );
         let (hir, definition) = fixture(&source);
         let cfg = build_cfg(&hir, definition).unwrap();

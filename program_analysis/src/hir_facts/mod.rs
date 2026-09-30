@@ -74,6 +74,7 @@ pub enum FactBlocker {
     ExternalSummary,
     AggregateAccess,
     AggregateConstraint(NodeId),
+    DeferredControl(NodeId),
     OpaqueExpression(ExprId),
     MissingExit,
 }
@@ -245,7 +246,7 @@ impl AnalysisFacts<'_> {
         if !expression.visit_accesses(self.hir, &mut |path| uses.push(path.clone())) {
             blockers.insert(FactBlocker::OpaqueExpression(expression));
         }
-        let sites: BTreeSet<_> = self
+        let mut sites: BTreeSet<_> = self
             .cfg
             .nodes()
             .iter()
@@ -255,6 +256,17 @@ impl AnalysisFacts<'_> {
                 _ => false,
             })
             .collect();
+        let mut seen = BTreeSet::new();
+        for path in &uses {
+            if self
+                .hir
+                .symbol(path.root)
+                .is_some_and(|symbol| symbol.kind == parser::hir::SymbolKind::Variable)
+            {
+                self.variable_assignment_sites(path.root, &mut sites, &mut seen);
+            }
+        }
+        blockers.extend(self.deferred_control_blockers(&sites));
         if let SolveResult::Incomplete { blockers: solver_blockers, .. } = &self.forward {
             for blocker in solver_blockers {
                 match blocker {
@@ -282,6 +294,41 @@ impl AnalysisFacts<'_> {
             }
         }
         blockers
+    }
+
+    fn variable_assignment_sites(
+        &self,
+        variable: parser::hir::SymbolId,
+        sites: &mut BTreeSet<NodeId>,
+        seen: &mut BTreeSet<parser::hir::SymbolId>,
+    ) {
+        if !seen.insert(variable) {
+            return;
+        }
+        for id in self.cfg.nodes() {
+            let Some(CfgNodeKind::Assignment { target, value }) =
+                self.cfg.node(*id).map(|node| &node.kind)
+            else {
+                continue;
+            };
+            if target.root != variable {
+                continue;
+            }
+            sites.insert(*id);
+            let mut nested = BTreeSet::new();
+            value.visit_accesses(self.hir, &mut |path| {
+                if self
+                    .hir
+                    .symbol(path.root)
+                    .is_some_and(|symbol| symbol.kind == parser::hir::SymbolKind::Variable)
+                {
+                    nested.insert(path.root);
+                }
+            });
+            for child in nested {
+                self.variable_assignment_sites(child, sites, seen);
+            }
+        }
     }
 
     fn scalar_blockers(&self, expression: ExprId) -> BTreeSet<FactBlocker> {
@@ -614,6 +661,7 @@ impl AnalysisFacts<'_> {
         let mut blockers = BTreeSet::new();
         let query = key_for_path(self.hir, self.field, path, &BTreeMap::new());
         let potential_sites = self.potential_sites(&query);
+        blockers.extend(self.deferred_control_blockers(&potential_sites));
         if self.hir.components().iter().any(|item| item.symbol == path.root) {
             blockers.insert(FactBlocker::ExternalSummary);
         }
@@ -698,6 +746,41 @@ impl AnalysisFacts<'_> {
         false
     }
 
+    fn deferred_control_blockers(&self, sites: &BTreeSet<NodeId>) -> BTreeSet<FactBlocker> {
+        let mut blockers = BTreeSet::new();
+        for id in self.cfg.nodes() {
+            let Some(CfgNodeKind::Branch {
+                guard: parser::hir::ControlGuard::DeferredScalar, ..
+            }) = self.cfg.node(*id).map(|node| &node.kind)
+            else {
+                continue;
+            };
+            let mut true_target = None;
+            let mut false_target = None;
+            for edge_id in self.cfg.edges() {
+                let Some(edge) = self.cfg.edge(*edge_id) else { continue };
+                if edge.source != *id {
+                    continue;
+                }
+                match edge.payload.kind {
+                    crate::hir_cfg::EdgeKind::True => true_target = Some(edge.target),
+                    crate::hir_cfg::EdgeKind::False => false_target = Some(edge.target),
+                    crate::hir_cfg::EdgeKind::Normal
+                    | crate::hir_cfg::EdgeKind::Loop
+                    | crate::hir_cfg::EdgeKind::Return => {}
+                }
+            }
+            let (Some(yes), Some(no)) = (true_target, false_target) else { continue };
+            for site in sites {
+                let target = BTreeSet::from([*site]);
+                if self.can_reach_any(yes, &target) != self.can_reach_any(no, &target) {
+                    blockers.insert(FactBlocker::DeferredControl(*id));
+                }
+            }
+        }
+        blockers
+    }
+
     fn is_opaque_node(&self, id: NodeId) -> bool {
         let Some(node) = self.cfg.node(id) else { return true };
         match &node.kind {
@@ -719,7 +802,7 @@ impl AnalysisFacts<'_> {
             CfgNodeKind::Entry
             | CfgNodeKind::Exit
             | CfgNodeKind::LoopHeader
-            | CfgNodeKind::Branch(_)
+            | CfgNodeKind::Branch { .. }
             | CfgNodeKind::Witness { .. }
             | CfgNodeKind::Constraint { .. }
             | CfgNodeKind::Assignment { .. }

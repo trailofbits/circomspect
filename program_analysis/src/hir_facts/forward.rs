@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use abstract_interpretation::graph::NodeId;
 use abstract_interpretation::lattice::Lattice;
 use abstract_interpretation::solver::{DataflowAnalysis, Transfer, TransferOutcome};
-use parser::hir::{ExprId, ExprKind, HirProject, SymbolId, SymbolKind};
+use parser::hir::{AccessPath, ExprId, ExprKind, HirProject, SymbolId, SymbolKind};
 use parser::new_frontend::{BinaryOperator, PostfixOperator, UnaryOperator};
 
 use crate::hir_cfg::{CfgEdge, CfgNode, CfgNodeKind, DefinitionCfg, EdgeKind};
@@ -109,6 +109,32 @@ pub struct ForwardAnalysis<'a> {
     pub field: &'a FieldContext,
 }
 
+fn apply_update(
+    analysis: &ForwardAnalysis<'_>,
+    target: &AccessPath,
+    operator: PostfixOperator,
+    variables: &mut BTreeMap<SymbolId, FieldValue>,
+) -> Result<(), &'static str> {
+    if !target.steps.is_empty()
+        || !analysis
+            .hir
+            .symbol(target.root)
+            .is_some_and(|symbol| symbol.kind == SymbolKind::Variable)
+    {
+        return Err("unsupported update target");
+    }
+    let Some(previous) = variables.get(&target.root) else {
+        return Err("unknown update value");
+    };
+    let one = analysis.field.canonical(1.into());
+    let updated = match operator {
+        PostfixOperator::Increment => analysis.field.add(previous, &one),
+        PostfixOperator::Decrement => analysis.field.subtract(previous, &one),
+    };
+    variables.insert(target.root, updated);
+    Ok(())
+}
+
 impl DataflowAnalysis<DefinitionCfg> for ForwardAnalysis<'_> {
     type State = ForwardState;
     type Reason = String;
@@ -169,29 +195,9 @@ impl Transfer<ForwardAnalysis<'_>, ForwardState, String> for CfgNode {
                 }
             }
             CfgNodeKind::Update { target, operator } => {
-                if !target.steps.is_empty()
-                    || !analysis
-                        .hir
-                        .symbol(target.root)
-                        .is_some_and(|symbol| symbol.kind == SymbolKind::Variable)
-                {
-                    return TransferOutcome::Opaque {
-                        provisional: output,
-                        reason: "unsupported update target".into(),
-                    };
+                if let Err(reason) = apply_update(analysis, target, *operator, variables) {
+                    return TransferOutcome::Opaque { provisional: output, reason: reason.into() };
                 }
-                let Some(previous) = variables.get(&target.root) else {
-                    return TransferOutcome::Opaque {
-                        provisional: output,
-                        reason: "unknown update value".into(),
-                    };
-                };
-                let one = analysis.field.canonical(1.into());
-                let updated = match operator {
-                    PostfixOperator::Increment => analysis.field.add(previous, &one),
-                    PostfixOperator::Decrement => analysis.field.subtract(previous, &one),
-                };
-                variables.insert(target.root, updated);
             }
             CfgNodeKind::Constraint { .. } => {
                 may_constraints.insert(self.id);
@@ -212,7 +218,7 @@ impl Transfer<ForwardAnalysis<'_>, ForwardState, String> for CfgNode {
             CfgNodeKind::Entry
             | CfgNodeKind::Exit
             | CfgNodeKind::LoopHeader
-            | CfgNodeKind::Branch(_)
+            | CfgNodeKind::Branch { .. }
             | CfgNodeKind::Witness { .. }
             | CfgNodeKind::Declaration
             | CfgNodeKind::Return(_)
@@ -306,6 +312,46 @@ pub fn eval_expression(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use abstract_interpretation::solver::{solve, Forward, SolveResult};
+    use parser::hir::lower_project;
+    use parser::new_frontend::{load_sources, Version, VersionPolicy};
+    use program_structure::utils::constants::Curve;
+    use std::fs;
+
+    fn exit_value(alternative: &str) -> Option<FieldValue> {
+        let directory = std::env::temp_dir()
+            .join(format!("circomspect-phase4-join-{}-{alternative}", std::process::id()));
+        fs::create_dir_all(&directory).unwrap();
+        let source = directory.join("case.circom");
+        fs::write(
+            &source,
+            format!(
+                "function Check(n){{var x=0; if(n){{x=1;}}else{{x={alternative};}} return x;}}"
+            ),
+        )
+        .unwrap();
+        let loaded =
+            load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
+        let hir = lower_project(&loaded).hir;
+        let definition = hir.definition("Check").unwrap();
+        let cfg = crate::hir_cfg::build_cfg(&hir, definition).unwrap();
+        let field = FieldContext::for_curve(Curve::Bn254);
+        let SolveResult::Complete(states) =
+            solve::<_, _, Forward>(&cfg, &ForwardAnalysis { hir: &hir, field: &field }, None)
+                .unwrap()
+        else {
+            panic!("complete local solver")
+        };
+        let x = hir.symbols().iter().find(|symbol| symbol.name == "x").unwrap().id;
+        states.get(&cfg.exit)?.output.as_ref()?.variables()?.get(&x).cloned()
+    }
+
+    #[test]
+    fn late_predecessor_requeues_the_real_hir_join() {
+        let one = FieldContext::for_curve(Curve::Bn254).canonical(1.into());
+        assert_eq!(exit_value("1"), Some(one));
+        assert_eq!(exit_value("2"), None);
+    }
 
     fn states() -> Vec<ForwardState> {
         let mut values = vec![ForwardState::Unreachable];

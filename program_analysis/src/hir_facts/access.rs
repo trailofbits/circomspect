@@ -87,3 +87,62 @@ pub fn key_for_path(
     }
     AccessKey { root: path.root, instance, steps }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use parser::hir::{lower_project, ExprKind};
+    use parser::new_frontend::{load_sources, Version, VersionPolicy};
+    use program_structure::utils::constants::Curve;
+    use std::fs;
+
+    fn component_paths(source: &str) -> (HirProject, Vec<AccessPath>) {
+        let directory = std::env::temp_dir()
+            .join(format!("circomspect-phase4-instances-{}", std::process::id()));
+        fs::create_dir_all(&directory).unwrap();
+        let file = directory.join("case.circom");
+        fs::write(&file, source).unwrap();
+        let loaded = load_sources(&[file], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
+        let project = lower_project(&loaded);
+        assert!(project.syntax_diagnostics.is_empty());
+        assert!(project.diagnostics.is_empty(), "{:?}", project.diagnostics);
+        let paths = project
+            .hir
+            .expressions()
+            .iter()
+            .filter_map(|expr| match &expr.kind {
+                ExprKind::Access(path) if path.component_output => Some(path.clone()),
+                _ => None,
+            })
+            .collect();
+        (project.hir, paths)
+    }
+
+    #[test]
+    fn distinct_instances_and_array_elements_never_alias() {
+        let field = FieldContext::for_curve(Curve::Bn254);
+        let (hir, paths) = component_paths(
+            "template Child(){signal output out; out <== 1;} \
+             template Check(){component c0=Child(); component c1=Child(); \
+             signal output z; z <-- c0.out+c1.out;}",
+        );
+        assert_eq!(paths.len(), 2);
+        let first = key_for_path(&hir, &field, &paths[0], &BTreeMap::new());
+        let second = key_for_path(&hir, &field, &paths[1], &BTreeMap::new());
+        assert_ne!(first.instance, second.instance);
+        assert!(!first.may_alias(&second));
+
+        let (hir, paths) = component_paths(
+            "template Child(){signal output out; out <== 1;} \
+             template Check(){component c[2]; c[0]=Child(); c[1]=Child(); \
+             signal input i; signal output z; z <-- c[0].out+c[1].out+c[i].out;}",
+        );
+        assert_eq!(paths.len(), 3);
+        let keys: Vec<_> =
+            paths.iter().map(|path| key_for_path(&hir, &field, path, &BTreeMap::new())).collect();
+        assert!(!keys[0].may_alias(&keys[1]));
+        assert!(keys[2].may_alias(&keys[0]));
+        assert!(keys[2].may_alias(&keys[1]));
+        assert!(!keys[2].exact_alias(&keys[0]));
+    }
+}

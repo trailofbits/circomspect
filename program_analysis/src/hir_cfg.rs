@@ -4,8 +4,8 @@ use std::collections::BTreeMap;
 
 use abstract_interpretation::graph::{EdgeId, EdgeRef, FlowGraph, GraphError, IndexedGraph, NodeId};
 use parser::hir::{
-    AccessPath, AccessStep, BlockId, DefinitionRef, Effect, ExprId, ExprKind, HirProject,
-    IncompleteReason, SymbolId,
+    AccessPath, AccessStep, BlockId, ControlGuard, DefinitionRef, Effect, ExprId, ExprKind,
+    HirProject, IncompleteReason, SymbolId,
 };
 use parser::new_frontend::{BinaryOperator, PostfixOperator, Span};
 
@@ -23,7 +23,7 @@ pub enum CfgNodeKind {
     Exit,
     Evaluate(ExprId),
     LoopHeader,
-    Branch(ExprId),
+    Branch { condition: ExprId, guard: ControlGuard },
     Witness { target: AccessPath, value: ExprId },
     Constraint { target: Option<AccessPath>, left: ExprId, right: Option<ExprId> },
     Assignment { target: AccessPath, value: ExprId },
@@ -56,6 +56,7 @@ pub enum EdgeKind {
 pub struct CfgEdge {
     pub kind: EdgeKind,
     pub condition: Option<ExprId>,
+    pub guard: Option<ControlGuard>,
 }
 
 pub struct DefinitionCfg {
@@ -97,24 +98,35 @@ pub enum BuildError {
     MissingBlock(BlockId),
     MissingExpression(ExprId),
     MissingSymbol(SymbolId),
+    UnexpectedEffect,
+    InvalidLoopPlan,
     InvalidGraph(GraphError<NodeId, EdgeId>),
 }
 
 type Tails = Vec<(NodeId, EdgeKind)>;
 
+#[derive(Clone, Copy)]
+struct LoopPlan {
+    condition: ExprId,
+    guard: ControlGuard,
+    body: BlockId,
+    step: Option<BlockId>,
+    origin: Origin,
+}
+
 struct Builder<'a> {
     hir: &'a HirProject,
     nodes: Vec<CfgNode>,
     edges: Vec<(NodeId, NodeId, CfgEdge)>,
-    conditions: BTreeMap<NodeId, ExprId>,
+    conditions: BTreeMap<NodeId, (ExprId, ControlGuard)>,
     exit: NodeId,
 }
 
 impl Builder<'_> {
     fn node(&mut self, kind: CfgNodeKind, origin: Option<Origin>) -> NodeId {
         let id = NodeId::new(self.nodes.len());
-        if let CfgNodeKind::Branch(condition) = &kind {
-            self.conditions.insert(id, *condition);
+        if let CfgNodeKind::Branch { condition, guard } = &kind {
+            self.conditions.insert(id, (*condition, *guard));
         }
         self.nodes.push(CfgNode { id, kind, origin });
         id
@@ -122,8 +134,11 @@ impl Builder<'_> {
 
     fn link(&mut self, tails: Tails, node: NodeId) {
         for (source, kind) in tails {
-            let condition = self.conditions.get(&source).copied();
-            self.edges.push((source, node, CfgEdge { kind, condition }));
+            let (condition, guard) = self
+                .conditions
+                .get(&source)
+                .map_or((None, None), |(condition, guard)| (Some(*condition), Some(*guard)));
+            self.edges.push((source, node, CfgEdge { kind, condition, guard }));
         }
     }
 
@@ -181,7 +196,15 @@ impl Builder<'_> {
             ExprKind::Ternary { condition, yes, no } => {
                 tails = self.evaluate(tails, *condition, origin)?;
                 let branch_origin = self.expression_origin(*condition, origin)?;
-                let branch = self.node(CfgNodeKind::Branch(*condition), Some(branch_origin));
+                let guard = if expr.knownness == parser::hir::Knownness::Constant {
+                    ControlGuard::CheckedCompileTime
+                } else {
+                    ControlGuard::DeferredScalar
+                };
+                let branch = self.node(
+                    CfgNodeKind::Branch { condition: *condition, guard },
+                    Some(branch_origin),
+                );
                 self.link(tails, branch);
                 let yes_tail = self.evaluate(vec![(branch, EdgeKind::True)], *yes, origin)?;
                 let no_tail = self.evaluate(vec![(branch, EdgeKind::False)], *no, origin)?;
@@ -284,35 +307,12 @@ impl Builder<'_> {
                     origin,
                 ))
             }
-            Effect::If { condition, then_block, else_block, .. } => {
-                let tails = self.evaluate(tails, *condition, origin)?;
-                let branch_origin = self.expression_origin(*condition, origin)?;
-                let branch = self.node(CfgNodeKind::Branch(*condition), Some(branch_origin));
-                self.link(tails, branch);
-                let then_tails = self.block(vec![(branch, EdgeKind::True)], *then_block)?;
-                let else_tails = if let Some(other) = else_block {
-                    self.block(vec![(branch, EdgeKind::False)], *other)?
-                } else {
-                    vec![(branch, EdgeKind::False)]
-                };
-                Ok([then_tails, else_tails].concat())
-            }
-            Effect::While { condition, body, .. } => {
-                self.loop_effect(tails, *condition, *body, None, origin)
-            }
-            Effect::For { initializer, condition, step, body, guard, .. } => {
-                let iterations = if *guard == parser::hir::ControlGuard::CheckedCompileTime {
-                    self.static_for_iterations(*initializer, *condition, *step, *body)
-                } else {
-                    None
-                };
-                let tails = self.block(tails, *initializer)?;
-                if let Some(iterations) = iterations {
-                    self.unroll_for(tails, *condition, *body, *step, iterations, origin)
-                } else {
-                    self.loop_effect(tails, *condition, *body, Some(*step), origin)
-                }
-            }
+            Effect::If { .. } => self.if_effect(tails, effect, origin),
+            Effect::While { condition, guard, body, .. } => self.loop_effect(
+                tails,
+                LoopPlan { condition: *condition, guard: *guard, body: *body, step: None, origin },
+            ),
+            Effect::For { .. } => self.for_effect(tails, effect, origin),
             Effect::Return { value, .. } => {
                 let tails = self.evaluate(tails, *value, origin)?;
                 let tails = self.append(tails, CfgNodeKind::Return(*value), origin);
@@ -343,19 +343,67 @@ impl Builder<'_> {
         }
     }
 
-    fn loop_effect(
+    fn if_effect(
         &mut self,
         tails: Tails,
-        condition: ExprId,
-        body: BlockId,
-        step: Option<BlockId>,
+        effect: &Effect,
         origin: Origin,
     ) -> Result<Tails, BuildError> {
+        let Effect::If { condition, guard, then_block, else_block, .. } = effect else {
+            return Err(BuildError::UnexpectedEffect);
+        };
+        let tails = self.evaluate(tails, *condition, origin)?;
+        let branch_origin = self.expression_origin(*condition, origin)?;
+        let branch = self.node(
+            CfgNodeKind::Branch { condition: *condition, guard: *guard },
+            Some(branch_origin),
+        );
+        self.link(tails, branch);
+        let then_tails = self.block(vec![(branch, EdgeKind::True)], *then_block)?;
+        let else_tails = if let Some(other) = else_block {
+            self.block(vec![(branch, EdgeKind::False)], *other)?
+        } else {
+            vec![(branch, EdgeKind::False)]
+        };
+        Ok([then_tails, else_tails].concat())
+    }
+
+    fn for_effect(
+        &mut self,
+        tails: Tails,
+        effect: &Effect,
+        origin: Origin,
+    ) -> Result<Tails, BuildError> {
+        let Effect::For { initializer, condition, step, body, guard, .. } = effect else {
+            return Err(BuildError::UnexpectedEffect);
+        };
+        let iterations = if *guard == ControlGuard::CheckedCompileTime {
+            self.static_for_iterations(*initializer, *condition, *step, *body)
+        } else {
+            None
+        };
+        let tails = self.block(tails, *initializer)?;
+        let plan = LoopPlan {
+            condition: *condition,
+            guard: *guard,
+            body: *body,
+            step: Some(*step),
+            origin,
+        };
+        if let Some(iterations) = iterations {
+            self.unroll_for(tails, plan, iterations)
+        } else {
+            self.loop_effect(tails, plan)
+        }
+    }
+
+    fn loop_effect(&mut self, tails: Tails, plan: LoopPlan) -> Result<Tails, BuildError> {
+        let LoopPlan { condition, guard, body, step, origin } = plan;
         let header = self.node(CfgNodeKind::LoopHeader, Some(origin));
         self.link(tails, header);
         let evaluated = self.evaluate(vec![(header, EdgeKind::Normal)], condition, origin)?;
         let branch_origin = self.expression_origin(condition, origin)?;
-        let branch = self.node(CfgNodeKind::Branch(condition), Some(branch_origin));
+        let branch = self.node(CfgNodeKind::Branch { condition, guard }, Some(branch_origin));
         self.link(evaluated, branch);
         let mut body_tails = self.block(vec![(branch, EdgeKind::True)], body)?;
         if let Some(step) = step {
@@ -445,16 +493,16 @@ impl Builder<'_> {
     fn unroll_for(
         &mut self,
         mut tails: Tails,
-        condition: ExprId,
-        body: BlockId,
-        step: BlockId,
+        plan: LoopPlan,
         iterations: usize,
-        origin: Origin,
     ) -> Result<Tails, BuildError> {
+        let LoopPlan { condition, guard, body, step: Some(step), origin } = plan else {
+            return Err(BuildError::InvalidLoopPlan);
+        };
         let branch_origin = self.expression_origin(condition, origin)?;
         for _ in 0..iterations {
             let evaluated = self.evaluate(tails, condition, origin)?;
-            let branch = self.node(CfgNodeKind::Branch(condition), Some(branch_origin));
+            let branch = self.node(CfgNodeKind::Branch { condition, guard }, Some(branch_origin));
             self.link(evaluated, branch);
             let body_tails = self.block(vec![(branch, EdgeKind::True)], body)?;
             tails = self.block(body_tails, step)?;
@@ -463,7 +511,7 @@ impl Builder<'_> {
             }
         }
         let evaluated = self.evaluate(tails, condition, origin)?;
-        let branch = self.node(CfgNodeKind::Branch(condition), Some(branch_origin));
+        let branch = self.node(CfgNodeKind::Branch { condition, guard }, Some(branch_origin));
         self.link(evaluated, branch);
         Ok(vec![(branch, EdgeKind::False)])
     }

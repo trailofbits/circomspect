@@ -1,6 +1,6 @@
 use abstract_interpretation::graph::FlowGraph;
 use circomspect_program_analysis::hir_cfg::{build_cfg, BuildError, CfgNodeKind, EdgeKind};
-use parser::hir::{lower_project, DefinitionRef};
+use parser::hir::{lower_project, ControlGuard, DefinitionRef};
 use parser::new_frontend::{load_sources, Version, VersionPolicy};
 use std::fs;
 
@@ -150,6 +150,58 @@ fn conditional_has_distinct_true_false_paths() {
     assert_eq!(cfg.exits().len(), 1);
     assert!(cfg.edges().iter().any(|id| cfg.edge(*id).unwrap().payload.kind == EdgeKind::True));
     assert!(cfg.edges().iter().any(|id| cfg.edge(*id).unwrap().payload.kind == EdgeKind::False));
+    let branches: Vec<_> = cfg
+        .nodes()
+        .iter()
+        .filter_map(|id| {
+            let node = cfg.node(*id)?;
+            let CfgNodeKind::Branch { condition, guard } = &node.kind else { return None };
+            Some((*id, *condition, *guard, node.origin?))
+        })
+        .collect();
+    assert_eq!(branches.len(), 1);
+    assert_eq!(branches[0].2, ControlGuard::CheckedCompileTime);
+    assert_eq!(branches[0].3.expression, Some(branches[0].1));
+    let outgoing: Vec<_> = cfg
+        .edges()
+        .iter()
+        .filter_map(|id| cfg.edge(*id))
+        .filter(|edge| edge.source == branches[0].0)
+        .collect();
+    assert_eq!(outgoing.len(), 2);
+    assert!(outgoing.iter().all(|edge| {
+        edge.payload.condition == Some(branches[0].1)
+            && edge.payload.guard == Some(ControlGuard::CheckedCompileTime)
+    }));
+}
+
+#[test]
+fn deferred_parameter_guard_is_preserved_on_branch_and_edges() {
+    let (project, definition) =
+        fixture("template Check(n){signal output y; if(n){y <== 1;}else{y <== 2;}}");
+    let cfg = build_cfg(&project.hir, definition).unwrap();
+    let branch = cfg
+        .nodes()
+        .iter()
+        .find_map(|id| {
+            let CfgNodeKind::Branch { guard: ControlGuard::DeferredScalar, .. } =
+                &cfg.node(*id)?.kind
+            else {
+                return None;
+            };
+            Some(*id)
+        })
+        .unwrap();
+    let outgoing: Vec<_> = cfg
+        .edges()
+        .iter()
+        .filter_map(|id| cfg.edge(*id))
+        .filter(|edge| edge.source == branch)
+        .collect();
+    assert_eq!(outgoing.len(), 2);
+    assert!(outgoing
+        .iter()
+        .all(|edge| { edge.payload.guard == Some(ControlGuard::DeferredScalar) }));
 }
 
 #[test]

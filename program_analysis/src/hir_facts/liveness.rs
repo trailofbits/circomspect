@@ -135,7 +135,7 @@ impl Transfer<LivenessAnalysis<'_>, LiveState, String> for CfgNode {
                     complete &= collect(analysis, *right, live, &empty);
                 }
             }
-            CfgNodeKind::Branch(expression)
+            CfgNodeKind::Branch { condition: expression, .. }
             | CfgNodeKind::Return(expression)
             | CfgNodeKind::Assert { condition: expression } => {
                 complete &= collect(analysis, *expression, live, &empty);
