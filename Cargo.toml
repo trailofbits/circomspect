@@ -2,6 +2,7 @@
 resolver = "1"
 
 members = [
+  "abstract_interpretation",
   "cli",
   "parser",
   "program_analysis",

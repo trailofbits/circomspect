@@ -161,6 +161,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "circomspect-abstract-interpretation"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+]
+
+[[package]]
 name = "circomspect-circom-algebra"
 version = "2.0.2"
 dependencies = [

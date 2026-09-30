@@ -1,0 +1,320 @@
+//! Directional fixed-point solver with explicit incomplete results.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use crate::graph::{FlowGraph, GraphError};
+use crate::lattice::Lattice;
+
+/// Rule-specific semantics and the fact seeded at every entry or exit.
+pub trait DataflowAnalysis<G: FlowGraph> {
+    type State: Lattice;
+    type Reason: Clone + Ord;
+
+    fn boundary(&self, node: G::NodeId) -> Self::State;
+}
+
+/// Every node and edge payload supplies its own total transfer.
+pub trait Transfer<A, S, R> {
+    fn apply(&self, analysis: &A, input: &S) -> TransferOutcome<S, R>;
+}
+
+/// Unknown semantics retain a provisional fact and explain its origin.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TransferOutcome<S, R> {
+    Known(S),
+    Opaque { provisional: S, reason: R },
+}
+
+/// Both fields use natural CFG orientation, even in a backward analysis.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NodeFacts<S> {
+    pub input: Option<S>,
+    pub output: Option<S>,
+}
+
+impl<S> Default for NodeFacts<S> {
+    fn default() -> Self {
+        Self { input: None, output: None }
+    }
+}
+
+pub type CompleteFacts<N, S> = BTreeMap<N, NodeFacts<S>>;
+
+/// A dependency that prevents certification of the whole result.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum Blocker<N, E, R> {
+    PendingNode(N),
+    OpaqueNode { node: N, reason: R },
+    OpaqueEdge { edge: E, reason: R },
+}
+
+/// Only `Complete` can be consumed as certified facts by a warning rule.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SolveResult<N, E, S, R> {
+    Complete(CompleteFacts<N, S>),
+    Incomplete { provisional_facts: CompleteFacts<N, S>, blockers: BTreeSet<Blocker<N, E, R>> },
+}
+
+pub type SolveOutcome<G, A> = Result<
+    SolveResult<
+        <G as FlowGraph>::NodeId,
+        <G as FlowGraph>::EdgeId,
+        <A as DataflowAnalysis<G>>::State,
+        <A as DataflowAnalysis<G>>::Reason,
+    >,
+    GraphError<<G as FlowGraph>::NodeId, <G as FlowGraph>::EdgeId>,
+>;
+
+pub struct Forward;
+pub struct Backward;
+
+/// Selects boundary and traversal orientation without duplicating the solver.
+pub trait Direction {
+    fn boundaries<G: FlowGraph>(graph: &G) -> &[G::NodeId];
+    fn from<N, E, S>(facts: &NodeFacts<S>) -> &Option<S>;
+    fn from_mut<N, E, S>(facts: &mut NodeFacts<S>) -> &mut Option<S>;
+    fn to_mut<N, E, S>(facts: &mut NodeFacts<S>) -> &mut Option<S>;
+    fn next_edges<N: Copy + Ord, E: Copy + Ord>(graph: &ValidatedGraph<N, E>, node: N) -> &[E];
+    fn neighbor<N: Copy, E>(edge: (N, N)) -> N;
+}
+
+impl Direction for Forward {
+    fn boundaries<G: FlowGraph>(graph: &G) -> &[G::NodeId] {
+        graph.entries()
+    }
+    fn from<N, E, S>(facts: &NodeFacts<S>) -> &Option<S> {
+        &facts.input
+    }
+    fn from_mut<N, E, S>(facts: &mut NodeFacts<S>) -> &mut Option<S> {
+        &mut facts.input
+    }
+    fn to_mut<N, E, S>(facts: &mut NodeFacts<S>) -> &mut Option<S> {
+        &mut facts.output
+    }
+    fn next_edges<N: Copy + Ord, E: Copy + Ord>(graph: &ValidatedGraph<N, E>, node: N) -> &[E] {
+        graph.outgoing.get(&node).map_or(&[], Vec::as_slice)
+    }
+    fn neighbor<N: Copy, E>(edge: (N, N)) -> N {
+        edge.1
+    }
+}
+
+impl Direction for Backward {
+    fn boundaries<G: FlowGraph>(graph: &G) -> &[G::NodeId] {
+        graph.exits()
+    }
+    fn from<N, E, S>(facts: &NodeFacts<S>) -> &Option<S> {
+        &facts.output
+    }
+    fn from_mut<N, E, S>(facts: &mut NodeFacts<S>) -> &mut Option<S> {
+        &mut facts.output
+    }
+    fn to_mut<N, E, S>(facts: &mut NodeFacts<S>) -> &mut Option<S> {
+        &mut facts.input
+    }
+    fn next_edges<N: Copy + Ord, E: Copy + Ord>(graph: &ValidatedGraph<N, E>, node: N) -> &[E] {
+        graph.incoming.get(&node).map_or(&[], Vec::as_slice)
+    }
+    fn neighbor<N: Copy, E>(edge: (N, N)) -> N {
+        edge.0
+    }
+}
+
+pub struct ValidatedGraph<N: Copy + Ord, E: Copy + Ord> {
+    endpoints: BTreeMap<E, (N, N)>,
+    outgoing: BTreeMap<N, Vec<E>>,
+    incoming: BTreeMap<N, Vec<E>>,
+}
+
+impl<N: Copy + Ord, E: Copy + Ord> ValidatedGraph<N, E> {
+    fn new<G: FlowGraph<NodeId = N, EdgeId = E>>(graph: &G) -> Result<Self, GraphError<N, E>> {
+        let mut nodes = BTreeSet::new();
+        for &node in graph.nodes() {
+            if !nodes.insert(node) {
+                return Err(GraphError::DuplicateNode(node));
+            }
+            if graph.node(node).is_none() {
+                return Err(GraphError::MissingNode(node));
+            }
+        }
+        for &node in graph.entries().iter().chain(graph.exits()) {
+            if !nodes.contains(&node) {
+                return Err(GraphError::MissingBoundary(node));
+            }
+        }
+        let mut result = Self {
+            endpoints: BTreeMap::new(),
+            outgoing: BTreeMap::new(),
+            incoming: BTreeMap::new(),
+        };
+        for &edge in graph.edges() {
+            let Some(item) = graph.edge(edge) else {
+                return Err(GraphError::MissingEdge(edge));
+            };
+            if result.endpoints.insert(edge, (item.source, item.target)).is_some() {
+                return Err(GraphError::DuplicateEdge(edge));
+            }
+            for node in [item.source, item.target] {
+                if !nodes.contains(&node) {
+                    return Err(GraphError::MissingEndpoint { edge, node });
+                }
+            }
+            result.outgoing.entry(item.source).or_default().push(edge);
+            result.incoming.entry(item.target).or_default().push(edge);
+        }
+        for edges in result.outgoing.values_mut().chain(result.incoming.values_mut()) {
+            edges.sort_unstable();
+        }
+        Ok(result)
+    }
+}
+
+struct Working<N: Copy + Ord, E: Copy + Ord, S: Lattice, R: Clone + Ord> {
+    facts: CompleteFacts<N, S>,
+    edge_facts: BTreeMap<E, Option<S>>,
+    queue: BTreeSet<N>,
+    blockers: BTreeSet<Blocker<N, E, R>>,
+    updates: usize,
+    budget: Option<usize>,
+}
+
+impl<N: Copy + Ord, E: Copy + Ord, S: Lattice, R: Clone + Ord> Working<N, E, S, R> {
+    fn incomplete(mut self, pending: N) -> SolveResult<N, E, S, R> {
+        self.blockers.insert(Blocker::PendingNode(pending));
+        for node in self.queue {
+            self.blockers.insert(Blocker::PendingNode(node));
+        }
+        SolveResult::Incomplete { provisional_facts: self.facts, blockers: self.blockers }
+    }
+
+    fn finish(self) -> SolveResult<N, E, S, R> {
+        if self.blockers.is_empty() {
+            SolveResult::Complete(self.facts)
+        } else {
+            SolveResult::Incomplete { provisional_facts: self.facts, blockers: self.blockers }
+        }
+    }
+}
+
+fn join_limited<S: Lattice>(
+    target: &mut Option<S>,
+    value: &S,
+    updates: &mut usize,
+    budget: Option<usize>,
+) -> Result<bool, ()> {
+    let changes = match target {
+        Some(current) => !value.leq(current),
+        None => true,
+    };
+    if !changes {
+        return Ok(false);
+    }
+    if budget.is_some_and(|limit| *updates >= limit) {
+        return Err(());
+    }
+    match target {
+        Some(current) => {
+            current.join_assign(value);
+        }
+        None => {
+            *target = Some(value.clone());
+        }
+    }
+    *updates += 1;
+    Ok(true)
+}
+
+/// Compute the least fixed point, or return only provisional facts with blockers.
+pub fn solve<G, A, D>(graph: &G, analysis: &A, budget: Option<usize>) -> SolveOutcome<G, A>
+where
+    G: FlowGraph,
+    A: DataflowAnalysis<G>,
+    D: Direction,
+    G::Node: Transfer<A, A::State, A::Reason>,
+    G::Edge: Transfer<A, A::State, A::Reason>,
+{
+    let validated = ValidatedGraph::new(graph)?;
+    let mut work = Working {
+        facts: graph.nodes().iter().copied().map(|node| (node, NodeFacts::default())).collect(),
+        edge_facts: BTreeMap::new(),
+        queue: BTreeSet::new(),
+        blockers: BTreeSet::new(),
+        updates: 0,
+        budget,
+    };
+    work.queue.extend(D::boundaries(graph).iter().copied());
+    for &node in D::boundaries(graph) {
+        let seed = analysis.boundary(node);
+        let Some(facts) = work.facts.get_mut(&node) else {
+            return Err(GraphError::MissingBoundary(node));
+        };
+        let slot = D::from_mut::<G::NodeId, G::EdgeId, _>(facts);
+        match join_limited(slot, &seed, &mut work.updates, work.budget) {
+            Ok(true) => {}
+            Ok(false) => {}
+            Err(()) => return Ok(work.incomplete(node)),
+        }
+    }
+    while let Some(&node) = work.queue.first() {
+        work.queue.remove(&node);
+        let Some(facts) = work.facts.get(&node) else {
+            return Err(GraphError::MissingNode(node));
+        };
+        let Some(input) = D::from::<G::NodeId, G::EdgeId, _>(facts).as_ref() else {
+            continue;
+        };
+        let Some(payload) = graph.node(node) else {
+            return Err(GraphError::MissingNode(node));
+        };
+        let value = match payload.apply(analysis, input) {
+            TransferOutcome::Known(value) => value,
+            TransferOutcome::Opaque { provisional, reason } => {
+                work.blockers.insert(Blocker::OpaqueNode { node, reason });
+                provisional
+            }
+        };
+        let Some(facts) = work.facts.get_mut(&node) else {
+            return Err(GraphError::MissingNode(node));
+        };
+        let slot = D::to_mut::<G::NodeId, G::EdgeId, _>(facts);
+        match join_limited(slot, &value, &mut work.updates, work.budget) {
+            Ok(true) => {}
+            Ok(false) => continue,
+            Err(()) => return Ok(work.incomplete(node)),
+        }
+        for &edge in D::next_edges(&validated, node) {
+            let Some(item) = graph.edge(edge) else {
+                return Err(GraphError::MissingEdge(edge));
+            };
+            let value = match item.payload.apply(analysis, &value) {
+                TransferOutcome::Known(value) => value,
+                TransferOutcome::Opaque { provisional, reason } => {
+                    work.blockers.insert(Blocker::OpaqueEdge { edge, reason });
+                    provisional
+                }
+            };
+            let slot = work.edge_facts.entry(edge).or_default();
+            match join_limited(slot, &value, &mut work.updates, work.budget) {
+                Ok(true) => {}
+                Ok(false) => continue,
+                Err(()) => return Ok(work.incomplete(node)),
+            }
+            let Some(&endpoints) = validated.endpoints.get(&edge) else {
+                return Err(GraphError::MissingEdge(edge));
+            };
+            let target = D::neighbor::<G::NodeId, G::EdgeId>(endpoints);
+            let Some(facts) = work.facts.get_mut(&target) else {
+                return Err(GraphError::MissingNode(target));
+            };
+            let slot = D::from_mut::<G::NodeId, G::EdgeId, _>(facts);
+            match join_limited(slot, &value, &mut work.updates, work.budget) {
+                Ok(true) => {
+                    work.queue.insert(target);
+                }
+                Ok(false) => {}
+                Err(()) => return Ok(work.incomplete(target)),
+            }
+        }
+    }
+    Ok(work.finish())
+}

@@ -1,0 +1,11 @@
+[package]
+name = "circomspect-abstract-interpretation"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.74"
+license = "LGPL-3.0-only"
+description = "Generic dataflow and abstract interpretation for Circomspect"
+repository = "https://github.com/trailofbits/circomspect"
+
+[dev-dependencies]
+proptest = "=1.8.0"
