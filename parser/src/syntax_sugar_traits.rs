@@ -109,26 +109,55 @@ impl ContainsExpression for Expression {
 
 /// Visits every statement in a body, including nested blocks and branches.
 pub(crate) trait ContainsStatement {
-    fn visit_statements(&self, visitor: &mut impl FnMut(&Statement));
+    fn visit_statements(&self, visitor: &mut impl StatementVisitor);
+}
+
+pub(crate) trait StatementVisitor {
+    fn visit(&mut self, statement: &Statement);
+
+    fn enter_scope(&mut self) {}
+
+    fn leave_scope(&mut self) {}
+}
+
+impl<F: FnMut(&Statement)> StatementVisitor for F {
+    fn visit(&mut self, statement: &Statement) {
+        self(statement);
+    }
 }
 
 impl ContainsStatement for Statement {
-    fn visit_statements(&self, visitor: &mut impl FnMut(&Statement)) {
+    fn visit_statements(&self, visitor: &mut impl StatementVisitor) {
         use Statement::*;
 
-        visitor(self);
+        visitor.visit(self);
         match self {
             IfThenElse { if_case, else_case, .. } => {
+                visitor.enter_scope();
                 if_case.visit_statements(visitor);
+                visitor.leave_scope();
                 if let Some(else_case) = else_case {
+                    visitor.enter_scope();
                     else_case.visit_statements(visitor);
+                    visitor.leave_scope();
                 }
             }
-            While { stmt, .. } => stmt.visit_statements(visitor),
-            InitializationBlock { initializations: stmts, .. } | Block { stmts, .. } => {
+            While { stmt, .. } => {
+                visitor.enter_scope();
+                stmt.visit_statements(visitor);
+                visitor.leave_scope();
+            }
+            InitializationBlock { initializations: stmts, .. } => {
                 for statement in stmts {
                     statement.visit_statements(visitor);
                 }
+            }
+            Block { stmts, .. } => {
+                visitor.enter_scope();
+                for statement in stmts {
+                    statement.visit_statements(visitor);
+                }
+                visitor.leave_scope();
             }
             Return { .. }
             | Declaration { .. }
@@ -147,7 +176,7 @@ impl ContainsExpression for Statement {
         use LogArgument::*;
         use Statement::*;
 
-        self.visit_statements(&mut |statement| match statement {
+        self.visit_statements(&mut |statement: &Statement| match statement {
             IfThenElse { cond, .. } | While { cond, .. } => cond.visit_expressions(visitor),
             Return { value, .. } => value.visit_expressions(visitor),
             InitializationBlock { .. } | Block { .. } => {}
