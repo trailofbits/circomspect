@@ -5,8 +5,14 @@ use program_structure::ast::*;
 use program_structure::ast_shortcuts::{self, Symbol, TupleInit};
 use std::str::FromStr;
 use lalrpop_util::ErrorRecovery;
+use lalrpop_util::ParseError;
+use super::parser_logic::ParserUserError;
 
-grammar<'err>(errors: &'err mut Vec<ErrorRecovery<usize, Token<'input>, &'static str>>);
+grammar<'err>(errors: &'err mut Vec<ErrorRecovery<usize, Token<'input>, ParserUserError>>);
+
+extern {
+    type Error = ParserUserError;
+}
 
 match {
     _
@@ -686,7 +692,9 @@ DECNUMBER: BigInt = {
 };
 
 HEXNUMBER : BigInt = {
-    r"0x[0-9A-Fa-f]*" => BigInt::parse_bytes(&(<>.as_bytes()[2..]),16).expect("failed to parse base16")
+    <literal:r"0x[0-9A-Fa-f]+"> => {
+        BigInt::parse_bytes(&literal.as_bytes()[2..], 16).expect("hex literal contains digits")
+    }
 };
 
 IDENTIFIER : String = {
@@ -698,7 +706,9 @@ STRING : String = {
 };
 
 SMALL_DECNUMBER: usize = {
-    r"[0-9]+" => usize::from_str(<>).expect("failed to parse number")
+    <s:@L> <digits:r"[0-9]+"> <e:@R> =>? usize::from_str(digits).map_err(|_| {
+        ParseError::User { error: ParserUserError::VersionOverflow(s..e) }
+    })
 };
 
 

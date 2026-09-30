@@ -5,6 +5,12 @@ use program_structure::ast::AST;
 use program_structure::report::Report;
 use program_structure::report::ReportCollection;
 use program_structure::file_definition::FileID;
+use std::ops::Range;
+
+#[derive(Clone, Debug)]
+pub enum ParserUserError {
+    VersionOverflow(Range<usize>),
+}
 
 pub fn preprocess(expr: &str, file_id: FileID) -> Result<String, Box<Report>> {
     let mut pp = String::new();
@@ -91,7 +97,7 @@ pub fn parse_file(src: &str, file_id: FileID) -> Result<(AST, ReportCollection),
 }
 
 fn parse_error_report(
-    parse_error: lalrpop_util::ParseError<usize, lang::Token<'_>, &'static str>,
+    parse_error: lalrpop_util::ParseError<usize, lang::Token<'_>, ParserUserError>,
     file_id: FileID,
 ) -> Report {
     use lalrpop_util::ParseError::*;
@@ -120,7 +126,11 @@ fn parse_error_report(
             message: format!("Extra token `{}` found.", token.2),
             location: token.0..token.2,
         },
-        User { error } => ParsingError { file_id, message: error.to_string(), location: 0..0 },
+        User { error: ParserUserError::VersionOverflow(location) } => ParsingError {
+            file_id,
+            message: "A version component is too large.".to_string(),
+            location,
+        },
     };
     error.into_report()
 }

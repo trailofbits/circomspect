@@ -67,6 +67,32 @@ fn invalid_token_does_not_hide_valid_definition_in_the_same_library() {
 }
 
 #[test]
+fn empty_hex_literal_reports_error_without_crashing() {
+    let path = fixture("empty_hex_library.circom");
+    let output = run(&[path.to_str().expect("fixture path is not UTF-8")]);
+    let stdout = String::from_utf8(output.stdout).expect("CLI output is not UTF-8");
+    let stderr = String::from_utf8(output.stderr).expect("CLI stderr is not UTF-8");
+
+    assert!(!output.status.success(), "{stdout}");
+    assert!(stdout.contains("empty_hex_library.circom:4:"), "{stdout}");
+    assert!(stdout.contains("analyzing template 'AfterInvalidHex'"), "{stdout}");
+    assert!(!stderr.contains("panicked"), "{stderr}");
+}
+
+#[test]
+fn oversized_version_reports_error_without_crashing() {
+    let path = fixture("oversized_version.circom");
+    let output = run(&[path.to_str().expect("fixture path is not UTF-8")]);
+    let stdout = String::from_utf8(output.stdout).expect("CLI output is not UTF-8");
+    let stderr = String::from_utf8(output.stderr).expect("CLI stderr is not UTF-8");
+
+    assert!(!output.status.success(), "{stdout}");
+    assert!(stdout.contains("error:"), "{stdout}");
+    assert!(stdout.contains("oversized_version.circom:1:"), "{stdout}");
+    assert!(!stderr.contains("panicked"), "{stderr}");
+}
+
+#[test]
 fn syntax_error_keeps_includes_available_to_later_definitions() {
     let path = fixture("recoverable_include.circom");
     let output = run(&[path.to_str().expect("fixture path is not UTF-8"), "--level", "error"]);
