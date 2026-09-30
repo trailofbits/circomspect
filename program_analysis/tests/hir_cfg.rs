@@ -1,5 +1,5 @@
 use abstract_interpretation::graph::FlowGraph;
-use circomspect_program_analysis::hir_cfg::{build_cfg, CfgNodeKind, EdgeKind};
+use circomspect_program_analysis::hir_cfg::{build_cfg, BuildError, CfgNodeKind, EdgeKind};
 use parser::hir::{lower_project, DefinitionRef};
 use parser::new_frontend::{load_sources, Version, VersionPolicy};
 use std::fs;
@@ -60,6 +60,42 @@ fn loop_back_edge_and_return_preserve_exit() {
         .find(|edge| edge.payload.kind == EdgeKind::Return)
         .unwrap();
     assert_eq!(return_edge.target, cfg.exit);
+}
+
+#[test]
+fn symbolic_target_index_is_evaluated_before_witness_and_constraint() {
+    let (project, definition) =
+        fixture("template Check() { signal input i; signal output a[2]; a[i] <== 1; }");
+    let cfg = build_cfg(&project.hir, definition).unwrap();
+    let positions: Vec<_> = cfg
+        .nodes()
+        .iter()
+        .filter_map(|id| {
+            let node = cfg.node(*id).unwrap();
+            match &node.kind {
+                CfgNodeKind::Evaluate(expr) => Some(("eval", Some(*expr), node.origin.unwrap())),
+                CfgNodeKind::Witness { .. } => Some(("witness", None, node.origin.unwrap())),
+                CfgNodeKind::Constraint { .. } => Some(("constraint", None, node.origin.unwrap())),
+                _ => None,
+            }
+        })
+        .collect();
+    assert_eq!(
+        positions.iter().map(|entry| entry.0).collect::<Vec<_>>(),
+        ["eval", "eval", "witness", "constraint"]
+    );
+    assert_eq!(positions[0].2.effect_index, positions[2].2.effect_index);
+    assert_eq!(positions[2].2.effect_index, positions[3].2.effect_index);
+    assert_eq!(positions[2].2.expression, positions[3].2.expression);
+    assert!(positions[0].2.expression.is_some());
+}
+
+#[test]
+fn foreign_definition_returns_a_typed_error() {
+    let (first, definition) = fixture("template Check() {}");
+    let (other, _) = fixture("template Check() { signal x; }");
+    assert!(matches!(build_cfg(&other.hir, definition), Err(BuildError::ForeignDefinition)));
+    assert!(build_cfg(&first.hir, definition).is_ok());
 }
 
 #[test]

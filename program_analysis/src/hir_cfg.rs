@@ -1,6 +1,8 @@
 //! Immutable control flow graphs over the checked HIR.
 
-use abstract_interpretation::graph::{EdgeId, EdgeRef, FlowGraph, IndexedGraph, NodeId};
+use std::collections::BTreeMap;
+
+use abstract_interpretation::graph::{EdgeId, EdgeRef, FlowGraph, GraphError, IndexedGraph, NodeId};
 use parser::hir::{
     AccessPath, AccessStep, BlockId, DefinitionRef, Effect, ExprId, ExprKind, HirProject,
     IncompleteReason,
@@ -25,6 +27,7 @@ pub enum CfgNodeKind {
     Witness { target: AccessPath, value: ExprId },
     Constraint { target: Option<AccessPath>, left: ExprId, right: Option<ExprId> },
     Assignment { target: AccessPath, value: ExprId },
+    Instantiate { target: AccessPath, value: ExprId },
     Declaration,
     Return(ExprId),
     Assert { condition: ExprId },
@@ -87,11 +90,12 @@ impl FlowGraph for DefinitionCfg {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum BuildError {
     ForeignDefinition,
     MissingBlock(BlockId),
     MissingExpression(ExprId),
+    InvalidGraph(GraphError<NodeId, EdgeId>),
 }
 
 type Tails = Vec<(NodeId, EdgeKind)>;
@@ -100,24 +104,23 @@ struct Builder<'a> {
     hir: &'a HirProject,
     nodes: Vec<CfgNode>,
     edges: Vec<(NodeId, NodeId, CfgEdge)>,
+    conditions: BTreeMap<NodeId, ExprId>,
     exit: NodeId,
 }
 
 impl Builder<'_> {
     fn node(&mut self, kind: CfgNodeKind, origin: Option<Origin>) -> NodeId {
         let id = NodeId::new(self.nodes.len());
+        if let CfgNodeKind::Branch(condition) = &kind {
+            self.conditions.insert(id, *condition);
+        }
         self.nodes.push(CfgNode { id, kind, origin });
         id
     }
 
     fn link(&mut self, tails: Tails, node: NodeId) {
         for (source, kind) in tails {
-            let source_node =
-                self.nodes.iter().find(|item| item.id == source).expect("node exists");
-            let condition = match &source_node.kind {
-                CfgNodeKind::Branch(expression) => Some(*expression),
-                _ => None,
-            };
+            let condition = self.conditions.get(&source).copied();
             self.edges.push((source, node, CfgEdge { kind, condition }));
         }
     }
@@ -175,7 +178,8 @@ impl Builder<'_> {
             }
             ExprKind::Ternary { condition, yes, no } => {
                 tails = self.evaluate(tails, *condition, origin)?;
-                let branch = self.node(CfgNodeKind::Branch(*condition), Some(origin));
+                let branch_origin = self.expression_origin(*condition, origin)?;
+                let branch = self.node(CfgNodeKind::Branch(*condition), Some(branch_origin));
                 self.link(tails, branch);
                 let yes_tail = self.evaluate(vec![(branch, EdgeKind::True)], *yes, origin)?;
                 let no_tail = self.evaluate(vec![(branch, EdgeKind::False)], *no, origin)?;
@@ -208,8 +212,8 @@ impl Builder<'_> {
     ) -> Result<Tails, BuildError> {
         match effect {
             Effect::Declaration { .. } => Ok(self.append(tails, CfgNodeKind::Declaration, origin)),
-            Effect::VariableAssignment { target, value, .. }
-            | Effect::ComponentInstantiation { target, value, .. } => {
+            Effect::VariableAssignment { target, value, .. } => {
+                let tails = self.evaluate_target(tails, target, origin)?;
                 let tails = self.evaluate(tails, *value, origin)?;
                 Ok(self.append(
                     tails,
@@ -217,8 +221,18 @@ impl Builder<'_> {
                     origin,
                 ))
             }
+            Effect::ComponentInstantiation { target, value, .. } => {
+                let tails = self.evaluate_target(tails, target, origin)?;
+                let tails = self.evaluate(tails, *value, origin)?;
+                Ok(self.append(
+                    tails,
+                    CfgNodeKind::Instantiate { target: target.clone(), value: *value },
+                    origin,
+                ))
+            }
             Effect::WitnessAssignment { target, value, .. }
             | Effect::ConstraintAssignment { target, value, .. } => {
+                let tails = self.evaluate_target(tails, target, origin)?;
                 let tails = self.evaluate(tails, *value, origin)?;
                 let effect_origin = Origin { expression: Some(*value), ..origin };
                 let tails = self.append(
@@ -256,7 +270,8 @@ impl Builder<'_> {
             )),
             Effect::If { condition, then_block, else_block, .. } => {
                 let tails = self.evaluate(tails, *condition, origin)?;
-                let branch = self.node(CfgNodeKind::Branch(*condition), Some(origin));
+                let branch_origin = self.expression_origin(*condition, origin)?;
+                let branch = self.node(CfgNodeKind::Branch(*condition), Some(branch_origin));
                 self.link(tails, branch);
                 let then_tails = self.block(vec![(branch, EdgeKind::True)], *then_block)?;
                 let else_tails = if let Some(other) = else_block {
@@ -314,7 +329,8 @@ impl Builder<'_> {
         let header = self.node(CfgNodeKind::LoopHeader, Some(origin));
         self.link(tails, header);
         let evaluated = self.evaluate(vec![(header, EdgeKind::Normal)], condition, origin)?;
-        let branch = self.node(CfgNodeKind::Branch(condition), Some(origin));
+        let branch_origin = self.expression_origin(condition, origin)?;
+        let branch = self.node(CfgNodeKind::Branch(condition), Some(branch_origin));
         self.link(evaluated, branch);
         let mut body_tails = self.block(vec![(branch, EdgeKind::True)], body)?;
         if let Some(step) = step {
@@ -322,6 +338,29 @@ impl Builder<'_> {
         }
         self.link(body_tails.into_iter().map(|(id, _)| (id, EdgeKind::Loop)).collect(), header);
         Ok(vec![(branch, EdgeKind::False)])
+    }
+
+    fn evaluate_target(
+        &mut self,
+        mut tails: Tails,
+        target: &AccessPath,
+        origin: Origin,
+    ) -> Result<Tails, BuildError> {
+        for step in &target.steps {
+            if let AccessStep::Index {
+                index: parser::hir::ArrayIndex::Symbolic(expression), ..
+            } = step
+            {
+                tails = self.evaluate(tails, *expression, origin)?;
+            }
+        }
+        Ok(tails)
+    }
+
+    fn expression_origin(&self, expression: ExprId, origin: Origin) -> Result<Origin, BuildError> {
+        let span =
+            self.hir.expression(expression).ok_or(BuildError::MissingExpression(expression))?.span;
+        Ok(Origin { expression: Some(expression), span, ..origin })
     }
 }
 
@@ -353,12 +392,18 @@ pub fn build_cfg(hir: &HirProject, definition: DefinitionRef) -> Result<Definiti
         DefinitionRef::Template(id) => hir.template(id).ok_or(BuildError::ForeignDefinition)?.body,
         DefinitionRef::Bus(id) => hir.bus(id).ok_or(BuildError::ForeignDefinition)?.body,
     };
-    let mut builder = Builder { hir, nodes: Vec::new(), edges: Vec::new(), exit: NodeId::new(1) };
+    let mut builder = Builder {
+        hir,
+        nodes: Vec::new(),
+        edges: Vec::new(),
+        conditions: BTreeMap::new(),
+        exit: NodeId::new(1),
+    };
     let entry = builder.node(CfgNodeKind::Entry, None);
     let exit = builder.node(CfgNodeKind::Exit, None);
     let tails = builder.block(vec![(entry, EdgeKind::Normal)], body)?;
     builder.link(tails, exit);
     let graph = IndexedGraph::new(builder.nodes, builder.edges, vec![entry], vec![exit])
-        .expect("CFG builder creates valid endpoints");
+        .map_err(BuildError::InvalidGraph)?;
     Ok(DefinitionCfg { graph, definition, entry, exit })
 }
