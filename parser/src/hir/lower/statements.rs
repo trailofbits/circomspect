@@ -161,7 +161,10 @@ impl Lowerer<'_> {
                 ScalarShape::Deferred => Ok(ControlGuard::DeferredScalar),
                 ScalarShape::Invalid => Err(IncompleteReason::UnknownType),
             },
-            Knownness::WitnessDependent => Ok(ControlGuard::WitnessOnly),
+            Knownness::WitnessDependent if shape == ScalarShape::Checked => {
+                Ok(ControlGuard::WitnessOnly)
+            }
+            Knownness::WitnessDependent => Err(IncompleteReason::UnknownType),
             Knownness::Opaque
                 if shape == ScalarShape::Deferred && self.provisionally_compile_time(condition) =>
             {

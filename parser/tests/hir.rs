@@ -1315,6 +1315,18 @@ fn witness_control_rejects_anonymous_component_hidden_in_assignment() {
 }
 
 #[test]
+fn witness_guard_with_unproved_parameter_shape_stays_opaque() {
+    let source = "template T(n){signal input x;var v=0;if(n+x){v=1;}else{v=2;}}";
+    let result = lower(&[("deferred_witness_guard.circom", source)], Version::new(2, 2, 3));
+    let effects = effect_for(&result, "T");
+    assert!(effects.iter().all(|effect| !matches!(effect, Effect::If { .. })));
+    assert!(effects.iter().any(|effect| matches!(
+        effect,
+        Effect::Opaque { reason: IncompleteReason::UnknownType, .. }
+    )));
+}
+
+#[test]
 fn array_assertion_is_opaque_but_scalar_assertion_is_checked() {
     let invalid = "template T(){assert([1,2]);}";
     let result = lower(&[("array_assert.circom", invalid)], Version::new(2, 2, 3));
