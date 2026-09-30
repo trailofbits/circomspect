@@ -593,6 +593,7 @@ impl Lowerer<'_> {
             {
                 ScalarShape::Deferred
             }
+            ExprKind::Call { target: CallTarget::Function(_), .. } => ScalarShape::Deferred,
             ExprKind::Unary { operand, .. } => self.scalar_shape(*operand),
             ExprKind::Binary { left, right, .. } => {
                 self.scalar_shape(*left).join(self.scalar_shape(*right))

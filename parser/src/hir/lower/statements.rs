@@ -162,7 +162,43 @@ impl Lowerer<'_> {
                 ScalarShape::Invalid => Err(IncompleteReason::UnknownType),
             },
             Knownness::WitnessDependent => Ok(ControlGuard::WitnessOnly),
+            Knownness::Opaque
+                if shape == ScalarShape::Deferred && self.provisionally_compile_time(condition) =>
+            {
+                Ok(ControlGuard::DeferredScalar)
+            }
             Knownness::Opaque => Err(IncompleteReason::UnknownType),
+        }
+    }
+
+    fn provisionally_compile_time(&self, id: ExprId) -> bool {
+        let Some(expression) = self.hir.expression(id) else { return false };
+        match &expression.kind {
+            ExprKind::Number(_) => true,
+            ExprKind::Access(path) => {
+                expression.knownness.is_compile_time()
+                    && Self::symbolic_indices(path)
+                        .all(|index| self.provisionally_compile_time(index))
+            }
+            ExprKind::Call { target: CallTarget::Function(_), arguments } => {
+                arguments.iter().all(|id| self.provisionally_compile_time(*id))
+            }
+            ExprKind::Array(values) | ExprKind::Tuple(values) => {
+                values.iter().all(|id| self.provisionally_compile_time(*id))
+            }
+            ExprKind::Unary { operand, .. } => self.provisionally_compile_time(*operand),
+            ExprKind::Binary { left, right, .. } => {
+                self.provisionally_compile_time(*left) && self.provisionally_compile_time(*right)
+            }
+            ExprKind::Ternary { condition, yes, no } => {
+                self.provisionally_compile_time(*condition)
+                    && self.provisionally_compile_time(*yes)
+                    && self.provisionally_compile_time(*no)
+            }
+            ExprKind::Call { .. }
+            | ExprKind::AnonymousComponent { .. }
+            | ExprKind::Parallel(_)
+            | ExprKind::Opaque(_) => false,
         }
     }
 
@@ -171,12 +207,20 @@ impl Lowerer<'_> {
             Effect::Declaration { symbol, .. } => {
                 self.hir.symbols[symbol.index].kind == SymbolKind::Variable
             }
-            Effect::VariableAssignment { .. }
-            | Effect::WitnessAssignment { .. }
-            | Effect::Update { .. }
-            | Effect::Return { .. }
-            | Effect::Assert { .. }
-            | Effect::Log { .. } => true,
+            Effect::VariableAssignment { target, value, .. }
+            | Effect::WitnessAssignment { target, value, .. } => {
+                Self::symbolic_indices(target).all(|id| self.expression_is_witness_only(id))
+                    && self.expression_is_witness_only(*value)
+            }
+            Effect::Update { target, .. } => {
+                Self::symbolic_indices(target).all(|id| self.expression_is_witness_only(id))
+            }
+            Effect::Return { value, .. } | Effect::Assert { condition: value, .. } => {
+                self.expression_is_witness_only(*value)
+            }
+            Effect::Log { values, .. } => {
+                values.iter().all(|id| self.expression_is_witness_only(*id))
+            }
             Effect::Block(child) => self.branch_is_witness_only(*child),
             Effect::ComponentInstantiation { .. }
             | Effect::ConstraintAssignment { .. }
@@ -187,6 +231,32 @@ impl Lowerer<'_> {
             | Effect::AnonymousComponent { .. }
             | Effect::Opaque { .. } => false,
         })
+    }
+
+    fn expression_is_witness_only(&self, id: ExprId) -> bool {
+        let Some(expression) = self.hir.expression(id) else { return false };
+        match &expression.kind {
+            ExprKind::Number(_) => true,
+            ExprKind::Access(path) => {
+                Self::symbolic_indices(path).all(|index| self.expression_is_witness_only(index))
+            }
+            ExprKind::Array(values) | ExprKind::Tuple(values) => {
+                values.iter().all(|id| self.expression_is_witness_only(*id))
+            }
+            ExprKind::Unary { operand, .. } => self.expression_is_witness_only(*operand),
+            ExprKind::Binary { left, right, .. } => {
+                self.expression_is_witness_only(*left) && self.expression_is_witness_only(*right)
+            }
+            ExprKind::Ternary { condition, yes, no } => {
+                self.expression_is_witness_only(*condition)
+                    && self.expression_is_witness_only(*yes)
+                    && self.expression_is_witness_only(*no)
+            }
+            ExprKind::Call { .. }
+            | ExprKind::AnonymousComponent { .. }
+            | ExprKind::Parallel(_)
+            | ExprKind::Opaque(_) => false,
+        }
     }
 
     pub(super) fn lower_terminal_statement(&mut self, statement: &Statement) -> Vec<Effect> {
