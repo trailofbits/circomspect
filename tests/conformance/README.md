@@ -41,8 +41,56 @@ The compiler is a development oracle and is not used by Circomspect at runtime.
 
 The version-specific entries follow the official [release history](https://github.com/iden3/circom/blob/ad44e915a12bb047b05745c2884aad9cc8326bc6/RELEASES.md)
 and [language documentation](https://docs.circom.io/circom-language/).
-This is a category baseline. It does not cover every Circom 2.2.3 grammar
-alternative or operator; the parser phase will add a production- and
-operator-complete matrix. It is not an exhaustive semantic test suite. Incomplete
-libraries and missing `main` are analyzer-specific fixtures under `cli/tests`:
-the compiler requires a main program, so it cannot classify those inputs.
+The category baseline is retained for regression history. The production and
+operator matrix below expands its syntax coverage. It is not an exhaustive
+semantic test suite. Incomplete libraries also have analyzer-specific fixtures
+under `cli/tests`; missing `main` is classified separately from syntax here.
+
+## Production and operator matrix
+
+`production_matrix.json` expands the category baseline into 141 rows traced to
+[`parser/src/lang.lalrpop` at the pinned commit](https://github.com/iden3/circom/blob/ad44e915a12bb047b05745c2884aad9cc8326bc6/parser/src/lang.lalrpop).
+Each row names an upstream production or operator, its earliest documented
+release, an accepted-syntax case, a token-valid malformed counterpart, the
+kind of source construct, and the UTF-8 byte span of the focal syntax. The
+separate `grammar_inventory.json` lists the expected row IDs and names the
+upstream recovery or invalid-source branches omitted from the valid-source
+matrix. The ordinary test checks exact inventory agreement and fixture spans;
+the compiler test also checks the operator and assignment token sets against
+the pinned grammar text. A fixture with a compiler semantic error still counts
+as syntax accepted. The `project_error` result for a definition-only library
+records `P1001` (missing main), which is a project requirement rather than a
+syntax error: the upstream `ParseAst` production makes `main` optional.
+
+The 319 compiler cases include 139 new accepted/malformed matrix pairs, the
+original 18 feature pairs (two also appear in the matrix), one semantic
+control, and four compiler-boundary cases. Prefix `++x` and `--x` are grammar
+recovery alternatives that produce `P1012`; they are rejected-source cases,
+not valid-source production rows. The upstream HEXNUMBER regular expression
+matches `0x`, but its action panics while converting an empty digit sequence.
+That case is recorded as `compiler_panic` with indeterminate syntax status; it
+must not be treated as an ordinary parser rejection or semantic error.
+
+The operator rows cover each token from the upstream unary and infix tables,
+and separate fixtures exercise precedence boundaries, left-associative
+subtraction, power associativity, and the restricted ternary-arm grammar.
+The statement rows include both `for` initializers, dangling `else`, empty and
+nonempty `log`, equality constraints, reverse assignments, all twelve compound
+assignments, and the invalid prefix forms. The declaration rows cover both
+signal orders, bus header orders with and without arguments, tags, arrays,
+tuple initialization, and both omitted-parentheses definition forms. The
+2.2.3 inline-array cases contain buses and anonymous components.
+
+The matrix asserts source spans and compiler syntax classes now. After the
+owned frontend lands, Phase 1 must additionally assert AST node kinds and
+nested spans for every row; compiler acceptance alone cannot prove the new
+parser preserves the intended structure. The compiler's parser also reports
+some errors by semantic or project-level checks, so the recorded class should
+not be inferred solely from its exit status or a `P` code prefix.
+
+The `min_version` field means the first known Circom compiler release that
+supports a feature. It does not require the source pragma to equal that
+release. `old_pragma_bus_success` uses `pragma circom 2.1.0` with a 2.2.0 bus
+under compiler 2.2.3 and succeeds: the pragma is a minimum compiler version
+request, not a syntax-version lock. The parser version policy must follow this
+observed behavior.

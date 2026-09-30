@@ -371,6 +371,2826 @@
       "expected_syntax": "accept",
       "compiler_class": "semantic_error",
       "compiler_code": "T2021"
+    },
+    {
+      "id": "matrix_pragma_version_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_pragma_version_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_pragma_version_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_pragma_version_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1010"
+    },
+    {
+      "id": "matrix_pragma_custom_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.6",
+      "curve": "bn128",
+      "source": "cases/matrix_pragma_custom_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_pragma_custom_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.6",
+      "curve": "bn128",
+      "source": "cases/matrix_pragma_custom_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1011"
+    },
+    {
+      "id": "matrix_include_path_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_include_path_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_include_path_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_include_path_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1009"
+    },
+    {
+      "id": "matrix_main_plain_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_main_plain_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_main_plain_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_main_plain_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_main_public_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_main_public_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_main_public_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_main_public_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_function_definition_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_function_definition_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_function_definition_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_function_definition_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_template_definition_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_template_definition_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_template_definition_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_template_definition_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_template_parallel_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_template_parallel_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_template_parallel_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_template_parallel_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_template_custom_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.6",
+      "curve": "bn128",
+      "source": "cases/matrix_template_custom_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_template_custom_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.6",
+      "curve": "bn128",
+      "source": "cases/matrix_template_custom_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_template_extern_c_valid",
+      "feature": "production_matrix",
+      "min_version": "2.2.3",
+      "curve": "bn128",
+      "source": "cases/matrix_template_extern_c_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "semantic_error",
+      "compiler_code": "BU01"
+    },
+    {
+      "id": "matrix_template_extern_c_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.2.3",
+      "curve": "bn128",
+      "source": "cases/matrix_template_extern_c_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_template_without_parentheses_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_template_without_parentheses_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_template_without_parentheses_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_template_without_parentheses_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_bus_without_parentheses_valid",
+      "feature": "production_matrix",
+      "min_version": "2.2.0",
+      "curve": "bn128",
+      "source": "cases/matrix_bus_without_parentheses_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_bus_without_parentheses_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.2.0",
+      "curve": "bn128",
+      "source": "cases/matrix_bus_without_parentheses_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_library_without_main_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_library_without_main_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "project_error",
+      "compiler_code": "P1001"
+    },
+    {
+      "id": "matrix_library_without_main_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_library_without_main_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_bus_definition_valid",
+      "feature": "production_matrix",
+      "min_version": "2.2.0",
+      "curve": "bn128",
+      "source": "cases/matrix_bus_definition_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_bus_definition_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.2.0",
+      "curve": "bn128",
+      "source": "cases/matrix_bus_definition_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_definition_empty_args_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_definition_empty_args_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_definition_empty_args_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_definition_empty_args_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_definition_named_args_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_definition_named_args_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_definition_named_args_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_definition_named_args_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_var_simple_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_var_simple_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_var_simple_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_var_simple_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_var_initialized_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_var_initialized_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_var_initialized_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_var_initialized_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_var_array_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_var_array_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_var_array_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_var_array_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_var_multiple_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_var_multiple_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_var_multiple_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_var_multiple_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_var_tuple_valid",
+      "feature": "production_matrix",
+      "min_version": "2.1.0",
+      "curve": "bn128",
+      "source": "cases/matrix_var_tuple_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_var_tuple_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.1.0",
+      "curve": "bn128",
+      "source": "cases/matrix_var_tuple_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1008"
+    },
+    {
+      "id": "matrix_component_simple_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_component_simple_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_component_simple_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_component_simple_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1008"
+    },
+    {
+      "id": "matrix_component_tuple_valid",
+      "feature": "production_matrix",
+      "min_version": "2.1.0",
+      "curve": "bn128",
+      "source": "cases/matrix_component_tuple_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_component_tuple_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.1.0",
+      "curve": "bn128",
+      "source": "cases/matrix_component_tuple_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1008"
+    },
+    {
+      "id": "matrix_signal_plain_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_signal_plain_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_signal_plain_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_signal_plain_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_signal_input_after_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_signal_input_after_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_signal_input_after_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_signal_input_after_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_signal_output_after_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_signal_output_after_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_signal_output_after_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_signal_output_after_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_signal_input_before_valid",
+      "feature": "production_matrix",
+      "min_version": "2.2.0",
+      "curve": "bn128",
+      "source": "cases/matrix_signal_input_before_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_signal_input_before_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.2.0",
+      "curve": "bn128",
+      "source": "cases/matrix_signal_input_before_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_signal_output_before_valid",
+      "feature": "production_matrix",
+      "min_version": "2.2.0",
+      "curve": "bn128",
+      "source": "cases/matrix_signal_output_before_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_signal_output_before_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.2.0",
+      "curve": "bn128",
+      "source": "cases/matrix_signal_output_before_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_signal_tags_valid",
+      "feature": "production_matrix",
+      "min_version": "2.1.0",
+      "curve": "bn128",
+      "source": "cases/matrix_signal_tags_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_signal_tags_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.1.0",
+      "curve": "bn128",
+      "source": "cases/matrix_signal_tags_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_signal_constraint_init_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_signal_constraint_init_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_signal_constraint_init_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_signal_constraint_init_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_signal_witness_init_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_signal_witness_init_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_signal_witness_init_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_signal_witness_init_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_signal_tuple_valid",
+      "feature": "production_matrix",
+      "min_version": "2.1.0",
+      "curve": "bn128",
+      "source": "cases/matrix_signal_tuple_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_signal_tuple_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.1.0",
+      "curve": "bn128",
+      "source": "cases/matrix_signal_tuple_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1008"
+    },
+    {
+      "id": "matrix_component_tuple_constraint_valid",
+      "feature": "production_matrix",
+      "min_version": "2.1.0",
+      "curve": "bn128",
+      "source": "cases/matrix_component_tuple_constraint_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "semantic_error",
+      "compiler_code": "T2055"
+    },
+    {
+      "id": "matrix_component_tuple_constraint_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.1.0",
+      "curve": "bn128",
+      "source": "cases/matrix_component_tuple_constraint_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_var_tuple_witness_valid",
+      "feature": "production_matrix",
+      "min_version": "2.1.0",
+      "curve": "bn128",
+      "source": "cases/matrix_var_tuple_witness_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "semantic_error",
+      "compiler_code": "T2055"
+    },
+    {
+      "id": "matrix_var_tuple_witness_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.1.0",
+      "curve": "bn128",
+      "source": "cases/matrix_var_tuple_witness_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_bus_after_valid",
+      "feature": "production_matrix",
+      "min_version": "2.2.0",
+      "curve": "bn128",
+      "source": "cases/matrix_bus_after_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_bus_after_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.2.0",
+      "curve": "bn128",
+      "source": "cases/matrix_bus_after_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_bus_before_valid",
+      "feature": "production_matrix",
+      "min_version": "2.2.0",
+      "curve": "bn128",
+      "source": "cases/matrix_bus_before_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_bus_before_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.2.0",
+      "curve": "bn128",
+      "source": "cases/matrix_bus_before_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_bus_args_after_valid",
+      "feature": "production_matrix",
+      "min_version": "2.2.0",
+      "curve": "bn128",
+      "source": "cases/matrix_bus_args_after_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_bus_args_after_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.2.0",
+      "curve": "bn128",
+      "source": "cases/matrix_bus_args_after_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_bus_args_before_valid",
+      "feature": "production_matrix",
+      "min_version": "2.2.0",
+      "curve": "bn128",
+      "source": "cases/matrix_bus_args_before_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_bus_args_before_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.2.0",
+      "curve": "bn128",
+      "source": "cases/matrix_bus_args_before_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_bus_tags_valid",
+      "feature": "production_matrix",
+      "min_version": "2.2.0",
+      "curve": "bn128",
+      "source": "cases/matrix_bus_tags_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_bus_tags_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.2.0",
+      "curve": "bn128",
+      "source": "cases/matrix_bus_tags_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_bus_multiple_valid",
+      "feature": "production_matrix",
+      "min_version": "2.2.0",
+      "curve": "bn128",
+      "source": "cases/matrix_bus_multiple_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_bus_multiple_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.2.0",
+      "curve": "bn128",
+      "source": "cases/matrix_bus_multiple_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_bus_constraint_init_valid",
+      "feature": "production_matrix",
+      "min_version": "2.2.0",
+      "curve": "bn128",
+      "source": "cases/matrix_bus_constraint_init_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "semantic_error",
+      "compiler_code": "T2059"
+    },
+    {
+      "id": "matrix_bus_constraint_init_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.2.0",
+      "curve": "bn128",
+      "source": "cases/matrix_bus_constraint_init_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_bus_witness_init_valid",
+      "feature": "production_matrix",
+      "min_version": "2.2.0",
+      "curve": "bn128",
+      "source": "cases/matrix_bus_witness_init_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "semantic_error",
+      "compiler_code": "T2059"
+    },
+    {
+      "id": "matrix_bus_witness_init_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.2.0",
+      "curve": "bn128",
+      "source": "cases/matrix_bus_witness_init_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_block_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_block_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_block_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_block_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_if_plain_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_if_plain_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_if_plain_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_if_plain_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_if_else_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_if_else_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_if_else_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_if_else_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_dangling_else_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_dangling_else_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_dangling_else_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_dangling_else_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_for_declaration_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_for_declaration_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_for_declaration_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_for_declaration_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_for_substitution_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_for_substitution_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_for_substitution_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_for_substitution_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_while_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_while_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_while_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_while_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_constraint_equality_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_constraint_equality_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_constraint_equality_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_constraint_equality_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1008"
+    },
+    {
+      "id": "matrix_assert_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_assert_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_assert_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_assert_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_log_empty_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.7",
+      "curve": "bn128",
+      "source": "cases/matrix_log_empty_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_log_empty_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.7",
+      "curve": "bn128",
+      "source": "cases/matrix_log_empty_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_log_expression_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.7",
+      "curve": "bn128",
+      "source": "cases/matrix_log_expression_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_log_expression_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.7",
+      "curve": "bn128",
+      "source": "cases/matrix_log_expression_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_log_string_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.7",
+      "curve": "bn128",
+      "source": "cases/matrix_log_string_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_log_string_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.7",
+      "curve": "bn128",
+      "source": "cases/matrix_log_string_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1008"
+    },
+    {
+      "id": "matrix_anonymous_statement_valid",
+      "feature": "production_matrix",
+      "min_version": "2.1.0",
+      "curve": "bn128",
+      "source": "cases/matrix_anonymous_statement_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "semantic_error",
+      "compiler_code": "TAC02"
+    },
+    {
+      "id": "matrix_anonymous_statement_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.1.0",
+      "curve": "bn128",
+      "source": "cases/matrix_anonymous_statement_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_substitution_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_substitution_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_substitution_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_substitution_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_reverse_witness_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_reverse_witness_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "semantic_error",
+      "compiler_code": "T3001"
+    },
+    {
+      "id": "matrix_reverse_witness_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_reverse_witness_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1008"
+    },
+    {
+      "id": "matrix_reverse_constraint_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_reverse_constraint_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "semantic_error",
+      "compiler_code": "T3001"
+    },
+    {
+      "id": "matrix_reverse_constraint_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_reverse_constraint_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1008"
+    },
+    {
+      "id": "matrix_postfix_increment_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_postfix_increment_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_postfix_increment_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_postfix_increment_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_postfix_decrement_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_postfix_decrement_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_postfix_decrement_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_postfix_decrement_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_return_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_return_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_return_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_return_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_compound_intdiv_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_compound_intdiv_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_compound_intdiv_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_compound_intdiv_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_compound_pow_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_compound_pow_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_compound_pow_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_compound_pow_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_compound_add_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_compound_add_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_compound_add_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_compound_add_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_compound_sub_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_compound_sub_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_compound_sub_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_compound_sub_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_compound_mul_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_compound_mul_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_compound_mul_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_compound_mul_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_compound_div_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_compound_div_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_compound_div_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_compound_div_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_compound_mod_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_compound_mod_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_compound_mod_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_compound_mod_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_compound_shl_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_compound_shl_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_compound_shl_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_compound_shl_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_compound_shr_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_compound_shr_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_compound_shr_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_compound_shr_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_compound_and_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_compound_and_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_compound_and_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_compound_and_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_compound_or_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_compound_or_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_compound_or_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_compound_or_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_compound_xor_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_compound_xor_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_compound_xor_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_compound_xor_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_assign_var_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_assign_var_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "semantic_error",
+      "compiler_code": "T2054"
+    },
+    {
+      "id": "matrix_assign_var_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_assign_var_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1008"
+    },
+    {
+      "id": "matrix_assign_witness_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_assign_witness_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "semantic_error",
+      "compiler_code": "T3001"
+    },
+    {
+      "id": "matrix_assign_witness_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_assign_witness_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1008"
+    },
+    {
+      "id": "matrix_assign_constraint_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_assign_constraint_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "semantic_error",
+      "compiler_code": "T3001"
+    },
+    {
+      "id": "matrix_assign_constraint_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_assign_constraint_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1008"
+    },
+    {
+      "id": "matrix_op_bool_or_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_bool_or_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_op_bool_or_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_bool_or_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_op_bool_and_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_bool_and_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_op_bool_and_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_bool_and_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_op_eq_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_eq_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_op_eq_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_eq_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_op_neq_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_neq_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_op_neq_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_neq_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_op_lt_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_lt_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_op_lt_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_lt_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_op_gt_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_gt_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_op_gt_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_gt_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_op_le_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_le_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_op_le_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_le_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_op_ge_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_ge_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_op_ge_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_ge_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_op_bit_or_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_bit_or_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_op_bit_or_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_bit_or_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_op_bit_xor_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_bit_xor_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_op_bit_xor_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_bit_xor_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_op_bit_and_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_bit_and_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_op_bit_and_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_bit_and_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_op_shl_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_shl_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_op_shl_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_shl_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_op_shr_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_shr_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_op_shr_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_shr_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_op_add_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_add_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_op_add_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_add_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_op_sub_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_sub_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_op_sub_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_sub_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_op_mul_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_mul_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_op_mul_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_mul_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_op_div_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_div_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_op_div_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_div_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_op_intdiv_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_intdiv_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_op_intdiv_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_intdiv_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_op_mod_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_mod_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_op_mod_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_mod_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_op_pow_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_pow_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_op_pow_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_op_pow_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_unary_not_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_unary_not_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_unary_not_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_unary_not_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_unary_complement_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_unary_complement_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_unary_complement_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_unary_complement_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_unary_neg_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_unary_neg_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_unary_neg_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_unary_neg_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_ternary_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_ternary_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_ternary_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_ternary_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1008"
+    },
+    {
+      "id": "matrix_parallel_expr_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.8",
+      "curve": "bn128",
+      "source": "cases/matrix_parallel_expr_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "semantic_error",
+      "compiler_code": "T2060"
+    },
+    {
+      "id": "matrix_parallel_expr_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.8",
+      "curve": "bn128",
+      "source": "cases/matrix_parallel_expr_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1008"
+    },
+    {
+      "id": "matrix_call_empty_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_call_empty_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "semantic_error",
+      "compiler_code": "T2012"
+    },
+    {
+      "id": "matrix_call_empty_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_call_empty_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_call_args_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_call_args_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_call_args_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_call_args_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_anonymous_positional_valid",
+      "feature": "production_matrix",
+      "min_version": "2.1.0",
+      "curve": "bn128",
+      "source": "cases/matrix_anonymous_positional_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_anonymous_positional_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.1.0",
+      "curve": "bn128",
+      "source": "cases/matrix_anonymous_positional_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_anonymous_named_valid",
+      "feature": "production_matrix",
+      "min_version": "2.1.1",
+      "curve": "bn128",
+      "source": "cases/matrix_anonymous_named_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_anonymous_named_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.1.1",
+      "curve": "bn128",
+      "source": "cases/matrix_anonymous_named_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1008"
+    },
+    {
+      "id": "matrix_inline_array_valid",
+      "feature": "production_matrix",
+      "min_version": "2.1.0",
+      "curve": "bn128",
+      "source": "cases/matrix_inline_array_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "semantic_error",
+      "compiler_code": "T2061"
+    },
+    {
+      "id": "matrix_inline_array_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.1.0",
+      "curve": "bn128",
+      "source": "cases/matrix_inline_array_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_tuple_valid",
+      "feature": "production_matrix",
+      "min_version": "2.1.0",
+      "curve": "bn128",
+      "source": "cases/matrix_tuple_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "semantic_error",
+      "compiler_code": "TAC02"
+    },
+    {
+      "id": "matrix_tuple_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.1.0",
+      "curve": "bn128",
+      "source": "cases/matrix_tuple_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_variable_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_variable_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "semantic_error",
+      "compiler_code": "T2061"
+    },
+    {
+      "id": "matrix_variable_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_variable_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_array_access_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_array_access_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_array_access_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_array_access_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_field_access_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_field_access_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "semantic_error",
+      "compiler_code": "T3001"
+    },
+    {
+      "id": "matrix_field_access_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_field_access_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_discard_valid",
+      "feature": "production_matrix",
+      "min_version": "2.1.0",
+      "curve": "bn128",
+      "source": "cases/matrix_discard_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "semantic_error",
+      "compiler_code": "T2021"
+    },
+    {
+      "id": "matrix_discard_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.1.0",
+      "curve": "bn128",
+      "source": "cases/matrix_discard_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_decimal_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_decimal_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_decimal_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_decimal_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_hex_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_hex_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_hex_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_hex_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_parenthesized_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_parenthesized_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_parenthesized_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_parenthesized_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_precedence_bool_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_precedence_bool_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_precedence_bool_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_precedence_bool_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1008"
+    },
+    {
+      "id": "matrix_precedence_comparison_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_precedence_comparison_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_precedence_comparison_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_precedence_comparison_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1008"
+    },
+    {
+      "id": "matrix_precedence_bitwise_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_precedence_bitwise_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_precedence_bitwise_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_precedence_bitwise_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1008"
+    },
+    {
+      "id": "matrix_precedence_shift_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_precedence_shift_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_precedence_shift_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_precedence_shift_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1008"
+    },
+    {
+      "id": "matrix_precedence_additive_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_precedence_additive_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_precedence_additive_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_precedence_additive_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1008"
+    },
+    {
+      "id": "matrix_precedence_power_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_precedence_power_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_precedence_power_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_precedence_power_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1008"
+    },
+    {
+      "id": "matrix_associativity_sub_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_associativity_sub_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_associativity_sub_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_associativity_sub_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1008"
+    },
+    {
+      "id": "matrix_associativity_pow_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_associativity_pow_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_associativity_pow_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_associativity_pow_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1008"
+    },
+    {
+      "id": "matrix_ternary_arm_boundary_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_ternary_arm_boundary_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_ternary_arm_boundary_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_ternary_arm_boundary_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1008"
+    },
+    {
+      "id": "matrix_top_level_order_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_top_level_order_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_top_level_order_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_top_level_order_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_nested_if_no_else_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_nested_if_no_else_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_nested_if_no_else_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_nested_if_no_else_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_signal_multiple_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_signal_multiple_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_signal_multiple_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_signal_multiple_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_component_multiple_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_component_multiple_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_component_multiple_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_component_multiple_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_bus_with_parameter_valid",
+      "feature": "production_matrix",
+      "min_version": "2.2.0",
+      "curve": "bn128",
+      "source": "cases/matrix_bus_with_parameter_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_bus_with_parameter_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.2.0",
+      "curve": "bn128",
+      "source": "cases/matrix_bus_with_parameter_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_bus_before_parameter_valid",
+      "feature": "production_matrix",
+      "min_version": "2.2.0",
+      "curve": "bn128",
+      "source": "cases/matrix_bus_before_parameter_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_bus_before_parameter_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.2.0",
+      "curve": "bn128",
+      "source": "cases/matrix_bus_before_parameter_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_tuple_var_constraint_valid",
+      "feature": "production_matrix",
+      "min_version": "2.1.0",
+      "curve": "bn128",
+      "source": "cases/matrix_tuple_var_constraint_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "semantic_error",
+      "compiler_code": "T2055"
+    },
+    {
+      "id": "matrix_tuple_var_constraint_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.1.0",
+      "curve": "bn128",
+      "source": "cases/matrix_tuple_var_constraint_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_tuple_signal_witness_valid",
+      "feature": "production_matrix",
+      "min_version": "2.1.0",
+      "curve": "bn128",
+      "source": "cases/matrix_tuple_signal_witness_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_tuple_signal_witness_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.1.0",
+      "curve": "bn128",
+      "source": "cases/matrix_tuple_signal_witness_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_signal_tags_input_valid",
+      "feature": "production_matrix",
+      "min_version": "2.1.0",
+      "curve": "bn128",
+      "source": "cases/matrix_signal_tags_input_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "semantic_error",
+      "compiler_code": "T2051"
+    },
+    {
+      "id": "matrix_signal_tags_input_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.1.0",
+      "curve": "bn128",
+      "source": "cases/matrix_signal_tags_input_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_bus_tags_type_last_valid",
+      "feature": "production_matrix",
+      "min_version": "2.2.0",
+      "curve": "bn128",
+      "source": "cases/matrix_bus_tags_type_last_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_bus_tags_type_last_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.2.0",
+      "curve": "bn128",
+      "source": "cases/matrix_bus_tags_type_last_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_anonymous_named_witness_valid",
+      "feature": "production_matrix",
+      "min_version": "2.1.1",
+      "curve": "bn128",
+      "source": "cases/matrix_anonymous_named_witness_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "semantic_error",
+      "compiler_code": "TAC01"
+    },
+    {
+      "id": "matrix_anonymous_named_witness_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.1.1",
+      "curve": "bn128",
+      "source": "cases/matrix_anonymous_named_witness_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1008"
+    },
+    {
+      "id": "matrix_anonymous_named_assignment_valid",
+      "feature": "production_matrix",
+      "min_version": "2.1.1",
+      "curve": "bn128",
+      "source": "cases/matrix_anonymous_named_assignment_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "semantic_error",
+      "compiler_code": "TAC01"
+    },
+    {
+      "id": "matrix_anonymous_named_assignment_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.1.1",
+      "curve": "bn128",
+      "source": "cases/matrix_anonymous_named_assignment_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1008"
+    },
+    {
+      "id": "matrix_multiple_array_dimensions_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_multiple_array_dimensions_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_multiple_array_dimensions_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_multiple_array_dimensions_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_mixed_access_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_mixed_access_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "semantic_error",
+      "compiler_code": "T2032"
+    },
+    {
+      "id": "matrix_mixed_access_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_mixed_access_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "matrix_comment_line_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_comment_line_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_comment_line_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_comment_line_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1008"
+    },
+    {
+      "id": "matrix_comment_block_valid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_comment_block_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "matrix_comment_block_invalid",
+      "feature": "production_matrix",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/matrix_comment_block_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1008"
+    },
+    {
+      "id": "prefix_increment_invalid",
+      "feature": "compiler_boundary",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/prefix_increment_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "prefix_decrement_invalid",
+      "feature": "compiler_boundary",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/prefix_decrement_invalid.circom",
+      "expected_syntax": "reject",
+      "compiler_class": "syntax_error",
+      "compiler_code": "P1012"
+    },
+    {
+      "id": "empty_hex_compiler_panic",
+      "feature": "compiler_boundary",
+      "min_version": "2.0.0",
+      "curve": "bn128",
+      "source": "cases/empty_hex_compiler_panic.circom",
+      "expected_syntax": "indeterminate",
+      "compiler_class": "compiler_panic",
+      "compiler_code": ""
+    },
+    {
+      "id": "old_pragma_bus_success",
+      "feature": "compiler_boundary",
+      "min_version": "2.2.0",
+      "curve": "bn128",
+      "source": "cases/old_pragma_bus_success.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
     }
   ]
 }

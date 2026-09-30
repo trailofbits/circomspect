@@ -1,0 +1,1839 @@
+{
+  "compiler_commit": "ad44e915a12bb047b05745c2884aad9cc8326bc6",
+  "rows": [
+    {
+      "id": "pragma_version",
+      "grammar": "ParsePragma#version",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_pragma_version_valid",
+      "reject_case": "matrix_pragma_version_invalid",
+      "span": {
+        "start": 0,
+        "end": 13,
+        "text": "pragma circom"
+      },
+      "focal_kind": "top"
+    },
+    {
+      "id": "pragma_custom",
+      "grammar": "ParsePragma#custom_templates",
+      "min_version": "2.0.6",
+      "accept_case": "matrix_pragma_custom_valid",
+      "reject_case": "matrix_pragma_custom_invalid",
+      "span": {
+        "start": 21,
+        "end": 44,
+        "text": "pragma custom_templates"
+      },
+      "focal_kind": "top"
+    },
+    {
+      "id": "include_path",
+      "grammar": "ParseInclude#path",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_include_path_valid",
+      "reject_case": "matrix_include_path_invalid",
+      "span": {
+        "start": 21,
+        "end": 28,
+        "text": "include"
+      },
+      "focal_kind": "top"
+    },
+    {
+      "id": "main_plain",
+      "grammar": "ParseMainComponent#plain",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_main_plain_valid",
+      "reject_case": "matrix_main_plain_invalid",
+      "span": {
+        "start": 68,
+        "end": 82,
+        "text": "component main"
+      },
+      "focal_kind": "top"
+    },
+    {
+      "id": "main_public",
+      "grammar": "ParsePublicList#public",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_main_public_valid",
+      "reject_case": "matrix_main_public_invalid",
+      "span": {
+        "start": 101,
+        "end": 114,
+        "text": "{public [in]}"
+      },
+      "focal_kind": "top"
+    },
+    {
+      "id": "function_definition",
+      "grammar": "ParseDefinition#function",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_function_definition_valid",
+      "reject_case": "matrix_function_definition_invalid",
+      "span": {
+        "start": 21,
+        "end": 31,
+        "text": "function F"
+      },
+      "focal_kind": "top"
+    },
+    {
+      "id": "template_definition",
+      "grammar": "ParseDefinition#template",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_template_definition_valid",
+      "reject_case": "matrix_template_definition_invalid",
+      "span": {
+        "start": 21,
+        "end": 34,
+        "text": "template Main"
+      },
+      "focal_kind": "top"
+    },
+    {
+      "id": "template_parallel",
+      "grammar": "ParseDefinition#template_parallel",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_template_parallel_valid",
+      "reject_case": "matrix_template_parallel_invalid",
+      "span": {
+        "start": 30,
+        "end": 38,
+        "text": "parallel"
+      },
+      "focal_kind": "top"
+    },
+    {
+      "id": "template_custom",
+      "grammar": "ParseDefinition#template_custom",
+      "min_version": "2.0.6",
+      "accept_case": "matrix_template_custom_valid",
+      "reject_case": "matrix_template_custom_invalid",
+      "span": {
+        "start": 55,
+        "end": 66,
+        "text": "custom Main"
+      },
+      "focal_kind": "top"
+    },
+    {
+      "id": "template_extern_c",
+      "grammar": "ParseDefinition#template_extern_c",
+      "min_version": "2.2.3",
+      "accept_case": "matrix_template_extern_c_valid",
+      "reject_case": "matrix_template_extern_c_invalid",
+      "span": {
+        "start": 30,
+        "end": 38,
+        "text": "extern_c"
+      },
+      "focal_kind": "top"
+    },
+    {
+      "id": "template_without_parentheses",
+      "grammar": "ParseDefinition#template_no_args_syntax",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_template_without_parentheses_valid",
+      "reject_case": "matrix_template_without_parentheses_invalid",
+      "span": {
+        "start": 21,
+        "end": 34,
+        "text": "template Main"
+      },
+      "focal_kind": "top"
+    },
+    {
+      "id": "bus_without_parentheses",
+      "grammar": "ParseDefinition#bus_no_args_syntax",
+      "min_version": "2.2.0",
+      "accept_case": "matrix_bus_without_parentheses_valid",
+      "reject_case": "matrix_bus_without_parentheses_invalid",
+      "span": {
+        "start": 21,
+        "end": 26,
+        "text": "bus B"
+      },
+      "focal_kind": "top"
+    },
+    {
+      "id": "library_without_main",
+      "grammar": "ParseAst#optional_main",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_library_without_main_valid",
+      "reject_case": "matrix_library_without_main_invalid",
+      "span": {
+        "start": 21,
+        "end": 31,
+        "text": "function F"
+      },
+      "focal_kind": "top"
+    },
+    {
+      "id": "bus_definition",
+      "grammar": "ParseDefinition#bus",
+      "min_version": "2.2.0",
+      "accept_case": "matrix_bus_definition_valid",
+      "reject_case": "matrix_bus_definition_invalid",
+      "span": {
+        "start": 21,
+        "end": 26,
+        "text": "bus B"
+      },
+      "focal_kind": "top"
+    },
+    {
+      "id": "definition_empty_args",
+      "grammar": "ParseParenthesisArguments#empty",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_definition_empty_args_valid",
+      "reject_case": "matrix_definition_empty_args_invalid",
+      "span": {
+        "start": 30,
+        "end": 33,
+        "text": "F()"
+      },
+      "focal_kind": "top"
+    },
+    {
+      "id": "definition_named_args",
+      "grammar": "ParseParenthesisArguments#names",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_definition_named_args_valid",
+      "reject_case": "matrix_definition_named_args_invalid",
+      "span": {
+        "start": 30,
+        "end": 36,
+        "text": "F(x,y)"
+      },
+      "focal_kind": "top"
+    },
+    {
+      "id": "var_simple",
+      "grammar": "ParseDeclaration#var_symbols",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_var_simple_valid",
+      "reject_case": "matrix_var_simple_invalid",
+      "span": {
+        "start": 105,
+        "end": 110,
+        "text": "var v"
+      },
+      "focal_kind": "decl"
+    },
+    {
+      "id": "var_initialized",
+      "grammar": "ComplexSymbol#var",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_var_initialized_valid",
+      "reject_case": "matrix_var_initialized_invalid",
+      "span": {
+        "start": 109,
+        "end": 114,
+        "text": "v = 1"
+      },
+      "focal_kind": "decl"
+    },
+    {
+      "id": "var_array",
+      "grammar": "SimpleSymbol#dims",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_var_array_valid",
+      "reject_case": "matrix_var_array_invalid",
+      "span": {
+        "start": 109,
+        "end": 113,
+        "text": "v[2]"
+      },
+      "focal_kind": "decl"
+    },
+    {
+      "id": "var_multiple",
+      "grammar": "ParseDeclaration#var_multiple",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_var_multiple_valid",
+      "reject_case": "matrix_var_multiple_invalid",
+      "span": {
+        "start": 109,
+        "end": 112,
+        "text": "v,w"
+      },
+      "focal_kind": "decl"
+    },
+    {
+      "id": "var_tuple",
+      "grammar": "ParseDeclaration#var_tuple",
+      "min_version": "2.1.0",
+      "accept_case": "matrix_var_tuple_valid",
+      "reject_case": "matrix_var_tuple_invalid",
+      "span": {
+        "start": 109,
+        "end": 114,
+        "text": "(v,w)"
+      },
+      "focal_kind": "decl"
+    },
+    {
+      "id": "component_simple",
+      "grammar": "ParseDeclaration#component_symbols",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_component_simple_valid",
+      "reject_case": "matrix_component_simple_invalid",
+      "span": {
+        "start": 105,
+        "end": 116,
+        "text": "component c"
+      },
+      "focal_kind": "decl"
+    },
+    {
+      "id": "component_tuple",
+      "grammar": "ParseDeclaration#component_tuple",
+      "min_version": "2.1.0",
+      "accept_case": "matrix_component_tuple_valid",
+      "reject_case": "matrix_component_tuple_invalid",
+      "span": {
+        "start": 115,
+        "end": 120,
+        "text": "(v,w)"
+      },
+      "focal_kind": "decl"
+    },
+    {
+      "id": "signal_plain",
+      "grammar": "SignalHeader#plain",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_signal_plain_valid",
+      "reject_case": "matrix_signal_plain_invalid",
+      "span": {
+        "start": 105,
+        "end": 113,
+        "text": "signal v"
+      },
+      "focal_kind": "decl"
+    },
+    {
+      "id": "signal_input_after",
+      "grammar": "SignalHeader#input_after",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_signal_input_after_valid",
+      "reject_case": "matrix_signal_input_after_invalid",
+      "span": {
+        "start": 105,
+        "end": 117,
+        "text": "signal input"
+      },
+      "focal_kind": "decl"
+    },
+    {
+      "id": "signal_output_after",
+      "grammar": "SignalHeader#output_after",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_signal_output_after_valid",
+      "reject_case": "matrix_signal_output_after_invalid",
+      "span": {
+        "start": 105,
+        "end": 118,
+        "text": "signal output"
+      },
+      "focal_kind": "decl"
+    },
+    {
+      "id": "signal_input_before",
+      "grammar": "SignalHeader#input_before",
+      "min_version": "2.2.0",
+      "accept_case": "matrix_signal_input_before_valid",
+      "reject_case": "matrix_signal_input_before_invalid",
+      "span": {
+        "start": 105,
+        "end": 117,
+        "text": "input signal"
+      },
+      "focal_kind": "decl"
+    },
+    {
+      "id": "signal_output_before",
+      "grammar": "SignalHeader#output_before",
+      "min_version": "2.2.0",
+      "accept_case": "matrix_signal_output_before_valid",
+      "reject_case": "matrix_signal_output_before_invalid",
+      "span": {
+        "start": 105,
+        "end": 118,
+        "text": "output signal"
+      },
+      "focal_kind": "decl"
+    },
+    {
+      "id": "signal_tags",
+      "grammar": "ParseTagsList#tags",
+      "min_version": "2.1.0",
+      "accept_case": "matrix_signal_tags_valid",
+      "reject_case": "matrix_signal_tags_invalid",
+      "span": {
+        "start": 119,
+        "end": 127,
+        "text": "{binary}"
+      },
+      "focal_kind": "decl"
+    },
+    {
+      "id": "signal_constraint_init",
+      "grammar": "SignalConstraintSymbol#init",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_signal_constraint_init_valid",
+      "reject_case": "matrix_signal_constraint_init_invalid",
+      "span": {
+        "start": 112,
+        "end": 117,
+        "text": "v <=="
+      },
+      "focal_kind": "decl"
+    },
+    {
+      "id": "signal_witness_init",
+      "grammar": "SignalSimpleSymbol#init",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_signal_witness_init_valid",
+      "reject_case": "matrix_signal_witness_init_invalid",
+      "span": {
+        "start": 112,
+        "end": 117,
+        "text": "v <--"
+      },
+      "focal_kind": "decl"
+    },
+    {
+      "id": "signal_tuple",
+      "grammar": "ParseDeclaration#signal_tuple",
+      "min_version": "2.1.0",
+      "accept_case": "matrix_signal_tuple_valid",
+      "reject_case": "matrix_signal_tuple_invalid",
+      "span": {
+        "start": 112,
+        "end": 117,
+        "text": "(v,w)"
+      },
+      "focal_kind": "decl"
+    },
+    {
+      "id": "component_tuple_constraint",
+      "grammar": "TupleInitialization#constraint",
+      "min_version": "2.1.0",
+      "accept_case": "matrix_component_tuple_constraint_valid",
+      "reject_case": "matrix_component_tuple_constraint_invalid",
+      "span": {
+        "start": 121,
+        "end": 124,
+        "text": "<=="
+      },
+      "focal_kind": "decl"
+    },
+    {
+      "id": "var_tuple_witness",
+      "grammar": "TupleInitialization#witness",
+      "min_version": "2.1.0",
+      "accept_case": "matrix_var_tuple_witness_valid",
+      "reject_case": "matrix_var_tuple_witness_invalid",
+      "span": {
+        "start": 115,
+        "end": 118,
+        "text": "<--"
+      },
+      "focal_kind": "decl"
+    },
+    {
+      "id": "bus_after",
+      "grammar": "BusHeader#name_then_type",
+      "min_version": "2.2.0",
+      "accept_case": "matrix_bus_after_valid",
+      "reject_case": "matrix_bus_after_invalid",
+      "span": {
+        "start": 105,
+        "end": 108,
+        "text": "B v"
+      },
+      "focal_kind": "decl"
+    },
+    {
+      "id": "bus_before",
+      "grammar": "BusHeader#type_then_name",
+      "min_version": "2.2.0",
+      "accept_case": "matrix_bus_before_valid",
+      "reject_case": "matrix_bus_before_invalid",
+      "span": {
+        "start": 105,
+        "end": 112,
+        "text": "input B"
+      },
+      "focal_kind": "decl"
+    },
+    {
+      "id": "bus_args_after",
+      "grammar": "BusHeader#call_then_type",
+      "min_version": "2.2.0",
+      "accept_case": "matrix_bus_args_after_valid",
+      "reject_case": "matrix_bus_args_after_invalid",
+      "span": {
+        "start": 105,
+        "end": 114,
+        "text": "B() input"
+      },
+      "focal_kind": "decl"
+    },
+    {
+      "id": "bus_args_before",
+      "grammar": "BusHeader#type_then_call",
+      "min_version": "2.2.0",
+      "accept_case": "matrix_bus_args_before_valid",
+      "reject_case": "matrix_bus_args_before_invalid",
+      "span": {
+        "start": 105,
+        "end": 114,
+        "text": "input B()"
+      },
+      "focal_kind": "decl"
+    },
+    {
+      "id": "bus_tags",
+      "grammar": "BusHeader#tags",
+      "min_version": "2.2.0",
+      "accept_case": "matrix_bus_tags_valid",
+      "reject_case": "matrix_bus_tags_invalid",
+      "span": {
+        "start": 114,
+        "end": 122,
+        "text": "{binary}"
+      },
+      "focal_kind": "decl"
+    },
+    {
+      "id": "bus_multiple",
+      "grammar": "ParseDeclaration#bus_symbols",
+      "min_version": "2.2.0",
+      "accept_case": "matrix_bus_multiple_valid",
+      "reject_case": "matrix_bus_multiple_invalid",
+      "span": {
+        "start": 107,
+        "end": 110,
+        "text": "v,w"
+      },
+      "focal_kind": "decl"
+    },
+    {
+      "id": "bus_constraint_init",
+      "grammar": "ParseDeclaration#bus_constraint",
+      "min_version": "2.2.0",
+      "accept_case": "matrix_bus_constraint_init_valid",
+      "reject_case": "matrix_bus_constraint_init_invalid",
+      "span": {
+        "start": 107,
+        "end": 112,
+        "text": "v <=="
+      },
+      "focal_kind": "decl"
+    },
+    {
+      "id": "bus_witness_init",
+      "grammar": "ParseDeclaration#bus_witness",
+      "min_version": "2.2.0",
+      "accept_case": "matrix_bus_witness_init_valid",
+      "reject_case": "matrix_bus_witness_init_invalid",
+      "span": {
+        "start": 107,
+        "end": 112,
+        "text": "v <--"
+      },
+      "focal_kind": "decl"
+    },
+    {
+      "id": "block",
+      "grammar": "ParseBlock#block",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_block_valid",
+      "reject_case": "matrix_block_invalid",
+      "span": {
+        "start": 147,
+        "end": 157,
+        "text": "{ x = 2; }"
+      },
+      "focal_kind": "stmt"
+    },
+    {
+      "id": "if_plain",
+      "grammar": "ParseStmt0NB#if",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_if_plain_valid",
+      "reject_case": "matrix_if_plain_invalid",
+      "span": {
+        "start": 147,
+        "end": 153,
+        "text": "if (1)"
+      },
+      "focal_kind": "stmt"
+    },
+    {
+      "id": "if_else",
+      "grammar": "ParseStatement1#if_else",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_if_else_valid",
+      "reject_case": "matrix_if_else_invalid",
+      "span": {
+        "start": 161,
+        "end": 165,
+        "text": "else"
+      },
+      "focal_kind": "stmt"
+    },
+    {
+      "id": "dangling_else",
+      "grammar": "ParseStmt0NB#dangling_else",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_dangling_else_valid",
+      "reject_case": "matrix_dangling_else_invalid",
+      "span": {
+        "start": 168,
+        "end": 172,
+        "text": "else"
+      },
+      "focal_kind": "stmt"
+    },
+    {
+      "id": "for_declaration",
+      "grammar": "ParseStatement2#for_declaration",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_for_declaration_valid",
+      "reject_case": "matrix_for_declaration_invalid",
+      "span": {
+        "start": 147,
+        "end": 155,
+        "text": "for (var"
+      },
+      "focal_kind": "stmt"
+    },
+    {
+      "id": "for_substitution",
+      "grammar": "ParseStatement2#for_substitution",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_for_substitution_valid",
+      "reject_case": "matrix_for_substitution_invalid",
+      "span": {
+        "start": 147,
+        "end": 153,
+        "text": "for (x"
+      },
+      "focal_kind": "stmt"
+    },
+    {
+      "id": "while",
+      "grammar": "ParseStatement2#while",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_while_valid",
+      "reject_case": "matrix_while_invalid",
+      "span": {
+        "start": 147,
+        "end": 152,
+        "text": "while"
+      },
+      "focal_kind": "stmt"
+    },
+    {
+      "id": "constraint_equality",
+      "grammar": "ParseStatement2#equality",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_constraint_equality_valid",
+      "reject_case": "matrix_constraint_equality_invalid",
+      "span": {
+        "start": 149,
+        "end": 152,
+        "text": "==="
+      },
+      "focal_kind": "stmt"
+    },
+    {
+      "id": "assert",
+      "grammar": "ParseStatement2#assert",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_assert_valid",
+      "reject_case": "matrix_assert_invalid",
+      "span": {
+        "start": 147,
+        "end": 153,
+        "text": "assert"
+      },
+      "focal_kind": "stmt"
+    },
+    {
+      "id": "log_empty",
+      "grammar": "ParseStatementLog#empty",
+      "min_version": "2.0.7",
+      "accept_case": "matrix_log_empty_valid",
+      "reject_case": "matrix_log_empty_invalid",
+      "span": {
+        "start": 147,
+        "end": 152,
+        "text": "log()"
+      },
+      "focal_kind": "stmt"
+    },
+    {
+      "id": "log_expression",
+      "grammar": "ParseStatementLog#expression",
+      "min_version": "2.0.7",
+      "accept_case": "matrix_log_expression_valid",
+      "reject_case": "matrix_log_expression_invalid",
+      "span": {
+        "start": 147,
+        "end": 153,
+        "text": "log(x)"
+      },
+      "focal_kind": "stmt"
+    },
+    {
+      "id": "log_string",
+      "grammar": "ParseLogArgument#string",
+      "min_version": "2.0.7",
+      "accept_case": "matrix_log_string_valid",
+      "reject_case": "matrix_log_string_invalid",
+      "span": {
+        "start": 151,
+        "end": 154,
+        "text": "\"x\""
+      },
+      "focal_kind": "stmt"
+    },
+    {
+      "id": "anonymous_statement",
+      "grammar": "ParseStatement2#anonymous",
+      "min_version": "2.1.0",
+      "accept_case": "matrix_anonymous_statement_valid",
+      "reject_case": "matrix_anonymous_statement_invalid",
+      "span": {
+        "start": 147,
+        "end": 157,
+        "text": "Child()(x)"
+      },
+      "focal_kind": "stmt"
+    },
+    {
+      "id": "substitution",
+      "grammar": "ParseStatement2#substitution",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_substitution_valid",
+      "reject_case": "matrix_substitution_invalid",
+      "span": {
+        "start": 147,
+        "end": 152,
+        "text": "x = 2"
+      },
+      "focal_kind": "stmt"
+    },
+    {
+      "id": "reverse_witness",
+      "grammar": "ParseSubstitution#reverse_witness",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_reverse_witness_valid",
+      "reject_case": "matrix_reverse_witness_invalid",
+      "span": {
+        "start": 149,
+        "end": 152,
+        "text": "-->"
+      },
+      "focal_kind": "stmt"
+    },
+    {
+      "id": "reverse_constraint",
+      "grammar": "ParseSubstitution#reverse_constraint",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_reverse_constraint_valid",
+      "reject_case": "matrix_reverse_constraint_invalid",
+      "span": {
+        "start": 149,
+        "end": 152,
+        "text": "==>"
+      },
+      "focal_kind": "stmt"
+    },
+    {
+      "id": "postfix_increment",
+      "grammar": "ParseSubstitution#increment",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_postfix_increment_valid",
+      "reject_case": "matrix_postfix_increment_invalid",
+      "span": {
+        "start": 148,
+        "end": 150,
+        "text": "++"
+      },
+      "focal_kind": "stmt"
+    },
+    {
+      "id": "postfix_decrement",
+      "grammar": "ParseSubstitution#decrement",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_postfix_decrement_valid",
+      "reject_case": "matrix_postfix_decrement_invalid",
+      "span": {
+        "start": 148,
+        "end": 150,
+        "text": "--"
+      },
+      "focal_kind": "stmt"
+    },
+    {
+      "id": "return",
+      "grammar": "ParseStatement2#return",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_return_valid",
+      "reject_case": "matrix_return_invalid",
+      "span": {
+        "start": 36,
+        "end": 42,
+        "text": "return"
+      },
+      "focal_kind": "function"
+    },
+    {
+      "id": "compound_intdiv",
+      "grammar": "ParseSubstitution#\\=",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_compound_intdiv_valid",
+      "reject_case": "matrix_compound_intdiv_invalid",
+      "span": {
+        "start": 149,
+        "end": 151,
+        "text": "\\="
+      },
+      "focal_kind": "stmt"
+    },
+    {
+      "id": "compound_pow",
+      "grammar": "ParseSubstitution#**=",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_compound_pow_valid",
+      "reject_case": "matrix_compound_pow_invalid",
+      "span": {
+        "start": 149,
+        "end": 152,
+        "text": "**="
+      },
+      "focal_kind": "stmt"
+    },
+    {
+      "id": "compound_add",
+      "grammar": "ParseSubstitution#+=",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_compound_add_valid",
+      "reject_case": "matrix_compound_add_invalid",
+      "span": {
+        "start": 149,
+        "end": 151,
+        "text": "+="
+      },
+      "focal_kind": "stmt"
+    },
+    {
+      "id": "compound_sub",
+      "grammar": "ParseSubstitution#-=",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_compound_sub_valid",
+      "reject_case": "matrix_compound_sub_invalid",
+      "span": {
+        "start": 149,
+        "end": 151,
+        "text": "-="
+      },
+      "focal_kind": "stmt"
+    },
+    {
+      "id": "compound_mul",
+      "grammar": "ParseSubstitution#*=",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_compound_mul_valid",
+      "reject_case": "matrix_compound_mul_invalid",
+      "span": {
+        "start": 149,
+        "end": 151,
+        "text": "*="
+      },
+      "focal_kind": "stmt"
+    },
+    {
+      "id": "compound_div",
+      "grammar": "ParseSubstitution#/=",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_compound_div_valid",
+      "reject_case": "matrix_compound_div_invalid",
+      "span": {
+        "start": 149,
+        "end": 151,
+        "text": "/="
+      },
+      "focal_kind": "stmt"
+    },
+    {
+      "id": "compound_mod",
+      "grammar": "ParseSubstitution#%=",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_compound_mod_valid",
+      "reject_case": "matrix_compound_mod_invalid",
+      "span": {
+        "start": 149,
+        "end": 151,
+        "text": "%="
+      },
+      "focal_kind": "stmt"
+    },
+    {
+      "id": "compound_shl",
+      "grammar": "ParseSubstitution#<<=",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_compound_shl_valid",
+      "reject_case": "matrix_compound_shl_invalid",
+      "span": {
+        "start": 149,
+        "end": 152,
+        "text": "<<="
+      },
+      "focal_kind": "stmt"
+    },
+    {
+      "id": "compound_shr",
+      "grammar": "ParseSubstitution#>>=",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_compound_shr_valid",
+      "reject_case": "matrix_compound_shr_invalid",
+      "span": {
+        "start": 149,
+        "end": 152,
+        "text": ">>="
+      },
+      "focal_kind": "stmt"
+    },
+    {
+      "id": "compound_and",
+      "grammar": "ParseSubstitution#&=",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_compound_and_valid",
+      "reject_case": "matrix_compound_and_invalid",
+      "span": {
+        "start": 149,
+        "end": 151,
+        "text": "&="
+      },
+      "focal_kind": "stmt"
+    },
+    {
+      "id": "compound_or",
+      "grammar": "ParseSubstitution#|=",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_compound_or_valid",
+      "reject_case": "matrix_compound_or_invalid",
+      "span": {
+        "start": 149,
+        "end": 151,
+        "text": "|="
+      },
+      "focal_kind": "stmt"
+    },
+    {
+      "id": "compound_xor",
+      "grammar": "ParseSubstitution#^=",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_compound_xor_valid",
+      "reject_case": "matrix_compound_xor_invalid",
+      "span": {
+        "start": 149,
+        "end": 151,
+        "text": "^="
+      },
+      "focal_kind": "stmt"
+    },
+    {
+      "id": "assign_var",
+      "grammar": "ParseAssignOp#=",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_assign_var_valid",
+      "reject_case": "matrix_assign_var_invalid",
+      "span": {
+        "start": 149,
+        "end": 150,
+        "text": "="
+      },
+      "focal_kind": "stmt"
+    },
+    {
+      "id": "assign_witness",
+      "grammar": "ParseAssignOp#<--",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_assign_witness_valid",
+      "reject_case": "matrix_assign_witness_invalid",
+      "span": {
+        "start": 149,
+        "end": 152,
+        "text": "<--"
+      },
+      "focal_kind": "stmt"
+    },
+    {
+      "id": "assign_constraint",
+      "grammar": "ParseAssignOp#<==",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_assign_constraint_valid",
+      "reject_case": "matrix_assign_constraint_invalid",
+      "span": {
+        "start": 149,
+        "end": 152,
+        "text": "<=="
+      },
+      "focal_kind": "stmt"
+    },
+    {
+      "id": "op_bool_or",
+      "grammar": "ExpressionOp#||",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_op_bool_or_valid",
+      "reject_case": "matrix_op_bool_or_invalid",
+      "span": {
+        "start": 200,
+        "end": 202,
+        "text": "||"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "op_bool_and",
+      "grammar": "ExpressionOp#&&",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_op_bool_and_valid",
+      "reject_case": "matrix_op_bool_and_invalid",
+      "span": {
+        "start": 200,
+        "end": 202,
+        "text": "&&"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "op_eq",
+      "grammar": "ExpressionOp#==",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_op_eq_valid",
+      "reject_case": "matrix_op_eq_invalid",
+      "span": {
+        "start": 200,
+        "end": 202,
+        "text": "=="
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "op_neq",
+      "grammar": "ExpressionOp#!=",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_op_neq_valid",
+      "reject_case": "matrix_op_neq_invalid",
+      "span": {
+        "start": 200,
+        "end": 202,
+        "text": "!="
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "op_lt",
+      "grammar": "ExpressionOp#<",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_op_lt_valid",
+      "reject_case": "matrix_op_lt_invalid",
+      "span": {
+        "start": 200,
+        "end": 201,
+        "text": "<"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "op_gt",
+      "grammar": "ExpressionOp#>",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_op_gt_valid",
+      "reject_case": "matrix_op_gt_invalid",
+      "span": {
+        "start": 200,
+        "end": 201,
+        "text": ">"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "op_le",
+      "grammar": "ExpressionOp#<=",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_op_le_valid",
+      "reject_case": "matrix_op_le_invalid",
+      "span": {
+        "start": 200,
+        "end": 202,
+        "text": "<="
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "op_ge",
+      "grammar": "ExpressionOp#>=",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_op_ge_valid",
+      "reject_case": "matrix_op_ge_invalid",
+      "span": {
+        "start": 200,
+        "end": 202,
+        "text": ">="
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "op_bit_or",
+      "grammar": "ExpressionOp#|",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_op_bit_or_valid",
+      "reject_case": "matrix_op_bit_or_invalid",
+      "span": {
+        "start": 200,
+        "end": 201,
+        "text": "|"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "op_bit_xor",
+      "grammar": "ExpressionOp#^",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_op_bit_xor_valid",
+      "reject_case": "matrix_op_bit_xor_invalid",
+      "span": {
+        "start": 200,
+        "end": 201,
+        "text": "^"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "op_bit_and",
+      "grammar": "ExpressionOp#&",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_op_bit_and_valid",
+      "reject_case": "matrix_op_bit_and_invalid",
+      "span": {
+        "start": 200,
+        "end": 201,
+        "text": "&"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "op_shl",
+      "grammar": "ExpressionOp#<<",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_op_shl_valid",
+      "reject_case": "matrix_op_shl_invalid",
+      "span": {
+        "start": 200,
+        "end": 202,
+        "text": "<<"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "op_shr",
+      "grammar": "ExpressionOp#>>",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_op_shr_valid",
+      "reject_case": "matrix_op_shr_invalid",
+      "span": {
+        "start": 200,
+        "end": 202,
+        "text": ">>"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "op_add",
+      "grammar": "ExpressionOp#+",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_op_add_valid",
+      "reject_case": "matrix_op_add_invalid",
+      "span": {
+        "start": 200,
+        "end": 201,
+        "text": "+"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "op_sub",
+      "grammar": "ExpressionOp#-",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_op_sub_valid",
+      "reject_case": "matrix_op_sub_invalid",
+      "span": {
+        "start": 200,
+        "end": 201,
+        "text": "-"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "op_mul",
+      "grammar": "ExpressionOp#*",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_op_mul_valid",
+      "reject_case": "matrix_op_mul_invalid",
+      "span": {
+        "start": 200,
+        "end": 201,
+        "text": "*"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "op_div",
+      "grammar": "ExpressionOp#/",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_op_div_valid",
+      "reject_case": "matrix_op_div_invalid",
+      "span": {
+        "start": 200,
+        "end": 201,
+        "text": "/"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "op_intdiv",
+      "grammar": "ExpressionOp#\\",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_op_intdiv_valid",
+      "reject_case": "matrix_op_intdiv_invalid",
+      "span": {
+        "start": 200,
+        "end": 201,
+        "text": "\\"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "op_mod",
+      "grammar": "ExpressionOp#%",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_op_mod_valid",
+      "reject_case": "matrix_op_mod_invalid",
+      "span": {
+        "start": 200,
+        "end": 201,
+        "text": "%"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "op_pow",
+      "grammar": "ExpressionOp#**",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_op_pow_valid",
+      "reject_case": "matrix_op_pow_invalid",
+      "span": {
+        "start": 200,
+        "end": 202,
+        "text": "**"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "unary_not",
+      "grammar": "ParseExpressionPrefixOpcode#!",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_unary_not_valid",
+      "reject_case": "matrix_unary_not_invalid",
+      "span": {
+        "start": 198,
+        "end": 199,
+        "text": "!"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "unary_complement",
+      "grammar": "ParseExpressionPrefixOpcode#~",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_unary_complement_valid",
+      "reject_case": "matrix_unary_complement_invalid",
+      "span": {
+        "start": 198,
+        "end": 199,
+        "text": "~"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "unary_neg",
+      "grammar": "ParseExpressionPrefixOpcode#-",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_unary_neg_valid",
+      "reject_case": "matrix_unary_neg_invalid",
+      "span": {
+        "start": 198,
+        "end": 199,
+        "text": "-"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "ternary",
+      "grammar": "Expression13#ternary",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_ternary_valid",
+      "reject_case": "matrix_ternary_invalid",
+      "span": {
+        "start": 200,
+        "end": 201,
+        "text": "?"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "parallel_expr",
+      "grammar": "Expression14#parallel",
+      "min_version": "2.0.8",
+      "accept_case": "matrix_parallel_expr_valid",
+      "reject_case": "matrix_parallel_expr_invalid",
+      "span": {
+        "start": 198,
+        "end": 206,
+        "text": "parallel"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "call_empty",
+      "grammar": "Expression1#call_empty",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_call_empty_valid",
+      "reject_case": "matrix_call_empty_invalid",
+      "span": {
+        "start": 198,
+        "end": 201,
+        "text": "F()"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "call_args",
+      "grammar": "Expression1#call_args",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_call_args_valid",
+      "reject_case": "matrix_call_args_invalid",
+      "span": {
+        "start": 198,
+        "end": 202,
+        "text": "F(1)"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "anonymous_positional",
+      "grammar": "Expression1#anonymous_positional",
+      "min_version": "2.1.0",
+      "accept_case": "matrix_anonymous_positional_valid",
+      "reject_case": "matrix_anonymous_positional_invalid",
+      "span": {
+        "start": 198,
+        "end": 208,
+        "text": "Child()(1)"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "anonymous_named",
+      "grammar": "Expression1#anonymous_named",
+      "min_version": "2.1.1",
+      "accept_case": "matrix_anonymous_named_valid",
+      "reject_case": "matrix_anonymous_named_invalid",
+      "span": {
+        "start": 206,
+        "end": 212,
+        "text": "in <=="
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "inline_array",
+      "grammar": "Expression1#inline_array",
+      "min_version": "2.1.0",
+      "accept_case": "matrix_inline_array_valid",
+      "reject_case": "matrix_inline_array_invalid",
+      "span": {
+        "start": 198,
+        "end": 203,
+        "text": "[1,2]"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "tuple",
+      "grammar": "Expression1#tuple",
+      "min_version": "2.1.0",
+      "accept_case": "matrix_tuple_valid",
+      "reject_case": "matrix_tuple_invalid",
+      "span": {
+        "start": 198,
+        "end": 203,
+        "text": "(1,2)"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "variable",
+      "grammar": "Expression0#variable",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_variable_valid",
+      "reject_case": "matrix_variable_invalid",
+      "span": {
+        "start": 198,
+        "end": 199,
+        "text": "a"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "array_access",
+      "grammar": "ParseVarAccess#index",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_array_access_valid",
+      "reject_case": "matrix_array_access_invalid",
+      "span": {
+        "start": 199,
+        "end": 202,
+        "text": "[0]"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "field_access",
+      "grammar": "ParseVarAccess#field",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_field_access_valid",
+      "reject_case": "matrix_field_access_invalid",
+      "span": {
+        "start": 199,
+        "end": 201,
+        "text": ".x"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "discard",
+      "grammar": "Expression0#discard",
+      "min_version": "2.1.0",
+      "accept_case": "matrix_discard_valid",
+      "reject_case": "matrix_discard_invalid",
+      "span": {
+        "start": 198,
+        "end": 199,
+        "text": "_"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "decimal",
+      "grammar": "Expression0#decimal",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_decimal_valid",
+      "reject_case": "matrix_decimal_invalid",
+      "span": {
+        "start": 198,
+        "end": 201,
+        "text": "123"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "hex",
+      "grammar": "Expression0#hex",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_hex_valid",
+      "reject_case": "matrix_hex_invalid",
+      "span": {
+        "start": 198,
+        "end": 202,
+        "text": "0xAB"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "parenthesized",
+      "grammar": "Expression0#parentheses",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_parenthesized_valid",
+      "reject_case": "matrix_parenthesized_invalid",
+      "span": {
+        "start": 198,
+        "end": 201,
+        "text": "(1)"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "precedence_bool",
+      "grammar": "Precedence#precedence_bool",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_precedence_bool_valid",
+      "reject_case": "matrix_precedence_bool_invalid",
+      "span": {
+        "start": 200,
+        "end": 202,
+        "text": "||"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "precedence_comparison",
+      "grammar": "Precedence#precedence_comparison",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_precedence_comparison_valid",
+      "reject_case": "matrix_precedence_comparison_invalid",
+      "span": {
+        "start": 200,
+        "end": 202,
+        "text": "=="
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "precedence_bitwise",
+      "grammar": "Precedence#precedence_bitwise",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_precedence_bitwise_valid",
+      "reject_case": "matrix_precedence_bitwise_invalid",
+      "span": {
+        "start": 200,
+        "end": 201,
+        "text": "|"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "precedence_shift",
+      "grammar": "Precedence#precedence_shift",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_precedence_shift_valid",
+      "reject_case": "matrix_precedence_shift_invalid",
+      "span": {
+        "start": 200,
+        "end": 202,
+        "text": "<<"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "precedence_additive",
+      "grammar": "Precedence#precedence_additive",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_precedence_additive_valid",
+      "reject_case": "matrix_precedence_additive_invalid",
+      "span": {
+        "start": 200,
+        "end": 201,
+        "text": "+"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "precedence_power",
+      "grammar": "Precedence#precedence_power",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_precedence_power_valid",
+      "reject_case": "matrix_precedence_power_invalid",
+      "span": {
+        "start": 204,
+        "end": 206,
+        "text": "**"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "associativity_sub",
+      "grammar": "Precedence#associativity_sub",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_associativity_sub_valid",
+      "reject_case": "matrix_associativity_sub_invalid",
+      "span": {
+        "start": 201,
+        "end": 202,
+        "text": "-"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "associativity_pow",
+      "grammar": "Precedence#associativity_pow",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_associativity_pow_valid",
+      "reject_case": "matrix_associativity_pow_invalid",
+      "span": {
+        "start": 200,
+        "end": 202,
+        "text": "**"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "ternary_arm_boundary",
+      "grammar": "Precedence#ternary_arm_boundary",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_ternary_arm_boundary_valid",
+      "reject_case": "matrix_ternary_arm_boundary_invalid",
+      "span": {
+        "start": 200,
+        "end": 201,
+        "text": "?"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "top_level_order",
+      "grammar": "ParseAst#ordered_items",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_top_level_order_valid",
+      "reject_case": "matrix_top_level_order_invalid",
+      "span": {
+        "start": 21,
+        "end": 46,
+        "text": "include \"included.circom\""
+      },
+      "focal_kind": "top"
+    },
+    {
+      "id": "nested_if_no_else",
+      "grammar": "ParseStmt0NB#nested_if",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_nested_if_no_else_valid",
+      "reject_case": "matrix_nested_if_no_else_invalid",
+      "span": {
+        "start": 154,
+        "end": 160,
+        "text": "if (0)"
+      },
+      "focal_kind": "stmt"
+    },
+    {
+      "id": "signal_multiple",
+      "grammar": "ParseDeclaration#signal_multiple",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_signal_multiple_valid",
+      "reject_case": "matrix_signal_multiple_invalid",
+      "span": {
+        "start": 112,
+        "end": 115,
+        "text": "v,w"
+      },
+      "focal_kind": "decl"
+    },
+    {
+      "id": "component_multiple",
+      "grammar": "ParseDeclaration#component_multiple",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_component_multiple_valid",
+      "reject_case": "matrix_component_multiple_invalid",
+      "span": {
+        "start": 115,
+        "end": 118,
+        "text": "v,w"
+      },
+      "focal_kind": "decl"
+    },
+    {
+      "id": "bus_with_parameter",
+      "grammar": "BusHeader#parameterized_call",
+      "min_version": "2.2.0",
+      "accept_case": "matrix_bus_with_parameter_valid",
+      "reject_case": "matrix_bus_with_parameter_invalid",
+      "span": {
+        "start": 60,
+        "end": 66,
+        "text": "B(2) v"
+      },
+      "focal_kind": "top"
+    },
+    {
+      "id": "bus_before_parameter",
+      "grammar": "BusHeader#parameterized_type_first",
+      "min_version": "2.2.0",
+      "accept_case": "matrix_bus_before_parameter_valid",
+      "reject_case": "matrix_bus_before_parameter_invalid",
+      "span": {
+        "start": 60,
+        "end": 70,
+        "text": "input B(2)"
+      },
+      "focal_kind": "top"
+    },
+    {
+      "id": "tuple_var_constraint",
+      "grammar": "TupleInitialization#var_constraint",
+      "min_version": "2.1.0",
+      "accept_case": "matrix_tuple_var_constraint_valid",
+      "reject_case": "matrix_tuple_var_constraint_invalid",
+      "span": {
+        "start": 115,
+        "end": 118,
+        "text": "<=="
+      },
+      "focal_kind": "decl"
+    },
+    {
+      "id": "tuple_signal_witness",
+      "grammar": "TupleInitialization#signal_witness",
+      "min_version": "2.1.0",
+      "accept_case": "matrix_tuple_signal_witness_valid",
+      "reject_case": "matrix_tuple_signal_witness_invalid",
+      "span": {
+        "start": 118,
+        "end": 121,
+        "text": "<--"
+      },
+      "focal_kind": "decl"
+    },
+    {
+      "id": "signal_tags_input",
+      "grammar": "ParseTagsVector#input_tags",
+      "min_version": "2.1.0",
+      "accept_case": "matrix_signal_tags_input_valid",
+      "reject_case": "matrix_signal_tags_input_invalid",
+      "span": {
+        "start": 118,
+        "end": 126,
+        "text": "{binary}"
+      },
+      "focal_kind": "decl"
+    },
+    {
+      "id": "bus_tags_type_last",
+      "grammar": "BusHeader#tags_type_last",
+      "min_version": "2.2.0",
+      "accept_case": "matrix_bus_tags_type_last_valid",
+      "reject_case": "matrix_bus_tags_type_last_invalid",
+      "span": {
+        "start": 114,
+        "end": 122,
+        "text": "{binary}"
+      },
+      "focal_kind": "decl"
+    },
+    {
+      "id": "anonymous_named_witness",
+      "grammar": "ListableWithInputNames#witness",
+      "min_version": "2.1.1",
+      "accept_case": "matrix_anonymous_named_witness_valid",
+      "reject_case": "matrix_anonymous_named_witness_invalid",
+      "span": {
+        "start": 209,
+        "end": 212,
+        "text": "<--"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "anonymous_named_assignment",
+      "grammar": "ListableWithInputNames#assignment",
+      "min_version": "2.1.1",
+      "accept_case": "matrix_anonymous_named_assignment_valid",
+      "reject_case": "matrix_anonymous_named_assignment_invalid",
+      "span": {
+        "start": 209,
+        "end": 210,
+        "text": "="
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "multiple_array_dimensions",
+      "grammar": "SimpleSymbol#multiple_dimensions",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_multiple_array_dimensions_valid",
+      "reject_case": "matrix_multiple_array_dimensions_invalid",
+      "span": {
+        "start": 110,
+        "end": 116,
+        "text": "[2][3]"
+      },
+      "focal_kind": "decl"
+    },
+    {
+      "id": "mixed_access",
+      "grammar": "ParseVariable#mixed_access",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_mixed_access_valid",
+      "reject_case": "matrix_mixed_access_invalid",
+      "span": {
+        "start": 199,
+        "end": 204,
+        "text": ".x[0]"
+      },
+      "focal_kind": "expr"
+    },
+    {
+      "id": "comment_line",
+      "grammar": "Lexer#line_comment",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_comment_line_valid",
+      "reject_case": "matrix_comment_line_invalid",
+      "span": {
+        "start": 21,
+        "end": 36,
+        "text": "// line comment"
+      },
+      "focal_kind": "top"
+    },
+    {
+      "id": "comment_block",
+      "grammar": "Lexer#block_comment",
+      "min_version": "2.0.0",
+      "accept_case": "matrix_comment_block_valid",
+      "reject_case": "matrix_comment_block_invalid",
+      "span": {
+        "start": 21,
+        "end": 40,
+        "text": "/* block comment */"
+      },
+      "focal_kind": "top"
+    },
+    {
+      "id": "inline_array_buses",
+      "grammar": "Expression1#inline_array_buses",
+      "accept_case": "inline_array_buses_valid",
+      "reject_case": "inline_array_buses_invalid",
+      "min_version": "2.2.3",
+      "span": {
+        "start": 110,
+        "end": 128,
+        "text": "[a[2], a[0], a[1]]"
+      },
+      "focal_kind": "existing"
+    },
+    {
+      "id": "inline_array_anonymous",
+      "grammar": "Expression1#inline_array_anonymous",
+      "accept_case": "inline_array_anonymous_valid",
+      "reject_case": "inline_array_anonymous_invalid",
+      "min_version": "2.2.3",
+      "span": {
+        "start": 177,
+        "end": 203,
+        "text": "[Inc()(x[0]), Inc()(x[1])]"
+      },
+      "focal_kind": "existing"
+    }
+  ],
+  "version_semantics": "min_version is the earliest supporting compiler release; pragma declares a minimum required compiler release and does not freeze grammar features"
+}
