@@ -723,6 +723,7 @@ impl AnalysisFacts<'_> {
             | CfgNodeKind::Witness { .. }
             | CfgNodeKind::Constraint { .. }
             | CfgNodeKind::Assignment { .. }
+            | CfgNodeKind::Update { .. }
             | CfgNodeKind::Declaration
             | CfgNodeKind::Return(_)
             | CfgNodeKind::Assert { .. }

@@ -4,7 +4,7 @@ use abstract_interpretation::graph::NodeId;
 use abstract_interpretation::lattice::Lattice;
 use abstract_interpretation::solver::{DataflowAnalysis, Transfer, TransferOutcome};
 use parser::hir::{ExprId, ExprKind, HirProject, SymbolId, SymbolKind};
-use parser::new_frontend::{BinaryOperator, UnaryOperator};
+use parser::new_frontend::{BinaryOperator, PostfixOperator, UnaryOperator};
 
 use crate::hir_cfg::{CfgEdge, CfgNode, CfgNodeKind, DefinitionCfg, EdgeKind};
 
@@ -168,6 +168,31 @@ impl Transfer<ForwardAnalysis<'_>, ForwardState, String> for CfgNode {
                     }
                 }
             }
+            CfgNodeKind::Update { target, operator } => {
+                if !target.steps.is_empty()
+                    || !analysis
+                        .hir
+                        .symbol(target.root)
+                        .is_some_and(|symbol| symbol.kind == SymbolKind::Variable)
+                {
+                    return TransferOutcome::Opaque {
+                        provisional: output,
+                        reason: "unsupported update target".into(),
+                    };
+                }
+                let Some(previous) = variables.get(&target.root) else {
+                    return TransferOutcome::Opaque {
+                        provisional: output,
+                        reason: "unknown update value".into(),
+                    };
+                };
+                let one = analysis.field.canonical(1.into());
+                let updated = match operator {
+                    PostfixOperator::Increment => analysis.field.add(previous, &one),
+                    PostfixOperator::Decrement => analysis.field.subtract(previous, &one),
+                };
+                variables.insert(target.root, updated);
+            }
             CfgNodeKind::Constraint { .. } => {
                 may_constraints.insert(self.id);
                 must_constraints.insert(self.id);
@@ -254,6 +279,12 @@ pub fn eval_expression(
                 BinaryOperator::Multiply => Some(field.multiply(&left, &right)),
                 BinaryOperator::Equal => Some(field.canonical(i32::from(left == right).into())),
                 BinaryOperator::NotEqual => Some(field.canonical(i32::from(left != right).into())),
+                BinaryOperator::Less => Some(field.canonical(i32::from(left < right).into())),
+                BinaryOperator::LessEqual => Some(field.canonical(i32::from(left <= right).into())),
+                BinaryOperator::Greater => Some(field.canonical(i32::from(left > right).into())),
+                BinaryOperator::GreaterEqual => {
+                    Some(field.canonical(i32::from(left >= right).into()))
+                }
                 _ => None,
             }
         }

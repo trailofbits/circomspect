@@ -1,7 +1,9 @@
 use abstract_interpretation::graph::FlowGraph;
 use circomspect_program_analysis::hir_cfg::{build_cfg, CfgNodeKind};
-use circomspect_program_analysis::hir_facts::{analyze, AnalysisError, FieldContext, Incidence};
-use parser::hir::{lower_project, AccessPath, DefinitionRef, Effect, ExprKind, HirProject};
+use circomspect_program_analysis::hir_facts::{analyze, AnalysisError, FieldContext, Incidence, Range};
+use parser::hir::{
+    lower_project, AccessPath, ControlGuard, DefinitionRef, Effect, ExprKind, HirProject,
+};
 use parser::new_frontend::{load_sources, Version, VersionPolicy};
 use std::fs;
 use program_structure::utils::constants::Curve;
@@ -126,7 +128,12 @@ fn branch_must_constraint_needs_proven_compile_time_choice() {
     let field = FieldContext::for_curve(Curve::Bn254);
     let facts = analyze(&hir, &cfg, &field, None).unwrap();
     let path = last_assigned_path(&hir, definition, "y");
-    assert!(facts.incidence(&path).unavailable().is_some());
+    assert_eq!(facts.incidence(&path).certified(), Some(&Incidence::May));
+    let DefinitionRef::Template(id) = definition else { panic!("template fixture") };
+    let body = hir.block(hir.template(id).unwrap().body).unwrap();
+    assert!(body.effects.iter().any(|effect| {
+        matches!(effect, Effect::If { guard: ControlGuard::DeferredScalar, .. })
+    }));
 
     let (hir, definition) = fixture(
         "template Check() { signal output y; if (1) { y <== 7; } else { y <-- 7; } y <-- 1; }",
@@ -387,19 +394,26 @@ fn exhausted_budget_can_leave_an_independent_zero_certified() {
 }
 
 #[test]
-fn opaque_symbolic_branch_blocks_a_provisional_exact_value() {
-    let (hir, definition) = fixture("function Check(n){var x=0; if(n){x=1;}else{x=2;} return x;}");
-    let cfg = build_cfg(&hir, definition).unwrap();
+fn late_predecessor_changes_the_joined_range() {
     let field = FieldContext::for_curve(Curve::Bn254);
-    let facts = analyze(&hir, &cfg, &field, None).unwrap();
-    let DefinitionRef::Function(id) = definition else { panic!("function fixture") };
-    let body = hir.block(hir.function(id).unwrap().body).unwrap();
-    let expression = body.expressions()[0];
-    assert!(facts.range(expression).unavailable().is_some());
+    for (alternative, expected) in
+        [("1", Range::Exact(field.canonical(1.into()))), ("2", Range::Canonical)]
+    {
+        let source = format!(
+            "function Check(n){{var x=0; if(n){{x=1;}}else{{x={alternative};}} return x;}}"
+        );
+        let (hir, definition) = fixture(&source);
+        let cfg = build_cfg(&hir, definition).unwrap();
+        let facts = analyze(&hir, &cfg, &field, None).unwrap();
+        let DefinitionRef::Function(id) = definition else { panic!("function fixture") };
+        let body = hir.block(hir.function(id).unwrap().body).unwrap();
+        let expression = body.expressions()[0];
+        assert_eq!(facts.range(expression).certified(), Some(&expected), "{source}");
+    }
 }
 
 #[test]
-fn loop_update_keeps_must_constraint_unavailable() {
+fn fixed_bound_loop_canonicalizes_induction_indices() {
     let (hir, definition) = fixture(
         "template Check(){var i=0; signal output y[2]; \
          for(var j=0;j<2;j++){y[j] <== i;} signal output z; z <-- y[0];}",
@@ -408,5 +422,33 @@ fn loop_update_keeps_must_constraint_unavailable() {
     let field = FieldContext::for_curve(Curve::Bn254);
     let facts = analyze(&hir, &cfg, &field, None).unwrap();
     let y = expression_path(&hir, "y", 1);
-    assert!(facts.incidence(&y).unavailable().is_some());
+    assert_eq!(facts.incidence(&y).certified(), Some(&Incidence::Must));
+}
+
+#[test]
+fn proven_small_for_bounds_have_exact_constraint_incidence() {
+    let field = FieldContext::for_curve(Curve::Bn254);
+    for (bound, expected) in [(0, Incidence::Zero), (1, Incidence::Must), (2, Incidence::Must)] {
+        let source = format!(
+            "template Check(){{signal output y; for(var j=0;j<{bound};j++){{y <== 7;}} y <-- 2;}}"
+        );
+        let (hir, definition) = fixture(&source);
+        let cfg = build_cfg(&hir, definition).unwrap();
+        let facts = analyze(&hir, &cfg, &field, None).unwrap();
+        let y = last_assigned_path(&hir, definition, "y");
+        assert_eq!(facts.incidence(&y).certified(), Some(&expected), "{source}");
+    }
+}
+
+#[test]
+fn loop_body_that_changes_induction_variable_is_not_unrolled() {
+    let (hir, definition) = fixture(
+        "template Check(){signal output y[2]; for(var j=0;j<2;j++){j++; y[j] <== 7;} \
+         signal output z; z <-- y[1];}",
+    );
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let y = expression_path(&hir, "y", 1);
+    assert_ne!(facts.incidence(&y).certified(), Some(&Incidence::Must));
 }

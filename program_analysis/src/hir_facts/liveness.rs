@@ -155,6 +155,7 @@ impl Transfer<LivenessAnalysis<'_>, LiveState, String> for CfgNode {
             CfgNodeKind::Entry
             | CfgNodeKind::Exit
             | CfgNodeKind::LoopHeader
+            | CfgNodeKind::Update { .. }
             | CfgNodeKind::Declaration
             | CfgNodeKind::Log => {}
         }

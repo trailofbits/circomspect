@@ -7,7 +7,7 @@ use parser::hir::{
     AccessPath, AccessStep, BlockId, DefinitionRef, Effect, ExprId, ExprKind, HirProject,
     IncompleteReason, SymbolId,
 };
-use parser::new_frontend::Span;
+use parser::new_frontend::{BinaryOperator, PostfixOperator, Span};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Origin {
@@ -27,6 +27,7 @@ pub enum CfgNodeKind {
     Witness { target: AccessPath, value: ExprId },
     Constraint { target: Option<AccessPath>, left: ExprId, right: Option<ExprId> },
     Assignment { target: AccessPath, value: ExprId },
+    Update { target: AccessPath, operator: PostfixOperator },
     Instantiate { target: AccessPath, value: ExprId },
     Declaration,
     Return(ExprId),
@@ -275,11 +276,14 @@ impl Builder<'_> {
                     Origin { expression: Some(*left), ..origin },
                 ))
             }
-            Effect::Update { .. } => Ok(self.append(
-                tails,
-                CfgNodeKind::Opaque(IncompleteReason::Unsupported("update transfer".into())),
-                origin,
-            )),
+            Effect::Update { target, operator, .. } => {
+                let tails = self.evaluate_target(tails, target, origin)?;
+                Ok(self.append(
+                    tails,
+                    CfgNodeKind::Update { target: target.clone(), operator: *operator },
+                    origin,
+                ))
+            }
             Effect::If { condition, then_block, else_block, .. } => {
                 let tails = self.evaluate(tails, *condition, origin)?;
                 let branch_origin = self.expression_origin(*condition, origin)?;
@@ -296,9 +300,18 @@ impl Builder<'_> {
             Effect::While { condition, body, .. } => {
                 self.loop_effect(tails, *condition, *body, None, origin)
             }
-            Effect::For { initializer, condition, step, body, .. } => {
+            Effect::For { initializer, condition, step, body, guard, .. } => {
+                let iterations = if *guard == parser::hir::ControlGuard::CheckedCompileTime {
+                    self.static_for_iterations(*initializer, *condition, *step, *body)
+                } else {
+                    None
+                };
                 let tails = self.block(tails, *initializer)?;
-                self.loop_effect(tails, *condition, *body, Some(*step), origin)
+                if let Some(iterations) = iterations {
+                    self.unroll_for(tails, *condition, *body, *step, iterations, origin)
+                } else {
+                    self.loop_effect(tails, *condition, *body, Some(*step), origin)
+                }
             }
             Effect::Return { value, .. } => {
                 let tails = self.evaluate(tails, *value, origin)?;
@@ -349,6 +362,109 @@ impl Builder<'_> {
             body_tails = self.block(body_tails, step)?;
         }
         self.link(body_tails.into_iter().map(|(id, _)| (id, EdgeKind::Loop)).collect(), header);
+        Ok(vec![(branch, EdgeKind::False)])
+    }
+
+    fn static_for_iterations(
+        &self,
+        initializer: BlockId,
+        condition: ExprId,
+        step: BlockId,
+        body: BlockId,
+    ) -> Option<usize> {
+        let initializer = self.hir.block(initializer)?;
+        let mut initial = None;
+        for effect in &initializer.effects {
+            match effect {
+                Effect::Declaration { .. } => {}
+                Effect::VariableAssignment { target, value, .. } if target.steps.is_empty() => {
+                    if initial.is_some() {
+                        return None;
+                    }
+                    initial = Some((target.root, self.small_literal(*value)?));
+                }
+                _ => return None,
+            }
+        }
+        let (variable, initial) = initial?;
+        let expression = self.hir.expression(condition)?;
+        let ExprKind::Binary { operator: BinaryOperator::Less, left, right } = &expression.kind
+        else {
+            return None;
+        };
+        let ExprKind::Access(path) = &self.hir.expression(*left)?.kind else { return None };
+        if path.root != variable || !path.steps.is_empty() {
+            return None;
+        }
+        let bound = self.small_literal(*right)?;
+        let step = self.hir.block(step)?;
+        let [Effect::Update { target, operator: PostfixOperator::Increment, .. }] =
+            step.effects.as_slice()
+        else {
+            return None;
+        };
+        if target.root != variable || !target.steps.is_empty() {
+            return None;
+        }
+        let body = self.hir.block(body)?;
+        if body.effects.iter().any(|effect| Self::may_write_variable(effect, variable)) {
+            return None;
+        }
+        let iterations = bound.saturating_sub(initial);
+        (iterations <= 16).then_some(iterations)
+    }
+
+    fn small_literal(&self, expression: ExprId) -> Option<usize> {
+        let ExprKind::Number(text) = &self.hir.expression(expression)?.kind else { return None };
+        let value = text.parse::<usize>().ok()?;
+        (value <= 16).then_some(value)
+    }
+
+    fn may_write_variable(effect: &Effect, variable: SymbolId) -> bool {
+        match effect {
+            Effect::VariableAssignment { target, .. } | Effect::Update { target, .. } => {
+                target.root == variable
+            }
+            Effect::Declaration { .. }
+            | Effect::WitnessAssignment { .. }
+            | Effect::ConstraintAssignment { .. }
+            | Effect::EqualityConstraint { .. }
+            | Effect::Assert { .. }
+            | Effect::Log { .. } => false,
+            Effect::ComponentInstantiation { .. }
+            | Effect::If { .. }
+            | Effect::While { .. }
+            | Effect::For { .. }
+            | Effect::Return { .. }
+            | Effect::AnonymousComponent { .. }
+            | Effect::Block(_)
+            | Effect::Opaque { .. } => true,
+        }
+    }
+
+    fn unroll_for(
+        &mut self,
+        mut tails: Tails,
+        condition: ExprId,
+        body: BlockId,
+        step: BlockId,
+        iterations: usize,
+        origin: Origin,
+    ) -> Result<Tails, BuildError> {
+        let branch_origin = self.expression_origin(condition, origin)?;
+        for _ in 0..iterations {
+            let evaluated = self.evaluate(tails, condition, origin)?;
+            let branch = self.node(CfgNodeKind::Branch(condition), Some(branch_origin));
+            self.link(evaluated, branch);
+            let body_tails = self.block(vec![(branch, EdgeKind::True)], body)?;
+            tails = self.block(body_tails, step)?;
+            if tails.is_empty() {
+                return Ok(tails);
+            }
+        }
+        let evaluated = self.evaluate(tails, condition, origin)?;
+        let branch = self.node(CfgNodeKind::Branch(condition), Some(branch_origin));
+        self.link(evaluated, branch);
         Ok(vec![(branch, EdgeKind::False)])
     }
 
