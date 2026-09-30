@@ -58,7 +58,7 @@ impl Lowerer<'_> {
                 }
                 let left = self.lower_expression(left);
                 let right = self.lower_expression(right);
-                if !self.expression_is_checked(left) || !self.expression_is_checked(right) {
+                if !self.compatible_equality_operands(left, right) {
                     return vec![self.opaque(span, IncompleteReason::UnknownType)];
                 }
                 vec![Effect::EqualityConstraint { left, right, span }]
@@ -573,6 +573,21 @@ impl Lowerer<'_> {
             || !Self::symbolic_indices(&path).all(|id| self.expression_is_checked(id))
         {
             return self.opaque(span, IncompleteReason::UnknownType);
+        }
+        if matches!(kind, SymbolKind::Signal | SymbolKind::Bus) {
+            let Some(rank) = self.access_rank(&path) else {
+                return self.opaque(span, IncompleteReason::UnknownType);
+            };
+            match self.check_value_shape(self.access_type(&path), rank, value) {
+                ShapeCheck::Valid => {}
+                ShapeCheck::Invalid => {
+                    return self.invalid_assignment(
+                        span,
+                        "assignment value has incompatible type or array rank",
+                    );
+                }
+                ShapeCheck::Unknown => return self.opaque(span, IncompleteReason::UnknownType),
+            }
         }
         match (kind, operator) {
             (SymbolKind::Variable, AssignmentOperator::Assign)

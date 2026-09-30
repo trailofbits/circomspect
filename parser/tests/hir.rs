@@ -1039,3 +1039,92 @@ fn anonymous_input_with_invalid_public_shape_remains_opaque() {
         .iter()
         .all(|item| !matches!(item, Effect::ConstraintAssignment { .. })));
 }
+
+#[test]
+fn incompatible_assignments_do_not_generate_constraints() {
+    let cases = [
+        ("bus B(){signal x;} template T(){B b; b<==1;}", "b<==1"),
+        ("bus B(){signal x;} template T(){B b; signal output out; out<==b;}", "out<==b"),
+        ("bus B(){signal x;} bus C(){signal x;} template T(){B b; C c; b<==c;}", "b<==c"),
+        ("template T(){signal a[2]; signal output out; out<==a;}", "out<==a"),
+    ];
+    for (source, assignment) in cases {
+        let result = lower(&[("mismatch.circom", source)], Version::new(2, 2, 3));
+        assert_eq!(result.diagnostics.len(), 1, "{:?}", result.diagnostics);
+        let diagnostic = &result.diagnostics[0];
+        assert_eq!(diagnostic.code, SemanticCode::InvalidAssignment);
+        assert_eq!(diagnostic.severity, Severity::Error);
+        assert_eq!(&source[diagnostic.span.start()..diagnostic.span.end()], assignment);
+        assert!(effect_for(&result, "T")
+            .iter()
+            .all(|item| !matches!(item, Effect::ConstraintAssignment { .. })));
+    }
+}
+
+#[test]
+fn matching_bus_and_array_shapes_keep_checked_assignments() {
+    let source = concat!(
+        "bus B(){signal x;} template T(){B input source; B output target; ",
+        "signal input a[2]; signal output b[2]; target<==source; b<==a;}"
+    );
+    let result = lower(&[("matching.circom", source)], Version::new(2, 2, 3));
+    assert!(result.diagnostics.is_empty(), "{:?}", result.diagnostics);
+    assert_eq!(
+        effect_for(&result, "T")
+            .iter()
+            .filter(|item| matches!(item, Effect::ConstraintAssignment { .. }))
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn incompatible_anonymous_input_is_not_checked() {
+    let source = concat!(
+        "bus B(){signal x;} template Child(){B input b; signal output out; out<==b.x;} ",
+        "template T(){var a=Child()(b<==1);}"
+    );
+    let result = lower(&[("anonymous_type.circom", source)], Version::new(2, 2, 3));
+    let start = source.find("b<==1").unwrap();
+    assert_eq!(
+        diagnostic_fingerprint(&result),
+        vec![(SemanticCode::InvalidAssignment, Severity::Error, 0, start, start + 5)]
+    );
+    let anonymous = result
+        .hir
+        .expressions()
+        .iter()
+        .find(|item| matches!(item.kind, ExprKind::AnonymousComponent { .. }))
+        .unwrap();
+    let ExprKind::AnonymousComponent { inputs, .. } = &anonymous.kind else { unreachable!() };
+    assert_eq!(anonymous.knownness, Knownness::Opaque);
+    assert_eq!(inputs.len(), 1);
+    assert!(inputs[0].resolved_port().is_none());
+}
+
+#[test]
+fn incompatible_bus_arithmetic_and_equality_cannot_certify_constraints() {
+    let cases = [
+        "bus B(){signal x;} template T(){B b; b===1;}",
+        "bus B(){signal x;} bus C(){signal x;} template T(){B b; C c; b===c;}",
+        "bus B(){signal x;} template T(){B b; signal output out; out<==b+1;}",
+        "bus B(){signal x;} template T(){B b; signal output out; out<==-b;}",
+        "bus B(){signal x;} template T(){B b; signal output out; out<==b?1:2;}",
+    ];
+    for source in cases {
+        let result = lower(&[("arithmetic.circom", source)], Version::new(2, 2, 3));
+        assert!(effect_for(&result, "T").iter().all(|item| {
+            !matches!(item, Effect::EqualityConstraint { .. } | Effect::ConstraintAssignment { .. })
+        }));
+    }
+}
+
+#[test]
+fn matching_bus_equality_remains_a_checked_constraint() {
+    let source = "bus B(){signal x;} template T(){B a; B b; a===b;}";
+    let result = lower(&[("bus_equality.circom", source)], Version::new(2, 2, 3));
+    assert!(result.diagnostics.is_empty(), "{:?}", result.diagnostics);
+    assert!(effect_for(&result, "T")
+        .iter()
+        .any(|item| matches!(item, Effect::EqualityConstraint { .. })));
+}

@@ -358,6 +358,9 @@ impl Lowerer<'_> {
         match expression {
             Expression::Unary { operator, operand, .. } => {
                 let operand = self.lower_expression(operand);
+                if !self.scalar_arithmetic_operand(operand) {
+                    return self.opaque_expression(span);
+                }
                 self.add_expression(
                     ExprKind::Unary { operator: *operator, operand },
                     self.knownness(operand),
@@ -368,6 +371,9 @@ impl Lowerer<'_> {
             Expression::Binary { operator, left, right, .. } => {
                 let left = self.lower_expression(left);
                 let right = self.lower_expression(right);
+                if !self.scalar_arithmetic_operand(left) || !self.scalar_arithmetic_operand(right) {
+                    return self.opaque_expression(span);
+                }
                 self.add_expression(
                     ExprKind::Binary { operator: *operator, left, right },
                     self.knownness(left).join(self.knownness(right)),
@@ -379,6 +385,9 @@ impl Lowerer<'_> {
                 let condition = self.lower_expression(condition);
                 let yes = self.lower_expression(yes);
                 let no = self.lower_expression(no);
+                if !self.scalar_arithmetic_operand(condition) {
+                    return self.opaque_expression(span);
+                }
                 let ty = if self.expression_type(yes) == self.expression_type(no) {
                     self.expression_type(yes)
                 } else {
@@ -423,20 +432,128 @@ impl Lowerer<'_> {
         self.symbol_type(path.terminal)
     }
 
-    pub(super) fn array_type(&self, elements: &[ExprId]) -> ValueType {
-        if elements.is_empty() {
-            return ValueType::Plain;
+    pub(super) fn access_rank(&self, path: &AccessPath) -> Option<usize> {
+        let symbol = &self.hir.symbols[path.terminal.index];
+        if !symbol.shape_checked {
+            return None;
         }
-        let mut ty = ValueType::Plain;
-        for element in elements {
-            match self.expression_type(*element) {
-                ValueType::Bus(id) => ty = ValueType::Bus(id),
-                ValueType::Component(_) => return ValueType::Unknown,
-                ValueType::Unknown if !matches!(ty, ValueType::Bus(_)) => ty = ValueType::Unknown,
-                _ => {}
+        let mut indices = 0;
+        for step in path.steps.iter().rev() {
+            match step {
+                AccessStep::Index { .. } => indices += 1,
+                AccessStep::Port { .. } => break,
+                AccessStep::Tag { .. } => return Some(0),
             }
         }
-        ty
+        symbol.rank.checked_sub(indices)
+    }
+
+    pub(super) fn expression_rank(&self, id: ExprId) -> Option<usize> {
+        let expression = self.hir.expression(id)?;
+        match &expression.kind {
+            ExprKind::Number(_)
+            | ExprKind::Call { .. }
+            | ExprKind::Unary { .. }
+            | ExprKind::Binary { .. } => Some(0),
+            ExprKind::Access(path) => self.access_rank(path),
+            ExprKind::Array(elements) => {
+                let Some(first) = elements.first() else { return Some(1) };
+                let rank = self.expression_rank(*first)?;
+                elements
+                    .iter()
+                    .all(|id| self.expression_rank(*id) == Some(rank))
+                    .then_some(rank + 1)
+            }
+            ExprKind::Ternary { yes, no, .. } => {
+                let rank = self.expression_rank(*yes)?;
+                (self.expression_rank(*no) == Some(rank)).then_some(rank)
+            }
+            ExprKind::Parallel(operand) => self.expression_rank(*operand),
+            ExprKind::AnonymousComponent { component, .. } => {
+                let target = self.hir.components[component.index].target.as_ref()?;
+                let CallTarget::Template(template) = target else { return None };
+                self.anonymous_output_shape(*template).map(|(_, rank)| rank)
+            }
+            ExprKind::Tuple(_) | ExprKind::Opaque(_) => None,
+        }
+    }
+
+    pub(super) fn check_value_shape(
+        &self,
+        expected_type: ValueType,
+        expected_rank: usize,
+        value: ExprId,
+    ) -> ShapeCheck {
+        let actual_type = self.expression_type(value);
+        let actual_rank = self.expression_rank(value);
+        if expected_type == ValueType::Unknown || actual_type == ValueType::Unknown {
+            return ShapeCheck::Unknown;
+        }
+        let Some(actual_rank) = actual_rank else { return ShapeCheck::Unknown };
+        if expected_type == actual_type && expected_rank == actual_rank {
+            ShapeCheck::Valid
+        } else {
+            ShapeCheck::Invalid
+        }
+    }
+
+    pub(super) fn scalar_arithmetic_operand(&self, id: ExprId) -> bool {
+        self.expression_is_checked(id)
+            && self.expression_type(id) == ValueType::Plain
+            && self.expression_rank(id) == Some(0)
+    }
+
+    pub(super) fn compatible_equality_operands(&self, left: ExprId, right: ExprId) -> bool {
+        if !self.expression_is_checked(left) || !self.expression_is_checked(right) {
+            return false;
+        }
+        let ty = self.expression_type(left);
+        if !matches!(ty, ValueType::Plain | ValueType::Bus(_)) {
+            return false;
+        }
+        let Some(rank) = self.expression_rank(left) else { return false };
+        self.check_value_shape(ty, rank, right) == ShapeCheck::Valid
+    }
+
+    fn opaque_expression(&mut self, span: Span) -> ExprId {
+        self.incomplete(span, IncompleteReason::UnknownType);
+        self.add_expression(
+            ExprKind::Opaque(IncompleteReason::UnknownType),
+            Knownness::Opaque,
+            span,
+            ValueType::Unknown,
+        )
+    }
+
+    fn anonymous_output_shape(&self, template: TemplateId) -> Option<(ValueType, usize)> {
+        let mut outputs = self.hir.templates[template.index]
+            .ports
+            .iter()
+            .filter(|port| self.hir.ports[port.index].direction == Some(PortDirection::Output));
+        let port = *outputs.next()?;
+        if outputs.next().is_some() {
+            return None;
+        }
+        let port = &self.hir.ports[port.index];
+        let ty = match port.schema {
+            PortSchema::Signal => ValueType::Plain,
+            PortSchema::Bus(id) => ValueType::Bus(id),
+            PortSchema::Opaque(_) => return None,
+        };
+        Some((ty, self.hir.symbols[port.symbol.index].rank))
+    }
+
+    pub(super) fn array_type(&self, elements: &[ExprId]) -> ValueType {
+        let Some(first) = elements.first() else { return ValueType::Plain };
+        let ty = self.expression_type(*first);
+        if ty == ValueType::Unknown
+            || matches!(ty, ValueType::Component(_))
+            || elements.iter().any(|element| self.expression_type(*element) != ty)
+        {
+            ValueType::Unknown
+        } else {
+            ty
+        }
     }
 
     pub(super) fn span_key(span: Span) -> (usize, usize, usize) {
@@ -474,6 +591,10 @@ impl Lowerer<'_> {
         let component = self.hir.add_component(symbol, call.span);
         let valid_target = matches!(target, CallTarget::Template(_));
         self.hir.components[component.index].target = Some(target);
+        let ty = template
+            .filter(|_| valid_inputs)
+            .and_then(|template| self.anonymous_output_shape(template))
+            .map_or(ValueType::Unknown, |(ty, _)| ty);
         self.add_expression(
             ExprKind::AnonymousComponent { component, arguments, inputs },
             if valid_target && valid_inputs {
@@ -482,7 +603,7 @@ impl Lowerer<'_> {
                 Knownness::Opaque
             },
             call.span,
-            ValueType::Unknown,
+            ty,
         )
     }
 
@@ -549,10 +670,14 @@ impl Lowerer<'_> {
             self.incomplete(span, IncompleteReason::InvalidAssignment);
             AnonymousInputTarget::Opaque(IncompleteReason::InvalidAssignment)
         } else if let Some(port) = port {
-            match &self.hir.ports[port.index].schema {
-                PortSchema::Signal | PortSchema::Bus(_) => AnonymousInputTarget::Port(port),
+            match self.hir.ports[port.index].schema.clone() {
+                PortSchema::Signal => {
+                    self.checked_anonymous_port(port, ValueType::Plain, value, span)
+                }
+                PortSchema::Bus(id) => {
+                    self.checked_anonymous_port(port, ValueType::Bus(id), value, span)
+                }
                 PortSchema::Opaque(reason) => {
-                    let reason = reason.clone();
                     self.incomplete(span, reason.clone());
                     AnonymousInputTarget::Opaque(reason)
                 }
@@ -571,6 +696,34 @@ impl Lowerer<'_> {
             AnonymousInputTarget::Opaque(reason)
         };
         AnonymousInputEffect { target, operator, value, span }
+    }
+
+    fn checked_anonymous_port(
+        &mut self,
+        port: crate::hir::PortId,
+        expected_type: ValueType,
+        value: ExprId,
+        span: Span,
+    ) -> AnonymousInputTarget {
+        let symbol = self.hir.ports[port.index].symbol;
+        let rank = self.hir.symbols[symbol.index].rank;
+        match self.check_value_shape(expected_type, rank, value) {
+            ShapeCheck::Valid => AnonymousInputTarget::Port(port),
+            ShapeCheck::Invalid => {
+                self.diagnostic(
+                    SemanticCode::InvalidAssignment,
+                    Severity::Error,
+                    span,
+                    "anonymous input value has incompatible type or array rank".into(),
+                );
+                self.incomplete(span, IncompleteReason::InvalidAssignment);
+                AnonymousInputTarget::Opaque(IncompleteReason::InvalidAssignment)
+            }
+            ShapeCheck::Unknown => {
+                self.incomplete(span, IncompleteReason::UnknownType);
+                AnonymousInputTarget::Opaque(IncompleteReason::UnknownType)
+            }
+        }
     }
 
     pub(super) fn validate_anonymous_inputs(

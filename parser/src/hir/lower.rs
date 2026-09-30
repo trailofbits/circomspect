@@ -22,6 +22,13 @@ enum ValueType {
     Unknown,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ShapeCheck {
+    Valid,
+    Invalid,
+    Unknown,
+}
+
 #[derive(Default)]
 struct Scopes {
     stack: Vec<BTreeMap<String, SymbolId>>,
