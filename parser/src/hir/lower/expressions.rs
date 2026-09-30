@@ -212,15 +212,12 @@ impl Lowerer<'_> {
             }
             if let Some(port) = matching.first().copied() {
                 let symbol = self.hir.ports[port.index].symbol;
-                if !self.hir.symbols[symbol.index].shape_checked {
+                let Some(PortSchema::Checked(next)) = self.external_ports.get(&port).copied()
+                else {
                     self.incomplete(field.span, IncompleteReason::UnknownType);
                     return None;
-                }
-                return Some((
-                    AccessStep::Port { port, span: field.span },
-                    symbol,
-                    self.symbol_type(symbol),
-                ));
+                };
+                return Some((AccessStep::Port { port, span: field.span }, symbol, next));
             }
             self.diagnostic(
                 SemanticCode::InvalidSignalAccess,
@@ -407,6 +404,18 @@ impl Lowerer<'_> {
     }
 
     pub(super) fn access_type(&self, path: &AccessPath) -> ValueType {
+        for step in path.steps.iter().rev() {
+            match step {
+                AccessStep::Port { port, .. } => {
+                    return match self.external_ports.get(port).copied() {
+                        Some(PortSchema::Checked(ty)) => ty,
+                        Some(PortSchema::Opaque) | None => ValueType::Unknown,
+                    };
+                }
+                AccessStep::Tag { .. } => return ValueType::Plain,
+                AccessStep::Index { .. } => {}
+            }
+        }
         self.symbol_type(path.terminal)
     }
 
@@ -536,7 +545,13 @@ impl Lowerer<'_> {
             self.incomplete(span, IncompleteReason::InvalidAssignment);
             AnonymousInputTarget::Opaque(IncompleteReason::InvalidAssignment)
         } else if let Some(port) = port {
-            AnonymousInputTarget::Port(port)
+            match self.external_ports.get(&port).copied() {
+                Some(PortSchema::Checked(_)) => AnonymousInputTarget::Port(port),
+                Some(PortSchema::Opaque) | None => {
+                    self.incomplete(span, IncompleteReason::UnknownType);
+                    AnonymousInputTarget::Opaque(IncompleteReason::UnknownType)
+                }
+            }
         } else {
             self.diagnostic(
                 SemanticCode::AnonymousInput,

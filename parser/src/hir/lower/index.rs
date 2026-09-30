@@ -212,6 +212,18 @@ impl Lowerer<'_> {
                             .iter()
                             .all(|value| Self::syntactic_compile_time(value, &known_parameters));
                         let port = self.hir.add_port(symbol, direction, declared.span);
+                        let schema = if self.hir.symbols[symbol.index].shape_checked {
+                            match (kind, &bus_type) {
+                                (SymbolKind::Signal, _) => PortSchema::Checked(ValueType::Plain),
+                                (SymbolKind::Bus, Some(BusTarget::Bus(id))) => {
+                                    PortSchema::Checked(ValueType::Bus(*id))
+                                }
+                                _ => PortSchema::Opaque,
+                            }
+                        } else {
+                            PortSchema::Opaque
+                        };
+                        self.external_ports.insert(port, schema);
                         for tag in tags {
                             let tag_id =
                                 self.hir.add_symbol(tag.name.clone(), SymbolKind::Tag, tag.span);

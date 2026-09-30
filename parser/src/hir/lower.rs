@@ -4,7 +4,7 @@ use super::{
     AccessPath, AccessStep, AnonymousInputEffect, AnonymousInputTarget, ArrayIndex, BlockId, Bus,
     BusId, BusTarget, CallTarget, ComponentId, DefinitionKind, DefinitionRef, Effect, ExprId,
     ExprKind, HirProject, IncompleteLocation, IncompleteReason, IncompleteRegion, Knownness,
-    LoweredProject, Main, SemanticCode, SemanticDiagnostic, Severity, SymbolId, SymbolKind,
+    LoweredProject, Main, PortId, SemanticCode, SemanticDiagnostic, Severity, SymbolId, SymbolKind,
     Template, TemplateId, Function, FunctionId,
 };
 use crate::new_frontend::{
@@ -20,6 +20,12 @@ enum ValueType {
     Bus(BusId),
     Component(TemplateId),
     Unknown,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PortSchema {
+    Checked(ValueType),
+    Opaque,
 }
 
 #[derive(Default)]
@@ -69,6 +75,7 @@ struct Lowerer<'a> {
     array_types: BTreeMap<(usize, usize, usize), ValueType>,
     components: BTreeMap<SymbolId, ComponentId>,
     predeclared_ports: BTreeMap<(usize, usize, usize), SymbolId>,
+    external_ports: BTreeMap<PortId, PortSchema>,
     definition_locations: BTreeMap<(usize, usize, usize), DefinitionRef>,
     scopes: Scopes,
     current_definition: Option<DefinitionRef>,
@@ -184,6 +191,7 @@ pub fn lower_project(source: &LoadedProject) -> LoweredProject {
         array_types: BTreeMap::new(),
         components: BTreeMap::new(),
         predeclared_ports: BTreeMap::new(),
+        external_ports: BTreeMap::new(),
         definition_locations: BTreeMap::new(),
         scopes: Scopes::default(),
         current_definition: None,

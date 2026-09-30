@@ -987,3 +987,48 @@ fn invalid_forward_port_dimension_does_not_resolve_checked_access() {
         .iter()
         .all(|item| !matches!(item, Effect::ConstraintAssignment { .. })));
 }
+
+#[test]
+fn external_port_schema_does_not_change_with_definition_order() {
+    let later = concat!("template Later(){var n=1; signal output p[n]; ", "Inner(n) output b;}");
+    let early = concat!(
+        "template Early(){component c=Later(); signal output o; ",
+        "o<==c.p[0]; o<==c.b.leaf;}"
+    );
+    let bus = "bus Inner(n){signal leaf;}";
+    let before = format!("{bus} {early} {later}");
+    let after = format!("{bus} {later} {early}");
+    for source in [&before, &after] {
+        let result = lower(&[("order.circom", source)], Version::new(2, 2, 3));
+        assert!(result.diagnostics.is_empty(), "{:?}", result.diagnostics);
+        assert_eq!(max_port_steps(&result), 0);
+        assert!(effect_for(&result, "Early")
+            .iter()
+            .all(|item| !matches!(item, Effect::ConstraintAssignment { .. })));
+    }
+}
+
+#[test]
+fn anonymous_input_with_invalid_public_shape_remains_opaque() {
+    let source = concat!(
+        "template Child(){signal input n; signal input x[n];} ",
+        "template T(){signal output out; out<==Child()(n<==2,x<==3);}"
+    );
+    let result = lower(&[("anonymous_shape.circom", source)], Version::new(2, 2, 3));
+    assert!(result
+        .diagnostics
+        .iter()
+        .any(|item| { item.code == SemanticCode::NonConstantArrayLength }));
+    let anonymous = result
+        .hir
+        .expressions()
+        .iter()
+        .find(|item| matches!(item.kind, ExprKind::AnonymousComponent { .. }))
+        .unwrap();
+    let ExprKind::AnonymousComponent { inputs, .. } = &anonymous.kind else { unreachable!() };
+    assert!(inputs.iter().any(|input| input.resolved_port().is_none()));
+    assert_eq!(anonymous.knownness, Knownness::Opaque);
+    assert!(effect_for(&result, "T")
+        .iter()
+        .all(|item| !matches!(item, Effect::ConstraintAssignment { .. })));
+}
