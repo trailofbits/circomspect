@@ -1,0 +1,400 @@
+use super::ast::{SourceId, SyntaxKind, SyntaxNode};
+use super::{node, labelled};
+use super::lexer::TokenKind;
+
+grammar(source: SourceId);
+
+pub Item: SyntaxNode = {
+    <s:@L> "pragma" "circom" <a:Num> "." <b:Num> "." <c:Num> ";" <e:@R>
+        => labelled(SyntaxKind::Pragma, source, s, e, format!("{}.{}.{}", a, b, c), vec![]),
+    <s:@L> "pragma" "custom_templates" ";" <e:@R>
+        => node(SyntaxKind::Pragma, source, s, e, vec![]),
+    <s:@L> "include" <path:Str> ";" <e:@R>
+        => labelled(SyntaxKind::Include, source, s, e, path, vec![]),
+    <s:@L> "function" <name:Name> <params:Parameters> <body:Block> <e:@R>
+        => node(SyntaxKind::Function, source, s, e, vec![name, params, body]),
+    <s:@L> "template" <mods:TemplateModifiers> <name:Name> <params:Parameters?> <body:Block> <e:@R>
+        => node(SyntaxKind::Template, source, s, e,
+            [mods, vec![name], params.into_iter().collect(), vec![body]].concat()),
+    <s:@L> "bus" <name:Name> <params:Parameters?> <body:Block> <e:@R>
+        => node(SyntaxKind::Bus, source, s, e,
+            [vec![name], params.into_iter().collect(), vec![body]].concat()),
+    <s:@L> "component" "main" <public:PublicList?> "=" <expr:Expr> ";" <e:@R>
+        => node(SyntaxKind::Main, source, s, e,
+            [public.into_iter().collect(), vec![expr]].concat()),
+};
+
+TemplateModifiers: Vec<SyntaxNode> = {
+    <custom:CustomModifier?> <external:ExternalModifier?> <parallel:ParallelModifier?>
+        => [custom, external, parallel].into_iter().flatten().collect(),
+};
+CustomModifier: SyntaxNode = {
+    <s:@L> "custom" <e:@R> => labelled(SyntaxKind::Modifier, source, s, e, "custom".into(), vec![]),
+};
+ExternalModifier: SyntaxNode = {
+    <s:@L> "extern_c" <e:@R> => labelled(SyntaxKind::Modifier, source, s, e, "extern_c".into(), vec![]),
+};
+ParallelModifier: SyntaxNode = {
+    <s:@L> "parallel" <e:@R> => labelled(SyntaxKind::Modifier, source, s, e, "parallel".into(), vec![]),
+};
+
+PublicList: SyntaxNode = {
+    <s:@L> "{" "public" "[" <names:NameList> "]" "}" <e:@R>
+        => node(SyntaxKind::PublicList, source, s, e, names),
+};
+Parameters: SyntaxNode = {
+    <s:@L> "(" <names:NameList?> ")" <e:@R>
+        => node(SyntaxKind::Parameters, source, s, e, names.unwrap_or_default()),
+};
+NameList: Vec<SyntaxNode> = {
+    <mut names:(<Name> ",")*> <last:Name> => { names.push(last); names },
+};
+Name: SyntaxNode = {
+    <s:@L> <name:Id> <e:@R> => labelled(SyntaxKind::Identifier, source, s, e, name, vec![]),
+};
+
+Block: SyntaxNode = {
+    <s:@L> "{" <stmts:BlockStatement*> "}" <e:@R>
+        => node(SyntaxKind::Block, source, s, e, stmts),
+    <s:@L> "{" <mut stmts:BlockStatement*> <error_start:@L> ! <error_end:@R> "}" <e:@R>
+        => {
+            stmts.push(node(SyntaxKind::RecoveredStatement, source,
+                error_start, error_end, vec![]));
+            node(SyntaxKind::Block, source, s, e, stmts)
+        },
+};
+BlockStatement: SyntaxNode = {
+    <decl:Declaration> ";" => decl,
+    Statement,
+    <s:@L> ! ";" <e:@R> => node(SyntaxKind::RecoveredStatement, source, s, e, vec![]),
+};
+
+Declaration: SyntaxNode = {
+    <s:@L> "var" <symbols:SymbolList> <e:@R>
+        => labelled(SyntaxKind::Declaration, source, s, e, "var".into(), symbols),
+    <s:@L> "component" <symbols:SymbolList> <e:@R>
+        => labelled(SyntaxKind::Declaration, source, s, e, "component".into(), symbols),
+    <s:@L> <header:SignalHeader> <symbols:SignalSymbolList> <e:@R>
+        => node(SyntaxKind::Declaration, source, s, e, [vec![header], symbols].concat()),
+    <s:@L> <header:BusHeader> <symbols:SignalSymbolList> <e:@R>
+        => node(SyntaxKind::Declaration, source, s, e, [vec![header], symbols].concat()),
+    <s:@L> "var" "(" <symbols:SimpleSymbolList> ")" <init:TupleInit?> <e:@R>
+        => labelled(SyntaxKind::TupleDeclaration, source, s, e, "var".into(),
+            [symbols, init.into_iter().collect()].concat()),
+    <s:@L> "component" "(" <symbols:SimpleSymbolList> ")" <init:TupleInit?> <e:@R>
+        => labelled(SyntaxKind::TupleDeclaration, source, s, e, "component".into(),
+            [symbols, init.into_iter().collect()].concat()),
+    <s:@L> <header:SignalHeader> "(" <symbols:SimpleSymbolList> ")" <init:TupleInit?> <e:@R>
+        => node(SyntaxKind::TupleDeclaration, source, s, e,
+            [vec![header], symbols, init.into_iter().collect()].concat()),
+};
+
+SymbolList: Vec<SyntaxNode> = {
+    <mut xs:(<Symbol> ",")*> <x:Symbol> => { xs.push(x); xs },
+};
+SimpleSymbolList: Vec<SyntaxNode> = {
+    <mut xs:(<SimpleSymbol> ",")*> <x:SimpleSymbol> => { xs.push(x); xs },
+};
+SignalSymbolList: Vec<SyntaxNode> = {
+    <mut xs:(<SignalSymbol> ",")*> <x:SignalSymbol> => { xs.push(x); xs },
+};
+SimpleSymbol: SyntaxNode = {
+    <s:@L> <name:Name> <dims:Index*> <e:@R>
+        => node(SyntaxKind::Name, source, s, e, [vec![name], dims].concat()),
+};
+Symbol: SyntaxNode = {
+    <base:SimpleSymbol> => base,
+    <s:@L> <base:SimpleSymbol> "=" <expr:Expr> <e:@R>
+        => labelled(SyntaxKind::Assignment, source, s, e, "=".into(), vec![base, expr]),
+};
+SignalSymbol: SyntaxNode = {
+    <base:SimpleSymbol> => base,
+    <s:@L> <base:SimpleSymbol> <op:SignalAssignOp> <expr:Expr> <e:@R>
+        => labelled(SyntaxKind::Assignment, source, s, e, op, vec![base, expr]),
+};
+TupleInit: SyntaxNode = {
+    <s:@L> <op:AssignOp> <expr:Expr> <e:@R>
+        => labelled(SyntaxKind::Assignment, source, s, e, op, vec![expr]),
+};
+SignalHeader: SyntaxNode = {
+    <s:@L> "signal" <direction:Direction?> <tags:Tags?> <e:@R>
+        => node(SyntaxKind::SignalHeader, source, s, e,
+            [direction.into_iter().collect(), tags.unwrap_or_default()].concat()),
+    <s:@L> <direction:Direction> "signal" <tags:Tags?> <e:@R>
+        => node(SyntaxKind::DirectionFirstSignalHeader, source, s, e,
+            [vec![direction], tags.unwrap_or_default()].concat()),
+};
+BusHeader: SyntaxNode = {
+    <s:@L> <name:Name> <args:Arguments?> <direction:Direction?> <tags:Tags?> <e:@R>
+        => node(SyntaxKind::BusHeader, source, s, e,
+            [vec![name], args.into_iter().collect(), direction.into_iter().collect(),
+                tags.unwrap_or_default()].concat()),
+    <s:@L> <direction:Direction> <name:Name> <args:Arguments?> <tags:Tags?> <e:@R>
+        => node(SyntaxKind::DirectionFirstBusHeader, source, s, e,
+            [vec![direction, name], args.into_iter().collect(), tags.unwrap_or_default()].concat()),
+};
+Tags: Vec<SyntaxNode> = {
+    <s:@L> "{" <names:NameList> "}" <e:@R>
+        => vec![node(SyntaxKind::Tags, source, s, e, names)]
+};
+Direction: SyntaxNode = {
+    <s:@L> "input" <e:@R> => labelled(SyntaxKind::Direction, source, s, e, "input".into(), vec![]),
+    <s:@L> "output" <e:@R> => labelled(SyntaxKind::Direction, source, s, e, "output".into(), vec![]),
+};
+
+pub Statement: SyntaxNode = { Statement0 };
+Statement0: SyntaxNode = { IfNoElse, Statement1 };
+IfNoElse: SyntaxNode = {
+    <s:@L> "if" "(" <cond:Expr> ")" <then:IfNoElse> <e:@R>
+        => node(SyntaxKind::Conditional, source, s, e, vec![cond, then]),
+    <s:@L> "if" "(" <cond:Expr> ")" <then:Statement1> <e:@R>
+        => node(SyntaxKind::Conditional, source, s, e, vec![cond, then]),
+    <s:@L> "if" "(" <cond:Expr> ")" <then:Statement1> "else" <otherwise:IfNoElse> <e:@R>
+        => node(SyntaxKind::Conditional, source, s, e, vec![cond, then, otherwise]),
+};
+Statement1: SyntaxNode = {
+    <s:@L> "if" "(" <cond:Expr> ")" <then:Statement1> "else" <otherwise:Statement1> <e:@R>
+        => node(SyntaxKind::Conditional, source, s, e, vec![cond, then, otherwise]),
+    Statement2,
+};
+Statement2: SyntaxNode = {
+    <s:@L> "for" "(" <init:Declaration> ";" <cond:Expr> ";" <step:Substitution> ")" <body:Statement2> <e:@R>
+        => node(SyntaxKind::Loop, source, s, e, vec![init, cond, step, body]),
+    <s:@L> "for" "(" <init:Substitution> ";" <cond:Expr> ";" <step:Substitution> ")" <body:Statement2> <e:@R>
+        => node(SyntaxKind::Loop, source, s, e, vec![init, cond, step, body]),
+    <s:@L> "while" "(" <cond:Expr> ")" <body:Statement2> <e:@R>
+        => node(SyntaxKind::Loop, source, s, e, vec![cond, body]),
+    <s:@L> "return" <expr:Expr> ";" <e:@R>
+        => node(SyntaxKind::Return, source, s, e, vec![expr]),
+    <sub:Substitution> ";" => sub,
+    <s:@L> <left:Expr> "===" <right:Expr> ";" <e:@R>
+        => node(SyntaxKind::Constraint, source, s, e, vec![left, right]),
+    <s:@L> "log" "(" <args:LogArguments?> ")" ";" <e:@R>
+        => node(SyntaxKind::Log, source, s, e, args.unwrap_or_default()),
+    <s:@L> "assert" "(" <expr:Expr> ")" ";" <e:@R>
+        => node(SyntaxKind::Assert, source, s, e, vec![expr]),
+    <s:@L> <expr:Expr> ";" <e:@R>
+        => node(SyntaxKind::ExpressionStatement, source, s, e, vec![expr]),
+    Block,
+};
+LogArguments: Vec<SyntaxNode> = {
+    <mut xs:(<LogArgument> ",")*> <x:LogArgument> => { xs.push(x); xs },
+};
+LogArgument: SyntaxNode = {
+    <s:@L> <value:Str> <e:@R> => labelled(SyntaxKind::String, source, s, e, value, vec![]),
+    Expr,
+};
+
+Substitution: SyntaxNode = {
+    <s:@L> <left:Expr> <op:AssignOp> <right:Expr> <e:@R>
+        => labelled(SyntaxKind::Assignment, source, s, e, op, vec![left, right]),
+    <s:@L> <left:Expr> <op:ReverseAssignOp> <right:Expr> <e:@R>
+        => labelled(SyntaxKind::Assignment, source, s, e, op, vec![left, right]),
+    <s:@L> <left:Variable> <op:CompoundAssignOp> <right:Expr> <e:@R>
+        => labelled(SyntaxKind::Assignment, source, s, e, op, vec![left, right]),
+    <s:@L> <left:Variable> <op:PostfixOp> <e:@R>
+        => labelled(SyntaxKind::Assignment, source, s, e, op, vec![left]),
+};
+AssignOp: String = { "=" => "=".into(), "<--" => "<--".into(), "<==" => "<==".into() };
+SignalAssignOp: String = { "<--" => "<--".into(), "<==" => "<==".into() };
+ReverseAssignOp: String = { "-->" => "-->".into(), "==>" => "==>".into() };
+CompoundAssignOp: String = {
+    "+=" => "+=".into(), "-=" => "-=".into(), "*=" => "*=".into(),
+    "/=" => "/=".into(), "\\=" => "\\=".into(), "%=" => "%=".into(),
+    "**=" => "**=".into(), "<<=" => "<<=".into(), ">>=" => ">>=".into(),
+    "&=" => "&=".into(), "|=" => "|=".into(), "^=" => "^=".into(),
+};
+PostfixOp: String = { "++" => "++".into(), "--" => "--".into() };
+
+Variable: SyntaxNode = {
+    <s:@L> <name:Name> <access:Access*> <e:@R>
+        => node(SyntaxKind::Name, source, s, e, [vec![name], access].concat()),
+};
+Access: SyntaxNode = {
+    Index,
+    <s:@L> "." <name:Name> <e:@R>
+        => node(SyntaxKind::Access, source, s, e, vec![name]),
+};
+Index: SyntaxNode = {
+    <s:@L> "[" <expr:Expr> "]" <e:@R>
+        => node(SyntaxKind::Access, source, s, e, vec![expr]),
+};
+
+Arguments: SyntaxNode = {
+    <s:@L> "(" <args:ExpressionList?> ")" <e:@R>
+        => node(SyntaxKind::Arguments, source, s, e, args.unwrap_or_default()),
+};
+ExpressionList: Vec<SyntaxNode> = {
+    <mut xs:(<Expr> ",")*> <x:Expr> => { xs.push(x); xs },
+};
+NamedInputs: Vec<SyntaxNode> = {
+    <mut xs:(<NamedInput> ",")*> <x:NamedInput> => { xs.push(x); xs },
+};
+NamedInput: SyntaxNode = {
+    <s:@L> <name:Name> <op:AssignOp> <expr:Expr> <e:@R>
+        => labelled(SyntaxKind::Inputs, source, s, e, op, vec![name, expr]),
+};
+AnonymousInputs: Vec<SyntaxNode> = { ExpressionList, NamedInputs };
+
+pub Expr: SyntaxNode = { Expression14, Expression13, Expression12 };
+Expression14: SyntaxNode = {
+    <s:@L> "parallel" <expr:ParallelOperand> <e:@R>
+        => node(SyntaxKind::Parallel, source, s, e, vec![expr]),
+};
+ParallelOperand: SyntaxNode = { Expression13, Expression12 };
+Expression13: SyntaxNode = {
+    <s:@L> <cond:Expression12> "?" <yes:Expression12> ":" <no:Expression12> <e:@R>
+        => node(SyntaxKind::Ternary, source, s, e, vec![cond, yes, no]),
+};
+Infix<Op, Next>: SyntaxNode = {
+    <s:@L> <left:Infix<Op, Next>> <op:Op> <right:Next> <e:@R>
+        => labelled(SyntaxKind::Binary, source, s, e, op, vec![left, right]),
+    Next,
+};
+Prefix<Op, Next>: SyntaxNode = {
+    <s:@L> <op:Op> <expr:Next> <e:@R>
+        => labelled(SyntaxKind::Unary, source, s, e, op, vec![expr]),
+    Next,
+};
+Expression12 = Infix<BoolOrOp, Expression11>;
+Expression11 = Infix<BoolAndOp, Expression10>;
+Expression10 = Infix<CompareOp, Expression9>;
+Expression9 = Infix<BitOrOp, Expression8>;
+Expression8 = Infix<BitXorOp, Expression7>;
+Expression7 = Infix<BitAndOp, Expression6>;
+Expression6 = Infix<ShiftOp, Expression5>;
+Expression5 = Infix<AddOp, Expression4>;
+Expression4 = Infix<MulOp, Expression3>;
+Expression3 = Infix<PowOp, Expression2>;
+Expression2 = Prefix<UnaryOp, Expression1>;
+Expression1: SyntaxNode = {
+    <s:@L> <name:Name> <ps:@L> "(" <params:ExpressionList?> ")" <pe:@R>
+        <is:@L> "(" <inputs:AnonymousInputs?> ")" <ie:@R> <e:@R>
+        => node(SyntaxKind::AnonymousCall, source, s, e,
+            vec![name, node(SyntaxKind::Parameters, source, ps, pe, params.unwrap_or_default()),
+                 node(SyntaxKind::Inputs, source, is, ie, inputs.unwrap_or_default())]),
+    <s:@L> <name:Name> "(" <args:ExpressionList?> ")" <e:@R>
+        => node(SyntaxKind::Call, source, s, e,
+            [vec![name], args.unwrap_or_default()].concat()),
+    <s:@L> "[" <items:ExpressionList> "]" <e:@R>
+        => node(SyntaxKind::Array, source, s, e, items),
+    <s:@L> "(" <first:Expr> "," <second:Expr> <rest:("," <Expr>)*> ")" <e:@R>
+        => node(SyntaxKind::Tuple, source, s, e,
+            [vec![first, second], rest].concat()),
+    Primary,
+};
+Primary: SyntaxNode = {
+    Variable,
+    <s:@L> "_" <e:@R> => labelled(SyntaxKind::Identifier, source, s, e, "_".into(), vec![]),
+    <s:@L> <value:Num> <e:@R> => labelled(SyntaxKind::Number, source, s, e, value, vec![]),
+    <s:@L> "(" <expr:Expr> ")" <e:@R>
+        => node(SyntaxKind::Group, source, s, e, vec![expr]),
+};
+
+UnaryOp: String = { "!" => "!".into(), "~" => "~".into(), "-" => "-".into() };
+BoolOrOp: String = { "||" => "||".into() };
+BoolAndOp: String = { "&&" => "&&".into() };
+CompareOp: String = {
+    "==" => "==".into(), "!=" => "!=".into(), "<" => "<".into(),
+    ">" => ">".into(), "<=" => "<=".into(), ">=" => ">=".into(),
+};
+BitOrOp: String = { "|" => "|".into() };
+BitXorOp: String = { "^" => "^".into() };
+BitAndOp: String = { "&" => "&".into() };
+ShiftOp: String = { "<<" => "<<".into(), ">>" => ">>".into() };
+AddOp: String = { "+" => "+".into(), "-" => "-".into() };
+MulOp: String = {
+    "*" => "*".into(), "/" => "/".into(), "\\" => "\\".into(), "%" => "%".into(),
+};
+PowOp: String = { "**" => "**".into() };
+Id: String = { "ident" => <> };
+Num: String = { "number" => <> };
+Str: String = { "string" => <> };
+
+extern {
+    type Location = usize;
+    type Error = ();
+    enum TokenKind {
+        "ident" => TokenKind::Ident(<String>),
+        "number" => TokenKind::Number(<String>),
+        "string" => TokenKind::String(<String>),
+        "pragma" => TokenKind::Pragma,
+        "circom" => TokenKind::Circom,
+        "custom_templates" => TokenKind::CustomTemplates,
+        "include" => TokenKind::Include,
+        "function" => TokenKind::Function,
+        "template" => TokenKind::Template,
+        "bus" => TokenKind::Bus,
+        "custom" => TokenKind::Custom,
+        "extern_c" => TokenKind::ExternC,
+        "parallel" => TokenKind::Parallel,
+        "component" => TokenKind::Component,
+        "main" => TokenKind::Main,
+        "public" => TokenKind::Public,
+        "signal" => TokenKind::Signal,
+        "input" => TokenKind::Input,
+        "output" => TokenKind::Output,
+        "var" => TokenKind::Var,
+        "if" => TokenKind::If,
+        "else" => TokenKind::Else,
+        "for" => TokenKind::For,
+        "while" => TokenKind::While,
+        "return" => TokenKind::Return,
+        "assert" => TokenKind::Assert,
+        "log" => TokenKind::Log,
+        "{" => TokenKind::LBrace,
+        "}" => TokenKind::RBrace,
+        "(" => TokenKind::LParen,
+        ")" => TokenKind::RParen,
+        "[" => TokenKind::LBracket,
+        "]" => TokenKind::RBracket,
+        ";" => TokenKind::Semicolon,
+        "," => TokenKind::Comma,
+        "." => TokenKind::Dot,
+        "?" => TokenKind::Question,
+        ":" => TokenKind::Colon,
+        "=" => TokenKind::Assign,
+        "<--" => TokenKind::LeftSignal,
+        "<==" => TokenKind::LeftConstraint,
+        "-->" => TokenKind::RightSignal,
+        "==>" => TokenKind::RightConstraint,
+        "===" => TokenKind::EqConstraint,
+        "+=" => TokenKind::AddAssign,
+        "-=" => TokenKind::SubAssign,
+        "*=" => TokenKind::MulAssign,
+        "/=" => TokenKind::DivAssign,
+        "\\=" => TokenKind::IntDivAssign,
+        "%=" => TokenKind::ModAssign,
+        "**=" => TokenKind::PowAssign,
+        "<<=" => TokenKind::ShlAssign,
+        ">>=" => TokenKind::ShrAssign,
+        "&=" => TokenKind::AndAssign,
+        "|=" => TokenKind::OrAssign,
+        "^=" => TokenKind::XorAssign,
+        "++" => TokenKind::Increment,
+        "--" => TokenKind::Decrement,
+        "||" => TokenKind::BoolOr,
+        "&&" => TokenKind::BoolAnd,
+        "==" => TokenKind::Eq,
+        "!=" => TokenKind::Ne,
+        "<" => TokenKind::Lt,
+        ">" => TokenKind::Gt,
+        "<=" => TokenKind::Le,
+        ">=" => TokenKind::Ge,
+        "|" => TokenKind::BitOr,
+        "^" => TokenKind::BitXor,
+        "&" => TokenKind::BitAnd,
+        "<<" => TokenKind::Shl,
+        ">>" => TokenKind::Shr,
+        "+" => TokenKind::Plus,
+        "-" => TokenKind::Minus,
+        "*" => TokenKind::Star,
+        "/" => TokenKind::Slash,
+        "\\" => TokenKind::Backslash,
+        "%" => TokenKind::Percent,
+        "**" => TokenKind::Pow,
+        "!" => TokenKind::Not,
+        "~" => TokenKind::Complement,
+        "_" => TokenKind::Underscore,
+    }
+}
