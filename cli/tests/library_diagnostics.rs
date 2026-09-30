@@ -154,6 +154,50 @@ fn comment_markers_inside_include_path_are_not_comments() {
 }
 
 #[test]
+fn malformed_pragma_does_not_hide_later_definition() {
+    let path = fixture("malformed_pragma_library.circom");
+    let output = run(&[path.to_str().expect("fixture path is not UTF-8"), "--level", "error"]);
+    let stdout = String::from_utf8(output.stdout).expect("CLI output is not UTF-8");
+
+    assert!(!output.status.success(), "{stdout}");
+    assert!(stdout.contains("malformed_pragma_library.circom"), "{stdout}");
+    assert!(stdout.contains("analyzing template 'AfterMalformedPragma'"), "{stdout}");
+}
+
+#[test]
+fn malformed_include_does_not_hide_later_definition() {
+    let path = fixture("malformed_include_library.circom");
+    let output = run(&[path.to_str().expect("fixture path is not UTF-8"), "--level", "error"]);
+    let stdout = String::from_utf8(output.stdout).expect("CLI output is not UTF-8");
+
+    assert!(!output.status.success(), "{stdout}");
+    assert!(stdout.contains("malformed_include_library.circom"), "{stdout}");
+    assert!(stdout.contains("analyzing template 'AfterMalformedInclude'"), "{stdout}");
+}
+
+#[test]
+fn malformed_version_value_is_located_and_later_definition_is_analyzed() {
+    let path = fixture("malformed_version_value_library.circom");
+    let output = run(&[path.to_str().expect("fixture path is not UTF-8"), "--level", "error"]);
+    let stdout = String::from_utf8(output.stdout).expect("CLI output is not UTF-8");
+
+    assert!(!output.status.success(), "{stdout}");
+    assert!(stdout.contains("malformed_version_value_library.circom:1:15"), "{stdout}");
+    assert!(stdout.contains("analyzing template 'AfterMalformedVersionValue'"), "{stdout}");
+}
+
+#[test]
+fn malformed_include_path_is_located_and_later_definition_is_analyzed() {
+    let path = fixture("malformed_include_path_library.circom");
+    let output = run(&[path.to_str().expect("fixture path is not UTF-8"), "--level", "error"]);
+    let stdout = String::from_utf8(output.stdout).expect("CLI output is not UTF-8");
+
+    assert!(!output.status.success(), "{stdout}");
+    assert!(stdout.contains("malformed_include_path_library.circom:2:9"), "{stdout}");
+    assert!(stdout.contains("analyzing template 'AfterMalformedIncludePath'"), "{stdout}");
+}
+
+#[test]
 fn missing_input_file_is_visible() {
     let path = std::env::temp_dir()
         .join(format!("circomspect-nonexistent-input-{}.circom", std::process::id()));
@@ -219,6 +263,62 @@ fn unresolved_main_template_is_reported() {
     assert!(stdout.contains("MissingParameter"), "{stdout}");
     assert_eq!(stdout.matches("error:").count(), 2, "{stdout}");
     assert!(stdout.contains("unresolved_main.circom:3:"), "{stdout}");
+}
+
+#[test]
+fn function_cannot_be_used_as_main_template() {
+    let path = fixture("function_as_main.circom");
+    let output = run(&[path.to_str().expect("fixture path is not UTF-8"), "--level", "error"]);
+    let stdout = String::from_utf8(output.stdout).expect("CLI output is not UTF-8");
+
+    assert!(!output.status.success(), "{stdout}");
+    assert!(stdout.contains("OnlyFunction"), "{stdout}");
+    assert!(stdout.contains("template is required"), "{stdout}");
+    assert!(stdout.contains("function_as_main.circom:7:"), "{stdout}");
+}
+
+#[test]
+fn wrong_main_target_has_a_source_location_in_sarif() {
+    let source = fixture("function_as_main.circom");
+    let sarif = std::env::temp_dir().join(format!("circomspect-main-{}.sarif", std::process::id()));
+    let output = run(&[
+        source.to_str().expect("fixture path is not UTF-8"),
+        "--level",
+        "error",
+        "--sarif-file",
+        sarif.to_str().expect("temporary path is not UTF-8"),
+    ]);
+    let contents = std::fs::read_to_string(&sarif).expect("SARIF file was not written");
+    std::fs::remove_file(&sarif).expect("failed to remove SARIF file");
+    let sarif: serde_json::Value = serde_json::from_str(&contents).expect("invalid SARIF JSON");
+    let results = sarif["runs"][0]["results"].as_array().expect("SARIF results missing");
+
+    assert!(!output.status.success());
+    assert!(results.iter().any(|result| {
+        result["ruleId"] == "T2002"
+            && result["locations"][0]["physicalLocation"]["region"]["startLine"] == 7
+    }));
+}
+
+#[test]
+fn parallel_function_cannot_be_used_as_main_template() {
+    let path = fixture("parallel_function_as_main.circom");
+    let output = run(&[path.to_str().expect("fixture path is not UTF-8"), "--level", "error"]);
+    let stdout = String::from_utf8(output.stdout).expect("CLI output is not UTF-8");
+
+    assert!(!output.status.success(), "{stdout}");
+    assert!(stdout.contains("template is required"), "{stdout}");
+    assert!(stdout.contains("parallel_function_as_main.circom:7:"), "{stdout}");
+}
+
+#[test]
+fn valid_main_template_has_no_target_error() {
+    let path = fixture("valid_main.circom");
+    let output = run(&[path.to_str().expect("fixture path is not UTF-8"), "--level", "error"]);
+    let stdout = String::from_utf8(output.stdout).expect("CLI output is not UTF-8");
+
+    assert!(output.status.success(), "{stdout}");
+    assert!(stdout.contains("No issues found."), "{stdout}");
 }
 
 #[test]
