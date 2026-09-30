@@ -19,6 +19,7 @@ mod syntax_sugar_traits;
 mod syntax_sugar_remover;
 
 pub mod new_frontend;
+pub mod hir;
 
 pub use parser_logic::parse_definition;
 

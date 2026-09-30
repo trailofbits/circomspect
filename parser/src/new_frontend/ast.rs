@@ -10,6 +10,11 @@ impl SourceId {
     pub const fn new(value: usize) -> Self {
         Self(value)
     }
+
+    #[must_use]
+    pub const fn index(self) -> usize {
+        self.0
+    }
 }
 
 /// A byte range in a UTF-8 source file.

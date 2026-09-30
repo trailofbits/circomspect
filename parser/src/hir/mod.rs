@@ -1,0 +1,495 @@
+//! Checked, resolved semantic representation of an owned Circom source project.
+
+mod lower;
+
+use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+use crate::new_frontend::{
+    BinaryOperator, PortDirection, PostfixOperator, Span, SyntaxDiagnostic, UnaryOperator,
+};
+
+pub use lower::lower_project;
+
+static NEXT_PROJECT: AtomicU64 = AtomicU64::new(1);
+
+macro_rules! arena_id {
+    ($name:ident) => {
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub struct $name {
+            index: usize,
+            project: u64,
+        }
+
+        impl $name {
+            const fn new(index: usize, project: u64) -> Self {
+                Self { index, project }
+            }
+        }
+    };
+}
+
+arena_id!(FunctionId);
+arena_id!(TemplateId);
+arena_id!(BusId);
+arena_id!(SymbolId);
+arena_id!(ComponentId);
+arena_id!(PortId);
+arena_id!(ExprId);
+arena_id!(BlockId);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DefinitionKind {
+    Function,
+    Template,
+    Bus,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DefinitionRef {
+    Function(FunctionId),
+    Template(TemplateId),
+    Bus(BusId),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CallTarget {
+    Function(FunctionId),
+    Template(TemplateId),
+    Missing { expected_kind: DefinitionKind, name: String, span: Span },
+    WrongKind { expected_kind: DefinitionKind, actual: DefinitionRef },
+    Ambiguous { expected_kind: DefinitionKind, name: String, span: Span },
+    Opaque { reason: IncompleteReason },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum BusTarget {
+    Bus(BusId),
+    Missing { name: String, span: Span },
+    WrongKind { actual: DefinitionRef, span: Span },
+    Ambiguous { name: String, span: Span },
+    Opaque { reason: IncompleteReason },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SymbolKind {
+    Parameter,
+    Variable,
+    Signal,
+    Component,
+    Bus,
+    Tag,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Symbol {
+    pub id: SymbolId,
+    pub name: String,
+    pub kind: SymbolKind,
+    pub span: Span,
+    pub dimensions: Vec<ExprId>,
+    pub bus_type: Option<BusTarget>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Function {
+    pub id: FunctionId,
+    pub name: String,
+    pub parameters: Vec<SymbolId>,
+    pub body: BlockId,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Template {
+    pub id: TemplateId,
+    pub name: String,
+    pub parameters: Vec<SymbolId>,
+    pub ports: Vec<PortId>,
+    pub body: BlockId,
+    pub custom: bool,
+    pub external: bool,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Bus {
+    pub id: BusId,
+    pub name: String,
+    pub parameters: Vec<SymbolId>,
+    pub ports: Vec<PortId>,
+    pub body: BlockId,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Port {
+    pub id: PortId,
+    pub symbol: SymbolId,
+    pub direction: Option<PortDirection>,
+    pub tags: Vec<SymbolId>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Component {
+    pub id: ComponentId,
+    pub symbol: SymbolId,
+    pub target: Option<CallTarget>,
+    pub span: Span,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Knownness {
+    Constant,
+    ParameterDependent,
+    WitnessDependent,
+    Opaque,
+}
+
+impl Knownness {
+    #[must_use]
+    pub const fn is_compile_time(self) -> bool {
+        matches!(self, Self::Constant | Self::ParameterDependent)
+    }
+
+    fn join(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::Opaque, _) | (_, Self::Opaque) => Self::Opaque,
+            (Self::WitnessDependent, _) | (_, Self::WitnessDependent) => Self::WitnessDependent,
+            (Self::ParameterDependent, _) | (_, Self::ParameterDependent) => {
+                Self::ParameterDependent
+            }
+            (Self::Constant, Self::Constant) => Self::Constant,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ArrayIndex {
+    Constant(String),
+    Symbolic(ExprId),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AccessStep {
+    Index { index: ArrayIndex, span: Span },
+    Field { name: String, span: Span },
+    Port { port: PortId, span: Span },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AccessPath {
+    pub root: SymbolId,
+    pub steps: Vec<AccessStep>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ExprKind {
+    Number(String),
+    Access(AccessPath),
+    Call { target: CallTarget, arguments: Vec<ExprId> },
+    AnonymousComponent { component: ComponentId, arguments: Vec<ExprId>, inputs: Vec<ExprId> },
+    Array(Vec<ExprId>),
+    Tuple(Vec<ExprId>),
+    Unary { operator: UnaryOperator, operand: ExprId },
+    Binary { operator: BinaryOperator, left: ExprId, right: ExprId },
+    Ternary { condition: ExprId, yes: ExprId, no: ExprId },
+    Parallel(ExprId),
+    Opaque(IncompleteReason),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Expr {
+    pub id: ExprId,
+    pub kind: ExprKind,
+    pub knownness: Knownness,
+    pub span: Span,
+}
+
+impl Expr {
+    #[must_use]
+    pub fn call_target(&self) -> Option<&CallTarget> {
+        match &self.kind {
+            ExprKind::Call { target, .. } => Some(target),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Effect {
+    Declaration { symbol: SymbolId, value: Option<ExprId>, span: Span },
+    CompileTimeAssignment { target: AccessPath, value: ExprId, span: Span },
+    WitnessAssignment { target: AccessPath, value: ExprId, span: Span },
+    ConstraintAssignment { target: AccessPath, value: ExprId, span: Span },
+    EqualityConstraint { left: ExprId, right: ExprId, span: Span },
+    Update { target: AccessPath, operator: PostfixOperator, span: Span },
+    If { condition: ExprId, then_block: BlockId, else_block: Option<BlockId>, span: Span },
+    While { condition: ExprId, body: BlockId, span: Span },
+    For { initializer: BlockId, condition: ExprId, step: BlockId, body: BlockId, span: Span },
+    Return { value: ExprId, span: Span },
+    Assert { condition: ExprId, span: Span },
+    Log { values: Vec<ExprId>, span: Span },
+    AnonymousComponent { expression: ExprId, span: Span },
+    Block(BlockId),
+    Opaque { reason: IncompleteReason, span: Span },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Block {
+    pub id: BlockId,
+    pub effects: Vec<Effect>,
+    pub span: Span,
+}
+
+impl Block {
+    #[must_use]
+    pub fn expressions(&self) -> Vec<ExprId> {
+        self.effects
+            .iter()
+            .filter_map(|effect| match effect {
+                Effect::Return { value, .. }
+                | Effect::AnonymousComponent { expression: value, .. } => Some(*value),
+                _ => None,
+            })
+            .collect()
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Main {
+    pub target: CallTarget,
+    pub arguments: Vec<ExprId>,
+    pub span: Span,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Severity {
+    Error,
+    Warning,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SemanticCode {
+    MissingCall,
+    WrongFunction,
+    WrongTemplate,
+    DuplicateFunction,
+    DuplicateTemplate,
+    DuplicateSymbol,
+    Shadowing,
+    ParameterCollision,
+    MissingBusType,
+    InvalidAssignment,
+    UnknownSymbol,
+    WrongArity,
+    NonCompileTime,
+    FeatureVersion,
+    Unsupported,
+}
+
+impl SemanticCode {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::MissingCall => "CS0019",
+            Self::WrongFunction => "T2001",
+            Self::WrongTemplate => "T2002",
+            Self::DuplicateFunction => "T2006",
+            Self::DuplicateTemplate => "T2007",
+            Self::DuplicateSymbol => "T2008",
+            Self::Shadowing => "CS0001",
+            Self::ParameterCollision => "CS0002",
+            Self::MissingBusType => "CS0022",
+            Self::InvalidAssignment => "T2000",
+            Self::UnknownSymbol => "T2021",
+            Self::WrongArity => "T20465",
+            Self::NonCompileTime => "T20463",
+            Self::FeatureVersion => "P1003",
+            Self::Unsupported => "T2038",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SemanticDiagnostic {
+    pub code: SemanticCode,
+    pub severity: Severity,
+    pub span: Span,
+    pub message: String,
+    pub expected_kind: Option<DefinitionKind>,
+    pub actual_kind: Option<DefinitionKind>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum IncompleteReason {
+    Syntax,
+    Include,
+    MissingReference(String),
+    AmbiguousReference(String),
+    WrongKind(String),
+    UnknownType,
+    UnknownSymbol(String),
+    NonCompileTime,
+    InvalidAssignment,
+    Unsupported(String),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IncompleteRegion {
+    pub span: Span,
+    pub reason: IncompleteReason,
+}
+
+#[derive(Clone, Debug)]
+pub struct LoweredProject {
+    pub hir: HirProject,
+    pub diagnostics: Vec<SemanticDiagnostic>,
+    pub syntax_diagnostics: Vec<SyntaxDiagnostic>,
+    pub incomplete: Vec<IncompleteRegion>,
+}
+
+#[derive(Clone, Debug)]
+pub struct HirProject {
+    key: u64,
+    functions: Vec<Function>,
+    templates: Vec<Template>,
+    buses: Vec<Bus>,
+    symbols: Vec<Symbol>,
+    components: Vec<Component>,
+    ports: Vec<Port>,
+    expressions: Vec<Expr>,
+    blocks: Vec<Block>,
+    definitions: BTreeMap<String, Vec<DefinitionRef>>,
+    pub mains: Vec<Main>,
+}
+
+impl HirProject {
+    fn new() -> Self {
+        Self {
+            key: NEXT_PROJECT.fetch_add(1, Ordering::Relaxed),
+            functions: Vec::new(),
+            templates: Vec::new(),
+            buses: Vec::new(),
+            symbols: Vec::new(),
+            components: Vec::new(),
+            ports: Vec::new(),
+            expressions: Vec::new(),
+            blocks: Vec::new(),
+            definitions: BTreeMap::new(),
+            mains: Vec::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn functions(&self) -> &[Function] {
+        &self.functions
+    }
+    #[must_use]
+    pub fn templates(&self) -> &[Template] {
+        &self.templates
+    }
+    #[must_use]
+    pub fn buses(&self) -> &[Bus] {
+        &self.buses
+    }
+    #[must_use]
+    pub fn symbols(&self) -> &[Symbol] {
+        &self.symbols
+    }
+    #[must_use]
+    pub fn components(&self) -> &[Component] {
+        &self.components
+    }
+    #[must_use]
+    pub fn ports(&self) -> &[Port] {
+        &self.ports
+    }
+    #[must_use]
+    pub fn expressions(&self) -> &[Expr] {
+        &self.expressions
+    }
+    #[must_use]
+    pub fn blocks(&self) -> &[Block] {
+        &self.blocks
+    }
+
+    #[must_use]
+    pub fn function(&self, id: FunctionId) -> Option<&Function> {
+        (id.project == self.key).then(|| self.functions.get(id.index)).flatten()
+    }
+    #[must_use]
+    pub fn template(&self, id: TemplateId) -> Option<&Template> {
+        (id.project == self.key).then(|| self.templates.get(id.index)).flatten()
+    }
+    #[must_use]
+    pub fn bus(&self, id: BusId) -> Option<&Bus> {
+        (id.project == self.key).then(|| self.buses.get(id.index)).flatten()
+    }
+    #[must_use]
+    pub fn symbol(&self, id: SymbolId) -> Option<&Symbol> {
+        (id.project == self.key).then(|| self.symbols.get(id.index)).flatten()
+    }
+    #[must_use]
+    pub fn component(&self, id: ComponentId) -> Option<&Component> {
+        (id.project == self.key).then(|| self.components.get(id.index)).flatten()
+    }
+    #[must_use]
+    pub fn port(&self, id: PortId) -> Option<&Port> {
+        (id.project == self.key).then(|| self.ports.get(id.index)).flatten()
+    }
+    #[must_use]
+    pub fn expression(&self, id: ExprId) -> Option<&Expr> {
+        (id.project == self.key).then(|| self.expressions.get(id.index)).flatten()
+    }
+    #[must_use]
+    pub fn block(&self, id: BlockId) -> Option<&Block> {
+        (id.project == self.key).then(|| self.blocks.get(id.index)).flatten()
+    }
+    #[must_use]
+    pub fn definition(&self, name: &str) -> Option<DefinitionRef> {
+        let definitions = self.definitions.get(name)?;
+        (definitions.len() == 1).then_some(definitions[0])
+    }
+    #[must_use]
+    pub fn definitions_named(&self, name: &str) -> &[DefinitionRef] {
+        self.definitions.get(name).map_or(&[], Vec::as_slice)
+    }
+
+    fn add_block(&mut self, span: Span) -> BlockId {
+        let id = BlockId::new(self.blocks.len(), self.key);
+        self.blocks.push(Block { id, effects: Vec::new(), span });
+        id
+    }
+
+    fn add_symbol(&mut self, name: String, kind: SymbolKind, span: Span) -> SymbolId {
+        let id = SymbolId::new(self.symbols.len(), self.key);
+        self.symbols.push(Symbol { id, name, kind, span, dimensions: Vec::new(), bus_type: None });
+        id
+    }
+
+    fn add_port(
+        &mut self,
+        symbol: SymbolId,
+        direction: Option<PortDirection>,
+        span: Span,
+    ) -> PortId {
+        let id = PortId::new(self.ports.len(), self.key);
+        self.ports.push(Port { id, symbol, direction, tags: Vec::new(), span });
+        id
+    }
+
+    fn add_component(&mut self, symbol: SymbolId, span: Span) -> ComponentId {
+        let id = ComponentId::new(self.components.len(), self.key);
+        self.components.push(Component { id, symbol, target: None, span });
+        id
+    }
+
+    fn add_expr(&mut self, kind: ExprKind, knownness: Knownness, span: Span) -> ExprId {
+        let id = ExprId::new(self.expressions.len(), self.key);
+        self.expressions.push(Expr { id, kind, knownness, span });
+        id
+    }
+}
