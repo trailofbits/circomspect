@@ -7,6 +7,7 @@ use parser::hir::{
     lower_project, AccessPath, ControlGuard, DefinitionRef, Effect, ExprKind, HirProject,
 };
 use parser::new_frontend::{load_sources, Version, VersionPolicy};
+use std::collections::BTreeSet;
 use std::fs;
 use program_structure::utils::constants::Curve;
 
@@ -358,6 +359,47 @@ fn constraint_dependencies_follow_intermediate_variables() {
 }
 
 #[test]
+fn overwritten_variable_does_not_keep_stale_constraint_dependencies() {
+    let (hir, definition) =
+        fixture("template Check(){signal input x; var t=x; t=0; signal output y; y <== t;}");
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let x = expression_path(&hir, "x", 0);
+    let t = hir
+        .expressions()
+        .iter()
+        .find_map(|expression| {
+            let ExprKind::Access(path) = &expression.kind else { return None };
+            hir.symbol(path.root).is_some_and(|symbol| symbol.name == "t").then_some(expression.id)
+        })
+        .unwrap();
+    assert_eq!(facts.incidence(&x).certified(), Some(&Incidence::Zero));
+    assert_eq!(facts.dependencies(t).certified().map(BTreeSet::is_empty), Some(true));
+}
+
+#[test]
+fn local_variable_degree_follows_its_reaching_definition() {
+    let (hir, definition) =
+        fixture("template Check(){signal input x; var t=x; signal output y; y <== t;}");
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let t = hir
+        .expressions()
+        .iter()
+        .find_map(|expression| {
+            let ExprKind::Access(path) = &expression.kind else { return None };
+            hir.symbol(path.root).is_some_and(|symbol| symbol.name == "t").then_some(expression.id)
+        })
+        .unwrap();
+    assert_eq!(
+        facts.degree(t).certified(),
+        Some(&circomspect_program_analysis::hir_facts::Degree::Linear)
+    );
+}
+
+#[test]
 fn backward_liveness_tracks_reads_before_assignment() {
     let (hir, definition) = fixture("function Check(){var x=1; var y=x; return y;}");
     let cfg = build_cfg(&hir, definition).unwrap();
@@ -503,6 +545,23 @@ fn deferred_guard_blocks_only_values_derived_from_its_assignments() {
 }
 
 #[test]
+fn returning_arm_keeps_following_value_guard_dependent() {
+    let (hir, definition) = fixture("function Check(n){var x=0; if(n){return 0;} x=1; return x;}");
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let x = hir
+        .expressions()
+        .iter()
+        .find_map(|expr| {
+            let ExprKind::Access(path) = &expr.kind else { return None };
+            hir.symbol(path.root).is_some_and(|symbol| symbol.name == "x").then_some(expr.id)
+        })
+        .unwrap();
+    assert!(facts.range(x).unavailable().is_some());
+}
+
+#[test]
 fn deferred_ternary_does_not_certify_even_matching_arm_values() {
     let (hir, definition) = fixture("function Check(n){return n ? 1 : 1;}");
     let cfg = build_cfg(&hir, definition).unwrap();
@@ -517,6 +576,24 @@ fn deferred_ternary_does_not_certify_even_matching_arm_values() {
         })
         .unwrap();
     assert!(facts.range(expression).unavailable().is_some());
+}
+
+#[test]
+fn parameter_with_deferred_shape_has_no_scalar_range_or_degree() {
+    let (hir, definition) = fixture("function Check(n){if(n){return 1;} return n;}");
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let n = hir
+        .expressions()
+        .iter()
+        .find_map(|expr| {
+            let ExprKind::Access(path) = &expr.kind else { return None };
+            hir.symbol(path.root).is_some_and(|symbol| symbol.name == "n").then_some(expr.id)
+        })
+        .unwrap();
+    assert!(facts.range(n).unavailable().is_some());
+    assert!(facts.degree(n).unavailable().is_some());
 }
 
 #[test]
