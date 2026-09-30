@@ -3,11 +3,12 @@
 mod lower;
 
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::new_frontend::{
-    BinaryOperator, InputAssignmentOperator, PortDirection, PostfixOperator, Span,
-    SyntaxDiagnostic, UnaryOperator,
+    BinaryOperator, DiagnosticLocation, InputAssignmentOperator, PortDirection, PostfixOperator,
+    Span, SyntaxDiagnostic, UnaryOperator,
 };
 
 pub use lower::lower_project;
@@ -103,6 +104,7 @@ pub struct Function {
     pub parameters: Vec<SymbolId>,
     pub body: BlockId,
     pub span: Span,
+    pub name_span: Span,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -115,6 +117,7 @@ pub struct Template {
     pub custom: bool,
     pub external: bool,
     pub span: Span,
+    pub name_span: Span,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -125,6 +128,7 @@ pub struct Bus {
     pub ports: Vec<PortId>,
     pub body: BlockId,
     pub span: Span,
+    pub name_span: Span,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -276,7 +280,8 @@ impl Expr {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Effect {
     Declaration { symbol: SymbolId, span: Span },
-    CompileTimeAssignment { target: AccessPath, value: ExprId, span: Span },
+    VariableAssignment { target: AccessPath, value: ExprId, span: Span },
+    ComponentInstantiation { target: AccessPath, value: ExprId, span: Span },
     WitnessAssignment { target: AccessPath, value: ExprId, span: Span },
     ConstraintAssignment { target: AccessPath, value: ExprId, span: Span },
     EqualityConstraint { left: ExprId, right: ExprId, span: Span },
@@ -341,11 +346,14 @@ pub enum SemanticCode {
     InvalidSignalAccess,
     InvalidArrayAccess,
     AnonymousInput,
+    ForbiddenDeclaration,
+    TemplateReturn,
+    ConstraintInFunction,
     UnknownSymbol,
     WrongArity,
     NonConstantArrayLength,
+    NonComputableExpression,
     FeatureVersion,
-    Unsupported,
 }
 
 impl SemanticCode {
@@ -365,11 +373,14 @@ impl SemanticCode {
             Self::InvalidSignalAccess => "T2046",
             Self::InvalidArrayAccess => "T2032",
             Self::AnonymousInput => "TAC01",
+            Self::ForbiddenDeclaration => "T2016",
+            Self::TemplateReturn => "T2024",
+            Self::ConstraintInFunction => "T2039",
             Self::UnknownSymbol => "T2021",
             Self::WrongArity => "T20465",
             Self::NonConstantArrayLength => "T20463",
+            Self::NonComputableExpression => "T20464",
             Self::FeatureVersion => "P1003",
-            Self::Unsupported => "T2038",
         }
     }
 }
@@ -400,8 +411,33 @@ pub enum IncompleteReason {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IncompleteRegion {
-    pub span: Span,
+    pub location: IncompleteLocation,
     pub reason: IncompleteReason,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum IncompleteLocation {
+    Source(Span),
+    Path(PathBuf),
+}
+
+impl IncompleteRegion {
+    #[must_use]
+    pub fn span(&self) -> Option<Span> {
+        match self.location {
+            IncompleteLocation::Source(span) => Some(span),
+            IncompleteLocation::Path(_) => None,
+        }
+    }
+}
+
+impl From<&DiagnosticLocation> for IncompleteLocation {
+    fn from(location: &DiagnosticLocation) -> Self {
+        match location {
+            DiagnosticLocation::Source(span) => Self::Source(*span),
+            DiagnosticLocation::Path(path) => Self::Path(path.clone()),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -477,6 +513,19 @@ impl HirProject {
         &self.blocks
     }
 
+    /// Looks up a function only with a function ID from this project.
+    ///
+    /// ```compile_fail
+    /// use circomspect_parser::hir::{HirProject, TemplateId};
+    /// fn wrong_kind(project: &HirProject, id: TemplateId) {
+    ///     let _ = project.function(id);
+    /// }
+    /// ```
+    ///
+    /// ```compile_fail
+    /// use circomspect_parser::hir::FunctionId;
+    /// let _forged = FunctionId { index: 0, project: 0 };
+    /// ```
     #[must_use]
     pub fn function(&self, id: FunctionId) -> Option<&Function> {
         (id.project == self.key).then(|| self.functions.get(id.index)).flatten()

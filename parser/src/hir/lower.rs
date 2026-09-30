@@ -1,17 +1,17 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::{
     AccessPath, AccessStep, AnonymousInputEffect, AnonymousInputTarget, ArrayIndex, BlockId, Bus,
     BusId, BusTarget, CallTarget, ComponentId, DefinitionKind, DefinitionRef, Effect, ExprId,
-    ExprKind, HirProject, IncompleteReason, IncompleteRegion, Knownness, LoweredProject, Main,
-    SemanticCode, SemanticDiagnostic, Severity, SymbolId, SymbolKind, Template, TemplateId,
-    Function, FunctionId,
+    ExprKind, HirProject, IncompleteLocation, IncompleteReason, IncompleteRegion, Knownness,
+    LoweredProject, Main, SemanticCode, SemanticDiagnostic, Severity, SymbolId, SymbolKind,
+    Template, TemplateId, Function, FunctionId,
 };
 use crate::new_frontend::{
     Access, AnonymousCallExpr, AnonymousInput, AssignmentOperator, Declaration, DeclarationKind,
-    Definition, DefinitionKind as SourceDefinitionKind, DirectionSyntax, Expression, Identifier,
-    Item, LoadedProject, LogArgument, PortDirection, Span, Statement, DiagnosticKind,
-    InputAssignmentOperator,
+    DeclaredSymbol, Definition, DefinitionKind as SourceDefinitionKind, DirectionSyntax,
+    Expression, Identifier, Item, LoadedProject, LogArgument, PortDirection, Span, Statement,
+    DiagnosticKind, InputAssignmentOperator,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -59,6 +59,7 @@ struct Lowerer<'a> {
     array_types: BTreeMap<(usize, usize, usize), ValueType>,
     components: BTreeMap<SymbolId, ComponentId>,
     predeclared_ports: BTreeMap<(usize, usize, usize), SymbolId>,
+    definition_locations: BTreeMap<(usize, usize, usize), DefinitionRef>,
     scopes: Scopes,
     current_definition: Option<DefinitionRef>,
 }
@@ -76,7 +77,8 @@ impl Lowerer<'_> {
     }
 
     fn incomplete(&mut self, span: Span, reason: IncompleteReason) {
-        self.incomplete.push(IncompleteRegion { span, reason });
+        self.incomplete
+            .push(IncompleteRegion { location: IncompleteLocation::Source(span), reason });
     }
 
     fn add_expression(
@@ -129,6 +131,7 @@ impl Lowerer<'_> {
                             parameters: Vec::new(),
                             body,
                             span: definition.span,
+                            name_span: definition.name.span,
                         });
                         DefinitionRef::Function(id)
                     }
@@ -143,6 +146,7 @@ impl Lowerer<'_> {
                             custom,
                             external,
                             span: definition.span,
+                            name_span: definition.name.span,
                         });
                         DefinitionRef::Template(id)
                     }
@@ -155,11 +159,13 @@ impl Lowerer<'_> {
                             ports: Vec::new(),
                             body,
                             span: definition.span,
+                            name_span: definition.name.span,
                         });
                         DefinitionRef::Bus(id)
                     }
                 };
                 self.hir.definitions.entry(name).or_default().push(reference);
+                self.definition_locations.insert(Self::span_key(definition.span), reference);
             }
         }
         self.report_duplicate_definitions();
@@ -209,9 +215,9 @@ impl Lowerer<'_> {
 
     fn definition_span(&self, reference: DefinitionRef) -> Span {
         match reference {
-            DefinitionRef::Function(id) => self.hir.functions[id.index].span,
-            DefinitionRef::Template(id) => self.hir.templates[id.index].span,
-            DefinitionRef::Bus(id) => self.hir.buses[id.index].span,
+            DefinitionRef::Function(id) => self.hir.functions[id.index].name_span,
+            DefinitionRef::Template(id) => self.hir.templates[id.index].name_span,
+            DefinitionRef::Bus(id) => self.hir.buses[id.index].name_span,
         }
     }
 
@@ -316,25 +322,7 @@ impl Lowerer<'_> {
     }
 
     fn definition_at(&self, span: Span) -> Option<DefinitionRef> {
-        self.hir
-            .functions
-            .iter()
-            .find(|item| item.span == span)
-            .map(|item| DefinitionRef::Function(item.id))
-            .or_else(|| {
-                self.hir
-                    .templates
-                    .iter()
-                    .find(|item| item.span == span)
-                    .map(|item| DefinitionRef::Template(item.id))
-            })
-            .or_else(|| {
-                self.hir
-                    .buses
-                    .iter()
-                    .find(|item| item.span == span)
-                    .map(|item| DefinitionRef::Bus(item.id))
-            })
+        self.definition_locations.get(&Self::span_key(span)).copied()
     }
 
     fn resolve_call(&mut self, name: &Identifier, expected: DefinitionKind) -> CallTarget {
@@ -423,7 +411,12 @@ impl Lowerer<'_> {
                     expected_kind: Some(DefinitionKind::Bus),
                     actual_kind,
                 });
-                self.incomplete(name.span, IncompleteReason::MissingReference(name.name.clone()));
+                let reason = if actual_kind.is_some() {
+                    IncompleteReason::WrongKind(name.name.clone())
+                } else {
+                    IncompleteReason::MissingReference(name.name.clone())
+                };
+                self.incomplete(name.span, reason);
             }
             BusTarget::Ambiguous { .. } => {
                 self.incomplete(name.span, IncompleteReason::AmbiguousReference(name.name.clone()));
@@ -433,7 +426,7 @@ impl Lowerer<'_> {
         result
     }
 
-    fn check_arity(&mut self, target: &CallTarget, arguments: usize, span: Span) {
+    fn check_arity(&mut self, target: &CallTarget, arguments: usize, span: Span) -> bool {
         let expected = match target {
             CallTarget::Function(id) => self.hir.function(*id).map(|item| item.parameters.len()),
             CallTarget::Template(id) => self.hir.template(*id).map(|item| item.parameters.len()),
@@ -448,8 +441,28 @@ impl Lowerer<'_> {
                     format!("expected {expected} arguments, found {arguments}"),
                 );
                 self.incomplete(span, IncompleteReason::Unsupported("wrong argument arity".into()));
+                return false;
             }
         }
+        true
+    }
+
+    fn check_template_arguments(&mut self, arguments: &[ExprId], span: Span) -> bool {
+        let knownness =
+            arguments.iter().fold(Knownness::Constant, |acc, id| acc.join(self.knownness(*id)));
+        if knownness == Knownness::WitnessDependent {
+            self.diagnostic(
+                SemanticCode::NonComputableExpression,
+                Severity::Error,
+                span,
+                "template arguments depend on witness values".into(),
+            );
+        }
+        if !knownness.is_compile_time() {
+            self.incomplete(span, IncompleteReason::NonCompileTime);
+            return false;
+        }
+        true
     }
 
     fn lower_definitions(&mut self) {
@@ -485,7 +498,7 @@ impl Lowerer<'_> {
             DefinitionRef::Template(id) => self.hir.templates[id.index].body,
             DefinitionRef::Bus(id) => self.hir.buses[id.index].body,
         };
-        self.lower_block_into(&definition.body.statements, body, false);
+        self.lower_block_into(&definition.body.statements, body, true);
         self.scopes.leave();
         self.current_definition = None;
     }
@@ -513,6 +526,24 @@ impl Lowerer<'_> {
     }
 
     fn lower_statement(&mut self, statement: &Statement) -> Vec<Effect> {
+        match statement {
+            Statement::Block(_)
+            | Statement::Declaration(_)
+            | Statement::Assignment { .. }
+            | Statement::PostfixUpdate { .. }
+            | Statement::Constraint { .. } => self.lower_local_statement(statement),
+            Statement::If { .. } | Statement::For { .. } | Statement::While { .. } => {
+                self.lower_control_statement(statement)
+            }
+            Statement::Return { .. }
+            | Statement::Assert { .. }
+            | Statement::Log { .. }
+            | Statement::AnonymousCall { .. }
+            | Statement::Error { .. } => self.lower_terminal_statement(statement),
+        }
+    }
+
+    fn lower_local_statement(&mut self, statement: &Statement) -> Vec<Effect> {
         let span = statement.span();
         match statement {
             Statement::Block(_) => vec![Effect::Block(self.lower_branch(statement))],
@@ -532,32 +563,93 @@ impl Lowerer<'_> {
                 vec![Effect::Update { target: path, operator: *operator, span }]
             }
             Statement::Constraint { left, right, .. } => {
+                if matches!(self.current_definition, Some(DefinitionRef::Function(_))) {
+                    self.diagnostic(
+                        SemanticCode::ConstraintInFunction,
+                        Severity::Error,
+                        span,
+                        "a function cannot generate constraints".into(),
+                    );
+                    return vec![self.opaque(
+                        span,
+                        IncompleteReason::Unsupported("constraint in function".into()),
+                    )];
+                }
                 let left = self.lower_expression(left);
                 let right = self.lower_expression(right);
                 vec![Effect::EqualityConstraint { left, right, span }]
             }
+            _ => {
+                vec![self.opaque(span, IncompleteReason::Unsupported("local statement form".into()))]
+            }
+        }
+    }
+
+    fn lower_control_statement(&mut self, statement: &Statement) -> Vec<Effect> {
+        let span = statement.span();
+        match statement {
             Statement::If { condition, then_branch, else_branch, .. } => {
                 let condition = self.lower_expression(condition);
+                let before = self.snapshot_knownness();
                 let then_block = self.lower_branch(then_branch);
+                let after_then = self.snapshot_knownness();
+                self.restore_knownness(&before);
                 let else_block = else_branch.as_ref().map(|branch| self.lower_branch(branch));
+                self.join_knownness(&after_then, &before);
+                if !self.knownness(condition).is_compile_time() {
+                    return vec![self.opaque(span, IncompleteReason::NonCompileTime)];
+                }
                 vec![Effect::If { condition, then_block, else_block, span }]
             }
             Statement::For { initializer, condition, step, body, .. } => {
                 self.scopes.enter();
                 let initializer_block = self.hir.add_block(initializer.span());
                 self.lower_block_into(std::slice::from_ref(initializer), initializer_block, false);
+                let before_loop = self.snapshot_knownness();
                 let condition = self.lower_expression(condition);
-                let step = self.lower_branch(step);
                 let body = self.lower_branch(body);
+                let after_body = self.snapshot_knownness();
+                let step = self.lower_branch(step);
+                self.join_knownness(&before_loop, &after_body);
                 self.scopes.leave();
+                if !self.knownness(condition).is_compile_time() {
+                    return vec![self.opaque(span, IncompleteReason::NonCompileTime)];
+                }
                 vec![Effect::For { initializer: initializer_block, condition, step, body, span }]
             }
             Statement::While { condition, body, .. } => {
+                let before = self.snapshot_knownness();
                 let condition = self.lower_expression(condition);
                 let body = self.lower_branch(body);
+                self.join_knownness(&before, &before);
+                if !self.knownness(condition).is_compile_time() {
+                    return vec![self.opaque(span, IncompleteReason::NonCompileTime)];
+                }
                 vec![Effect::While { condition, body, span }]
             }
+            _ => {
+                vec![self
+                    .opaque(span, IncompleteReason::Unsupported("control statement form".into()))]
+            }
+        }
+    }
+
+    fn lower_terminal_statement(&mut self, statement: &Statement) -> Vec<Effect> {
+        let span = statement.span();
+        match statement {
             Statement::Return { value, .. } => {
+                if !matches!(self.current_definition, Some(DefinitionRef::Function(_))) {
+                    self.diagnostic(
+                        SemanticCode::TemplateReturn,
+                        Severity::Error,
+                        span,
+                        "return is only valid in a function".into(),
+                    );
+                    return vec![self.opaque(
+                        span,
+                        IncompleteReason::Unsupported("return outside function".into()),
+                    )];
+                }
                 vec![Effect::Return { value: self.lower_expression(value), span }]
             }
             Statement::Assert { condition, .. } => {
@@ -578,6 +670,27 @@ impl Lowerer<'_> {
                 vec![Effect::AnonymousComponent { expression, span }]
             }
             Statement::Error { .. } => vec![self.opaque(span, IncompleteReason::Syntax)],
+            _ => {
+                vec![self
+                    .opaque(span, IncompleteReason::Unsupported("terminal statement form".into()))]
+            }
+        }
+    }
+
+    fn snapshot_knownness(&self) -> Vec<Knownness> {
+        self.hir.symbols.iter().map(|symbol| symbol.knownness).collect()
+    }
+
+    fn restore_knownness(&mut self, snapshot: &[Knownness]) {
+        for (symbol, knownness) in self.hir.symbols.iter_mut().zip(snapshot) {
+            symbol.knownness = *knownness;
+        }
+    }
+
+    fn join_knownness(&mut self, first: &[Knownness], second: &[Knownness]) {
+        for (index, (first, second)) in first.iter().zip(second).enumerate() {
+            let current = self.hir.symbols[index].knownness;
+            self.hir.symbols[index].knownness = current.join(*first).join(*second);
         }
     }
 
@@ -602,7 +715,10 @@ impl Lowerer<'_> {
             self.incomplete(name.span, IncompleteReason::AmbiguousReference(name.name.clone()));
         } else if let Some(outer) = self.scopes.outer(&name.name) {
             if kind == SymbolKind::Variable
-                && self.hir.symbols[outer.index].kind == SymbolKind::Variable
+                && matches!(
+                    self.hir.symbols[outer.index].kind,
+                    SymbolKind::Variable | SymbolKind::Parameter
+                )
             {
                 self.diagnostic(
                     SemanticCode::Shadowing,
@@ -620,6 +736,20 @@ impl Lowerer<'_> {
     }
 
     fn lower_declaration(&mut self, declaration: &Declaration) -> Vec<Effect> {
+        if matches!(self.current_definition, Some(DefinitionRef::Function(_)))
+            && !matches!(declaration.kind, DeclarationKind::Variable)
+        {
+            self.diagnostic(
+                SemanticCode::ForbiddenDeclaration,
+                Severity::Error,
+                declaration.span,
+                "function contains a template-only declaration".into(),
+            );
+            return vec![self.opaque(
+                declaration.span,
+                IncompleteReason::Unsupported("template element in function".into()),
+            )];
+        }
         let kind = match declaration.kind {
             DeclarationKind::Variable => SymbolKind::Variable,
             DeclarationKind::Component => SymbolKind::Component,
@@ -632,103 +762,139 @@ impl Lowerer<'_> {
             }
             DeclarationKind::Variable | DeclarationKind::Component => &[],
         };
-        let bus_arguments: Vec<_> = match &declaration.kind {
-            DeclarationKind::Bus { arguments, .. } => arguments
-                .values()
-                .iter()
-                .map(|argument| {
-                    let id = self.lower_expression(argument);
-                    self.expect_compile_time(id, argument.span(), false);
-                    id
-                })
-                .collect(),
-            _ => Vec::new(),
-        };
-        let bus_type = match &declaration.kind {
-            DeclarationKind::Bus { type_name, .. } => {
-                let predeclared = declaration.symbols.first().and_then(|declared| {
-                    self.predeclared_ports.get(&Self::span_key(declared.name.span)).copied()
-                });
-                if let Some(symbol) = predeclared {
-                    self.hir.symbols[symbol.index].bus_type.clone()
-                } else {
-                    Some(self.resolve_bus(type_name))
-                }
-            }
-            _ => None,
+        let bus_arguments = self.lower_bus_arguments(declaration);
+        let bus_type = self.lower_bus_type(declaration, &bus_arguments);
+        let mut effects = Vec::new();
+        for declared in &declaration.symbols {
+            effects.extend(self.lower_declared_symbol(
+                declared,
+                kind,
+                bus_type.clone(),
+                &bus_arguments,
+                tags,
+            ));
+        }
+        effects.extend(self.lower_tuple_initialization(declaration));
+        effects
+    }
+
+    fn lower_bus_arguments(&mut self, declaration: &Declaration) -> Vec<ExprId> {
+        let DeclarationKind::Bus { arguments, .. } = &declaration.kind else { return Vec::new() };
+        arguments
+            .values()
+            .iter()
+            .map(|argument| {
+                let id = self.lower_expression(argument);
+                self.expect_compile_time(id, argument.span(), false);
+                id
+            })
+            .collect()
+    }
+
+    fn lower_bus_type(
+        &mut self,
+        declaration: &Declaration,
+        arguments: &[ExprId],
+    ) -> Option<BusTarget> {
+        let DeclarationKind::Bus { type_name, .. } = &declaration.kind else { return None };
+        let predeclared = declaration.symbols.first().and_then(|declared| {
+            self.predeclared_ports.get(&Self::span_key(declared.name.span)).copied()
+        });
+        let mut bus_type = if let Some(symbol) = predeclared {
+            self.hir.symbols[symbol.index].bus_type.clone()
+        } else {
+            Some(self.resolve_bus(type_name))
         };
         if let Some(BusTarget::Bus(id)) = bus_type {
             let expected = self.hir.buses[id.index].parameters.len();
-            if expected != bus_arguments.len() {
+            if expected != arguments.len() {
                 self.diagnostic(
                     SemanticCode::WrongArity,
                     Severity::Error,
                     declaration.span,
-                    format!("bus expects {expected} arguments, found {}", bus_arguments.len()),
+                    format!("bus expects {expected} arguments, found {}", arguments.len()),
                 );
                 self.incomplete(
                     declaration.span,
                     IncompleteReason::Unsupported("wrong bus argument arity".into()),
                 );
+                bus_type = Some(BusTarget::Opaque {
+                    reason: IncompleteReason::Unsupported("wrong bus argument arity".into()),
+                });
             }
         }
+        if !arguments.iter().all(|id| self.knownness(*id).is_compile_time()) {
+            bus_type = Some(BusTarget::Opaque { reason: IncompleteReason::NonCompileTime });
+        }
+        bus_type
+    }
+
+    fn lower_declared_symbol(
+        &mut self,
+        declared: &DeclaredSymbol,
+        kind: SymbolKind,
+        bus_type: Option<BusTarget>,
+        bus_arguments: &[ExprId],
+        tags: &[Identifier],
+    ) -> Vec<Effect> {
+        let symbol = if let Some(symbol) =
+            self.predeclared_ports.get(&Self::span_key(declared.name.span)).copied()
+        {
+            self.bind_predeclared(&declared.name, symbol);
+            symbol
+        } else {
+            self.declare(&declared.name, kind)
+        };
+        self.hir.symbols[symbol.index].bus_type = bus_type;
+        self.hir.symbols[symbol.index].bus_arguments = bus_arguments.to_vec();
+        self.hir.symbols[symbol.index].rank = declared.dimensions.len();
+        for dimension in &declared.dimensions {
+            let id = self.lower_expression(dimension);
+            self.expect_compile_time(id, dimension.span(), true);
+            self.hir.symbols[symbol.index].dimensions.push(id);
+        }
+        if kind == SymbolKind::Component {
+            self.components.insert(symbol, self.hir.add_component(symbol, declared.span));
+        }
+        if self.hir.symbols[symbol.index].tags.is_empty() {
+            for tag in tags {
+                let id = self.hir.add_symbol(tag.name.clone(), SymbolKind::Tag, tag.span);
+                self.hir.symbols[symbol.index].tags.push(id);
+            }
+        }
+        let mut effects = vec![Effect::Declaration { symbol, span: declared.span }];
+        if let Some((operator, value)) = &declared.initialization {
+            effects.push(self.assignment_for_symbol(symbol, *operator, value, declared.span));
+        }
+        effects
+    }
+
+    fn lower_tuple_initialization(&mut self, declaration: &Declaration) -> Vec<Effect> {
+        let Some((operator, value)) = &declaration.tuple_initialization else { return Vec::new() };
         let mut effects = Vec::new();
-        for declared in &declaration.symbols {
-            let symbol = if let Some(symbol) =
-                self.predeclared_ports.get(&Self::span_key(declared.name.span)).copied()
-            {
-                self.bind_predeclared(&declared.name, symbol);
-                symbol
-            } else {
-                self.declare(&declared.name, kind)
-            };
-            self.hir.symbols[symbol.index].bus_type = bus_type.clone();
-            self.hir.symbols[symbol.index].bus_arguments = bus_arguments.clone();
-            self.hir.symbols[symbol.index].rank = declared.dimensions.len();
-            for dimension in &declared.dimensions {
-                let id = self.lower_expression(dimension);
-                self.expect_compile_time(id, dimension.span(), true);
-                self.hir.symbols[symbol.index].dimensions.push(id);
-            }
-            if kind == SymbolKind::Component {
-                self.components.insert(symbol, self.hir.add_component(symbol, declared.span));
-            }
-            if self.hir.symbols[symbol.index].tags.is_empty() {
-                for tag in tags {
-                    let id = self.hir.add_symbol(tag.name.clone(), SymbolKind::Tag, tag.span);
-                    self.hir.symbols[symbol.index].tags.push(id);
-                }
-            }
-            effects.push(Effect::Declaration { symbol, span: declared.span });
-            if let Some((operator, value)) = &declared.initialization {
-                effects.push(self.assignment_for_symbol(symbol, *operator, value, declared.span));
-            }
-        }
-        if let Some((operator, value)) = &declaration.tuple_initialization {
-            if let Expression::Tuple { elements, .. } = value {
-                if elements.len() == declaration.symbols.len() {
-                    for (declared, element) in declaration.symbols.iter().zip(elements) {
-                        if let Some(symbol) = self.scopes.resolve(&declared.name.name) {
-                            effects.push(self.assignment_for_symbol(
-                                symbol,
-                                *operator,
-                                element,
-                                declared.span,
-                            ));
-                        }
+        if let Expression::Tuple { elements, .. } = value {
+            if elements.len() == declaration.symbols.len() {
+                for (declared, element) in declaration.symbols.iter().zip(elements) {
+                    if let Some(symbol) = self.scopes.resolve(&declared.name.name) {
+                        effects.push(self.assignment_for_symbol(
+                            symbol,
+                            *operator,
+                            element,
+                            declared.span,
+                        ));
                     }
-                } else {
-                    effects.push(self.invalid_assignment(
-                        declaration.span,
-                        "tuple initializer has the wrong number of elements",
-                    ));
                 }
             } else {
-                effects.push(self.opaque(
+                effects.push(self.invalid_assignment(
                     declaration.span,
-                    IncompleteReason::Unsupported("nonliteral tuple initializer".into()),
+                    "tuple initializer has the wrong number of elements",
                 ));
             }
+        } else {
+            effects.push(self.opaque(
+                declaration.span,
+                IncompleteReason::Unsupported("nonliteral tuple initializer".into()),
+            ));
         }
         effects
     }
@@ -838,7 +1004,11 @@ impl Lowerer<'_> {
                 {
                     return self.opaque(span, IncompleteReason::InvalidAssignment);
                 }
-                Effect::CompileTimeAssignment { target: path, value, span }
+                if kind == SymbolKind::Component {
+                    Effect::ComponentInstantiation { target: path, value, span }
+                } else {
+                    Effect::VariableAssignment { target: path, value, span }
+                }
             }
             (
                 SymbolKind::Signal | SymbolKind::Bus,
@@ -880,8 +1050,16 @@ impl Lowerer<'_> {
         };
         let arguments: Vec<_> =
             arguments.iter().map(|value| self.lower_expression(value)).collect();
-        let target = self.resolve_call(name, DefinitionKind::Template);
-        self.check_arity(&target, arguments.len(), span);
+        let mut target = self.resolve_call(name, DefinitionKind::Template);
+        let valid_arity = self.check_arity(&target, arguments.len(), span);
+        let valid_arguments = self.check_template_arguments(&arguments, span);
+        if !valid_arity {
+            target = CallTarget::Opaque {
+                reason: IncompleteReason::Unsupported("wrong argument arity".into()),
+            };
+        } else if !valid_arguments {
+            target = CallTarget::Opaque { reason: IncompleteReason::NonCompileTime };
+        }
         if let Some(component) = self.components.get(&symbol) {
             self.hir.components[component.index].target = Some(target.clone());
         }
@@ -1078,56 +1256,96 @@ impl Lowerer<'_> {
                 span,
                 ValueType::Plain,
             ),
-            Expression::Name { .. } => {
-                let Some(path) = self.lower_access(expression) else {
-                    return self.add_expression(
-                        ExprKind::Opaque(IncompleteReason::UnknownType),
-                        Knownness::Opaque,
-                        span,
-                        ValueType::Unknown,
-                    );
-                };
-                let ty = self.access_type(&path);
-                let knownness = self.hir.symbols[path.terminal.index].knownness;
-                if knownness == Knownness::Opaque {
-                    self.incomplete(span, IncompleteReason::UnknownType);
-                }
-                self.add_expression(ExprKind::Access(path), knownness, span, ty)
-            }
+            Expression::Name { .. } => self.lower_named_expression(expression),
             Expression::Call { name, arguments, .. } => {
-                let arguments: Vec<_> =
-                    arguments.iter().map(|value| self.lower_expression(value)).collect();
-                let target = self.resolve_call(name, DefinitionKind::Function);
-                self.check_arity(&target, arguments.len(), span);
-                let knownness = if matches!(target, CallTarget::Function(_))
-                    && arguments.iter().all(|id| self.knownness(*id).is_compile_time())
-                {
-                    Knownness::ParameterDependent
-                } else {
-                    Knownness::Opaque
-                };
-                self.add_expression(
-                    ExprKind::Call { target, arguments },
-                    knownness,
-                    span,
-                    ValueType::Plain,
-                )
+                self.lower_function_call(name, arguments, span)
             }
             Expression::AnonymousCall(call) => self.lower_anonymous(call),
-            Expression::Array { elements, .. } | Expression::Tuple { elements, .. } => {
-                let elements: Vec<_> =
-                    elements.iter().map(|value| self.lower_expression(value)).collect();
-                let knownness = elements
-                    .iter()
-                    .fold(Knownness::Constant, |acc, id| acc.join(self.knownness(*id)));
-                let ty = self.array_type(&elements);
-                if matches!(expression, Expression::Array { .. }) {
-                    self.array_types.insert(Self::span_key(span), ty);
-                    self.add_expression(ExprKind::Array(elements), knownness, span, ty)
-                } else {
-                    self.add_expression(ExprKind::Tuple(elements), knownness, span, ty)
-                }
+            Expression::Array { elements, .. } => self.lower_collection(elements, span, true),
+            Expression::Tuple { elements, .. } => self.lower_collection(elements, span, false),
+            Expression::Unary { .. }
+            | Expression::Binary { .. }
+            | Expression::Ternary { .. }
+            | Expression::Parallel { .. } => self.lower_operation(expression),
+            Expression::Group { expression, .. } => self.lower_expression(expression),
+            Expression::Error { .. } => {
+                self.incomplete(span, IncompleteReason::Syntax);
+                self.add_expression(
+                    ExprKind::Opaque(IncompleteReason::Syntax),
+                    Knownness::Opaque,
+                    span,
+                    ValueType::Unknown,
+                )
             }
+        }
+    }
+
+    fn lower_named_expression(&mut self, expression: &Expression) -> ExprId {
+        let span = expression.span();
+        let Some(path) = self.lower_access(expression) else {
+            return self.add_expression(
+                ExprKind::Opaque(IncompleteReason::UnknownType),
+                Knownness::Opaque,
+                span,
+                ValueType::Unknown,
+            );
+        };
+        let ty = self.access_type(&path);
+        if ty == ValueType::Unknown
+            && self.hir.symbols[path.terminal.index].kind != SymbolKind::Parameter
+        {
+            self.incomplete(span, IncompleteReason::UnknownType);
+            return self.add_expression(
+                ExprKind::Opaque(IncompleteReason::UnknownType),
+                Knownness::Opaque,
+                span,
+                ValueType::Unknown,
+            );
+        }
+        let knownness = self.hir.symbols[path.terminal.index].knownness;
+        if knownness == Knownness::Opaque {
+            self.incomplete(span, IncompleteReason::UnknownType);
+        }
+        self.add_expression(ExprKind::Access(path), knownness, span, ty)
+    }
+
+    fn lower_function_call(
+        &mut self,
+        name: &Identifier,
+        values: &[Expression],
+        span: Span,
+    ) -> ExprId {
+        let arguments: Vec<_> = values.iter().map(|value| self.lower_expression(value)).collect();
+        let mut target = self.resolve_call(name, DefinitionKind::Function);
+        if !self.check_arity(&target, arguments.len(), span) {
+            target = CallTarget::Opaque {
+                reason: IncompleteReason::Unsupported("wrong argument arity".into()),
+            };
+        }
+        self.add_expression(
+            ExprKind::Call { target, arguments },
+            Knownness::Opaque,
+            span,
+            ValueType::Plain,
+        )
+    }
+
+    fn lower_collection(&mut self, values: &[Expression], span: Span, array: bool) -> ExprId {
+        let elements: Vec<_> = values.iter().map(|value| self.lower_expression(value)).collect();
+        let knownness =
+            elements.iter().fold(Knownness::Constant, |acc, id| acc.join(self.knownness(*id)));
+        let ty = self.array_type(&elements);
+        if array {
+            self.array_types.insert(Self::span_key(span), ty);
+            self.add_expression(ExprKind::Array(elements), knownness, span, ty)
+        } else {
+            self.add_expression(ExprKind::Tuple(elements), knownness, span, ty)
+        }
+    }
+
+    fn lower_operation(&mut self, expression: &Expression) -> ExprId {
+        let span = expression.span();
+        match expression {
             Expression::Unary { operator, operand, .. } => {
                 let operand = self.lower_expression(operand);
                 self.add_expression(
@@ -1140,10 +1358,9 @@ impl Lowerer<'_> {
             Expression::Binary { operator, left, right, .. } => {
                 let left = self.lower_expression(left);
                 let right = self.lower_expression(right);
-                let knownness = self.knownness(left).join(self.knownness(right));
                 self.add_expression(
                     ExprKind::Binary { operator: *operator, left, right },
-                    knownness,
+                    self.knownness(left).join(self.knownness(right)),
                     span,
                     ValueType::Plain,
                 )
@@ -1152,34 +1369,30 @@ impl Lowerer<'_> {
                 let condition = self.lower_expression(condition);
                 let yes = self.lower_expression(yes);
                 let no = self.lower_expression(no);
-                let knownness =
-                    self.knownness(condition).join(self.knownness(yes)).join(self.knownness(no));
                 let ty = if self.expression_type(yes) == self.expression_type(no) {
                     self.expression_type(yes)
                 } else {
                     ValueType::Unknown
                 };
+                let knownness =
+                    self.knownness(condition).join(self.knownness(yes)).join(self.knownness(no));
                 self.add_expression(ExprKind::Ternary { condition, yes, no }, knownness, span, ty)
             }
-            Expression::Parallel { operand, .. } => {
-                let operand = self.lower_expression(operand);
+            Expression::Parallel { .. } => {
+                self.incomplete(span, IncompleteReason::Unsupported("parallel value".into()));
                 self.add_expression(
-                    ExprKind::Parallel(operand),
-                    Knownness::Opaque,
-                    span,
-                    self.expression_type(operand),
-                )
-            }
-            Expression::Group { expression, .. } => self.lower_expression(expression),
-            Expression::Error { .. } => {
-                self.incomplete(span, IncompleteReason::Syntax);
-                self.add_expression(
-                    ExprKind::Opaque(IncompleteReason::Syntax),
+                    ExprKind::Opaque(IncompleteReason::Unsupported("parallel value".into())),
                     Knownness::Opaque,
                     span,
                     ValueType::Unknown,
                 )
             }
+            _ => self.add_expression(
+                ExprKind::Opaque(IncompleteReason::Unsupported("expression operation".into())),
+                Knownness::Opaque,
+                span,
+                ValueType::Unknown,
+            ),
         }
     }
 
@@ -1208,27 +1421,43 @@ impl Lowerer<'_> {
     }
 
     fn lower_anonymous(&mut self, call: &AnonymousCallExpr) -> ExprId {
-        let target = self.resolve_call(&call.name, DefinitionKind::Template);
+        let mut target = self.resolve_call(&call.name, DefinitionKind::Template);
         let arguments: Vec<_> =
             call.parameters.iter().map(|value| self.lower_expression(value)).collect();
-        self.check_arity(&target, arguments.len(), call.span);
+        let valid_arity = self.check_arity(&target, arguments.len(), call.span);
+        let valid_arguments = self.check_template_arguments(&arguments, call.span);
+        if !valid_arity {
+            target = CallTarget::Opaque {
+                reason: IncompleteReason::Unsupported("wrong argument arity".into()),
+            };
+        } else if !valid_arguments {
+            target = CallTarget::Opaque { reason: IncompleteReason::NonCompileTime };
+        }
         let template = if let CallTarget::Template(id) = target { Some(id) } else { None };
-        let inputs: Vec<_> = call
+        let mut inputs: Vec<_> = call
             .inputs
             .iter()
             .enumerate()
             .map(|(position, input)| self.lower_anonymous_input(template, input, position))
             .collect();
+        let valid_inputs = template.is_some_and(|template| {
+            self.validate_anonymous_inputs(template, &mut inputs, call.span)
+        });
         let symbol = self.hir.add_symbol(
             format!("<anonymous:{}>", call.span.start()),
             SymbolKind::Component,
             call.span,
         );
         let component = self.hir.add_component(symbol, call.span);
+        let valid_target = matches!(target, CallTarget::Template(_));
         self.hir.components[component.index].target = Some(target);
         self.add_expression(
             ExprKind::AnonymousComponent { component, arguments, inputs },
-            Knownness::WitnessDependent,
+            if valid_target && valid_inputs {
+                Knownness::WitnessDependent
+            } else {
+                Knownness::Opaque
+            },
             call.span,
             ValueType::Unknown,
         )
@@ -1249,8 +1478,16 @@ impl Lowerer<'_> {
             }
         };
         let value = self.lower_expression(value);
-        let port = template.and_then(|id| {
-            let inputs = self.hir.templates[id.index]
+        let Some(template) = template else {
+            return AnonymousInputEffect {
+                target: AnonymousInputTarget::Opaque(IncompleteReason::UnknownType),
+                operator,
+                value,
+                span,
+            };
+        };
+        let port = {
+            let inputs = self.hir.templates[template.index]
                 .ports
                 .iter()
                 .filter(|port| self.hir.ports[port.index].direction == Some(PortDirection::Input));
@@ -1264,7 +1501,7 @@ impl Lowerer<'_> {
             } else {
                 inputs.into_iter().nth(position).copied()
             }
-        });
+        };
         let target = if operator != InputAssignmentOperator::Constraint {
             self.diagnostic(
                 SemanticCode::AnonymousInput,
@@ -1292,6 +1529,45 @@ impl Lowerer<'_> {
         AnonymousInputEffect { target, operator, value, span }
     }
 
+    fn validate_anonymous_inputs(
+        &mut self,
+        template: TemplateId,
+        inputs: &mut [AnonymousInputEffect],
+        span: Span,
+    ) -> bool {
+        let mut used = BTreeSet::new();
+        for input in inputs.iter_mut() {
+            let AnonymousInputTarget::Port(port) = input.target else { continue };
+            if !used.insert(port) {
+                self.diagnostic(
+                    SemanticCode::AnonymousInput,
+                    Severity::Error,
+                    input.span,
+                    "anonymous input is assigned more than once".into(),
+                );
+                self.incomplete(input.span, IncompleteReason::InvalidAssignment);
+                input.target = AnonymousInputTarget::Opaque(IncompleteReason::InvalidAssignment);
+            }
+        }
+        if inputs.iter().any(|input| matches!(input.target, AnonymousInputTarget::Opaque(_))) {
+            return false;
+        }
+        let missing = self.hir.templates[template.index].ports.iter().any(|port| {
+            self.hir.ports[port.index].direction == Some(PortDirection::Input)
+                && !used.contains(port)
+        });
+        if missing {
+            self.diagnostic(
+                SemanticCode::AnonymousInput,
+                Severity::Error,
+                span,
+                "anonymous call does not assign every input port".into(),
+            );
+            self.incomplete(span, IncompleteReason::InvalidAssignment);
+        }
+        !missing
+    }
+
     fn lower_mains(&mut self) {
         for file in &self.source.files {
             for item in &file.outcome.ast.items {
@@ -1311,8 +1587,16 @@ impl Lowerer<'_> {
                     let arguments: Vec<_> =
                         arguments.iter().map(|value| self.lower_expression(value)).collect();
                     self.scopes.leave();
-                    let target = self.resolve_call(name, DefinitionKind::Template);
-                    self.check_arity(&target, arguments.len(), *span);
+                    let mut target = self.resolve_call(name, DefinitionKind::Template);
+                    let valid_arity = self.check_arity(&target, arguments.len(), *span);
+                    let valid_arguments = self.check_template_arguments(&arguments, *span);
+                    if !valid_arity {
+                        target = CallTarget::Opaque {
+                            reason: IncompleteReason::Unsupported("wrong argument arity".into()),
+                        };
+                    } else if !valid_arguments {
+                        target = CallTarget::Opaque { reason: IncompleteReason::NonCompileTime };
+                    }
                     self.hir.mains.push(Main { target, arguments, span: *span });
                 } else {
                     self.diagnostic(
@@ -1354,14 +1638,16 @@ impl Lowerer<'_> {
 
     fn collect_syntax_incomplete(&mut self) {
         for diagnostic in &self.source.diagnostics {
-            let Some(span) = diagnostic.span() else { continue };
             let reason = match diagnostic.kind {
                 DiagnosticKind::MissingInclude
                 | DiagnosticKind::FileRead
                 | DiagnosticKind::CyclicInclude => IncompleteReason::Include,
                 _ => IncompleteReason::Syntax,
             };
-            self.incomplete(span, reason);
+            self.incomplete.push(IncompleteRegion {
+                location: IncompleteLocation::from(&diagnostic.location),
+                reason,
+            });
         }
     }
 }
@@ -1378,6 +1664,7 @@ pub fn lower_project(source: &LoadedProject) -> LoweredProject {
         array_types: BTreeMap::new(),
         components: BTreeMap::new(),
         predeclared_ports: BTreeMap::new(),
+        definition_locations: BTreeMap::new(),
         scopes: Scopes::default(),
         current_definition: None,
     };
@@ -1391,8 +1678,16 @@ pub fn lower_project(source: &LoadedProject) -> LoweredProject {
     lowerer.diagnostics.sort_by_key(|diagnostic| {
         (diagnostic.span.source().index(), diagnostic.span.start(), diagnostic.span.end())
     });
-    lowerer.incomplete.sort_by_key(|region| {
-        (region.span.source().index(), region.span.start(), region.span.end())
+    lowerer.incomplete.sort_by(|left, right| match (&left.location, &right.location) {
+        (IncompleteLocation::Source(left), IncompleteLocation::Source(right)) => (
+            left.source().index(),
+            left.start(),
+            left.end(),
+        )
+            .cmp(&(right.source().index(), right.start(), right.end())),
+        (IncompleteLocation::Source(_), IncompleteLocation::Path(_)) => std::cmp::Ordering::Less,
+        (IncompleteLocation::Path(_), IncompleteLocation::Source(_)) => std::cmp::Ordering::Greater,
+        (IncompleteLocation::Path(left), IncompleteLocation::Path(right)) => left.cmp(right),
     });
     LoweredProject {
         hir: lowerer.hir,
