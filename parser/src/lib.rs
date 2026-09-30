@@ -14,6 +14,7 @@ use log::debug;
 mod errors;
 mod include_logic;
 mod parser_logic;
+mod reference_checker;
 mod syntax_sugar_traits;
 mod syntax_sugar_remover;
 
@@ -100,6 +101,11 @@ pub fn parse_files(
     // TODO: This could be moved to the lifting phase.
     match &mut result {
         ParseResult::Program(program_archive, reports) => {
+            reference_checker::report_unresolved_calls(
+                &program_archive.templates,
+                &program_archive.functions,
+                reports,
+            );
             if program_archive.main_expression().is_anonymous_component() {
                 reports.push(
                     errors::AnonymousComponentError::new(
@@ -120,6 +126,11 @@ pub fn parse_files(
             program_archive.functions = new_functions;
         }
         ParseResult::Library(template_library, reports) => {
+            reference_checker::report_unresolved_calls(
+                &template_library.templates,
+                &template_library.functions,
+                reports,
+            );
             let (new_templates, new_functions) = syntax_sugar_remover::remove_syntactic_sugar(
                 &template_library.templates,
                 &template_library.functions,
@@ -148,7 +159,7 @@ pub fn parse_file(
 
     debug!("parsing file `{}`", file_path.display());
     let program = parser_logic::parse_file(&file_content, file_id)?;
-    match check_compiler_version(file_path, program.compiler_version, compiler_version) {
+    match check_compiler_version(file_path, file_id, program.compiler_version, compiler_version) {
         Ok(warnings) => reports.extend(warnings),
         Err(error) => reports.push(*error),
     }
@@ -172,6 +183,7 @@ fn open_file(file_path: &PathBuf) -> Result<(String, String), Box<Report>> /* pa
 
 fn check_compiler_version(
     file_path: &Path,
+    file_id: FileID,
     required_version: Option<Version>,
     compiler_version: &Version,
 ) -> Result<ReportCollection, Box<Report>> {
@@ -186,6 +198,7 @@ fn check_compiler_version(
         } else {
             let error = CompilerVersionError {
                 path: format!("{}", file_path.display()),
+                file_id,
                 required_version,
                 version: *compiler_version,
             };
@@ -194,6 +207,7 @@ fn check_compiler_version(
     } else {
         let report = NoCompilerVersionWarning::produce_report(NoCompilerVersionWarning {
             path: format!("{}", file_path.display()),
+            file_id,
             version: *compiler_version,
         });
         Ok(vec![report])
@@ -210,14 +224,14 @@ mod tests {
     fn test_compiler_version() {
         let path = PathBuf::from("example.circom");
 
-        assert!(check_compiler_version(&path, None, &(2, 1, 2)).is_ok());
-        assert!(check_compiler_version(&path, Some((2, 0, 0)), &(2, 1, 2)).is_ok());
-        assert!(check_compiler_version(&path, Some((2, 0, 8)), &(2, 1, 2)).is_ok());
-        assert!(check_compiler_version(&path, Some((2, 1, 2)), &(2, 1, 2)).is_ok());
+        assert!(check_compiler_version(&path, 0, None, &(2, 1, 2)).is_ok());
+        assert!(check_compiler_version(&path, 0, Some((2, 0, 0)), &(2, 1, 2)).is_ok());
+        assert!(check_compiler_version(&path, 0, Some((2, 0, 8)), &(2, 1, 2)).is_ok());
+        assert!(check_compiler_version(&path, 0, Some((2, 1, 2)), &(2, 1, 2)).is_ok());
 
         // We don't support Circom 1.
-        assert!(check_compiler_version(&path, Some((1, 0, 0)), &(2, 0, 8)).is_err());
-        assert!(check_compiler_version(&path, Some((2, 1, 2)), &(2, 0, 8)).is_err());
-        assert!(check_compiler_version(&path, Some((2, 1, 4)), &(2, 1, 2)).is_err());
+        assert!(check_compiler_version(&path, 0, Some((1, 0, 0)), &(2, 0, 8)).is_err());
+        assert!(check_compiler_version(&path, 0, Some((2, 1, 2)), &(2, 0, 8)).is_err());
+        assert!(check_compiler_version(&path, 0, Some((2, 1, 4)), &(2, 1, 2)).is_err());
     }
 }

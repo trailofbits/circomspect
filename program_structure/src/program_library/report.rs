@@ -130,6 +130,12 @@ impl Report {
         self
     }
 
+    /// Associates a report with a file when no precise source span is available.
+    pub fn scope_to_file(&mut self, file_id: FileID) -> &mut Self {
+        self.primary_file_ids_mut().push(file_id);
+        self
+    }
+
     pub fn add_secondary(
         &mut self,
         location: FileLocation,

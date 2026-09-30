@@ -3,200 +3,164 @@ use program_structure::report::ReportCollection;
 
 use crate::errors::TupleError;
 
+/// Visits every expression in an AST node, including nested call arguments.
 pub(crate) trait ContainsExpression {
-    /// Returns true if `self` contains `expr` such that `matcher(expr)`
-    /// evaluates to true. If the callback is not `None` it is invoked on
-    /// `expr.meta()` for each matching expression.
+    fn visit_expressions(&self, visitor: &mut impl FnMut(&Expression));
+
     fn contains_expr(
         &self,
         matcher: &impl Fn(&Expression) -> bool,
         callback: &mut impl FnMut(&Meta),
-    ) -> bool;
+    ) -> bool {
+        let mut found = false;
+        self.visit_expressions(&mut |expression| {
+            if matcher(expression) {
+                found = true;
+                callback(expression.meta());
+            }
+        });
+        found
+    }
 
-    /// Returns true if the node contains a tuple. If `reports` is not `None`, a
-    /// report is generated for each occurrence.
     fn contains_tuple(&self, reports: Option<&mut ReportCollection>) -> bool {
-        let matcher = |expr: &Expression| expr.is_tuple();
+        let matcher = |expression: &Expression| expression.is_tuple();
         if let Some(reports) = reports {
             let mut callback = |meta: &Meta| {
-                let error = TupleError::new(
-                    Some(meta),
-                    "Tuples are not allowed in functions.",
-                    Some("Tuple instantiated here."),
+                reports.push(
+                    TupleError::new(
+                        Some(meta),
+                        "Tuples are not allowed in functions.",
+                        Some("Tuple instantiated here."),
+                    )
+                    .into_report(),
                 );
-                reports.push(error.into_report());
             };
             self.contains_expr(&matcher, &mut callback)
         } else {
-            // We need to pass a dummy callback because rustc isn't smart enough
-            // to infer the type parameter to `Option` if we use options here.
-            let mut dummy = |_: &Meta| {};
-            self.contains_expr(&matcher, &mut dummy)
+            self.contains_expr(&matcher, &mut |_: &Meta| {})
         }
     }
 
-    /// Returns true if the node contains an anonymous component. If `reports`
-    /// is not `None`, a report is generated for each occurrence.
     fn contains_anonymous_component(&self, reports: Option<&mut ReportCollection>) -> bool {
-        let matcher = |expr: &Expression| expr.is_anonymous_component();
+        let matcher = |expression: &Expression| expression.is_anonymous_component();
         if let Some(reports) = reports {
             let mut callback = |meta: &Meta| {
-                let error = TupleError::new(
-                    Some(meta),
-                    "Anonymous components are not allowed in functions.",
-                    Some("Anonymous component instantiated here."),
+                reports.push(
+                    TupleError::new(
+                        Some(meta),
+                        "Anonymous components are not allowed in functions.",
+                        Some("Anonymous component instantiated here."),
+                    )
+                    .into_report(),
                 );
-                reports.push(error.into_report());
             };
             self.contains_expr(&matcher, &mut callback)
         } else {
-            // We need to pass a dummy callback because rustc isn't smart enough
-            // to infer the type parameter to `Option` if we use options here.
-            let mut dummy = |_: &Meta| {};
-            self.contains_expr(&matcher, &mut dummy)
+            self.contains_expr(&matcher, &mut |_: &Meta| {})
         }
     }
 }
 
 impl ContainsExpression for Expression {
-    fn contains_expr(
-        &self,
-        matcher: &impl Fn(&Expression) -> bool,
-        callback: &mut impl FnMut(&Meta),
-    ) -> bool {
+    fn visit_expressions(&self, visitor: &mut impl FnMut(&Expression)) {
         use Expression::*;
-        // Check if the current expression matches and invoke the callback if
-        // defined.
-        if matcher(self) {
-            callback(self.meta());
-            return true;
-        }
-        let mut result = false;
-        match &self {
+
+        visitor(self);
+        match self {
             InfixOp { lhe, rhe, .. } => {
-                result = lhe.contains_expr(matcher, callback) || result;
-                result = rhe.contains_expr(matcher, callback) || result;
-                result
+                lhe.visit_expressions(visitor);
+                rhe.visit_expressions(visitor);
             }
-            PrefixOp { rhe, .. } => rhe.contains_expr(matcher, callback),
+            PrefixOp { rhe, .. } | ParallelOp { rhe, .. } => rhe.visit_expressions(visitor),
             InlineSwitchOp { cond, if_true, if_false, .. } => {
-                result = cond.contains_expr(matcher, callback) || result;
-                result = if_true.contains_expr(matcher, callback) || result;
-                result = if_false.contains_expr(matcher, callback) || result;
-                result
-            }
-            Call { args, .. } => {
-                for arg in args {
-                    result = arg.contains_expr(matcher, callback) || result;
-                }
-                result
-            }
-            ArrayInLine { values, .. } => {
-                for value in values {
-                    result = value.contains_expr(matcher, callback) || result;
-                }
-                result
-            }
-            AnonymousComponent { params, signals, .. } => {
-                for param in params {
-                    result = param.contains_expr(matcher, callback) || result;
-                }
-                for signal in signals {
-                    result = signal.contains_expr(matcher, callback) || result;
-                }
-                result
+                cond.visit_expressions(visitor);
+                if_true.visit_expressions(visitor);
+                if_false.visit_expressions(visitor);
             }
             Variable { access, .. } => {
                 for access in access {
                     if let Access::ArrayAccess(index) = access {
-                        result = index.contains_expr(matcher, callback) || result;
+                        index.visit_expressions(visitor);
                     }
                 }
-                result
             }
-            Number(_, _) => false,
-            Tuple { values, .. } => {
-                for value in values {
-                    result = value.contains_expr(matcher, callback) || result;
+            Number(_, _) => {}
+            Call { args, .. } => {
+                for arg in args {
+                    arg.visit_expressions(visitor);
                 }
-                result
             }
-            ParallelOp { rhe, .. } => rhe.contains_expr(matcher, callback),
+            AnonymousComponent { params, signals, .. } => {
+                for param in params {
+                    param.visit_expressions(visitor);
+                }
+                for signal in signals {
+                    signal.visit_expressions(visitor);
+                }
+            }
+            ArrayInLine { values, .. } | Tuple { values, .. } => {
+                for value in values {
+                    value.visit_expressions(visitor);
+                }
+            }
         }
     }
 }
 
 impl ContainsExpression for Statement {
-    fn contains_expr(
-        &self,
-        matcher: &impl Fn(&Expression) -> bool,
-        callback: &mut impl FnMut(&Meta),
-    ) -> bool {
+    fn visit_expressions(&self, visitor: &mut impl FnMut(&Expression)) {
+        use Access::*;
         use LogArgument::*;
         use Statement::*;
-        use Access::*;
-        let mut result = false;
+
         match self {
             IfThenElse { cond, if_case, else_case, .. } => {
-                result = cond.contains_expr(matcher, callback) || result;
-                result = if_case.contains_expr(matcher, callback) || result;
+                cond.visit_expressions(visitor);
+                if_case.visit_expressions(visitor);
                 if let Some(else_case) = else_case {
-                    result = else_case.contains_expr(matcher, callback) || result;
+                    else_case.visit_expressions(visitor);
                 }
-                result
             }
             While { cond, stmt, .. } => {
-                result = cond.contains_expr(matcher, callback) || result;
-                result = stmt.contains_expr(matcher, callback) || result;
-                result
+                cond.visit_expressions(visitor);
+                stmt.visit_expressions(visitor);
             }
-            Return { value, .. } => value.contains_expr(matcher, callback),
+            Return { value, .. } => value.visit_expressions(visitor),
             InitializationBlock { initializations, .. } => {
-                for init in initializations {
-                    result = init.contains_expr(matcher, callback) || result;
+                for initialization in initializations {
+                    initialization.visit_expressions(visitor);
                 }
-                result
-            }
-            Block { stmts, .. } => {
-                for stmt in stmts {
-                    result = stmt.contains_expr(matcher, callback) || result;
-                }
-                result
             }
             Declaration { dimensions, .. } => {
-                for size in dimensions {
-                    result = size.contains_expr(matcher, callback) || result;
+                for dimension in dimensions {
+                    dimension.visit_expressions(visitor);
                 }
-                result
             }
             Substitution { access, rhe, .. } => {
                 for access in access {
                     if let ArrayAccess(index) = access {
-                        result = index.contains_expr(matcher, callback) || result;
+                        index.visit_expressions(visitor);
                     }
                 }
-                result = rhe.contains_expr(matcher, callback) || result;
-                result
+                rhe.visit_expressions(visitor);
             }
-            MultiSubstitution { lhe, rhe, .. } => {
-                result = lhe.contains_expr(matcher, callback) || result;
-                result = rhe.contains_expr(matcher, callback) || result;
-                result
-            }
-            ConstraintEquality { lhe, rhe, .. } => {
-                result = lhe.contains_expr(matcher, callback) || result;
-                result = rhe.contains_expr(matcher, callback) || result;
-                result
+            MultiSubstitution { lhe, rhe, .. } | ConstraintEquality { lhe, rhe, .. } => {
+                lhe.visit_expressions(visitor);
+                rhe.visit_expressions(visitor);
             }
             LogCall { args, .. } => {
-                for arg in args {
-                    if let LogExp(expr) = arg {
-                        result = expr.contains_expr(matcher, callback) || result;
+                for argument in args {
+                    if let LogExp(expression) = argument {
+                        expression.visit_expressions(visitor);
                     }
                 }
-                result
             }
-            Assert { arg, .. } => arg.contains_expr(matcher, callback),
+            Block { stmts, .. } => {
+                for statement in stmts {
+                    statement.visit_expressions(visitor);
+                }
+            }
+            Assert { arg, .. } => arg.visit_expressions(visitor),
         }
     }
 }

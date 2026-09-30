@@ -88,6 +88,7 @@ pub enum ReportCode {
     Bn254SpecificCircuit,
     UnderConstrainedSignal,
     UnusedOutputSignal,
+    UnresolvedCall,
 }
 
 impl ReportCode {
@@ -180,6 +181,7 @@ impl ReportCode {
             Bn254SpecificCircuit => "CS0016",
             UnderConstrainedSignal => "CS0017",
             UnusedOutputSignal => "CS0018",
+            UnresolvedCall => "CS0019",
         }
         .to_string()
     }
@@ -271,6 +273,7 @@ impl ReportCode {
             Bn254SpecificCircuit => "bn254-specific-circuit",
             UnderConstrainedSignal => "under-constrained-signal",
             UnusedOutputSignal => "unused-output-signal",
+            UnresolvedCall => "unresolved-call",
         }
         .to_string()
     }

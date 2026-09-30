@@ -71,6 +71,7 @@ impl MultipleMainError {
 
 pub struct CompilerVersionError {
     pub path: String,
+    pub file_id: FileID,
     pub required_version: Version,
     pub version: Version,
 }
@@ -82,24 +83,29 @@ impl CompilerVersionError {
             version_string(&self.required_version),
             version_string(&self.version),
         );
-        Report::error(message, ReportCode::CompilerVersionError)
+        let mut report = Report::error(message, ReportCode::CompilerVersionError);
+        report.scope_to_file(self.file_id);
+        report
     }
 }
 
 pub struct NoCompilerVersionWarning {
     pub path: String,
+    pub file_id: FileID,
     pub version: Version,
 }
 impl NoCompilerVersionWarning {
     pub fn produce_report(error: Self) -> Report {
-        Report::warning(
+        let mut report = Report::warning(
             format!(
                 "The file `{}` does not include a version pragma. Assuming version {}.",
                 error.path,
                 version_string(&error.version)
             ),
             ReportCode::NoCompilerVersionWarning,
-        )
+        );
+        report.scope_to_file(error.file_id);
+        report
     }
 }
 

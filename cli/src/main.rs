@@ -56,10 +56,12 @@ fn cli_styles() -> clap::builder::Styles {
         .placeholder(AnsiColor::Green.on_default())
 }
 
-/// Returns true if a primary location of the report corresponds to a file
-/// specified on the command line by the user.
+/// Keep errors, project-level reports, and reports located in a user input file.
 fn filter_by_file(report: &Report, user_inputs: &HashSet<FileID>) -> bool {
-    report.primary_file_ids().iter().any(|file_id| user_inputs.contains(file_id))
+    let file_ids = report.primary_file_ids();
+    *report.category() == MessageCategory::Error
+        || file_ids.is_empty()
+        || file_ids.iter().any(|file_id| user_inputs.contains(file_id))
 }
 
 /// Returns true if the report level is greater than or equal to the given
@@ -111,7 +113,7 @@ fn main() -> ExitCode {
             .add_filter(move |report: &Report| filter_by_file(report, &user_inputs))
             .add_filter(move |report: &Report| filter_by_id(report, &allow_list));
         if sarif_writer.write_reports(stdout_writer.reports(), runner.file_library()) > 0 {
-            stdout_writer.write_message(&format!("Result written to `{}`.", sarif_file.display()));
+            stdout_writer.write_message(format!("Result written to `{}`.", sarif_file.display()));
         }
     }
 
@@ -126,7 +128,7 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
         n => {
-            stdout_writer.write_message(&format!("{n} issues found."));
+            stdout_writer.write_message(format!("{n} issues found."));
             ExitCode::FAILURE
         }
     }
