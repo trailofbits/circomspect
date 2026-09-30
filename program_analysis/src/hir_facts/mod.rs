@@ -444,12 +444,11 @@ impl AnalysisFacts<'_> {
         let Some(state) = self.exit_state() else {
             return Fact::blocked(BTreeSet::from([FactBlocker::MissingExit]));
         };
-        let Some((may, must)) = state.constraints() else {
+        let Some((may, _)) = state.constraints() else {
             return Fact::known(Incidence::Zero);
         };
-        let must_match = state.must_touches().is_some_and(|keys| keys.contains(&query))
-            || must.iter().any(|site| self.site_touches(*site, &query, true));
-        let may_match = may.iter().any(|site| self.site_touches(*site, &query, false));
+        let must_match = state.must_touches().is_some_and(|keys| keys.contains(&query));
+        let may_match = may.iter().any(|site| self.site_touches(*site, &query));
         let value = if must_match {
             Incidence::Must
         } else if may_match {
@@ -501,69 +500,43 @@ impl AnalysisFacts<'_> {
         facts.input.as_ref()
     }
 
-    fn site_touches(&self, id: NodeId, query: &AccessKey, exact: bool) -> bool {
+    fn site_touches(&self, id: NodeId, query: &AccessKey) -> bool {
         let unknown = ForwardState::boundary();
         let state = self.site_state(id).unwrap_or(&unknown);
-        self.site_touches_with_state(id, query, exact, state)
+        self.site_touches_with_state(id, query, state)
     }
 
-    fn site_touches_with_state(
-        &self,
-        id: NodeId,
-        query: &AccessKey,
-        exact: bool,
-        state: &ForwardState,
-    ) -> bool {
+    fn site_touches_with_state(&self, id: NodeId, query: &AccessKey, state: &ForwardState) -> bool {
         let Some(node) = self.cfg.node(id) else { return true };
         let CfgNodeKind::Constraint { target, left, right } = &node.kind else { return false };
         let empty = BTreeMap::new();
         let variables = state.variables().unwrap_or(&empty);
         let target_touches = target.as_ref().is_some_and(|path| {
-            let key = key_for_path(self.hir, self.field, path, variables);
-            if exact {
-                key.exact_alias(query)
-            } else {
-                key.may_alias(query)
-            }
+            key_for_path(self.hir, self.field, path, variables).may_alias(query)
         });
         let index_touches = target.as_ref().is_some_and(|path| {
-            !exact
-                && path.steps.iter().any(|step| match step {
-                    parser::hir::AccessStep::Index {
-                        index: parser::hir::ArrayIndex::Symbolic(id),
-                        ..
-                    } => self.expr_touches(*id, query, state, false),
-                    parser::hir::AccessStep::Index {
-                        index: parser::hir::ArrayIndex::Constant(_),
-                        ..
-                    }
-                    | parser::hir::AccessStep::Port { .. }
-                    | parser::hir::AccessStep::Tag { .. } => false,
-                })
+            path.steps.iter().any(|step| match step {
+                parser::hir::AccessStep::Index {
+                    index: parser::hir::ArrayIndex::Symbolic(id),
+                    ..
+                } => self.expr_touches(*id, query, state),
+                parser::hir::AccessStep::Index {
+                    index: parser::hir::ArrayIndex::Constant(_),
+                    ..
+                }
+                | parser::hir::AccessStep::Port { .. }
+                | parser::hir::AccessStep::Tag { .. } => false,
+            })
         });
         target_touches
             || index_touches
-            || self.expr_touches(*left, query, state, exact)
-            || right.is_some_and(|id| self.expr_touches(id, query, state, exact))
+            || self.expr_touches(*left, query, state)
+            || right.is_some_and(|id| self.expr_touches(id, query, state))
     }
 
-    fn expr_touches(
-        &self,
-        id: ExprId,
-        query: &AccessKey,
-        state: &ForwardState,
-        exact: bool,
-    ) -> bool {
+    fn expr_touches(&self, id: ExprId, query: &AccessKey, state: &ForwardState) -> bool {
         let empty_values = BTreeMap::new();
         let values = state.variables().unwrap_or(&empty_values);
-        if exact {
-            let mut found = false;
-            id.visit_accesses(self.hir, &mut |path| {
-                let key = key_for_path(self.hir, self.field, path, values);
-                found |= key.exact_alias(query);
-            });
-            return found;
-        }
         let empty_dependencies = BTreeMap::new();
         let dependencies = state.dependencies().unwrap_or(&empty_dependencies);
         let analysis = ForwardAnalysis { hir: self.hir, field: self.field };
@@ -609,6 +582,10 @@ impl AnalysisFacts<'_> {
             }
         }
         if terminal != path.terminal {
+            blockers.insert(FactBlocker::ForeignQuery);
+            return blockers;
+        }
+        if !self.cfg.owns_path(path) {
             blockers.insert(FactBlocker::ForeignQuery);
             return blockers;
         }
@@ -681,9 +658,9 @@ impl AnalysisFacts<'_> {
             .copied()
             .filter(|node| {
                 if incomplete {
-                    self.site_touches_with_state(*node, query, false, &unknown)
+                    self.site_touches_with_state(*node, query, &unknown)
                 } else {
-                    self.site_touches(*node, query, false)
+                    self.site_touches(*node, query)
                 }
             })
             .collect()

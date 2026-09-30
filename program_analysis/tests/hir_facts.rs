@@ -205,6 +205,34 @@ fn arithmetic_access_on_each_branch_proves_must_incidence() {
 }
 
 #[test]
+fn known_ternary_discards_dependencies_of_its_unselected_arm() {
+    let (hir, definition) =
+        fixture("template Check(){signal input x; signal output y; y<==(0 ? x : 1);}");
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let x = expression_path(&hir, "x", 0);
+    assert_eq!(facts.incidence(&x).certified(), Some(&Incidence::Zero));
+}
+
+#[test]
+fn signed_field_comparison_selects_the_negative_branch() {
+    let (hir, definition) =
+        fixture("template Check(){signal output y; if(-1<0){y<==1;}else{y<--1;}}");
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let DefinitionRef::Template(id) = definition else { panic!("template") };
+    let body = hir.block(hir.template(id).unwrap().body).unwrap();
+    let Some(Effect::If { then_block, .. }) = body.effects.last() else { panic!("if") };
+    let then_block = hir.block(*then_block).unwrap();
+    let Some(Effect::ConstraintAssignment { target, .. }) = then_block.effects.first() else {
+        panic!("constraint")
+    };
+    assert_eq!(facts.incidence(target).certified(), Some(&Incidence::Must));
+}
+
+#[test]
 fn two_exact_array_dependencies_do_not_mention_a_third_element() {
     let (hir, definition) = fixture(
         "template Check(){signal input a[3]; var t=a[0]; \
@@ -571,6 +599,32 @@ fn query_paths_from_other_definitions_or_projects_are_unavailable() {
         span: local.span,
     });
     assert!(facts.incidence(&forged).unavailable().is_some());
+}
+
+#[test]
+fn foreign_symbolic_index_cannot_be_grafted_onto_a_local_root() {
+    let directory = std::env::temp_dir()
+        .join(format!("circomspect-phase4-foreign-index-{}", std::process::id()));
+    fs::create_dir_all(&directory).unwrap();
+    let source = directory.join("case.circom");
+    fs::write(
+        &source,
+        "template T(){signal input a[2];signal output y;y<==a[0];} \
+         template U(){signal input b[2];var i=0;signal output z;z<--b[i];}",
+    )
+    .unwrap();
+    let loaded = load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
+    let hir = lower_project(&loaded).hir;
+    let cfg = build_cfg(&hir, hir.definition("T").unwrap()).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let mut grafted = expression_path(&hir, "a", 1);
+    let foreign = expression_path(&hir, "b", 1);
+    grafted.steps = foreign.steps;
+    assert!(facts
+        .incidence(&grafted)
+        .unavailable()
+        .is_some_and(|blockers| { blockers.contains(&FactBlocker::ForeignQuery) }));
 }
 
 #[test]

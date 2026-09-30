@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use num_bigint::BigInt;
 use num_traits::{Signed, Zero};
 use program_structure::utils::constants::Curve;
@@ -81,5 +83,19 @@ impl FieldContext {
     #[must_use]
     pub fn is_zero(&self, value: &FieldValue) -> bool {
         value.0.is_zero()
+    }
+
+    /// Compare canonical values using Circom's signed half-field ordering.
+    #[must_use]
+    pub fn compare_signed(&self, left: &FieldValue, right: &FieldValue) -> Ordering {
+        let cutoff = &self.modulus / 2 + 1;
+        let signed = |value: &FieldValue| {
+            if value.0 >= cutoff {
+                &value.0 - &self.modulus
+            } else {
+                value.0.clone()
+            }
+        };
+        signed(left).cmp(&signed(right))
     }
 }

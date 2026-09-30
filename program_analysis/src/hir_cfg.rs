@@ -63,6 +63,7 @@ pub struct CfgEdge {
 pub struct DefinitionCfg {
     graph: IndexedGraph<CfgNode, CfgEdge>,
     local_symbols: BTreeSet<SymbolId>,
+    checked_paths: Vec<AccessPath>,
     pub definition: DefinitionRef,
     pub entry: NodeId,
     pub exit: NodeId,
@@ -71,6 +72,34 @@ pub struct DefinitionCfg {
 impl DefinitionCfg {
     pub(crate) fn owns_symbol(&self, symbol: SymbolId) -> bool {
         self.local_symbols.contains(&symbol)
+    }
+
+    pub(crate) fn owns_path(&self, path: &AccessPath) -> bool {
+        if !self.owns_symbol(path.root) {
+            return false;
+        }
+        if path.steps.is_empty() {
+            return true;
+        }
+        self.checked_paths.iter().any(|checked| {
+            checked.root == path.root
+                && checked.terminal == path.terminal
+                && checked.steps.len() == path.steps.len()
+                && checked.steps.iter().zip(&path.steps).all(|(left, right)| match (left, right) {
+                    (
+                        AccessStep::Index { index: left, .. },
+                        AccessStep::Index { index: right, .. },
+                    ) => left == right,
+                    (AccessStep::Port { port: left, .. }, AccessStep::Port { port: right, .. }) => {
+                        left == right
+                    }
+                    (
+                        AccessStep::Tag { symbol: left, .. },
+                        AccessStep::Tag { symbol: right, .. },
+                    ) => left == right,
+                    _ => false,
+                })
+        })
     }
 }
 
@@ -130,6 +159,7 @@ struct Builder<'a> {
     conditions: BTreeMap<NodeId, (ExprId, ControlGuard)>,
     active_deferred: Vec<NodeId>,
     local_symbols: BTreeSet<SymbolId>,
+    checked_paths: Vec<AccessPath>,
     exit: NodeId,
 }
 
@@ -171,6 +201,7 @@ impl Builder<'_> {
         match &expr.kind {
             ExprKind::Number(_) | ExprKind::Opaque(_) => {}
             ExprKind::Access(path) => {
+                self.checked_paths.push(path.clone());
                 for step in &path.steps {
                     if let AccessStep::Index {
                         index: parser::hir::ArrayIndex::Symbolic(index),
@@ -576,6 +607,7 @@ impl Builder<'_> {
         target: &AccessPath,
         origin: Origin,
     ) -> Result<Tails, BuildError> {
+        self.checked_paths.push(target.clone());
         for step in &target.steps {
             if let AccessStep::Index {
                 index: parser::hir::ArrayIndex::Symbolic(expression), ..
@@ -651,6 +683,7 @@ pub fn build_cfg(hir: &HirProject, definition: DefinitionRef) -> Result<Definiti
         conditions: BTreeMap::new(),
         active_deferred: Vec::new(),
         local_symbols,
+        checked_paths: Vec::new(),
         exit: NodeId::new(1),
     };
     let entry = builder.node(CfgNodeKind::Entry, None);
@@ -658,7 +691,8 @@ pub fn build_cfg(hir: &HirProject, definition: DefinitionRef) -> Result<Definiti
     let tails = builder.block(vec![(entry, EdgeKind::Normal)], body)?;
     builder.link(tails, exit);
     let local_symbols = builder.local_symbols;
+    let checked_paths = builder.checked_paths;
     let graph = IndexedGraph::new(builder.nodes, builder.edges, vec![entry], vec![exit])
         .map_err(BuildError::InvalidGraph)?;
-    Ok(DefinitionCfg { graph, local_symbols, definition, entry, exit })
+    Ok(DefinitionCfg { graph, local_symbols, checked_paths, definition, entry, exit })
 }

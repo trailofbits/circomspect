@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::cmp::Ordering;
 
 use abstract_interpretation::graph::NodeId;
 use abstract_interpretation::lattice::Lattice;
@@ -11,7 +12,7 @@ use crate::hir_cfg::{CfgEdge, CfgNode, CfgNodeKind, DefinitionCfg, EdgeKind};
 use super::access::{key_for_path, AccessKey, MayAccessSet};
 use super::domains::DegreeUpper;
 use super::field::{FieldContext, FieldValue};
-use super::walk::{VisitAccesses, VisitDefiniteAccesses};
+use super::walk::VisitDefiniteAccesses;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ForwardState {
@@ -274,23 +275,76 @@ pub fn expression_dependencies(
     values: &BTreeMap<SymbolId, FieldValue>,
     variables: &BTreeMap<SymbolId, MayAccessSet>,
 ) -> Option<BTreeSet<AccessKey>> {
-    let mut accesses = BTreeSet::new();
-    let mut complete = true;
-    let traversed = expression.visit_accesses(analysis.hir, &mut |path| {
-        if analysis.hir.symbol(path.root).is_some_and(|symbol| symbol.kind == SymbolKind::Variable)
-        {
-            if !path.steps.is_empty() {
-                complete = false;
-            } else if let Some(reaching) = variables.get(&path.root) {
-                accesses.extend(reaching.iter().cloned());
-            } else {
-                complete = false;
-            }
-        } else {
-            accesses.insert(key_for_path(analysis.hir, analysis.field, path, values));
+    let expr = analysis.hir.expression(expression)?;
+    match &expr.kind {
+        ExprKind::Number(_) => Some(BTreeSet::new()),
+        ExprKind::Access(path) => access_dependencies(analysis, path, values, variables),
+        ExprKind::Unary { operand, .. } | ExprKind::Parallel(operand) => {
+            expression_dependencies(analysis, *operand, values, variables)
         }
-    });
-    (complete && traversed).then_some(accesses)
+        ExprKind::Binary { left, right, .. } => {
+            expression_list_dependencies(analysis, &[*left, *right], values, variables)
+        }
+        ExprKind::Ternary { condition, yes, no } => {
+            let mut result = expression_dependencies(analysis, *condition, values, variables)?;
+            let arms = if let Some(value) =
+                eval_expression(analysis.hir, analysis.field, *condition, values)
+            {
+                if analysis.field.is_zero(&value) {
+                    vec![*no]
+                } else {
+                    vec![*yes]
+                }
+            } else {
+                vec![*yes, *no]
+            };
+            result.extend(expression_list_dependencies(analysis, &arms, values, variables)?);
+            Some(result)
+        }
+        ExprKind::Array(items) | ExprKind::Tuple(items) => {
+            expression_list_dependencies(analysis, items, values, variables)
+        }
+        ExprKind::Call { .. } | ExprKind::AnonymousComponent { .. } | ExprKind::Opaque(_) => None,
+    }
+}
+
+fn expression_list_dependencies(
+    analysis: &ForwardAnalysis<'_>,
+    expressions: &[ExprId],
+    values: &BTreeMap<SymbolId, FieldValue>,
+    variables: &BTreeMap<SymbolId, MayAccessSet>,
+) -> Option<BTreeSet<AccessKey>> {
+    let mut result = BTreeSet::new();
+    for expression in expressions {
+        result.extend(expression_dependencies(analysis, *expression, values, variables)?);
+    }
+    Some(result)
+}
+
+fn access_dependencies(
+    analysis: &ForwardAnalysis<'_>,
+    path: &AccessPath,
+    values: &BTreeMap<SymbolId, FieldValue>,
+    variables: &BTreeMap<SymbolId, MayAccessSet>,
+) -> Option<BTreeSet<AccessKey>> {
+    let mut result = BTreeSet::new();
+    if analysis.hir.symbol(path.root).is_some_and(|symbol| symbol.kind == SymbolKind::Variable) {
+        if !path.steps.is_empty() {
+            return None;
+        }
+        result.extend(variables.get(&path.root)?.iter().cloned());
+    } else {
+        result.insert(key_for_path(analysis.hir, analysis.field, path, values));
+    }
+    for step in &path.steps {
+        if let parser::hir::AccessStep::Index {
+            index: parser::hir::ArrayIndex::Symbolic(id), ..
+        } = step
+        {
+            result.extend(expression_dependencies(analysis, *id, values, variables)?);
+        }
+    }
+    Some(result)
 }
 
 pub fn expression_degree(
@@ -555,12 +609,18 @@ pub fn eval_expression(
                 BinaryOperator::Multiply => Some(field.multiply(&left, &right)),
                 BinaryOperator::Equal => Some(field.canonical(i32::from(left == right).into())),
                 BinaryOperator::NotEqual => Some(field.canonical(i32::from(left != right).into())),
-                BinaryOperator::Less => Some(field.canonical(i32::from(left < right).into())),
-                BinaryOperator::LessEqual => Some(field.canonical(i32::from(left <= right).into())),
-                BinaryOperator::Greater => Some(field.canonical(i32::from(left > right).into())),
-                BinaryOperator::GreaterEqual => {
-                    Some(field.canonical(i32::from(left >= right).into()))
-                }
+                BinaryOperator::Less => Some(field.canonical(
+                    i32::from(field.compare_signed(&left, &right) == Ordering::Less).into(),
+                )),
+                BinaryOperator::LessEqual => Some(field.canonical(
+                    i32::from(field.compare_signed(&left, &right) != Ordering::Greater).into(),
+                )),
+                BinaryOperator::Greater => Some(field.canonical(
+                    i32::from(field.compare_signed(&left, &right) == Ordering::Greater).into(),
+                )),
+                BinaryOperator::GreaterEqual => Some(field.canonical(
+                    i32::from(field.compare_signed(&left, &right) != Ordering::Less).into(),
+                )),
                 _ => None,
             }
         }
