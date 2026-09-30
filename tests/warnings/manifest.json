@@ -14,7 +14,8 @@
       "reason": "~ is reachable; logical negation is a distinct operator",
       "legacy_rule_id": "CS0004",
       "legacy_observed_count": 0,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
     },
     {
       "id": "bitwise_complement_no_finding",
@@ -29,7 +30,8 @@
       "reason": "~ is reachable; logical negation is a distinct operator",
       "legacy_rule_id": "CS0004",
       "legacy_observed_count": 0,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
     },
     {
       "id": "bitwise_complement_abstain",
@@ -44,7 +46,8 @@
       "reason": "~ is reachable; logical negation is a distinct operator",
       "legacy_rule_id": "CS0004",
       "legacy_observed_count": 0,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
     },
     {
       "id": "bn254_specific_emit",
@@ -59,7 +62,8 @@
       "reason": "the same literal is curve-specific only on another field",
       "legacy_rule_id": "CS0016",
       "legacy_observed_count": 0,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
     },
     {
       "id": "bn254_specific_no_finding",
@@ -74,7 +78,8 @@
       "reason": "the same literal is curve-specific only on another field",
       "legacy_rule_id": "CS0016",
       "legacy_observed_count": 0,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
     },
     {
       "id": "bn254_specific_abstain",
@@ -89,7 +94,8 @@
       "reason": "the same literal is curve-specific only on another field",
       "legacy_rule_id": "CS0016",
       "legacy_observed_count": 0,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
     },
     {
       "id": "constant_conditional_emit",
@@ -104,7 +110,8 @@
       "reason": "definite condition versus input-dependent or unresolved condition",
       "legacy_rule_id": "CS0009",
       "legacy_observed_count": 0,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
     },
     {
       "id": "constant_conditional_no_finding",
@@ -119,7 +126,8 @@
       "reason": "definite condition versus input-dependent or unresolved condition",
       "legacy_rule_id": "CS0009",
       "legacy_observed_count": 0,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
     },
     {
       "id": "constant_conditional_abstain",
@@ -134,7 +142,8 @@
       "reason": "definite condition versus input-dependent or unresolved condition",
       "legacy_rule_id": "CS0009",
       "legacy_observed_count": 0,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
     },
     {
       "id": "field_arithmetic_emit",
@@ -149,7 +158,8 @@
       "reason": "proven modular wrap versus in-range or unknown arithmetic",
       "legacy_rule_id": "CS0004",
       "legacy_observed_count": 0,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
     },
     {
       "id": "field_arithmetic_no_finding",
@@ -164,7 +174,8 @@
       "reason": "proven modular wrap versus in-range or unknown arithmetic",
       "legacy_rule_id": "CS0004",
       "legacy_observed_count": 0,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
     },
     {
       "id": "field_arithmetic_abstain",
@@ -179,7 +190,8 @@
       "reason": "proven modular wrap versus in-range or unknown arithmetic",
       "legacy_rule_id": "CS0004",
       "legacy_observed_count": 0,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
     },
     {
       "id": "field_comparison_emit",
@@ -194,7 +206,8 @@
       "reason": "signed and unsigned order diverge only in the first case",
       "legacy_rule_id": "CS0003",
       "legacy_observed_count": 0,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
     },
     {
       "id": "field_comparison_no_finding",
@@ -209,7 +222,8 @@
       "reason": "signed and unsigned order diverge only in the first case",
       "legacy_rule_id": "CS0003",
       "legacy_observed_count": 0,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
     },
     {
       "id": "field_comparison_abstain",
@@ -224,7 +238,8 @@
       "reason": "signed and unsigned order diverge only in the first case",
       "legacy_rule_id": "CS0003",
       "legacy_observed_count": 0,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
     },
     {
       "id": "nonstrict_conversion_emit",
@@ -239,7 +254,18 @@
       "reason": "254-bit representation admits 0 and p; 253-bit does not",
       "legacy_rule_id": "CS0010",
       "legacy_observed_count": 1,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": [
+        {
+          "message": "Using `Num2Bits` to convert field elements to bits may lead to aliasing issues.",
+          "span": {
+            "startLine": 18,
+            "startColumn": 22,
+            "endLine": 18,
+            "endColumn": 35
+          }
+        }
+      ]
     },
     {
       "id": "nonstrict_conversion_no_finding",
@@ -254,7 +280,8 @@
       "reason": "254-bit representation admits 0 and p; 253-bit does not",
       "legacy_rule_id": "CS0010",
       "legacy_observed_count": 0,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
     },
     {
       "id": "nonstrict_conversion_abstain",
@@ -269,7 +296,18 @@
       "reason": "254-bit representation admits 0 and p; 253-bit does not",
       "legacy_rule_id": "CS0010",
       "legacy_observed_count": 1,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": [
+        {
+          "message": "Using `Num2Bits` to convert field elements to bits may lead to aliasing issues.",
+          "span": {
+            "startLine": 5,
+            "startColumn": 22,
+            "endLine": 5,
+            "endColumn": 35
+          }
+        }
+      ]
     },
     {
       "id": "unconstrained_division_emit",
@@ -284,7 +322,18 @@
       "reason": "zero-incidence denominator versus explicit inverse constraint",
       "legacy_rule_id": "CS0015",
       "legacy_observed_count": 1,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": [
+        {
+          "message": "In signal assignments containing division, the divisor needs to be constrained to be non-zero",
+          "span": {
+            "startLine": 5,
+            "startColumn": 17,
+            "endLine": 5,
+            "endColumn": 19
+          }
+        }
+      ]
     },
     {
       "id": "unconstrained_division_no_finding",
@@ -299,7 +348,27 @@
       "reason": "zero-incidence denominator versus explicit inverse constraint",
       "legacy_rule_id": "CS0015",
       "legacy_observed_count": 2,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": [
+        {
+          "message": "In signal assignments containing division, the divisor needs to be constrained to be non-zero",
+          "span": {
+            "startLine": 6,
+            "startColumn": 17,
+            "endLine": 6,
+            "endColumn": 19
+          }
+        },
+        {
+          "message": "In signal assignments containing division, the divisor needs to be constrained to be non-zero",
+          "span": {
+            "startLine": 8,
+            "startColumn": 17,
+            "endLine": 8,
+            "endColumn": 19
+          }
+        }
+      ]
     },
     {
       "id": "unconstrained_division_abstain",
@@ -314,7 +383,18 @@
       "reason": "zero-incidence denominator versus explicit inverse constraint",
       "legacy_rule_id": "CS0015",
       "legacy_observed_count": 1,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": [
+        {
+          "message": "In signal assignments containing division, the divisor needs to be constrained to be non-zero",
+          "span": {
+            "startLine": 5,
+            "startColumn": 17,
+            "endLine": 5,
+            "endColumn": 28
+          }
+        }
+      ]
     },
     {
       "id": "signal_assignment_emit",
@@ -329,7 +409,8 @@
       "reason": "witness-only assignment versus generated equality constraint",
       "legacy_rule_id": "CS0005",
       "legacy_observed_count": 0,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
     },
     {
       "id": "signal_assignment_no_finding",
@@ -344,7 +425,8 @@
       "reason": "witness-only assignment versus generated equality constraint",
       "legacy_rule_id": "CS0005",
       "legacy_observed_count": 0,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
     },
     {
       "id": "signal_assignment_abstain",
@@ -359,7 +441,18 @@
       "reason": "witness-only assignment versus generated equality constraint",
       "legacy_rule_id": "CS0005",
       "legacy_observed_count": 1,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": [
+        {
+          "message": "Using the signal assignment operator `<--` does not constrain the assigned signal.",
+          "span": {
+            "startLine": 5,
+            "startColumn": 5,
+            "endLine": 5,
+            "endColumn": 24
+          }
+        }
+      ]
     },
     {
       "id": "redundant_witness_emit",
@@ -374,7 +467,18 @@
       "reason": "only an identical normalized equation makes the witness assignment redundant",
       "legacy_rule_id": "CS0013",
       "legacy_observed_count": 1,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": [
+        {
+          "message": "Using the signal assignment operator `<--` is not necessary here.",
+          "span": {
+            "startLine": 5,
+            "startColumn": 5,
+            "endLine": 5,
+            "endColumn": 20
+          }
+        }
+      ]
     },
     {
       "id": "redundant_witness_no_finding",
@@ -389,7 +493,18 @@
       "reason": "only an identical normalized equation makes the witness assignment redundant",
       "legacy_rule_id": "CS0013",
       "legacy_observed_count": 1,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": [
+        {
+          "message": "Using the signal assignment operator `<--` is not necessary here.",
+          "span": {
+            "startLine": 5,
+            "startColumn": 5,
+            "endLine": 5,
+            "endColumn": 20
+          }
+        }
+      ]
     },
     {
       "id": "redundant_witness_abstain",
@@ -404,7 +519,18 @@
       "reason": "only an identical normalized equation makes the witness assignment redundant",
       "legacy_rule_id": "CS0013",
       "legacy_observed_count": 1,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": [
+        {
+          "message": "Using the signal assignment operator `<--` is not necessary here.",
+          "span": {
+            "startLine": 5,
+            "startColumn": 5,
+            "endLine": 5,
+            "endColumn": 20
+          }
+        }
+      ]
     },
     {
       "id": "underconstrained_signal_emit",
@@ -419,7 +545,18 @@
       "reason": "exact intermediate has zero versus nonzero constraint incidence",
       "legacy_rule_id": "CS0017",
       "legacy_observed_count": 1,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": [
+        {
+          "message": "Intermediate signals should typically occur in at least two separate constraints.",
+          "span": {
+            "startLine": 4,
+            "startColumn": 5,
+            "endLine": 4,
+            "endColumn": 13
+          }
+        }
+      ]
     },
     {
       "id": "underconstrained_signal_no_finding",
@@ -434,7 +571,8 @@
       "reason": "exact intermediate has zero versus nonzero constraint incidence",
       "legacy_rule_id": "CS0017",
       "legacy_observed_count": 0,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
     },
     {
       "id": "underconstrained_signal_abstain",
@@ -449,7 +587,18 @@
       "reason": "exact intermediate has zero versus nonzero constraint incidence",
       "legacy_rule_id": "CS0017",
       "legacy_observed_count": 1,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": [
+        {
+          "message": "Intermediate signals should typically occur in at least two separate constraints.",
+          "span": {
+            "startLine": 4,
+            "startColumn": 5,
+            "endLine": 4,
+            "endColumn": 13
+          }
+        }
+      ]
     },
     {
       "id": "unconstrained_less_than_emit",
@@ -464,7 +613,27 @@
       "reason": "constraint-fixed out-of-range input versus witness-only constant",
       "legacy_rule_id": "CS0014",
       "legacy_observed_count": 2,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": [
+        {
+          "message": "Inputs to `LessThan` need to be constrained to ensure that they are non-negative",
+          "span": {
+            "startLine": 25,
+            "startColumn": 19,
+            "endLine": 25,
+            "endColumn": 96
+          }
+        },
+        {
+          "message": "Inputs to `LessThan` need to be constrained to ensure that they are non-negative",
+          "span": {
+            "startLine": 26,
+            "startColumn": 19,
+            "endLine": 26,
+            "endColumn": 20
+          }
+        }
+      ]
     },
     {
       "id": "unconstrained_less_than_no_finding",
@@ -479,7 +648,18 @@
       "reason": "constraint-fixed out-of-range input versus witness-only constant",
       "legacy_rule_id": "CS0014",
       "legacy_observed_count": 1,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": [
+        {
+          "message": "Inputs to `LessThan` need to be constrained to ensure that they are non-negative",
+          "span": {
+            "startLine": 26,
+            "startColumn": 19,
+            "endLine": 26,
+            "endColumn": 20
+          }
+        }
+      ]
     },
     {
       "id": "unconstrained_less_than_abstain",
@@ -494,7 +674,27 @@
       "reason": "constraint-fixed out-of-range input versus witness-only constant",
       "legacy_rule_id": "CS0014",
       "legacy_observed_count": 2,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": [
+        {
+          "message": "Inputs to `LessThan` need to be constrained to ensure that they are non-negative",
+          "span": {
+            "startLine": 6,
+            "startColumn": 19,
+            "endLine": 6,
+            "endColumn": 20
+          }
+        },
+        {
+          "message": "Inputs to `LessThan` need to be constrained to ensure that they are non-negative",
+          "span": {
+            "startLine": 5,
+            "startColumn": 19,
+            "endLine": 5,
+            "endColumn": 20
+          }
+        }
+      ]
     },
     {
       "id": "side_effect_free_assignment_emit",
@@ -509,7 +709,8 @@
       "reason": "complete liveness proves unused value only in first case",
       "legacy_rule_id": "CS0008",
       "legacy_observed_count": 0,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
     },
     {
       "id": "side_effect_free_assignment_no_finding",
@@ -524,7 +725,8 @@
       "reason": "complete liveness proves unused value only in first case",
       "legacy_rule_id": "CS0008",
       "legacy_observed_count": 0,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
     },
     {
       "id": "side_effect_free_assignment_abstain",
@@ -539,7 +741,8 @@
       "reason": "complete liveness proves unused value only in first case",
       "legacy_rule_id": "CS0008",
       "legacy_observed_count": 0,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
     },
     {
       "id": "unused_output_emit",
@@ -554,7 +757,18 @@
       "reason": "closed main leaves b unread; exported library may have unknown consumers",
       "legacy_rule_id": "CS0018",
       "legacy_observed_count": 1,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": [
+        {
+          "message": "The output signal `b` defined by the template `Child` is not constrained in `Main`.",
+          "span": {
+            "startLine": 10,
+            "startColumn": 19,
+            "endLine": 10,
+            "endColumn": 26
+          }
+        }
+      ]
     },
     {
       "id": "unused_output_no_finding",
@@ -569,7 +783,8 @@
       "reason": "closed main leaves b unread; exported library may have unknown consumers",
       "legacy_rule_id": "CS0018",
       "legacy_observed_count": 0,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
     },
     {
       "id": "unused_output_abstain",
@@ -584,7 +799,8 @@
       "reason": "closed main leaves b unread; exported library may have unknown consumers",
       "legacy_rule_id": "CS0018",
       "legacy_observed_count": 0,
-      "legacy_analyzed": false
+      "legacy_analyzed": false,
+      "legacy_observed_evidence": []
     },
     {
       "id": "complexity_emit",
@@ -599,7 +815,13 @@
       "reason": "reachable CFG complexity is above threshold only in first case",
       "legacy_rule_id": "CS0011",
       "legacy_observed_count": 1,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": [
+        {
+          "message": "The template `Main` is too complex and would benefit from being refactored into smaller components.",
+          "span": null
+        }
+      ]
     },
     {
       "id": "complexity_no_finding",
@@ -614,7 +836,8 @@
       "reason": "reachable CFG complexity is above threshold only in first case",
       "legacy_rule_id": "CS0011",
       "legacy_observed_count": 0,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
     },
     {
       "id": "complexity_abstain",
@@ -629,7 +852,8 @@
       "reason": "reachable CFG complexity is above threshold only in first case",
       "legacy_rule_id": "CS0011",
       "legacy_observed_count": 0,
-      "legacy_analyzed": false
+      "legacy_analyzed": false,
+      "legacy_observed_evidence": []
     },
     {
       "id": "too_many_arguments_emit",
@@ -644,7 +868,18 @@
       "reason": "validated parameter count is eight versus seven or malformed",
       "legacy_rule_id": "CS0012",
       "legacy_observed_count": 1,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": [
+        {
+          "message": "`Many` takes too many parameters. This increases coupling and decreases readability.",
+          "span": {
+            "startLine": 2,
+            "startColumn": 15,
+            "endLine": 2,
+            "endColumn": 37
+          }
+        }
+      ]
     },
     {
       "id": "too_many_arguments_no_finding",
@@ -659,7 +894,8 @@
       "reason": "validated parameter count is eight versus seven or malformed",
       "legacy_rule_id": "CS0012",
       "legacy_observed_count": 0,
-      "legacy_analyzed": true
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
     },
     {
       "id": "too_many_arguments_abstain",
@@ -674,7 +910,8 @@
       "reason": "validated parameter count is eight versus seven or malformed",
       "legacy_rule_id": "CS0012",
       "legacy_observed_count": 0,
-      "legacy_analyzed": false
+      "legacy_analyzed": false,
+      "legacy_observed_evidence": []
     }
   ]
 }

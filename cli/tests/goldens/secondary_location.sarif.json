@@ -1,0 +1,70 @@
+{
+  "runs": [
+    {
+      "results": [
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "id": 0,
+              "message": {
+                "text": "The assigned signal `out` is not constrained here."
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixtures/secondary_location.circom"
+                },
+                "region": {
+                  "endColumn": 25,
+                  "endLine": 6,
+                  "startColumn": 5,
+                  "startLine": 6
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Using the signal assignment operator `<--` does not constrain the assigned signal."
+          },
+          "relatedLocations": [
+            {
+              "id": 0,
+              "message": {
+                "text": "The signal `out` is constrained here."
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixtures/secondary_location.circom"
+                },
+                "region": {
+                  "endColumn": 16,
+                  "endLine": 7,
+                  "startColumn": 5,
+                  "startLine": 7
+                }
+              }
+            }
+          ],
+          "rule": {
+            "id": "CS0005"
+          },
+          "ruleId": "CS0005"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "downloadUri": "https://github.com/trailofbits/circomspect",
+          "name": "Circomspect",
+          "organization": "Trail of Bits",
+          "rules": [
+            {
+              "id": "CS0005",
+              "name": "signal-assignment-statement"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

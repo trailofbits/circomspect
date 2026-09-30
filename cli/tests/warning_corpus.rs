@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use serde_json::Value;
+use serde_json::{json, Value};
 
 fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/warnings")
@@ -34,8 +34,10 @@ fn source(case: &Value) -> PathBuf {
     source
 }
 
-fn count_legacy_findings(case: &Value) -> (usize, bool) {
+fn observed_legacy_evidence(case: &Value) -> (Vec<Value>, bool) {
     let source = source(case);
+    let canonical_source = source.canonicalize().expect("failed to canonicalize warning fixture");
+    let expected_uri = format!("file://{}", canonical_source.display());
     let sarif = std::env::temp_dir().join(format!(
         "circomspect-warning-{}-{}.sarif",
         std::process::id(),
@@ -57,9 +59,32 @@ fn count_legacy_findings(case: &Value) -> (usize, bool) {
     std::fs::remove_file(&sarif).expect("failed to remove SARIF");
     let sarif: Value = serde_json::from_str(&text).expect("invalid CLI SARIF");
     let results = sarif["runs"][0]["results"].as_array().expect("missing SARIF results");
-    let count =
-        results.iter().filter(|result| result["ruleId"] == field(case, "legacy_rule_id")).count();
-    (count, analyzed)
+    let mut evidence = Vec::new();
+    for result in results {
+        if result["ruleId"] != field(case, "legacy_rule_id") {
+            continue;
+        }
+        let message = result["message"]["text"].as_str().expect("finding message is missing");
+        let locations = result["locations"].as_array().expect("finding locations are missing");
+        assert!(locations.len() <= 1, "finding has multiple primary locations");
+        let span = if let Some(location) = locations.first() {
+            let physical = &location["physicalLocation"];
+            assert_eq!(physical["artifactLocation"]["uri"], expected_uri);
+            let region = &physical["region"];
+            json!({
+                "startLine": region["startLine"],
+                "startColumn": region["startColumn"],
+                "endLine": region["endLine"],
+                "endColumn": region["endColumn"],
+            })
+        } else {
+            assert!(message.contains(field(case, "scope")), "locationless finding lacks scope");
+            Value::Null
+        };
+        evidence.push(json!({ "message": message, "span": span }));
+    }
+    evidence.sort_by_key(Value::to_string);
+    (evidence, analyzed)
 }
 
 fn compiler_class(binary: &Path, case: &Value) -> String {
@@ -111,8 +136,15 @@ fn warning_labels_and_legacy_results_are_frozen() {
             "abstain" => assert_eq!(truth, "undetermined"),
             other => panic!("invalid expected outcome: {other}"),
         }
-        let (count, analyzed) = count_legacy_findings(case);
+        let (evidence, analyzed) = observed_legacy_evidence(case);
+        let count = evidence.len();
         assert_eq!(case["legacy_observed_count"], count, "{id}");
+        let mut expected_evidence = case["legacy_observed_evidence"]
+            .as_array()
+            .expect("legacy finding evidence is missing")
+            .clone();
+        expected_evidence.sort_by_key(Value::to_string);
+        assert_eq!(evidence, expected_evidence, "{id} finding message or source span changed");
         assert_eq!(case["legacy_analyzed"], analyzed, "{id}");
         let label = match expected {
             "emit" if count > 0 => "TP",

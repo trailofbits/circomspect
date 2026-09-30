@@ -1,0 +1,13 @@
+circomspect: analyzing template 'Main'
+warning: Using the signal assignment operator `<--` does not constrain the assigned signal.
+  ┌─ <fixture>:6:5
+  │
+6 │     out <-- in * in * in;
+  │     ^^^^^^^^^^^^^^^^^^^^ The assigned signal `out` is not constrained here.
+7 │     out === in;
+  │     ----------- The signal `out` is constrained here.
+  │
+  = For more details, see https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md#signal-assignment.
+
+circomspect: Result written to `<sarif>`.
+circomspect: 1 issue found.

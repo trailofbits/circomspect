@@ -20,6 +20,12 @@ const CASES: &[GoldenCase] = &[
     },
     GoldenCase { name: "missing_include", source: "missing_include.circom", args: &[], status: 1 },
     GoldenCase {
+        name: "secondary_location",
+        source: "secondary_location.circom",
+        args: &[],
+        status: 1,
+    },
+    GoldenCase {
         name: "missing_callee_order",
         source: "unresolved_library.circom",
         args: &["--level", "error"],

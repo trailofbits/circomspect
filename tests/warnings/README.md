@@ -9,7 +9,9 @@ The detailed phase plan is local and ignored; the `reason` field and source
 files remain available in a clean checkout.
 
 The active test reruns the current CLI and checks `legacy_observed_count` for
-each case. Its baseline is 8 true positives, 3 false positives, 7 false
+each case. It also checks each finding's exact message and primary source span,
+or the named scope in its message for a locationless finding. Its baseline is
+8 true positives, 3 false positives, 7 false
 negatives, 12 true negatives, and 15 cases where the future rule must abstain.
 These counts concern the claimed property of the individual rule, using the
 rule ID in `legacy_rule_id`. They are not a measure of whole-program safety.

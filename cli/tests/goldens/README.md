@@ -2,8 +2,8 @@
 
 `cli_golden.rs` compares exit codes, terminal output, and full SARIF documents
 for libraries without `main`, recovered definitions, missing includes and
-callees, malformed input, locationless errors, rule suppression, and severity
-filtering. Absolute fixture paths and the temporary SARIF output path are
+callees, malformed input, locationless errors, secondary locations, rule
+suppression, and severity filtering. Absolute fixture paths and the temporary SARIF output path are
 normalized before comparison. The SARIF comparison includes result order,
 rule IDs, locations, levels, messages, and tool metadata.
 
