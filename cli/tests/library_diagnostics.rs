@@ -146,6 +146,19 @@ fn unresolved_function_and_template_calls_are_reported() {
 }
 
 #[test]
+fn unresolved_main_template_is_reported() {
+    let path = fixture("unresolved_main.circom");
+    let output = run(&[path.to_str().expect("fixture path is not UTF-8"), "--level", "error"]);
+    let stdout = String::from_utf8(output.stdout).expect("CLI output is not UTF-8");
+
+    assert!(!output.status.success(), "{stdout}");
+    assert!(stdout.contains("MissingMain"), "{stdout}");
+    assert!(stdout.contains("MissingParameter"), "{stdout}");
+    assert_eq!(stdout.matches("error:").count(), 2, "{stdout}");
+    assert!(stdout.contains("unresolved_main.circom:3:"), "{stdout}");
+}
+
+#[test]
 fn calls_to_loaded_library_definitions_are_resolved() {
     let path = fixture("resolved_library.circom");
     let output = run(&[path.to_str().expect("fixture path is not UTF-8"), "--level", "error"]);

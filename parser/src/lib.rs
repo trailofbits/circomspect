@@ -104,6 +104,7 @@ pub fn parse_files(
             reference_checker::report_unresolved_calls(
                 &program_archive.templates,
                 &program_archive.functions,
+                Some(program_archive.main_expression()),
                 reports,
             );
             if program_archive.main_expression().is_anonymous_component() {
@@ -129,6 +130,7 @@ pub fn parse_files(
             reference_checker::report_unresolved_calls(
                 &template_library.templates,
                 &template_library.functions,
+                None,
                 reports,
             );
             let (new_templates, new_functions) = syntax_sugar_remover::remove_syntactic_sugar(
