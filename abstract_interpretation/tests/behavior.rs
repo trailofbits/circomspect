@@ -157,6 +157,41 @@ fn exact_update_budget_can_complete() {
 }
 
 #[test]
+fn exact_budget_counts_seed_node_edge_and_destination_changes() {
+    let graph = IndexedGraph::new(
+        vec![Operation::Identity; 2],
+        vec![(NodeId::new(0), NodeId::new(1), Operation::Identity)],
+        vec![NodeId::new(0)],
+        vec![NodeId::new(1)],
+    )
+    .expect("valid graph");
+    let result = solve::<_, _, Forward>(&graph, &Analysis, Some(5)).expect("valid graph");
+    let SolveResult::Complete(_) = result else {
+        panic!("five strict changes reach the fixed point");
+    };
+    let result = solve::<_, _, Forward>(&graph, &Analysis, Some(4)).expect("valid graph");
+    let SolveResult::Incomplete { blockers, .. } = result else {
+        panic!("four strict changes leave the destination pending");
+    };
+    assert!(blockers.contains(&Blocker::PendingNode(NodeId::new(1))));
+}
+
+#[test]
+fn exact_budget_allows_remaining_no_change_work() {
+    let graph = IndexedGraph::new(
+        vec![Operation::Identity],
+        vec![(NodeId::new(0), NodeId::new(0), Operation::Identity)],
+        vec![NodeId::new(0)],
+        vec![NodeId::new(0)],
+    )
+    .expect("valid graph");
+    let result = solve::<_, _, Forward>(&graph, &Analysis, Some(3)).expect("valid graph");
+    let SolveResult::Complete(_) = result else {
+        panic!("no-change loop traversal must complete at the exact budget");
+    };
+}
+
+#[test]
 fn edge_opacity_records_only_reachable_origins_in_either_direction() {
     let graph = IndexedGraph::new(
         vec![Operation::Identity; 4],

@@ -13,7 +13,7 @@ pub trait DataflowAnalysis<G: FlowGraph> {
     fn boundary(&self, node: G::NodeId) -> Self::State;
 }
 
-/// Every node and edge payload supplies its own total transfer.
+/// Every node and edge payload supplies a total, monotone transfer.
 pub trait Transfer<A, S, R> {
     fn apply(&self, analysis: &A, input: &S) -> TransferOutcome<S, R>;
 }
@@ -68,33 +68,40 @@ pub type SolveOutcome<G, A> = Result<
 pub struct Forward;
 pub struct Backward;
 
+mod sealed {
+    pub trait Sealed {}
+}
+
+impl sealed::Sealed for Forward {}
+impl sealed::Sealed for Backward {}
+
 /// Selects boundary and traversal orientation without duplicating the solver.
-pub trait Direction {
+pub trait Direction: sealed::Sealed {
     fn boundaries<G: FlowGraph>(graph: &G) -> &[G::NodeId];
-    fn from<N, E, S>(facts: &NodeFacts<S>) -> &Option<S>;
-    fn from_mut<N, E, S>(facts: &mut NodeFacts<S>) -> &mut Option<S>;
-    fn to_mut<N, E, S>(facts: &mut NodeFacts<S>) -> &mut Option<S>;
+    fn from<S>(facts: &NodeFacts<S>) -> &Option<S>;
+    fn from_mut<S>(facts: &mut NodeFacts<S>) -> &mut Option<S>;
+    fn to_mut<S>(facts: &mut NodeFacts<S>) -> &mut Option<S>;
     fn next_edges<N: Copy + Ord, E: Copy + Ord>(graph: &ValidatedGraph<N, E>, node: N) -> &[E];
-    fn neighbor<N: Copy, E>(edge: (N, N)) -> N;
+    fn neighbor<N: Copy>(edge: (N, N)) -> N;
 }
 
 impl Direction for Forward {
     fn boundaries<G: FlowGraph>(graph: &G) -> &[G::NodeId] {
         graph.entries()
     }
-    fn from<N, E, S>(facts: &NodeFacts<S>) -> &Option<S> {
+    fn from<S>(facts: &NodeFacts<S>) -> &Option<S> {
         &facts.input
     }
-    fn from_mut<N, E, S>(facts: &mut NodeFacts<S>) -> &mut Option<S> {
+    fn from_mut<S>(facts: &mut NodeFacts<S>) -> &mut Option<S> {
         &mut facts.input
     }
-    fn to_mut<N, E, S>(facts: &mut NodeFacts<S>) -> &mut Option<S> {
+    fn to_mut<S>(facts: &mut NodeFacts<S>) -> &mut Option<S> {
         &mut facts.output
     }
     fn next_edges<N: Copy + Ord, E: Copy + Ord>(graph: &ValidatedGraph<N, E>, node: N) -> &[E] {
         graph.outgoing.get(&node).map_or(&[], Vec::as_slice)
     }
-    fn neighbor<N: Copy, E>(edge: (N, N)) -> N {
+    fn neighbor<N: Copy>(edge: (N, N)) -> N {
         edge.1
     }
 }
@@ -103,19 +110,19 @@ impl Direction for Backward {
     fn boundaries<G: FlowGraph>(graph: &G) -> &[G::NodeId] {
         graph.exits()
     }
-    fn from<N, E, S>(facts: &NodeFacts<S>) -> &Option<S> {
+    fn from<S>(facts: &NodeFacts<S>) -> &Option<S> {
         &facts.output
     }
-    fn from_mut<N, E, S>(facts: &mut NodeFacts<S>) -> &mut Option<S> {
+    fn from_mut<S>(facts: &mut NodeFacts<S>) -> &mut Option<S> {
         &mut facts.output
     }
-    fn to_mut<N, E, S>(facts: &mut NodeFacts<S>) -> &mut Option<S> {
+    fn to_mut<S>(facts: &mut NodeFacts<S>) -> &mut Option<S> {
         &mut facts.input
     }
     fn next_edges<N: Copy + Ord, E: Copy + Ord>(graph: &ValidatedGraph<N, E>, node: N) -> &[E] {
         graph.incoming.get(&node).map_or(&[], Vec::as_slice)
     }
-    fn neighbor<N: Copy, E>(edge: (N, N)) -> N {
+    fn neighbor<N: Copy>(edge: (N, N)) -> N {
         edge.0
     }
 }
@@ -224,7 +231,140 @@ fn join_limited<S: Lattice>(
     Ok(true)
 }
 
+type StepResult<G> = Result<
+    Option<<G as FlowGraph>::NodeId>,
+    GraphError<<G as FlowGraph>::NodeId, <G as FlowGraph>::EdgeId>,
+>;
+
+struct FlowContext<'a, G: FlowGraph, A: DataflowAnalysis<G>> {
+    graph: &'a G,
+    analysis: &'a A,
+    validated: &'a ValidatedGraph<G::NodeId, G::EdgeId>,
+}
+
+fn seed<G, A, D>(
+    graph: &G,
+    analysis: &A,
+    work: &mut Working<G::NodeId, G::EdgeId, A::State, A::Reason>,
+) -> StepResult<G>
+where
+    G: FlowGraph,
+    A: DataflowAnalysis<G>,
+    D: Direction,
+{
+    work.queue.extend(D::boundaries(graph).iter().copied());
+    for &node in D::boundaries(graph) {
+        let seed = analysis.boundary(node);
+        let Some(facts) = work.facts.get_mut(&node) else {
+            return Err(GraphError::MissingBoundary(node));
+        };
+        let slot = D::from_mut(facts);
+        match join_limited(slot, &seed, &mut work.updates, work.budget) {
+            Ok(true) => {}
+            Ok(false) => {}
+            Err(()) => return Ok(Some(node)),
+        }
+    }
+    Ok(None)
+}
+
+fn propagate_edge<G, A, D>(
+    context: &FlowContext<'_, G, A>,
+    work: &mut Working<G::NodeId, G::EdgeId, A::State, A::Reason>,
+    edge: G::EdgeId,
+    current: G::NodeId,
+    input: &A::State,
+) -> StepResult<G>
+where
+    G: FlowGraph,
+    A: DataflowAnalysis<G>,
+    D: Direction,
+    G::Edge: Transfer<A, A::State, A::Reason>,
+{
+    let Some(item) = context.graph.edge(edge) else {
+        return Err(GraphError::MissingEdge(edge));
+    };
+    let value = match item.payload.apply(context.analysis, input) {
+        TransferOutcome::Known(value) => value,
+        TransferOutcome::Opaque { provisional, reason } => {
+            work.blockers.insert(Blocker::OpaqueEdge { edge, reason });
+            provisional
+        }
+    };
+    let slot = work.edge_facts.entry(edge).or_default();
+    match join_limited(slot, &value, &mut work.updates, work.budget) {
+        Ok(true) => {}
+        Ok(false) => return Ok(None),
+        Err(()) => return Ok(Some(current)),
+    }
+    let Some(&endpoints) = context.validated.endpoints.get(&edge) else {
+        return Err(GraphError::MissingEdge(edge));
+    };
+    let target = D::neighbor(endpoints);
+    let Some(facts) = work.facts.get_mut(&target) else {
+        return Err(GraphError::MissingNode(target));
+    };
+    let slot = D::from_mut(facts);
+    match join_limited(slot, &value, &mut work.updates, work.budget) {
+        Ok(true) => {
+            work.queue.insert(target);
+        }
+        Ok(false) => {}
+        Err(()) => return Ok(Some(target)),
+    }
+    Ok(None)
+}
+
+fn process_node<G, A, D>(
+    context: &FlowContext<'_, G, A>,
+    work: &mut Working<G::NodeId, G::EdgeId, A::State, A::Reason>,
+    node: G::NodeId,
+) -> StepResult<G>
+where
+    G: FlowGraph,
+    A: DataflowAnalysis<G>,
+    D: Direction,
+    G::Node: Transfer<A, A::State, A::Reason>,
+    G::Edge: Transfer<A, A::State, A::Reason>,
+{
+    let Some(facts) = work.facts.get(&node) else {
+        return Err(GraphError::MissingNode(node));
+    };
+    let Some(input) = D::from(facts).as_ref() else {
+        return Ok(None);
+    };
+    let Some(payload) = context.graph.node(node) else {
+        return Err(GraphError::MissingNode(node));
+    };
+    let value = match payload.apply(context.analysis, input) {
+        TransferOutcome::Known(value) => value,
+        TransferOutcome::Opaque { provisional, reason } => {
+            work.blockers.insert(Blocker::OpaqueNode { node, reason });
+            provisional
+        }
+    };
+    let Some(facts) = work.facts.get_mut(&node) else {
+        return Err(GraphError::MissingNode(node));
+    };
+    let slot = D::to_mut(facts);
+    match join_limited(slot, &value, &mut work.updates, work.budget) {
+        Ok(true) => {}
+        Ok(false) => return Ok(None),
+        Err(()) => return Ok(Some(node)),
+    }
+    for &edge in D::next_edges(context.validated, node) {
+        if let Some(pending) = propagate_edge::<G, A, D>(context, work, edge, node, &value)? {
+            return Ok(Some(pending));
+        }
+    }
+    Ok(None)
+}
+
 /// Compute the least fixed point, or return only provisional facts with blockers.
+///
+/// One update is a strict change to a seeded boundary, node fact, or edge fact.
+/// An unbounded run requires a finite-height domain or a sound widening in the
+/// analysis transfer. Otherwise, pass an update budget to bound the run.
 pub fn solve<G, A, D>(graph: &G, analysis: &A, budget: Option<usize>) -> SolveOutcome<G, A>
 where
     G: FlowGraph,
@@ -242,78 +382,14 @@ where
         updates: 0,
         budget,
     };
-    work.queue.extend(D::boundaries(graph).iter().copied());
-    for &node in D::boundaries(graph) {
-        let seed = analysis.boundary(node);
-        let Some(facts) = work.facts.get_mut(&node) else {
-            return Err(GraphError::MissingBoundary(node));
-        };
-        let slot = D::from_mut::<G::NodeId, G::EdgeId, _>(facts);
-        match join_limited(slot, &seed, &mut work.updates, work.budget) {
-            Ok(true) => {}
-            Ok(false) => {}
-            Err(()) => return Ok(work.incomplete(node)),
-        }
+    if let Some(pending) = seed::<G, A, D>(graph, analysis, &mut work)? {
+        return Ok(work.incomplete(pending));
     }
+    let context = FlowContext { graph, analysis, validated: &validated };
     while let Some(&node) = work.queue.first() {
         work.queue.remove(&node);
-        let Some(facts) = work.facts.get(&node) else {
-            return Err(GraphError::MissingNode(node));
-        };
-        let Some(input) = D::from::<G::NodeId, G::EdgeId, _>(facts).as_ref() else {
-            continue;
-        };
-        let Some(payload) = graph.node(node) else {
-            return Err(GraphError::MissingNode(node));
-        };
-        let value = match payload.apply(analysis, input) {
-            TransferOutcome::Known(value) => value,
-            TransferOutcome::Opaque { provisional, reason } => {
-                work.blockers.insert(Blocker::OpaqueNode { node, reason });
-                provisional
-            }
-        };
-        let Some(facts) = work.facts.get_mut(&node) else {
-            return Err(GraphError::MissingNode(node));
-        };
-        let slot = D::to_mut::<G::NodeId, G::EdgeId, _>(facts);
-        match join_limited(slot, &value, &mut work.updates, work.budget) {
-            Ok(true) => {}
-            Ok(false) => continue,
-            Err(()) => return Ok(work.incomplete(node)),
-        }
-        for &edge in D::next_edges(&validated, node) {
-            let Some(item) = graph.edge(edge) else {
-                return Err(GraphError::MissingEdge(edge));
-            };
-            let value = match item.payload.apply(analysis, &value) {
-                TransferOutcome::Known(value) => value,
-                TransferOutcome::Opaque { provisional, reason } => {
-                    work.blockers.insert(Blocker::OpaqueEdge { edge, reason });
-                    provisional
-                }
-            };
-            let slot = work.edge_facts.entry(edge).or_default();
-            match join_limited(slot, &value, &mut work.updates, work.budget) {
-                Ok(true) => {}
-                Ok(false) => continue,
-                Err(()) => return Ok(work.incomplete(node)),
-            }
-            let Some(&endpoints) = validated.endpoints.get(&edge) else {
-                return Err(GraphError::MissingEdge(edge));
-            };
-            let target = D::neighbor::<G::NodeId, G::EdgeId>(endpoints);
-            let Some(facts) = work.facts.get_mut(&target) else {
-                return Err(GraphError::MissingNode(target));
-            };
-            let slot = D::from_mut::<G::NodeId, G::EdgeId, _>(facts);
-            match join_limited(slot, &value, &mut work.updates, work.budget) {
-                Ok(true) => {
-                    work.queue.insert(target);
-                }
-                Ok(false) => {}
-                Err(()) => return Ok(work.incomplete(target)),
-            }
+        if let Some(pending) = process_node::<G, A, D>(&context, &mut work, node)? {
+            return Ok(work.incomplete(pending));
         }
     }
     Ok(work.finish())

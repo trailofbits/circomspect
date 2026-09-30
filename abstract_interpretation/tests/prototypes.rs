@@ -5,6 +5,7 @@ use circomspect_abstract_interpretation::lattice::{Constant, Lattice, Set};
 use circomspect_abstract_interpretation::solver::{
     solve, Backward, DataflowAnalysis, Forward, SolveResult, Transfer, TransferOutcome,
 };
+use proptest::prelude::*;
 
 #[derive(Clone)]
 enum ConstantStep {
@@ -129,4 +130,64 @@ fn backward_liveness_joins_exits_then_applies_kill_and_gen() {
         .collect();
     assert_eq!(output, BTreeSet::from([1, 2]));
     assert_eq!(input, BTreeSet::from([2, 3]));
+}
+
+fn generated_constant(code: u8) -> Constant<i32> {
+    match code % 4 {
+        0 => Constant::Bottom,
+        1 => Constant::Value(7),
+        2 => Constant::Value(9),
+        _ => Constant::Top,
+    }
+}
+
+fn generated_live(bits: u8) -> Set<u8> {
+    let mut result = Set::bottom();
+    for value in 0..4 {
+        if bits & (1 << value) != 0 {
+            result.insert(value);
+        }
+    }
+    result
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(96))]
+
+    #[test]
+    fn constant_transfer_is_monotone(a in any::<u8>(), b in any::<u8>()) {
+        let left = generated_constant(a);
+        let right = generated_constant(b);
+        if left.leq(&right) {
+            for step in [ConstantStep::Pass, ConstantStep::Assign(11)] {
+                let TransferOutcome::Known(lower) = step.apply(&Constants, &left) else {
+                    panic!("constant transfer is total");
+                };
+                let TransferOutcome::Known(upper) = step.apply(&Constants, &right) else {
+                    panic!("constant transfer is total");
+                };
+                prop_assert!(lower.leq(&upper));
+            }
+        }
+    }
+
+    #[test]
+    fn liveness_transfer_is_monotone(
+        a in any::<u8>(), b in any::<u8>(), read in 0u8..5, write in 0u8..5,
+    ) {
+        let lower = generated_live(a & b);
+        let upper = generated_live(a | b);
+        let step = LivenessStep {
+            reads: if read == 4 { None } else { Some(read) },
+            writes: if write == 4 { None } else { Some(write) },
+        };
+        let TransferOutcome::Known(left) = step.apply(&Liveness, &lower) else {
+            panic!("liveness transfer is total");
+        };
+        let TransferOutcome::Known(right) = step.apply(&Liveness, &upper) else {
+            panic!("liveness transfer is total");
+        };
+        prop_assert!(lower.leq(&upper));
+        prop_assert!(left.leq(&right));
+    }
 }
