@@ -6,7 +6,7 @@ use abstract_interpretation::graph::{EdgeId, NodeId};
 use abstract_interpretation::lattice::Lattice;
 use abstract_interpretation::solver::{DataflowAnalysis, Transfer, TransferOutcome};
 use parser::hir::{DefinitionRef, ExprId, HirProject, SymbolId};
-use parser::new_frontend::PortDirection;
+use parser::new_frontend::{AssignmentOperator, PortDirection};
 
 use crate::hir_cfg::{CfgEdge, CfgNode, CfgNodeKind, DefinitionCfg, EdgeKind};
 
@@ -138,20 +138,29 @@ impl Transfer<LivenessAnalysis<'_>, LiveState, String> for CfgNode {
                     live.remove(&key);
                 }
             }
-            CfgNodeKind::Assignment { target, .. } => {
+            CfgNodeKind::Assignment { target, operator, .. } => {
                 let key = key_for_path(analysis.hir, analysis.field, target, &empty);
-                if key.exact_alias(&key) {
+                if *operator != AssignmentOperator::Assign {
+                    live.insert(key);
+                } else if key.exact_alias(&key) {
                     live.remove(&key);
                 }
             }
-            CfgNodeKind::DeferredAssignment { target, .. } => {
+            CfgNodeKind::DeferredAssignment { target, operator, .. } => {
+                let key = key_for_path(analysis.hir, analysis.field, target, &empty);
+                if *operator != AssignmentOperator::Assign {
+                    live.insert(key);
+                    return TransferOutcome::Opaque {
+                        provisional: output,
+                        reason: "unsupported compound assignment".into(),
+                    };
+                }
                 if !analysis.resolved_deferred.contains(&self.id) {
                     return TransferOutcome::Opaque {
                         provisional: output,
                         reason: "deferred assignment shape".into(),
                     };
                 }
-                let key = key_for_path(analysis.hir, analysis.field, target, &empty);
                 if key.exact_alias(&key) {
                     live.remove(&key);
                 }
@@ -176,13 +185,8 @@ impl Transfer<LivenessAnalysis<'_>, LiveState, String> for CfgNode {
             | CfgNodeKind::Assert { condition: expression } => {
                 complete &= collect(analysis, *expression, live, &empty);
             }
-            CfgNodeKind::Opaque(reason) => {
-                return TransferOutcome::Opaque {
-                    provisional: output,
-                    reason: format!("{reason:?}"),
-                };
-            }
-            CfgNodeKind::OpaqueAssignment { reason, .. }
+            CfgNodeKind::Opaque(reason)
+            | CfgNodeKind::OpaqueAssignment { reason, .. }
             | CfgNodeKind::OpaqueEquality { reason, .. } => {
                 return TransferOutcome::Opaque {
                     provisional: output,
@@ -412,5 +416,43 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn compound_assignment_reads_its_previous_target_value() {
+        let directory = std::env::temp_dir()
+            .join(format!("circomspect-phase5-live-compound-{}", std::process::id()));
+        fs::create_dir_all(&directory).unwrap();
+        let source = directory.join("case.circom");
+        fs::write(&source, "function T(){var t=1;t+=1;t=2;return 7;}").unwrap();
+        let loaded =
+            load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
+        let hir = lift_project(&loaded).hir;
+        let definition = hir.definition("T").unwrap();
+        let cfg = crate::hir_cfg::build_cfg(&hir, definition).unwrap();
+        let field = FieldContext::for_curve(Curve::Bn254);
+        let analysis = LivenessAnalysis::new(&hir, &field, definition);
+        let empty = LiveState::Reached(BTreeSet::new());
+        let mut compound = None;
+        let mut plain = None;
+        for id in cfg.nodes() {
+            let node = cfg.node(*id).unwrap();
+            let CfgNodeKind::Assignment { operator, .. } = node.kind else { continue };
+            if operator == AssignmentOperator::Add {
+                compound = Some(node);
+            } else if operator == AssignmentOperator::Assign {
+                plain = Some(node);
+            }
+        }
+        let compound = compound.unwrap();
+        let CfgNodeKind::Assignment { target, .. } = &compound.kind else {
+            panic!("compound assignment")
+        };
+        let key = key_for_path(&hir, &field, target, &BTreeMap::new());
+        assert_eq!(
+            compound.apply(&analysis, &empty),
+            TransferOutcome::Known(LiveState::Reached(BTreeSet::from([key])))
+        );
+        assert_eq!(plain.unwrap().apply(&analysis, &empty), TransferOutcome::Known(empty));
     }
 }

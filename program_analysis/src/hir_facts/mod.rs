@@ -201,11 +201,14 @@ fn resolved_deferred_nodes(
     let SolveResult::Complete(facts) = result else { return BTreeSet::new() };
     let mut resolved = BTreeSet::new();
     for id in cfg.nodes() {
-        let Some(CfgNodeKind::DeferredAssignment { target, value }) =
+        let Some(CfgNodeKind::DeferredAssignment { target, value, operator }) =
             cfg.node(*id).map(|node| &node.kind)
         else {
             continue;
         };
+        if *operator != AssignmentOperator::Assign {
+            continue;
+        }
         let Some(variables) =
             facts.get(id).and_then(|item| item.input.as_ref()).and_then(ForwardState::variables)
         else {
@@ -570,8 +573,8 @@ impl AnalysisFacts<'_> {
         }
         for id in self.cfg.nodes() {
             let Some(
-                CfgNodeKind::Assignment { target, value }
-                | CfgNodeKind::DeferredAssignment { target, value },
+                CfgNodeKind::Assignment { target, value, .. }
+                | CfgNodeKind::DeferredAssignment { target, value, .. },
             ) = self.cfg.node(*id).map(|node| &node.kind)
             else {
                 continue;
@@ -681,12 +684,15 @@ impl AnalysisFacts<'_> {
             }
             for id in self.cfg.nodes() {
                 let Some(
-                    CfgNodeKind::Assignment { target, value }
-                    | CfgNodeKind::DeferredAssignment { target, value },
+                    CfgNodeKind::Assignment { target, value, operator }
+                    | CfgNodeKind::DeferredAssignment { target, value, operator },
                 ) = self.cfg.node(*id).map(|node| &node.kind)
                 else {
                     continue;
                 };
+                if target.root == variable && *operator != AssignmentOperator::Assign {
+                    return true;
+                }
                 if target.root == variable && self.depends_on_parameter(*value, seen) {
                     return true;
                 }
@@ -1157,7 +1163,10 @@ impl AnalysisFacts<'_> {
             | CfgNodeKind::OpaqueAssignment { .. }
             | CfgNodeKind::OpaqueEquality { .. }
             | CfgNodeKind::Instantiate { .. } => true,
-            CfgNodeKind::DeferredAssignment { .. } => !self.resolved_deferred.contains(&id),
+            CfgNodeKind::Assignment { operator, .. } => *operator != AssignmentOperator::Assign,
+            CfgNodeKind::DeferredAssignment { operator, .. } => {
+                *operator != AssignmentOperator::Assign || !self.resolved_deferred.contains(&id)
+            }
             CfgNodeKind::Evaluate(expr) => {
                 self.hir.expression(*expr).map_or(true, |item| match &item.kind {
                     ExprKind::Opaque(_) | ExprKind::AnonymousComponent { .. } => true,
@@ -1178,7 +1187,6 @@ impl AnalysisFacts<'_> {
             | CfgNodeKind::Branch { .. }
             | CfgNodeKind::Witness { .. }
             | CfgNodeKind::Constraint { .. }
-            | CfgNodeKind::Assignment { .. }
             | CfgNodeKind::Update { .. }
             | CfgNodeKind::Declaration { .. }
             | CfgNodeKind::Return(_)
@@ -1281,7 +1289,7 @@ impl AnalysisFacts<'_> {
             }
         }
         if let CfgNodeKind::OpaqueAssignment { target, value, .. }
-        | CfgNodeKind::DeferredAssignment { target, value } = &node.kind
+        | CfgNodeKind::DeferredAssignment { target, value, .. } = &node.kind
         {
             let query = key_for_path(self.hir, self.field, path, &BTreeMap::new());
             let mut relevant = false;

@@ -89,6 +89,8 @@ pub enum ReportCode {
     UnderConstrainedSignal,
     UnusedOutputSignal,
     UnresolvedCall,
+    IncompleteCoverage,
+    RedundantWitnessAssignment,
 }
 
 impl ReportCode {
@@ -182,6 +184,8 @@ impl ReportCode {
             UnderConstrainedSignal => "CS0017",
             UnusedOutputSignal => "CS0018",
             UnresolvedCall => "CS0019",
+            IncompleteCoverage => "CS0020",
+            RedundantWitnessAssignment => "CS0021",
         }
         .to_string()
     }
@@ -274,6 +278,8 @@ impl ReportCode {
             UnderConstrainedSignal => "under-constrained-signal",
             UnusedOutputSignal => "unused-output-signal",
             UnresolvedCall => "unresolved-call",
+            IncompleteCoverage => "incomplete-analysis",
+            RedundantWitnessAssignment => "redundant-witness-assignment",
         }
         .to_string()
     }

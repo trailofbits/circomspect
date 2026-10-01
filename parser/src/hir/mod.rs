@@ -15,7 +15,7 @@ pub use lift::lift_project;
 
 static NEXT_PROJECT: AtomicU64 = AtomicU64::new(1);
 
-/// Nonforgeable identity shared by all arena IDs in one lowered HIR project.
+/// Nonforgeable identity shared by all arena IDs in one lifted HIR project.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ProjectIdentity(u64);
 
@@ -324,6 +324,7 @@ pub enum Effect {
     VariableAssignment {
         target: AccessPath,
         value: ExprId,
+        operator: AssignmentOperator,
         span: Span,
     },
     DeferredVariableAssignment {
@@ -606,7 +607,7 @@ impl HirProject {
         ProjectIdentity(self.key)
     }
 
-    /// Read-only root instances of the lowered project.
+    /// Read-only root instances of the lifted project.
     ///
     /// ```compile_fail
     /// use circomspect_parser::hir::HirProject;

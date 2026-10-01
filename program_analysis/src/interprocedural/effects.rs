@@ -6,6 +6,7 @@ use abstract_interpretation::solver::{
     solve, DataflowAnalysis, Forward, SolveResult, Transfer, TransferOutcome,
 };
 use parser::hir::{DefinitionRef, FunctionId};
+use parser::new_frontend::AssignmentOperator;
 
 use crate::hir_cfg::CfgNodeKind;
 
@@ -123,8 +124,14 @@ impl ProjectSummaries<'_> {
                 let effect = match &node.kind {
                     CfgNodeKind::Assert { .. } => Some(Ok(FunctionEffect::Assert)),
                     CfgNodeKind::Log => Some(Ok(FunctionEffect::Log)),
-                    CfgNodeKind::DeferredAssignment { .. }
-                        if !facts.resolved_deferred_assignment(*id) =>
+                    CfgNodeKind::Assignment { operator, .. }
+                        if *operator != AssignmentOperator::Assign =>
+                    {
+                        Some(Err(SummaryBlocker::UnsupportedContext))
+                    }
+                    CfgNodeKind::DeferredAssignment { operator, .. }
+                        if *operator != AssignmentOperator::Assign
+                            || !facts.resolved_deferred_assignment(*id) =>
                     {
                         Some(Err(SummaryBlocker::UnsupportedContext))
                     }

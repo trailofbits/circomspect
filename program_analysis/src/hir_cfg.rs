@@ -39,10 +39,12 @@ pub enum CfgNodeKind {
     Assignment {
         target: AccessPath,
         value: ExprId,
+        operator: AssignmentOperator,
     },
     DeferredAssignment {
         target: AccessPath,
         value: ExprId,
+        operator: AssignmentOperator,
     },
     Update {
         target: AccessPath,
@@ -470,9 +472,9 @@ impl Builder<'_> {
         let tails = self.evaluate(tails, value, origin)?;
         let effect_origin = Origin { expression: Some(value), ..origin };
         match effect {
-            Effect::VariableAssignment { .. } => Ok(self.append(
+            Effect::VariableAssignment { operator, .. } => Ok(self.append(
                 tails,
-                CfgNodeKind::Assignment { target: target.clone(), value },
+                CfgNodeKind::Assignment { target: target.clone(), value, operator: *operator },
                 effect_origin,
             )),
             Effect::ComponentInstantiation { .. } => Ok(self.append(
@@ -501,9 +503,13 @@ impl Builder<'_> {
                     effect_origin,
                 ))
             }
-            Effect::DeferredVariableAssignment { .. } => Ok(self.append(
+            Effect::DeferredVariableAssignment { operator, .. } => Ok(self.append(
                 tails,
-                CfgNodeKind::DeferredAssignment { target: target.clone(), value },
+                CfgNodeKind::DeferredAssignment {
+                    target: target.clone(),
+                    value,
+                    operator: *operator,
+                },
                 origin,
             )),
             Effect::OpaqueAssignment { operator, reason, .. } => Ok(self.append(
@@ -614,7 +620,12 @@ impl Builder<'_> {
         for effect in &initializer.effects {
             match effect {
                 Effect::Declaration { .. } => {}
-                Effect::VariableAssignment { target, value, .. } if target.steps.is_empty() => {
+                Effect::VariableAssignment {
+                    target,
+                    value,
+                    operator: AssignmentOperator::Assign,
+                    ..
+                } if target.steps.is_empty() => {
                     if initial.is_some() {
                         return None;
                     }

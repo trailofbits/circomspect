@@ -147,7 +147,7 @@ impl Lifter<'_> {
                     span: *span,
                 })
             }
-            Effect::VariableAssignment { target, value, span }
+            Effect::VariableAssignment { target, value, span, .. }
             | Effect::ComponentInstantiation { target, value, span }
             | Effect::WitnessAssignment { target, value, span }
             | Effect::ConstraintAssignment { target, value, span } => {
@@ -159,9 +159,8 @@ impl Lifter<'_> {
                 let operator = match effect {
                     Effect::WitnessAssignment { .. } => AssignmentOperator::Witness,
                     Effect::ConstraintAssignment { .. } => AssignmentOperator::Constraint,
-                    Effect::VariableAssignment { .. } | Effect::ComponentInstantiation { .. } => {
-                        AssignmentOperator::Assign
-                    }
+                    Effect::VariableAssignment { operator, .. } => *operator,
+                    Effect::ComponentInstantiation { .. } => AssignmentOperator::Assign,
                     Effect::Declaration { .. }
                     | Effect::DeferredVariableAssignment { .. }
                     | Effect::OpaqueAssignment { .. }
@@ -1024,7 +1023,7 @@ impl Lifter<'_> {
                 if kind == SymbolKind::Component {
                     Effect::ComponentInstantiation { target: path, value, span }
                 } else {
-                    Effect::VariableAssignment { target: path, value, span }
+                    Effect::VariableAssignment { target: path, value, operator, span }
                 }
             }
             (
@@ -1078,7 +1077,14 @@ impl Lifter<'_> {
             && self.provisionally_compile_time(value)
             && Self::symbolic_indices(&path).all(|index| self.provisionally_compile_time(index))
         {
-            self.hir.symbols[path.terminal.index].knownness = self.knownness(value);
+            let current = self.hir.symbols[path.terminal.index].knownness;
+            let next = self.knownness(value);
+            self.hir.symbols[path.terminal.index].knownness =
+                if operator == AssignmentOperator::Assign && path.steps.is_empty() {
+                    next
+                } else {
+                    current.join(next).join(self.access_knownness(&path))
+                };
             self.hir.symbols[path.terminal.index].value_evidence = ValueEvidence::Deferred;
             return Effect::DeferredVariableAssignment { target: path, value, operator, span };
         }
