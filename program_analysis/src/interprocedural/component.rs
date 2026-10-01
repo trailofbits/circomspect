@@ -30,6 +30,34 @@ pub struct AppliedComponentPort {
     instantiation: NodeId,
 }
 
+/// An exact component output access observed in this caller's reachable CFG.
+///
+/// This certificate says only that the caller may read this output. It does
+/// not prove the child is ready at the read or close all project-wide uses.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CallerOutputRead {
+    applied: AppliedComponentPort,
+    read_origins: Vec<Origin>,
+}
+
+impl CallerOutputRead {
+    #[must_use]
+    pub fn applied_port(&self) -> &AppliedComponentPort {
+        &self.applied
+    }
+
+    #[must_use]
+    pub fn read_origins(&self) -> &[Origin] {
+        &self.read_origins
+    }
+}
+
+#[derive(Debug)]
+pub(crate) enum LocalOutputUse {
+    Read(Vec<Origin>),
+    NoLocalRead,
+}
+
 #[derive(Clone, Copy)]
 struct GeneratedPortEquality {
     input: PortId,
@@ -104,6 +132,117 @@ impl AppliedComponentPort {
 }
 
 impl ProjectSummaries<'_> {
+    /// Certify an exact source read of this output in the bound caller context.
+    ///
+    /// Absence of a local read cannot certify a project-wide unused output.
+    pub fn caller_output_read(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        applied: &AppliedComponentPort,
+    ) -> SummaryFact<CallerOutputRead> {
+        let result = self.local_output_use_result(facts, applied).and_then(|use_state| {
+            let LocalOutputUse::Read(read_origins) = use_state else {
+                return Err(SummaryBlocker::ExternalSummary);
+            };
+            Ok(CallerOutputRead { applied: applied.clone(), read_origins })
+        });
+        SummaryFact::from_result(result)
+    }
+
+    pub(crate) fn local_output_use_result(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        applied: &AppliedComponentPort,
+    ) -> Result<LocalOutputUse, SummaryBlocker> {
+        self.check_facts_for_evidence(facts, &applied.caller)?;
+        if !applied.handle.matches_context(applied.caller.context()) {
+            return Err(SummaryBlocker::WrongContext);
+        }
+        let reads = self.exact_output_reads(facts, applied);
+        if !reads.is_empty() {
+            return Ok(LocalOutputUse::Read(reads));
+        }
+        self.prove_no_local_output_read(facts, applied)?;
+        Ok(LocalOutputUse::NoLocalRead)
+    }
+
+    fn exact_output_reads(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        applied: &AppliedComponentPort,
+    ) -> Vec<Origin> {
+        let mut reads = Vec::new();
+        for id in facts.cfg().nodes() {
+            let Some(node) = facts.cfg().node(*id) else { continue };
+            let CfgNodeKind::Evaluate(expression) = &node.kind else { continue };
+            let Some(ExprKind::Access(path)) =
+                self.hir().expression(*expression).map(|expr| &expr.kind)
+            else {
+                continue;
+            };
+            if facts.handle_relation(&applied.handle, path) != InstanceRelation::Exact {
+                continue;
+            }
+            if facts.reachable_node(*id).certified() == Some(&true) {
+                if let Some(origin) = node.origin {
+                    reads.push(origin);
+                }
+            }
+        }
+        reads
+    }
+
+    fn prove_no_local_output_read(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        applied: &AppliedComponentPort,
+    ) -> Result<(), SummaryBlocker> {
+        if !*certified(&facts.reachable_node(facts.cfg().exit()))? {
+            return Err(SummaryBlocker::ExternalSummary);
+        }
+        let mut uncertain = false;
+        for id in facts.cfg().nodes() {
+            let Some(node) = facts.cfg().node(*id) else {
+                return Err(SummaryBlocker::ExternalSummary);
+            };
+            if !*certified(&facts.reachable_node(*id))? {
+                continue;
+            }
+            match &node.kind {
+                CfgNodeKind::Evaluate(expression) => {
+                    let expr = self
+                        .hir()
+                        .expression(*expression)
+                        .ok_or(SummaryBlocker::ExternalSummary)?;
+                    match &expr.kind {
+                        ExprKind::Access(path) => {
+                            match facts.handle_relation(&applied.handle, path) {
+                                InstanceRelation::Exact => uncertain = true,
+                                InstanceRelation::Possible => uncertain = true,
+                                InstanceRelation::Separate => {}
+                            }
+                        }
+                        ExprKind::Opaque(_) | ExprKind::AnonymousComponent { .. } => {
+                            uncertain = true;
+                        }
+                        _ => {}
+                    }
+                }
+                CfgNodeKind::Opaque(_)
+                | CfgNodeKind::OpaqueAssignment { .. }
+                | CfgNodeKind::OpaqueEquality { .. }
+                | CfgNodeKind::DeferredAssignment { .. }
+                | CfgNodeKind::Log => uncertain = true,
+                _ => {}
+            }
+        }
+        if uncertain {
+            return Err(SummaryBlocker::ExternalSummary);
+        }
+        self.linear_caller_path(facts)?;
+        Ok(())
+    }
+
     /// Prove an output value through a must-generated child equality and caller input.
     pub fn composed_constraint_fixed_output(
         &self,
@@ -579,5 +718,81 @@ impl ProjectSummaries<'_> {
             | ExprKind::Ternary { .. }
             | ExprKind::Opaque(_) => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use parser::hir::{lift_project, DefinitionRef};
+    use parser::new_frontend::{load_sources, Version, VersionPolicy};
+    use program_structure::utils::constants::Curve;
+
+    use crate::hir_cfg::build_cfg;
+    use crate::interprocedural::{CallOwner, CallReachability, ProjectSummaries, SummaryBlocker};
+
+    use super::LocalOutputUse;
+
+    fn local_output_state(source: &str, instance: usize) -> Result<LocalOutputUse, SummaryBlocker> {
+        let directory = std::env::temp_dir().join(format!(
+            "circomspect-local-output-use-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let file = directory.join("case.circom");
+        std::fs::write(&file, source).unwrap();
+        let loaded = load_sources(&[file], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
+        let lifted = lift_project(&loaded);
+        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let parent = lifted.hir.definition("Parent").unwrap();
+        let DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap() else {
+            panic!("Child must be a template")
+        };
+        let cfg = build_cfg(&lifted.hir, parent).unwrap();
+        let scope = provider.symbolic_root(parent).unwrap();
+        let facts = provider.analyze_for_evidence(&cfg, &scope, None).unwrap();
+        let output = lifted.hir.template(child).unwrap().ports[0];
+        let component = lifted.hir.components()[0].id;
+        let handle = facts.component_output_handle(component, &[instance], output, &[]).unwrap();
+        let site = provider.graph().calls_from(CallOwner::Definition(parent))[instance];
+        let CallReachability::Reachable(call) = provider.graph().reachable_call(site.id(), &facts)
+        else {
+            panic!("second instance must be reachable")
+        };
+        let applied = provider.apply_component_output(&facts, &scope, &call, &handle);
+        let Some(applied) = applied.certified() else {
+            return Err(applied
+                .unavailable()
+                .and_then(|blockers| blockers.iter().next())
+                .cloned()
+                .unwrap_or(SummaryBlocker::ExternalSummary));
+        };
+        provider.local_output_use_result(&facts, applied)
+    }
+
+    #[test]
+    fn an_untouched_sibling_has_only_a_local_no_read_certificate() {
+        let result = local_output_state(
+            concat!(
+                "template Child(){signal output out;out<==1;} ",
+                "template Parent(){component c[2];c[0]=Child();c[1]=Child();",
+                "signal output y;y<==c[0].out;}"
+            ),
+            1,
+        );
+        assert!(matches!(result, Ok(LocalOutputUse::NoLocalRead)));
+    }
+
+    #[test]
+    fn a_bus_field_read_blocks_no_local_read_for_the_whole_output() {
+        let result = local_output_state(
+            concat!(
+                "bus B(){signal leaf;} template Child(){B output out;} ",
+                "template Parent(){component c[2];c[0]=Child();c[1]=Child();",
+                "signal output y;y<==c[0].out.leaf;}"
+            ),
+            0,
+        );
+        assert!(!matches!(result, Ok(LocalOutputUse::NoLocalRead)), "{result:?}");
     }
 }

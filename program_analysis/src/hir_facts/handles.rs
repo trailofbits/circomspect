@@ -98,6 +98,22 @@ pub enum AccessHandleError {
 }
 
 impl AnalysisFacts<'_> {
+    pub(crate) fn handle_relation(
+        &self,
+        handle: &AccessHandle,
+        path: &AccessPath,
+    ) -> InstanceRelation {
+        let requested = key_for_path(self.hir, self.field, handle.path(), &BTreeMap::new());
+        let actual = key_for_path(self.hir, self.field, path, &BTreeMap::new());
+        if requested.exact_alias(&actual) {
+            InstanceRelation::Exact
+        } else if requested.may_alias(&actual) {
+            InstanceRelation::Possible
+        } else {
+            InstanceRelation::Separate
+        }
+    }
+
     pub(crate) fn instance_relation(
         &self,
         handle: &AccessHandle,

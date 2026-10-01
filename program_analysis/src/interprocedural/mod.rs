@@ -19,4 +19,4 @@ pub use graph::{
 pub use summary::{FunctionSummary, SummaryFact};
 pub use effects::{FunctionEffect, FunctionEffects};
 pub use template::{PortSummary, WitnessProvenance, WitnessSite};
-pub use component::{AppliedComponentPort, ComposedConstraintFixedOutput};
+pub use component::{AppliedComponentPort, CallerOutputRead, ComposedConstraintFixedOutput};
