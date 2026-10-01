@@ -13,8 +13,10 @@ pub enum RuleKind {
     UnconstrainedDivision,
     SignalAssignment,
     RedundantWitnessAssignment,
-    UnderConstrainedSignal,
+    UnconstrainedSignal,
     UnconstrainedLessThan,
+    UnusedVariableValue,
+    UnusedParameterValue,
     SideEffectFreeAssignment,
     UnusedOutputSignal,
     Complexity,
@@ -35,8 +37,10 @@ impl RuleKind {
             UnconstrainedDivision => ReportCode::UnconstrainedDivision,
             SignalAssignment => ReportCode::SignalAssignmentStatement,
             RedundantWitnessAssignment => ReportCode::RedundantWitnessAssignment,
-            UnderConstrainedSignal => ReportCode::UnderConstrainedSignal,
+            UnconstrainedSignal => ReportCode::UnconstrainedSignal,
             UnconstrainedLessThan => ReportCode::UnconstrainedLessThan,
+            UnusedVariableValue => ReportCode::UnusedVariableValue,
+            UnusedParameterValue => ReportCode::UnusedParameterValue,
             SideEffectFreeAssignment => ReportCode::VariableWithoutSideEffect,
             UnusedOutputSignal => ReportCode::UnusedOutputSignal,
             Complexity => ReportCode::CyclomaticComplexity,
@@ -56,8 +60,10 @@ impl RuleKind {
             | UnconstrainedDivision
             | SignalAssignment
             | RedundantWitnessAssignment
-            | UnderConstrainedSignal
+            | UnconstrainedSignal
             | UnconstrainedLessThan
+            | UnusedVariableValue
+            | UnusedParameterValue
             | SideEffectFreeAssignment
             | UnusedOutputSignal
             | Complexity

@@ -47,6 +47,8 @@ fn new_rule_ids_have_distinct_renderer_descriptors() {
     assert_ne!(ReportCode::UnnecessarySignalAssignment.id(), "CS0021");
     assert_eq!(RuleKind::BitwiseComplement.code().id(), "CS0004");
     assert_eq!(RuleKind::BitwiseComplement.category(), MessageCategory::Info);
+    assert_eq!(RuleKind::UnconstrainedSignal.code().id(), "CA01");
+    assert_eq!(ReportCode::UnderConstrainedSignal.id(), "CS0017");
 }
 
 #[test]
@@ -62,8 +64,10 @@ fn every_new_rule_kind_has_a_frozen_id_and_level() {
         (UnconstrainedDivision, "CS0015", MessageCategory::Warning),
         (SignalAssignment, "CS0005", MessageCategory::Warning),
         (RedundantWitnessAssignment, "CS0021", MessageCategory::Warning),
-        (UnderConstrainedSignal, "CS0017", MessageCategory::Warning),
+        (UnconstrainedSignal, "CA01", MessageCategory::Warning),
         (UnconstrainedLessThan, "CS0014", MessageCategory::Warning),
+        (UnusedVariableValue, "CS0006", MessageCategory::Warning),
+        (UnusedParameterValue, "CS0007", MessageCategory::Warning),
         (SideEffectFreeAssignment, "CS0008", MessageCategory::Warning),
         (UnusedOutputSignal, "CS0018", MessageCategory::Warning),
         (Complexity, "CS0011", MessageCategory::Warning),
