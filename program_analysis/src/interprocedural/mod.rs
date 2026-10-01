@@ -6,6 +6,7 @@ mod effects;
 mod template;
 mod context;
 mod component;
+mod input_relation;
 mod project_use;
 
 pub use context::{

@@ -468,7 +468,7 @@ fn a_may_reachable_branch_instantiation_does_not_fix_an_output() {
 }
 
 #[test]
-fn branch_input_bindings_do_not_borrow_source_node_order_as_proof() {
+fn disagreeing_branch_input_bindings_cannot_fix_an_output() {
     let lifted = fixture(concat!(
         "template Child(){signal input in;signal output out;out<==in;} ",
         "template Parent(){component c=Child();",
@@ -493,13 +493,12 @@ fn branch_input_bindings_do_not_borrow_source_node_order_as_proof() {
     let applied = provider.apply_component_output(&facts, &scope, &call, &handle);
     assert!(provider
         .composed_constraint_fixed_output(&facts, applied.certified().unwrap())
-        .unavailable()
-        .unwrap()
-        .contains(&SummaryBlocker::UnsupportedContext));
+        .certified()
+        .is_none());
 }
 
 #[test]
-fn unrelated_branch_keeps_the_single_path_value_subset_conservative() {
+fn unrelated_branch_preserves_the_later_checked_input_value() {
     let lifted = fixture(concat!(
         "template Child(){signal input in;signal output out;out<==in;} ",
         "template Parent(){component c=Child();if(1 << 1){log(1);}",
@@ -522,11 +521,9 @@ fn unrelated_branch_keeps_the_single_path_value_subset_conservative() {
         panic!("instantiation must be reachable")
     };
     let applied = provider.apply_component_output(&facts, &scope, &call, &handle);
-    assert!(provider
-        .composed_constraint_fixed_output(&facts, applied.certified().unwrap())
-        .unavailable()
-        .unwrap()
-        .contains(&SummaryBlocker::UnsupportedContext));
+    let result = provider.composed_constraint_fixed_output(&facts, applied.certified().unwrap());
+    let expected = FieldContext::for_curve(Curve::Bn254).canonical(7.into());
+    assert_eq!(result.certified().map(|proof| proof.value()), Some(&expected));
 }
 
 #[test]
