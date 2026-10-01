@@ -30,6 +30,14 @@ pub use access::{AccessKey, AccessKeyStep, IndexKey};
 pub use domains::{DegreeUpper as Degree, FieldRange as Range};
 pub use field::{FieldContext, FieldValue};
 
+pub(crate) fn exact_compile_time(
+    hir: &HirProject,
+    field: &FieldContext,
+    expression: ExprId,
+) -> Option<FieldValue> {
+    forward::eval_expression(hir, field, expression, &BTreeMap::new())
+}
+
 /// A reporting fact whose certified constructor is private to the analysis.
 ///
 /// ```compile_fail
