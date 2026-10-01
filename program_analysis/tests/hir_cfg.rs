@@ -4,7 +4,7 @@ use parser::hir::{lift_project, ControlGuard, DefinitionRef};
 use parser::new_frontend::{load_sources, Version, VersionPolicy};
 use std::fs;
 
-fn fixture(source: &str) -> (parser::hir::LiftedProject, DefinitionRef) {
+fn lift_fixture(source: &str) -> parser::hir::LiftedProject {
     let directory = std::env::temp_dir().join(format!(
         "circomspect-phase4-cfg-{}-{:?}",
         std::process::id(),
@@ -14,11 +14,78 @@ fn fixture(source: &str) -> (parser::hir::LiftedProject, DefinitionRef) {
     let path = directory.join("case.circom");
     fs::write(&path, source).unwrap();
     let loaded = load_sources(&[path], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
-    let lifted = lift_project(&loaded);
+    lift_project(&loaded)
+}
+
+fn fixture(source: &str) -> (parser::hir::LiftedProject, DefinitionRef) {
+    let lifted = lift_fixture(source);
     assert!(lifted.syntax_diagnostics.is_empty(), "{:?}", lifted.syntax_diagnostics);
     assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
     let definition = lifted.hir.definition("Check").unwrap();
     (lifted, definition)
+}
+
+#[test]
+fn mixed_component_target_cannot_leave_an_earlier_generated_constraint() {
+    let lifted = lift_fixture(concat!(
+        "template A(){signal input in;signal output out;} ",
+        "template B(){signal input in;signal output out;} ",
+        "template Check(){component c[2];c[0]=A();signal x;",
+        "x<==c[0].out;c[0].in<==1;c[1]=B();}"
+    ));
+    assert!(!lifted.diagnostics.is_empty());
+    let definition = lifted.hir.definition("Check").unwrap();
+    let cfg = build_cfg(&lifted.hir, definition).unwrap();
+    assert!(!cfg
+        .nodes()
+        .iter()
+        .any(|id| { matches!(cfg.node(*id).unwrap().kind, CfgNodeKind::Constraint { .. }) }));
+}
+
+#[test]
+fn mixed_component_target_invalidates_transitive_use_but_keeps_independent_constraint() {
+    let lifted = lift_fixture(concat!(
+        "template A(){signal output out;} template B(){signal output out;} ",
+        "template Check(){component c[2];c[0]=A();var t=c[0].out;",
+        "signal x;signal y;x<==t;y<==7;c[1]=B();}"
+    ));
+    assert!(!lifted.diagnostics.is_empty());
+    let definition = lifted.hir.definition("Check").unwrap();
+    let cfg = build_cfg(&lifted.hir, definition).unwrap();
+    let constraints: Vec<_> = cfg
+        .nodes()
+        .iter()
+        .filter_map(|id| {
+            let CfgNodeKind::Constraint { target: Some(path), .. } = &cfg.node(*id)?.kind else {
+                return None;
+            };
+            lifted.hir.symbol(path.root).map(|symbol| symbol.name.as_str())
+        })
+        .collect();
+    assert_eq!(constraints, ["y"]);
+}
+
+#[test]
+fn mixed_component_target_blocks_later_reads_of_earlier_tainted_local() {
+    let lifted = lift_fixture(concat!(
+        "template A(){signal output out;} template B(){signal output out;} ",
+        "template Check(){component c[2];c[0]=A();var t=c[0].out;",
+        "c[1]=B();signal x;signal y;x<==t;y<==7;}"
+    ));
+    assert!(!lifted.diagnostics.is_empty());
+    let definition = lifted.hir.definition("Check").unwrap();
+    let cfg = build_cfg(&lifted.hir, definition).unwrap();
+    let constraints: Vec<_> = cfg
+        .nodes()
+        .iter()
+        .filter_map(|id| {
+            let CfgNodeKind::Constraint { target: Some(path), .. } = &cfg.node(*id)?.kind else {
+                return None;
+            };
+            lifted.hir.symbol(path.root).map(|symbol| symbol.name.as_str())
+        })
+        .collect();
+    assert_eq!(constraints, ["y"]);
 }
 
 #[test]
