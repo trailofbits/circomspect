@@ -5,7 +5,9 @@ use abstract_interpretation::graph::FlowGraph;
 use parser::hir::{DefinitionRef, ExprId, ExprKind, Function, FunctionId, SymbolId};
 
 use crate::hir_cfg::{build_cfg, CfgNodeKind, DefinitionCfg};
-use crate::hir_facts::{analyze_with_scalar_parameters, AnalysisFacts, Fact, FieldContext, Range};
+use crate::hir_facts::{
+    analyze_with_scalar_parameters, exact_compile_time, AnalysisFacts, Fact, FieldContext, Range,
+};
 
 use super::{CallContext, CallOwner, CallReachability, ProjectSummaries, SummaryBlocker};
 
@@ -128,9 +130,40 @@ impl ProjectSummaries<'_> {
         evaluation: &mut Evaluation,
     ) -> Result<FunctionSummary, SummaryBlocker> {
         self.with_local_function(id, context, |function, cfg, facts| {
+            if let Some(summary) = self.closed_constant_return(cfg) {
+                return Ok(summary);
+            }
             let calls = self.collect_calls(id, facts, evaluation)?;
             self.summarize_returns(function, cfg, facts, &calls)
         })
+    }
+
+    fn closed_constant_return(&self, cfg: &DefinitionCfg) -> Option<FunctionSummary> {
+        let field = FieldContext::for_curve(self.curve().clone());
+        let mut value = None;
+        let mut current = cfg.entry();
+        let mut visited = BTreeSet::new();
+        while current != cfg.exit() {
+            if !visited.insert(current) {
+                return None;
+            }
+            let node = cfg.node(current)?;
+            if let CfgNodeKind::Opaque(_) | CfgNodeKind::LoopHeader = &node.kind {
+                return None;
+            }
+            if let CfgNodeKind::Return(expression) = &node.kind {
+                value = Some(exact_compile_time(self.hir(), &field, *expression)?);
+            }
+            let mut next = None;
+            for id in cfg.edges() {
+                let edge = cfg.edge(*id)?;
+                if edge.source == current && next.replace(edge.target).is_some() {
+                    return None;
+                }
+            }
+            current = next?;
+        }
+        Some(FunctionSummary { returns: Range::Exact(value?), input_dependencies: BTreeSet::new() })
     }
 
     pub(super) fn with_local_function<T>(

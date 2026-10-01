@@ -162,6 +162,31 @@ fn unused_array_argument_does_not_block_a_constant_return() {
 }
 
 #[test]
+fn constant_return_survives_an_unrelated_opaque_call() {
+    for (source, expected) in [
+        ("function F(){var t=Missing();return 7;}", Some(7)),
+        ("function F(){var t=Missing();return t;}", None),
+        ("function F(n){if(n+Missing()){return 1;}return 7;}", None),
+    ] {
+        let lifted = fixture(source);
+        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let DefinitionRef::Function(function) = lifted.hir.definition("F").unwrap() else {
+            panic!("F must be a function")
+        };
+        let context = provider.symbolic_context_for(DefinitionRef::Function(function)).unwrap();
+        let summary = provider.function(function, &context);
+        let field = FieldContext::for_curve(Curve::Bn254);
+        match expected {
+            Some(value) => assert_eq!(
+                summary.certified().map(|item| item.returns()),
+                Some(&Range::Exact(field.canonical(value.into())))
+            ),
+            None => assert!(summary.unavailable().is_some()),
+        }
+    }
+}
+
+#[test]
 fn foreign_and_non_scalar_contexts_never_certify_function_returns() {
     let lifted = fixture("function F(n){return n;}");
     let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();

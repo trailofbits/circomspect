@@ -55,6 +55,25 @@ fn has_tag_access(result: &circomspect_parser::hir::LiftedProject) -> bool {
 }
 
 #[test]
+fn missing_call_initializer_keeps_a_typed_targeted_effect() {
+    let result =
+        lift(&[("case.circom", "function F(){var t=Missing();return 7;}")], Version::new(2, 2, 3));
+    let Some(DefinitionRef::Function(id)) = result.hir.definition("F") else {
+        panic!("function F must be present")
+    };
+    let effects = &result.hir.block(result.hir.function(id).unwrap().body).unwrap().effects;
+    assert!(effects.iter().any(|effect| {
+        let Effect::OpaqueAssignment { target, value, operator, reason, .. } = effect else {
+            return false;
+        };
+        *operator == AssignmentOperator::Assign
+            && *reason == IncompleteReason::UnknownType
+            && result.hir.symbol(target.root).is_some_and(|symbol| symbol.name == "t")
+            && result.hir.expression(*value).is_some()
+    }));
+}
+
+#[test]
 fn whole_project_resolution_keeps_independent_definitions() {
     let result = lift(
         &[
