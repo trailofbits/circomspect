@@ -7,10 +7,13 @@ use circomspect_program_analysis::new_rules::{
     constraints, direct, numeric, uses, AbstentionReason, Finding, RenderError, RuleKind,
     RuleResult, ScopedAbstention, SourceMap,
 };
+use circomspect_program_analysis::hir_facts::FieldContext;
+use circomspect_program_analysis::interprocedural::{ArgumentValue, ProjectSummaries};
 use parser::hir::lower_project;
 use parser::new_frontend::{load_sources, SourceId, Span, Version, VersionPolicy};
 use program_structure::report::MessageCategory;
 use program_structure::report_code::ReportCode;
+use program_structure::utils::constants::Curve;
 use serde_json::Value;
 
 fn load_fixture(name: &str, source: &str) -> parser::new_frontend::LoadedProject {
@@ -103,17 +106,40 @@ fn abstention_keeps_an_unproved_predicate_out_of_reports() {
     let loaded = load_fixture("abstain", "template Check(n) { signal output y; y <-- n; }\n");
     let lowered = lower_project(&loaded);
     let definition = lowered.hir.definition("Check").unwrap();
+    let summaries = ProjectSummaries::build(&lowered, Curve::Bn254).unwrap();
+    let context = summaries.symbolic_context_for(definition).unwrap();
     let source = &loaded.files[0];
     let span = Span::checked(source.id, 0..8, &source.text).unwrap();
     let sources = SourceMap::from_loaded(&loaded, &[source.id]).unwrap();
     let mut result = RuleResult::default();
     result.add_abstention(ScopedAbstention {
-        definition,
+        context,
         span,
         reason: AbstentionReason::SymbolicParameters,
     });
     assert!(result.findings().is_empty());
     assert_eq!(result.abstentions().len(), 1);
+    assert_eq!(result.abstentions()[0].definition(), definition);
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let one = summaries
+        .context_for(definition, vec![ArgumentValue::Scalar(field.canonical(1.into()))])
+        .unwrap();
+    let two = summaries
+        .context_for(definition, vec![ArgumentValue::Scalar(field.canonical(2.into()))])
+        .unwrap();
+    assert_ne!(one, two);
+    result.add_abstention(ScopedAbstention {
+        context: one,
+        span,
+        reason: AbstentionReason::SymbolicParameters,
+    });
+    result.add_abstention(ScopedAbstention {
+        context: two,
+        span,
+        reason: AbstentionReason::SymbolicParameters,
+    });
+    assert_eq!(result.abstentions().len(), 3);
+    assert_ne!(result.abstentions()[1].context, result.abstentions()[2].context);
     let output = source.path.with_extension("sarif.json");
     assert_eq!(
         support::render(result.findings(), &sources, MessageCategory::Info, &[], &output).unwrap(),

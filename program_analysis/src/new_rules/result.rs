@@ -2,6 +2,7 @@ use parser::hir::DefinitionRef;
 use parser::new_frontend::Span;
 
 use crate::hir_facts::FactBlocker;
+use crate::interprocedural::CallContext;
 
 use super::Finding;
 
@@ -18,9 +19,16 @@ pub enum AbstentionReason {
 /// An unresolved predicate at a specific source location and definition.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ScopedAbstention {
-    pub definition: DefinitionRef,
+    pub context: CallContext,
     pub span: Span,
     pub reason: AbstentionReason,
+}
+
+impl ScopedAbstention {
+    #[must_use]
+    pub fn definition(&self) -> DefinitionRef {
+        self.context.definition()
+    }
 }
 
 /// A rule's findings and unresolved scopes remain separate until rendering.
