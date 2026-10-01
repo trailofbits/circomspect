@@ -158,19 +158,23 @@ impl ProjectSummaries<'_> {
         if !applied.handle.matches_context(applied.caller.context()) {
             return Err(SummaryBlocker::WrongContext);
         }
-        let reads = self.exact_output_reads(facts, applied);
+        self.local_handle_use_result(facts, &applied.handle)
+    }
+
+    pub(super) fn local_handle_use_result(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        handle: &AccessHandle,
+    ) -> Result<LocalOutputUse, SummaryBlocker> {
+        let reads = self.exact_output_reads(facts, handle);
         if !reads.is_empty() {
             return Ok(LocalOutputUse::Read(reads));
         }
-        self.prove_no_local_output_read(facts, applied)?;
+        self.prove_no_local_output_read(facts, handle)?;
         Ok(LocalOutputUse::NoLocalRead)
     }
 
-    fn exact_output_reads(
-        &self,
-        facts: &AnalysisFacts<'_>,
-        applied: &AppliedComponentPort,
-    ) -> Vec<Origin> {
+    fn exact_output_reads(&self, facts: &AnalysisFacts<'_>, handle: &AccessHandle) -> Vec<Origin> {
         let mut reads = Vec::new();
         for id in facts.cfg().nodes() {
             let Some(node) = facts.cfg().node(*id) else { continue };
@@ -180,7 +184,7 @@ impl ProjectSummaries<'_> {
             else {
                 continue;
             };
-            if facts.handle_relation(&applied.handle, path) != InstanceRelation::Exact {
+            if facts.handle_relation(handle, path) != InstanceRelation::Exact {
                 continue;
             }
             if facts.reachable_node(*id).certified() == Some(&true) {
@@ -195,7 +199,7 @@ impl ProjectSummaries<'_> {
     fn prove_no_local_output_read(
         &self,
         facts: &AnalysisFacts<'_>,
-        applied: &AppliedComponentPort,
+        handle: &AccessHandle,
     ) -> Result<(), SummaryBlocker> {
         if !*certified(&facts.reachable_node(facts.cfg().exit()))? {
             return Err(SummaryBlocker::ExternalSummary);
@@ -215,13 +219,11 @@ impl ProjectSummaries<'_> {
                         .expression(*expression)
                         .ok_or(SummaryBlocker::ExternalSummary)?;
                     match &expr.kind {
-                        ExprKind::Access(path) => {
-                            match facts.handle_relation(&applied.handle, path) {
-                                InstanceRelation::Exact => uncertain = true,
-                                InstanceRelation::Possible => uncertain = true,
-                                InstanceRelation::Separate => {}
-                            }
-                        }
+                        ExprKind::Access(path) => match facts.handle_relation(handle, path) {
+                            InstanceRelation::Exact => uncertain = true,
+                            InstanceRelation::Possible => uncertain = true,
+                            InstanceRelation::Separate => {}
+                        },
                         ExprKind::Opaque(_) | ExprKind::AnonymousComponent { .. } => {
                             uncertain = true;
                         }

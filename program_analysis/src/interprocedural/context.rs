@@ -193,6 +193,12 @@ impl<'a> ProjectSummaries<'a> {
         &self.lifted.hir
     }
 
+    pub(super) fn source_complete(&self) -> bool {
+        self.lifted.diagnostics.is_empty()
+            && self.lifted.syntax_diagnostics.is_empty()
+            && self.lifted.incomplete.is_empty()
+    }
+
     #[must_use]
     pub fn graph(&self) -> &CallGraph {
         &self.graph

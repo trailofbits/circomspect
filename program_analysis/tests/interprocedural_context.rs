@@ -150,6 +150,52 @@ fn unbound_local_facts_cannot_mint_reachable_child_evidence() {
 }
 
 #[test]
+fn specializing_two_calls_keeps_one_source_diagnostic_for_a_missing_callee() {
+    let lifted = fixture(
+        concat!(
+            "template Child(n){var t=Missing(n);signal output out;out<==1;} ",
+            "template Parent(){component c[2];c[0]=Child(0);c[1]=Child(1);}",
+            "component main=Parent();"
+        ),
+        Version::new(2, 2, 3),
+    );
+    let missing = || {
+        lifted
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == SemanticCode::MissingCall)
+            .count()
+    };
+    assert_eq!(missing(), 1);
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let parent = lifted.hir.definition("Parent").unwrap();
+    let child = lifted.hir.definition("Child").unwrap();
+    let main_site = provider.graph().calls_from(CallOwner::Main(0))[0];
+    let CallReachability::Reachable(main) =
+        provider.graph().reachable_main_call(main_site.id(), &lifted.hir)
+    else {
+        panic!("main must resolve")
+    };
+    let root = provider.main_evidence(&main).unwrap();
+    let parent_cfg = build_cfg(&lifted.hir, parent).unwrap();
+    let facts = provider.analyze_for_evidence(&parent_cfg, &root, None).unwrap();
+    let child_cfg = build_cfg(&lifted.hir, child).unwrap();
+    let sites = provider.graph().calls_from(CallOwner::Definition(parent));
+    let mut contexts = Vec::new();
+    for site in sites {
+        let CallReachability::Reachable(call) = provider.graph().reachable_call(site.id(), &facts)
+        else {
+            panic!("child call must be reachable")
+        };
+        let evidence = provider.call_evidence(&call, &facts, &root).unwrap();
+        provider.analyze_for_evidence(&child_cfg, &evidence, None).unwrap();
+        contexts.push(evidence.context().clone());
+    }
+    assert_ne!(contexts[0], contexts[1]);
+    assert_eq!(missing(), 1);
+}
+
+#[test]
 fn reachable_array_call_preserves_shape_and_emits_a_located_assignment_error() {
     let source = concat!(
         "template Child(n){var x=n;x=1;signal output out;out<==1;} ",

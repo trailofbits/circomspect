@@ -337,6 +337,39 @@ fn finite_recursive_contexts_reach_a_base_case_without_certifying_a_cycle() {
 }
 
 #[test]
+fn mutual_recursion_with_repeated_context_abstains_from_return_value() {
+    let lifted = fixture(
+        "function F(n){if(n){return G(n);}return 7;} \
+         function G(n){if(n){return F(n);}return 7;}",
+    );
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else {
+        panic!("function F")
+    };
+    let DefinitionRef::Function(g) = lifted.hir.definition("G").unwrap() else {
+        panic!("function G")
+    };
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let zero = ArgumentValue::Scalar(field.canonical(0.into()));
+    let one = ArgumentValue::Scalar(field.canonical(1.into()));
+    let base = provider.context_for(DefinitionRef::Function(f), vec![zero]).unwrap();
+    let cycle = provider.context_for(DefinitionRef::Function(f), vec![one.clone()]).unwrap();
+    let g_cycle = provider.context_for(DefinitionRef::Function(g), vec![one]).unwrap();
+
+    assert_eq!(
+        provider.function(f, &base).certified().map(|summary| summary.returns()),
+        Some(&Range::Exact(field.canonical(7.into())))
+    );
+    // Repeating the same immutable argument tuple proves no terminating return path.
+    for (function, context) in [(f, cycle), (g, g_cycle)] {
+        assert_eq!(
+            provider.function(function, &context).unavailable(),
+            Some(&std::collections::BTreeSet::from([SummaryBlocker::RecursiveCycle]))
+        );
+    }
+}
+
+#[test]
 fn recursive_scc_effects_reach_a_least_fixed_point() {
     let lifted = fixture(
         "function F(n){if(n){return G(n);}return 0;} \
