@@ -783,7 +783,7 @@ fn effect_span(effect: &Effect, block_span: Span) -> Span {
     }
 }
 
-/// Lower a checked HIR definition without changing the legacy analysis path.
+/// Build a CFG from a checked HIR definition without changing the legacy analysis path.
 pub fn build_cfg(hir: &HirProject, definition: DefinitionRef) -> Result<DefinitionCfg, BuildError> {
     let (body, local_symbols) = definition_symbols(hir, definition)?;
     let mut builder = Builder {

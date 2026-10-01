@@ -1,4 +1,4 @@
-use crate::hir::lower::*;
+use crate::hir::lift::*;
 
 struct PortContext<'a> {
     reference: DefinitionRef,
@@ -9,7 +9,7 @@ struct PortContext<'a> {
     known_parameters: &'a BTreeSet<String>,
 }
 
-impl Lowerer<'_> {
+impl Lifter<'_> {
     pub(super) fn index_definitions(&mut self) {
         for file in &self.source.files {
             for item in &file.outcome.ast.items {
@@ -494,21 +494,21 @@ impl Lowerer<'_> {
         true
     }
 
-    pub(super) fn lower_definitions(&mut self) {
+    pub(super) fn lift_definitions(&mut self) {
         for kind in [DefinitionKind::Bus, DefinitionKind::Template, DefinitionKind::Function] {
             for file in &self.source.files {
                 for item in &file.outcome.ast.items {
                     let Item::Definition(definition) = item else { continue };
                     let Some(reference) = self.definition_at(definition.span) else { continue };
                     if Self::definition_kind(reference) == kind {
-                        self.lower_definition(definition, reference);
+                        self.lift_definition(definition, reference);
                     }
                 }
             }
         }
     }
 
-    pub(super) fn lower_definition(&mut self, definition: &Definition, reference: DefinitionRef) {
+    pub(super) fn lift_definition(&mut self, definition: &Definition, reference: DefinitionRef) {
         self.current_definition = Some(reference);
         self.scopes.enter();
         let parameters = match reference {
@@ -527,12 +527,12 @@ impl Lowerer<'_> {
             DefinitionRef::Template(id) => self.hir.templates[id.index].body,
             DefinitionRef::Bus(id) => self.hir.buses[id.index].body,
         };
-        self.lower_block_into(&definition.body.statements, body, true);
+        self.lift_block_into(&definition.body.statements, body, true);
         self.scopes.leave();
         self.current_definition = None;
     }
 
-    pub(super) fn lower_block_into(
+    pub(super) fn lift_block_into(
         &mut self,
         statements: &[Statement],
         block: BlockId,
@@ -542,7 +542,7 @@ impl Lowerer<'_> {
             self.scopes.enter();
         }
         for statement in statements {
-            let mut effects = self.lower_statement(statement);
+            let mut effects = self.lift_statement(statement);
             self.hir.blocks[block.index].effects.append(&mut effects);
         }
         if scoped {
@@ -550,11 +550,11 @@ impl Lowerer<'_> {
         }
     }
 
-    pub(super) fn lower_branch(&mut self, statement: &Statement) -> BlockId {
+    pub(super) fn lift_branch(&mut self, statement: &Statement) -> BlockId {
         let block = self.hir.add_block(statement.span());
         match statement {
-            Statement::Block(body) => self.lower_block_into(&body.statements, block, true),
-            _ => self.lower_block_into(std::slice::from_ref(statement), block, true),
+            Statement::Block(body) => self.lift_block_into(&body.statements, block, true),
+            _ => self.lift_block_into(std::slice::from_ref(statement), block, true),
         }
         block
     }
