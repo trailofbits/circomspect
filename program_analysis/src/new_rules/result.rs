@@ -1,16 +1,18 @@
+use std::collections::BTreeSet;
+
 use parser::hir::DefinitionRef;
 use parser::new_frontend::Span;
 
 use crate::hir_facts::FactBlocker;
-use crate::interprocedural::CallContext;
+use crate::interprocedural::{CallContext, SummaryBlocker};
 
 use crate::new_rules::{Finding, RuleKind};
 
 /// Why a rule cannot decide one source scope from certified evidence.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum AbstentionReason {
-    Fact(FactBlocker),
-    SummaryUnavailable(DefinitionRef),
+    LocalFacts(BTreeSet<FactBlocker>),
+    Summary(BTreeSet<SummaryBlocker>),
     SymbolicParameters,
     IncompleteDefinition,
     UnsupportedConstruct,

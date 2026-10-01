@@ -3,11 +3,12 @@ mod support;
 use std::collections::BTreeSet;
 use std::fs;
 
+use abstract_interpretation::graph::NodeId;
 use circomspect_program_analysis::new_rules::{
     constraints, direct, numeric, uses, AbstentionReason, RenderError, RuleContext,
     RuleContextError, RuleKind, RuleResult, ScopedAbstention, SourceMap,
 };
-use circomspect_program_analysis::hir_facts::{FieldContext, Range};
+use circomspect_program_analysis::hir_facts::{FactBlocker, FieldContext, Range};
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::hir_facts::analyze;
 use circomspect_program_analysis::interprocedural::{
@@ -217,6 +218,7 @@ fn abstention_keeps_an_unproved_predicate_out_of_reports() {
     let definition = lowered.hir.definition("Check").unwrap();
     let summaries = ProjectSummaries::build(&lowered, Curve::Bn254).unwrap();
     let context = summaries.symbolic_context_for(definition).unwrap();
+    let symbolic_context = context.clone();
     let source = &loaded.files[0];
     let span = Span::checked(source.id, 0..8, &source.text).unwrap();
     let sources = SourceMap::from_loaded(&loaded, &[source.id]).unwrap();
@@ -252,6 +254,27 @@ fn abstention_keeps_an_unproved_predicate_out_of_reports() {
     });
     assert_eq!(result.abstentions().len(), 3);
     assert_ne!(result.abstentions()[1].context, result.abstentions()[2].context);
+    let local_blockers = BTreeSet::from([
+        FactBlocker::Budget(NodeId::new(2)),
+        FactBlocker::OpaqueNode(NodeId::new(3), "missing call".to_string()),
+    ]);
+    let summary_blockers =
+        BTreeSet::from([SummaryBlocker::ContextBudget, SummaryBlocker::ExternalSummary]);
+    result.add_abstention(ScopedAbstention {
+        kind: RuleKind::UnconstrainedSignal,
+        context: symbolic_context.clone(),
+        span,
+        reason: AbstentionReason::LocalFacts(local_blockers.clone()),
+    });
+    result.add_abstention(ScopedAbstention {
+        kind: RuleKind::UnconstrainedSignal,
+        context: symbolic_context,
+        span,
+        reason: AbstentionReason::Summary(summary_blockers.clone()),
+    });
+    assert_eq!(result.abstentions().len(), 5);
+    assert_eq!(result.abstentions()[3].reason, AbstentionReason::LocalFacts(local_blockers));
+    assert_eq!(result.abstentions()[4].reason, AbstentionReason::Summary(summary_blockers));
     let output = source.path.with_extension("sarif.json");
     assert_eq!(
         support::render(result.findings(), &sources, MessageCategory::Info, &[], &output).unwrap(),
