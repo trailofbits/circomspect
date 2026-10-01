@@ -1,6 +1,6 @@
 use circomspect_program_analysis::hir_facts::{FieldContext, Range};
 use circomspect_program_analysis::interprocedural::{ArgumentValue, ProjectSummaries, SummaryBlocker};
-use parser::hir::{lower_project, DefinitionRef, LoweredProject};
+use parser::hir::{lower_project, DefinitionRef, Effect, ExprKind, LoweredProject};
 use parser::new_frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
 use std::fs;
@@ -107,4 +107,79 @@ fn scalar_context_cannot_validate_an_indexed_parameter_use() {
         )
         .unwrap();
     assert!(provider.function(function, &context).unavailable().is_some());
+}
+
+#[test]
+fn direct_resolved_function_call_agrees_with_inlined_return() {
+    let lowered = fixture("function Id(a){return a;} function Outer(n){return Id(n);}");
+    let provider = ProjectSummaries::build(&lowered, Curve::Bn254).unwrap();
+    let DefinitionRef::Function(outer) = lowered.hir.definition("Outer").unwrap() else {
+        panic!("function Outer")
+    };
+    let body = lowered.hir.block(lowered.hir.function(outer).unwrap().body).unwrap();
+    let Some(Effect::Return { value, .. }) = body.effects.first() else { panic!("Outer return") };
+    let expression = lowered.hir.expression(*value).unwrap();
+    assert!(matches!(expression.kind, ExprKind::Call { .. }), "{:?}", expression.kind);
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let context = provider
+        .context_for(
+            DefinitionRef::Function(outer),
+            vec![ArgumentValue::Scalar(field.canonical(5.into()))],
+        )
+        .unwrap();
+    let summary = provider.function(outer, &context);
+    assert_eq!(summary.certified().unwrap().returns(), &Range::Exact(field.canonical(5.into())));
+    assert_eq!(
+        summary.certified().unwrap().input_dependencies(),
+        &std::collections::BTreeSet::from([0])
+    );
+}
+
+#[test]
+fn finite_recursive_contexts_reach_a_base_case_without_certifying_a_cycle() {
+    let lowered = fixture("function F(n){if(n){return F(n-1);}return 0;}");
+    let provider = ProjectSummaries::build(&lowered, Curve::Bn254).unwrap();
+    let DefinitionRef::Function(function) = lowered.hir.definition("F").unwrap() else {
+        panic!("function F")
+    };
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let concrete = provider
+        .context_for(
+            DefinitionRef::Function(function),
+            vec![ArgumentValue::Scalar(field.canonical(3.into()))],
+        )
+        .unwrap();
+    let summary = provider.function(function, &concrete);
+    assert_eq!(
+        summary.certified().map(|item| item.returns()),
+        Some(&Range::Exact(field.canonical(0.into()))),
+        "{:?}",
+        summary.unavailable()
+    );
+    let too_deep = provider
+        .context_for(
+            DefinitionRef::Function(function),
+            vec![ArgumentValue::Scalar(field.canonical(70.into()))],
+        )
+        .unwrap();
+    assert_eq!(
+        provider.function(function, &too_deep).unavailable(),
+        Some(&std::collections::BTreeSet::from([SummaryBlocker::ContextBudget]))
+    );
+
+    let cyclic = fixture("function F(n){return F(n);}");
+    let cyclic_provider = ProjectSummaries::build(&cyclic, Curve::Bn254).unwrap();
+    let DefinitionRef::Function(cyclic_id) = cyclic.hir.definition("F").unwrap() else {
+        panic!("cyclic F")
+    };
+    let context = cyclic_provider
+        .context_for(
+            DefinitionRef::Function(cyclic_id),
+            vec![ArgumentValue::Scalar(field.canonical(1.into()))],
+        )
+        .unwrap();
+    assert_eq!(
+        cyclic_provider.function(cyclic_id, &context).unavailable(),
+        Some(&std::collections::BTreeSet::from([SummaryBlocker::RecursiveCycle]))
+    );
 }

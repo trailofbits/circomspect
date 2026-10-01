@@ -113,6 +113,8 @@ pub enum SummaryBlocker {
     ExternalSummary,
     MissingReturn,
     LocalAnalysis(String),
+    RecursiveCycle,
+    ContextBudget,
 }
 
 /// Owns the validated field and graph used to construct summary contexts.

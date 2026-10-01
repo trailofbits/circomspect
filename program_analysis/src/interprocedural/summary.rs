@@ -2,10 +2,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use abstract_interpretation::lattice::Lattice;
 use abstract_interpretation::graph::FlowGraph;
-use parser::hir::{DefinitionRef, FunctionId};
+use parser::hir::{DefinitionRef, ExprId, ExprKind, Function, FunctionId, SymbolId};
 
 use crate::hir_cfg::{build_cfg, CfgNodeKind};
-use crate::hir_facts::{analyze_with_scalar_parameters, Range};
+use crate::hir_facts::{analyze_with_scalar_parameters, AnalysisFacts, Fact, FieldContext, Range};
 
 use super::{ArgumentValue, CallContext, CallOwner, CallReachability, ProjectSummaries, SummaryBlocker};
 
@@ -33,6 +33,13 @@ impl<T> SummaryFact<T> {
         Self(SummaryState::Unavailable(BTreeSet::from([blocker])))
     }
 
+    fn from_result(result: Result<T, SummaryBlocker>) -> Self {
+        match result {
+            Ok(value) => Self::known(value),
+            Err(blocker) => Self::blocked(blocker),
+        }
+    }
+
     #[must_use]
     pub fn certified(&self) -> Option<&T> {
         match &self.0 {
@@ -48,6 +55,11 @@ impl<T> SummaryFact<T> {
             SummaryState::Unavailable(blockers) => Some(blockers),
         }
     }
+}
+
+fn certified<T>(fact: &Fact<T>) -> Result<&T, SummaryBlocker> {
+    fact.certified()
+        .ok_or_else(|| SummaryBlocker::LocalFacts(fact.unavailable().cloned().unwrap_or_default()))
 }
 
 /// Return evidence for one scalar function context.
@@ -69,19 +81,59 @@ impl FunctionSummary {
     }
 }
 
+#[derive(Default)]
+struct Evaluation {
+    active: BTreeSet<CallContext>,
+    memo: BTreeMap<CallContext, SummaryFact<FunctionSummary>>,
+}
+
+struct CalleeReturn {
+    summary: FunctionSummary,
+    arguments: Vec<ExprId>,
+}
+
 impl ProjectSummaries<'_> {
-    /// Summarize a scalar function under a validated context key.
-    /// Reachable calls remain unavailable until their effects are composed.
+    /// Summarize a scalar function using checked CFG reachability and resolved call sites.
     pub fn function(&self, id: FunctionId, context: &CallContext) -> SummaryFact<FunctionSummary> {
+        self.function_inner(id, context, &mut Evaluation::default())
+    }
+
+    fn function_inner(
+        &self,
+        id: FunctionId,
+        context: &CallContext,
+        evaluation: &mut Evaluation,
+    ) -> SummaryFact<FunctionSummary> {
+        const MAX_CONTEXTS: usize = 64;
+        if let Some(cached) = evaluation.memo.get(context) {
+            return cached.clone();
+        }
+        if evaluation.active.contains(context) {
+            return SummaryFact::blocked(SummaryBlocker::RecursiveCycle);
+        }
+        if evaluation.active.len() + evaluation.memo.len() >= MAX_CONTEXTS {
+            return SummaryFact::blocked(SummaryBlocker::ContextBudget);
+        }
+        evaluation.active.insert(context.clone());
+        let result = SummaryFact::from_result(self.compute_function(id, context, evaluation));
+        evaluation.active.remove(context);
+        evaluation.memo.insert(context.clone(), result.clone());
+        result
+    }
+
+    fn compute_function(
+        &self,
+        id: FunctionId,
+        context: &CallContext,
+        evaluation: &mut Evaluation,
+    ) -> Result<FunctionSummary, SummaryBlocker> {
         let Some(function) = self.hir().function(id) else {
-            return SummaryFact::blocked(SummaryBlocker::ForeignDefinition);
+            return Err(SummaryBlocker::ForeignDefinition);
         };
         if context.definition() != DefinitionRef::Function(id) {
-            return SummaryFact::blocked(SummaryBlocker::WrongContext);
+            return Err(SummaryBlocker::WrongContext);
         }
-        if let Err(blocker) = self.check_context(context) {
-            return SummaryFact::blocked(blocker);
-        }
+        self.check_context(context)?;
         let mut parameters = BTreeMap::new();
         for (symbol, argument) in function.parameters.iter().zip(context.arguments()) {
             match argument {
@@ -90,33 +142,63 @@ impl ProjectSummaries<'_> {
                 }
                 ArgumentValue::Symbolic(_) => {}
                 ArgumentValue::Array(_) | ArgumentValue::Bus(_) => {
-                    return SummaryFact::blocked(SummaryBlocker::UnsupportedContext);
+                    return Err(SummaryBlocker::UnsupportedContext);
                 }
             }
         }
-        let cfg = match build_cfg(self.hir(), DefinitionRef::Function(id)) {
-            Ok(cfg) => cfg,
-            Err(error) => {
-                return SummaryFact::blocked(SummaryBlocker::LocalAnalysis(format!("{error:?}")));
-            }
-        };
-        let field = crate::hir_facts::FieldContext::for_curve(self.curve().clone());
-        let facts = match analyze_with_scalar_parameters(self.hir(), &cfg, &field, parameters, None)
-        {
-            Ok(facts) => facts,
-            Err(error) => {
-                return SummaryFact::blocked(SummaryBlocker::LocalAnalysis(format!("{error:?}")));
-            }
-        };
+        let cfg = build_cfg(self.hir(), DefinitionRef::Function(id))
+            .map_err(|error| SummaryBlocker::LocalAnalysis(format!("{error:?}")))?;
+        let field = FieldContext::for_curve(self.curve().clone());
+        let facts = analyze_with_scalar_parameters(self.hir(), &cfg, &field, parameters, None)
+            .map_err(|error| SummaryBlocker::LocalAnalysis(format!("{error:?}")))?;
+        let calls = self.collect_calls(id, &facts, evaluation)?;
+        self.summarize_returns(function, &cfg, &facts, &calls)
+    }
+
+    fn collect_calls(
+        &self,
+        id: FunctionId,
+        facts: &AnalysisFacts<'_>,
+        evaluation: &mut Evaluation,
+    ) -> Result<BTreeMap<ExprId, CalleeReturn>, SummaryBlocker> {
         let owner = CallOwner::Definition(DefinitionRef::Function(id));
+        let mut calls = BTreeMap::new();
         for site in self.graph().calls_from(owner) {
-            match self.graph().reachable_call(site.id(), &facts) {
-                CallReachability::Unreachable => {}
-                CallReachability::Reachable(_) | CallReachability::Unavailable(_) => {
-                    return SummaryFact::blocked(SummaryBlocker::ExternalSummary);
-                }
-            }
+            let call = match self.graph().reachable_call(site.id(), facts) {
+                CallReachability::Unreachable => continue,
+                CallReachability::Reachable(call) => call,
+                CallReachability::Unavailable(_) => return Err(SummaryBlocker::ExternalSummary),
+            };
+            let DefinitionRef::Function(callee) = call.callee() else {
+                return Err(SummaryBlocker::ExternalSummary);
+            };
+            let expression = site.expression.ok_or(SummaryBlocker::UnsupportedCallForm)?;
+            let Some(ExprKind::Call { arguments, .. }) =
+                self.hir().expression(expression).map(|expr| &expr.kind)
+            else {
+                return Err(SummaryBlocker::UnsupportedCallForm);
+            };
+            let evidence = self.call_evidence(&call, facts)?;
+            let summary = self.function_inner(callee, evidence.context(), evaluation);
+            let Some(summary) = summary.certified() else {
+                let blocker = summary.unavailable().and_then(|items| items.iter().next()).cloned();
+                return Err(blocker.unwrap_or(SummaryBlocker::ExternalSummary));
+            };
+            calls.insert(
+                expression,
+                CalleeReturn { summary: summary.clone(), arguments: arguments.clone() },
+            );
         }
+        Ok(calls)
+    }
+
+    fn summarize_returns(
+        &self,
+        function: &Function,
+        cfg: &crate::hir_cfg::DefinitionCfg,
+        facts: &AnalysisFacts<'_>,
+        calls: &BTreeMap<ExprId, CalleeReturn>,
+    ) -> Result<FunctionSummary, SummaryBlocker> {
         let mut returns = Range::Unreachable;
         let mut observed = false;
         let mut dependencies = BTreeSet::new();
@@ -125,41 +207,47 @@ impl ProjectSummaries<'_> {
             else {
                 continue;
             };
-            let reachable = facts.reachable_expression(*expression);
-            match reachable.certified() {
-                Some(false) => continue,
-                Some(true) => {}
-                None => {
-                    return SummaryFact::blocked(SummaryBlocker::LocalFacts(
-                        reachable.unavailable().cloned().unwrap_or_default(),
-                    ));
-                }
+            if !*certified(&facts.reachable_expression(*expression))? {
+                continue;
             }
-            let range = facts.range(*expression);
-            let Some(range) = range.certified() else {
-                return SummaryFact::blocked(SummaryBlocker::LocalFacts(
-                    range.unavailable().cloned().unwrap_or_default(),
-                ));
-            };
-            returns.join_assign(range);
+            let (range, used) = self.return_fact(*expression, facts, calls)?;
+            returns.join_assign(&range);
             observed = true;
-            let used = facts.dependencies(*expression);
-            let Some(used) = used.certified() else {
-                return SummaryFact::blocked(SummaryBlocker::LocalFacts(
-                    used.unavailable().cloned().unwrap_or_default(),
-                ));
-            };
-            for key in used {
-                let Some(index) = function.parameters.iter().position(|symbol| *symbol == key.root)
-                else {
-                    return SummaryFact::blocked(SummaryBlocker::ExternalSummary);
-                };
+            for symbol in used {
+                let index = function
+                    .parameters
+                    .iter()
+                    .position(|item| *item == symbol)
+                    .ok_or(SummaryBlocker::ExternalSummary)?;
                 dependencies.insert(index);
             }
         }
         if !observed {
-            return SummaryFact::blocked(SummaryBlocker::MissingReturn);
+            return Err(SummaryBlocker::MissingReturn);
         }
-        SummaryFact::known(FunctionSummary { returns, input_dependencies: dependencies })
+        Ok(FunctionSummary { returns, input_dependencies: dependencies })
+    }
+
+    fn return_fact(
+        &self,
+        expression: ExprId,
+        facts: &AnalysisFacts<'_>,
+        calls: &BTreeMap<ExprId, CalleeReturn>,
+    ) -> Result<(Range, BTreeSet<SymbolId>), SummaryBlocker> {
+        if let Some(call) = calls.get(&expression) {
+            let mut used = BTreeSet::new();
+            for index in call.summary.input_dependencies() {
+                let argument = call.arguments.get(*index).ok_or(SummaryBlocker::WrongContext)?;
+                let dependencies = facts.dependencies(*argument);
+                used.extend(certified(&dependencies)?.iter().map(|key| key.root));
+            }
+            return Ok((call.summary.returns().clone(), used));
+        }
+        let range = facts.range(expression);
+        let dependencies = facts.dependencies(expression);
+        Ok((
+            certified(&range)?.clone(),
+            certified(&dependencies)?.iter().map(|key| key.root).collect(),
+        ))
     }
 }
