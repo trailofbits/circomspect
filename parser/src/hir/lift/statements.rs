@@ -1,45 +1,205 @@
 use crate::hir::lift::*;
 
 impl Lifter<'_> {
+    fn path_depends_on_invalid(
+        path: &AccessPath,
+        symbols: &BTreeSet<SymbolId>,
+        expressions: &BTreeSet<ExprId>,
+    ) -> bool {
+        symbols.contains(&path.root)
+            || path.steps.iter().any(|step| match step {
+                AccessStep::Index { index: ArrayIndex::Symbolic(id), .. } => {
+                    expressions.contains(id)
+                }
+                AccessStep::Index { index: ArrayIndex::Constant(_), .. }
+                | AccessStep::Port { .. }
+                | AccessStep::Tag { .. } => false,
+            })
+    }
+
+    fn expression_depends_on_invalid(
+        expression: &ExprKind,
+        symbols: &BTreeSet<SymbolId>,
+        expressions: &BTreeSet<ExprId>,
+    ) -> bool {
+        match expression {
+            ExprKind::Access(path) => Self::path_depends_on_invalid(path, symbols, expressions),
+            ExprKind::Call { arguments, .. }
+            | ExprKind::Array(arguments)
+            | ExprKind::Tuple(arguments) => arguments.iter().any(|id| expressions.contains(id)),
+            ExprKind::AnonymousComponent { arguments, inputs, .. } => {
+                arguments.iter().any(|id| expressions.contains(id))
+                    || inputs.iter().any(|input| expressions.contains(&input.value))
+            }
+            ExprKind::Unary { operand, .. } | ExprKind::Parallel(operand) => {
+                expressions.contains(operand)
+            }
+            ExprKind::Binary { left, right, .. } => {
+                expressions.contains(left) || expressions.contains(right)
+            }
+            ExprKind::Ternary { condition, yes, no } => {
+                expressions.contains(condition)
+                    || expressions.contains(yes)
+                    || expressions.contains(no)
+            }
+            ExprKind::Number(_) | ExprKind::Opaque(_) => false,
+        }
+    }
+
+    fn invalid_component_dependencies(
+        &self,
+        component: SymbolId,
+    ) -> (BTreeSet<SymbolId>, BTreeSet<ExprId>) {
+        let mut symbols = BTreeSet::from([component]);
+        let mut expressions = BTreeSet::new();
+        loop {
+            let before = (symbols.len(), expressions.len());
+            for block in &self.hir.blocks {
+                for effect in &block.effects {
+                    match effect {
+                        Effect::ComponentInstantiation { target, value, .. } => {
+                            if target.root == component {
+                                expressions.insert(*value);
+                            }
+                            if expressions.contains(value)
+                                || Self::path_depends_on_invalid(target, &symbols, &expressions)
+                            {
+                                symbols.insert(target.root);
+                            }
+                        }
+                        Effect::VariableAssignment { target, value, .. }
+                        | Effect::WitnessAssignment { target, value, .. }
+                        | Effect::ConstraintAssignment { target, value, .. }
+                        | Effect::OpaqueAssignment { target, value, .. } => {
+                            if expressions.contains(value)
+                                || Self::path_depends_on_invalid(target, &symbols, &expressions)
+                            {
+                                symbols.insert(target.root);
+                            }
+                        }
+                        Effect::Update { target, .. } => {
+                            if Self::path_depends_on_invalid(target, &symbols, &expressions) {
+                                symbols.insert(target.root);
+                            }
+                        }
+                        Effect::Declaration { .. }
+                        | Effect::EqualityConstraint { .. }
+                        | Effect::OpaqueEquality { .. }
+                        | Effect::If { .. }
+                        | Effect::While { .. }
+                        | Effect::For { .. }
+                        | Effect::Return { .. }
+                        | Effect::Assert { .. }
+                        | Effect::Log { .. }
+                        | Effect::AnonymousComponent { .. }
+                        | Effect::Block(_)
+                        | Effect::Opaque { .. } => {}
+                    }
+                }
+            }
+            for expression in &self.hir.expressions {
+                if Self::expression_depends_on_invalid(&expression.kind, &symbols, &expressions) {
+                    expressions.insert(expression.id);
+                }
+            }
+            if before == (symbols.len(), expressions.len()) {
+                return (symbols, expressions);
+            }
+        }
+    }
+
     fn invalidate_component_evidence(&mut self, symbol: SymbolId) {
-        let reason = IncompleteReason::InvalidAssignment;
-        let mut call_values = Vec::new();
+        let (symbols, expressions) = self.invalid_component_dependencies(symbol);
+        self.invalid_symbols.extend(symbols.iter().copied());
+        for id in &expressions {
+            self.hir.expressions[id.index].kind =
+                ExprKind::Opaque(IncompleteReason::InvalidAssignment);
+            self.expression_types[id.index] = ValueType::Unknown;
+        }
         for block in &mut self.hir.blocks {
             for effect in &mut block.effects {
-                let Effect::ComponentInstantiation { target, value, span } = effect else {
-                    continue;
-                };
-                if target.root != symbol {
-                    continue;
+                if let Some(opaque) = Self::opaque_invalid_effect(effect, &symbols, &expressions) {
+                    *effect = opaque;
                 }
-                call_values.push(*value);
-                *effect = Effect::OpaqueAssignment {
+            }
+        }
+    }
+
+    fn opaque_invalid_effect(
+        effect: &Effect,
+        symbols: &BTreeSet<SymbolId>,
+        expressions: &BTreeSet<ExprId>,
+    ) -> Option<Effect> {
+        let reason = IncompleteReason::InvalidAssignment;
+        match effect {
+            Effect::VariableAssignment { target, value, span }
+            | Effect::ComponentInstantiation { target, value, span }
+            | Effect::WitnessAssignment { target, value, span }
+            | Effect::ConstraintAssignment { target, value, span } => {
+                if !Self::path_depends_on_invalid(target, symbols, expressions)
+                    && !expressions.contains(value)
+                {
+                    return None;
+                }
+                let operator = match effect {
+                    Effect::WitnessAssignment { .. } => AssignmentOperator::Witness,
+                    Effect::ConstraintAssignment { .. } => AssignmentOperator::Constraint,
+                    Effect::VariableAssignment { .. } | Effect::ComponentInstantiation { .. } => {
+                        AssignmentOperator::Assign
+                    }
+                    Effect::Declaration { .. }
+                    | Effect::OpaqueAssignment { .. }
+                    | Effect::EqualityConstraint { .. }
+                    | Effect::OpaqueEquality { .. }
+                    | Effect::Update { .. }
+                    | Effect::If { .. }
+                    | Effect::While { .. }
+                    | Effect::For { .. }
+                    | Effect::Return { .. }
+                    | Effect::Assert { .. }
+                    | Effect::Log { .. }
+                    | Effect::AnonymousComponent { .. }
+                    | Effect::Block(_)
+                    | Effect::Opaque { .. } => return None,
+                };
+                Some(Effect::OpaqueAssignment {
                     target: target.clone(),
                     value: *value,
-                    operator: AssignmentOperator::Assign,
-                    reason: reason.clone(),
+                    operator,
+                    reason,
                     span: *span,
-                };
+                })
             }
-        }
-        for value in call_values {
-            let inner = match self.hir.expressions[value.index].kind {
-                ExprKind::Parallel(inner) => Some(inner),
-                _ => None,
-            };
-            if let Some(inner) = inner {
-                self.hir.expressions[inner.index].kind = ExprKind::Opaque(reason.clone());
-                self.expression_types[inner.index] = ValueType::Unknown;
+            Effect::EqualityConstraint { left, right, span } => {
+                if expressions.contains(left) || expressions.contains(right) {
+                    Some(Effect::OpaqueEquality { left: *left, right: *right, reason, span: *span })
+                } else {
+                    None
+                }
             }
-            self.hir.expressions[value.index].kind = ExprKind::Opaque(reason.clone());
-            self.expression_types[value.index] = ValueType::Unknown;
-        }
-        for (index, expression) in self.hir.expressions.iter_mut().enumerate() {
-            let ExprKind::Access(path) = &expression.kind else { continue };
-            if path.root == symbol {
-                expression.kind = ExprKind::Opaque(reason.clone());
-                self.expression_types[index] = ValueType::Unknown;
+            Effect::Update { target, span, .. } => {
+                Self::path_depends_on_invalid(target, symbols, expressions)
+                    .then_some(Effect::Opaque { reason, span: *span })
             }
+            Effect::If { condition, span, .. }
+            | Effect::While { condition, span, .. }
+            | Effect::For { condition, span, .. }
+            | Effect::Assert { condition, span } => {
+                expressions.contains(condition).then_some(Effect::Opaque { reason, span: *span })
+            }
+            Effect::Return { value, span }
+            | Effect::AnonymousComponent { expression: value, span } => {
+                expressions.contains(value).then_some(Effect::Opaque { reason, span: *span })
+            }
+            Effect::Log { values, span } => values
+                .iter()
+                .any(|id| expressions.contains(id))
+                .then_some(Effect::Opaque { reason, span: *span }),
+            Effect::Declaration { .. }
+            | Effect::OpaqueAssignment { .. }
+            | Effect::OpaqueEquality { .. }
+            | Effect::Block(_)
+            | Effect::Opaque { .. } => None,
         }
     }
 
