@@ -16,6 +16,10 @@ impl Lifter<'_> {
             );
             return None;
         };
+        if self.invalid_symbols.contains(&root) {
+            self.incomplete(*span, IncompleteReason::InvalidAssignment);
+            return None;
+        }
         if !self.hir.symbols[root.index].shape_checked {
             self.incomplete(*span, IncompleteReason::UnknownType);
             return None;
