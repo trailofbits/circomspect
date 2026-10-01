@@ -646,6 +646,31 @@ fn component_array_rejects_mixed_template_targets() {
         result.hir.symbol(path.root).is_some_and(|symbol| symbol.name == "c")
             && path.component_output
     }));
+    assert!(!result
+        .hir
+        .expressions()
+        .iter()
+        .any(|expression| { matches!(expression.call_target(), Some(CallTarget::Template(_))) }));
+}
+
+#[test]
+fn later_mixed_component_target_invalidates_earlier_call_and_port_read() {
+    let source = concat!(
+        "template A(){signal output out;} template B(){signal output out;} ",
+        "template Check(){component c[2]; c[0]=A(); signal x; x <== c[0].out; ",
+        "c[1]=B();}"
+    );
+    let result = lower(&[("late_mixed.circom", source)], Version::new(2, 2, 3));
+    assert!(result.diagnostics.iter().any(|item| item.code == SemanticCode::InvalidAssignment));
+    assert!(!result
+        .hir
+        .expressions()
+        .iter()
+        .any(|expression| { matches!(expression.call_target(), Some(CallTarget::Template(_))) }));
+    assert!(!result.hir.expressions().iter().any(|expression| {
+        let ExprKind::Access(path) = &expression.kind else { return false };
+        result.hir.symbol(path.root).is_some_and(|symbol| symbol.name == "c")
+    }));
 }
 
 #[test]
@@ -686,6 +711,11 @@ fn component_branches_reject_different_template_targets() {
         result.hir.symbol(path.root).is_some_and(|symbol| symbol.name == "c")
             && path.component_output
     }));
+    assert!(!result
+        .hir
+        .expressions()
+        .iter()
+        .any(|expression| { matches!(expression.call_target(), Some(CallTarget::Template(_))) }));
 }
 
 #[test]
