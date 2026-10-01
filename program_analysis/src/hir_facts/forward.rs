@@ -5,7 +5,7 @@ use abstract_interpretation::graph::NodeId;
 use abstract_interpretation::lattice::Lattice;
 use abstract_interpretation::solver::{DataflowAnalysis, Transfer, TransferOutcome};
 use parser::hir::{AccessPath, CallTarget, ExprId, ExprKind, HirProject, SymbolId, SymbolKind};
-use parser::new_frontend::{BinaryOperator, PostfixOperator, UnaryOperator};
+use parser::new_frontend::{AssignmentOperator, BinaryOperator, PostfixOperator, UnaryOperator};
 
 use crate::hir_cfg::{CfgEdge, CfgNode, CfgNodeKind, DefinitionCfg, EdgeKind};
 
@@ -649,7 +649,16 @@ impl Transfer<ForwardAnalysis<'_>, ForwardState, String> for CfgNode {
                     };
                 }
             }
-            CfgNodeKind::Assignment { target, value } => {
+            CfgNodeKind::Assignment { target, value, operator } => {
+                if *operator != AssignmentOperator::Assign {
+                    variables.remove(&target.root);
+                    dependencies.remove(&target.root);
+                    degrees.remove(&target.root);
+                    return TransferOutcome::Opaque {
+                        provisional: output,
+                        reason: format!("unsupported compound assignment {operator:?}"),
+                    };
+                }
                 if analysis
                     .hir
                     .symbol(target.root)
@@ -660,7 +669,16 @@ impl Transfer<ForwardAnalysis<'_>, ForwardState, String> for CfgNode {
                     assign_value(analysis, target, *value, variables);
                 }
             }
-            CfgNodeKind::DeferredAssignment { target, value } => {
+            CfgNodeKind::DeferredAssignment { target, value, operator } => {
+                if *operator != AssignmentOperator::Assign {
+                    variables.remove(&target.root);
+                    dependencies.remove(&target.root);
+                    degrees.remove(&target.root);
+                    return TransferOutcome::Opaque {
+                        provisional: output,
+                        reason: format!("unsupported compound assignment {operator:?}"),
+                    };
+                }
                 let scalar = target.steps.is_empty()
                     && analysis
                         .hir
@@ -926,6 +944,47 @@ mod tests {
             node.apply(&analysis, &ForwardState::boundary()),
             TransferOutcome::Opaque { .. }
         ));
+    }
+
+    #[test]
+    fn unsupported_compound_write_drops_old_scalar_facts_monotonically() {
+        let directory = std::env::temp_dir()
+            .join(format!("circomspect-phase5-compound-transfer-{}", std::process::id()));
+        fs::create_dir_all(&directory).unwrap();
+        let source = directory.join("case.circom");
+        fs::write(&source, "function F(){var x=1;x+=1;return x;}").unwrap();
+        let loaded =
+            load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
+        let hir = lift_project(&loaded).hir;
+        let cfg = crate::hir_cfg::build_cfg(&hir, hir.definition("F").unwrap()).unwrap();
+        let node = cfg
+            .nodes()
+            .iter()
+            .filter_map(|id| cfg.node(*id))
+            .find(|node| {
+                let CfgNodeKind::Assignment { operator, .. } = node.kind else { return false };
+                operator == AssignmentOperator::Add
+            })
+            .unwrap();
+        let field = FieldContext::for_curve(Curve::Bn254);
+        let x = hir.symbols().iter().find(|symbol| symbol.name == "x").unwrap().id;
+        let precise =
+            ForwardState::with_scalar_parameters(&BTreeMap::from([(x, field.canonical(1.into()))]));
+        let broad = ForwardState::boundary();
+        assert!(precise.leq(&broad));
+        let analysis = ForwardAnalysis::new(&hir, &field);
+        let TransferOutcome::Opaque { provisional: left, .. } = node.apply(&analysis, &precise)
+        else {
+            panic!("compound transfer must be opaque")
+        };
+        let TransferOutcome::Opaque { provisional: right, .. } = node.apply(&analysis, &broad)
+        else {
+            panic!("compound transfer must be opaque")
+        };
+        assert!(left.leq(&right));
+        assert!(!left.variables().unwrap().contains_key(&x));
+        assert!(!left.dependencies().unwrap().contains_key(&x));
+        assert!(!left.degrees().unwrap().contains_key(&x));
     }
 
     #[test]

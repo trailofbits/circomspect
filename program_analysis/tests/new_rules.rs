@@ -143,7 +143,7 @@ fn function_summaries_are_bound_to_the_active_definition() {
     let context = RuleContext::new(&facts, &summaries, &evidence).unwrap();
     let field = FieldContext::for_curve(Curve::Bn254);
     assert_eq!(
-        context.function_summary().unwrap().certified().unwrap().returns(),
+        context.function_summary().unwrap().certified().unwrap().complete_return().unwrap(),
         &Range::Exact(field.canonical(1.into()))
     );
     assert!(context.function_effects().unwrap().certified().is_some());
