@@ -4,8 +4,8 @@ use parser::new_frontend::Span;
 use crate::hir_facts::{AccessHandle, AnalysisFacts};
 use crate::interprocedural::{
     AppliedComponentPort, CallBlocker, CallContext, CallOwner, CallReachability, CallSite,
-    CallSiteId, ContextEvidence, FunctionEffects, FunctionSummary, PortSummary, ProjectSummaries,
-    SummaryBlocker, SummaryFact, WitnessSite,
+    CallSiteId, ComposedConstraintFixedOutput, ContextEvidence, FunctionEffects, FunctionSummary,
+    PortSummary, ProjectSummaries, SummaryBlocker, SummaryFact, WitnessSite,
 };
 
 use crate::new_rules::{Finding, RuleKind};
@@ -105,6 +105,20 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
             CallReachability::Unreachable => Ok(None),
             CallReachability::Unavailable(blocker) => Err(blocker),
         }
+    }
+
+    /// Prove a caller-side fixed output from a child equality and checked input binding.
+    ///
+    /// The applied port must belong to this exact source scope. The result proves a
+    /// constraint relation; it does not by itself prove an output witness write.
+    pub fn composed_constraint_fixed_output(
+        &self,
+        applied: &AppliedComponentPort,
+    ) -> Result<SummaryFact<ComposedConstraintFixedOutput>, SummaryBlocker> {
+        if applied.caller_evidence() != self.evidence {
+            return Err(SummaryBlocker::WrongContext);
+        }
+        Ok(self.summaries.composed_constraint_fixed_output(self.facts, applied))
     }
 
     /// Return a summary only for the active function specialization.

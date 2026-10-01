@@ -95,7 +95,7 @@ fn concrete_rule_context_rejects_unbound_and_wrong_seed_facts() {
         else {
             panic!("checked child call")
         };
-        child_evidence.push(summaries.call_evidence(&call, &parent_facts).unwrap());
+        child_evidence.push(summaries.call_evidence(&call, &parent_facts, &root).unwrap());
     }
     assert_eq!(child_evidence.len(), 2);
     assert_ne!(child_evidence[0].context(), child_evidence[1].context());
@@ -234,6 +234,60 @@ fn unreachable_component_call_has_no_applied_port_fact() {
         )
         .unwrap();
     assert!(context.applied_component_port(sites[0].id(), &handle).unwrap().is_none());
+}
+
+#[test]
+fn composed_output_constraint_requires_the_active_caller_scope() {
+    let loaded = load_fixture(
+        "composed-output-scope",
+        concat!(
+            "template Child(){signal input in;signal output out;out<==in;} ",
+            "template Parent(){component c=Child();c.in<==7;} ",
+            "template Other(){component c=Child();c.in<--8;}"
+        ),
+    );
+    let lifted = lift_project(&loaded);
+    let parent = lifted.hir.definition("Parent").unwrap();
+    let other = lifted.hir.definition("Other").unwrap();
+    let parser::hir::DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap()
+    else {
+        panic!("Child is a template")
+    };
+    let output = lifted.hir.template(child).unwrap().ports[1];
+    let summaries = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let parent_evidence = summaries.symbolic_root(parent).unwrap();
+    let parent_cfg = build_cfg(&lifted.hir, parent).unwrap();
+    let parent_facts = summaries.analyze_for_evidence(&parent_cfg, &parent_evidence, None).unwrap();
+    let parent_context = RuleContext::new(&parent_facts, &summaries, &parent_evidence).unwrap();
+    let handle = parent_context
+        .facts()
+        .component_output_handle(lifted.hir.components()[0].id, &[], output, &[])
+        .unwrap();
+    let site = parent_context.call_sites()[0].id();
+    let applied = parent_context.applied_component_port(site, &handle).unwrap().unwrap();
+    let applied = applied.certified().unwrap();
+    let composed = parent_context.composed_constraint_fixed_output(applied).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    assert_eq!(composed.certified().unwrap().value(), &field.canonical(7.into()));
+
+    let other_evidence = summaries.symbolic_root(other).unwrap();
+    let other_cfg = build_cfg(&lifted.hir, other).unwrap();
+    let other_facts = summaries.analyze_for_evidence(&other_cfg, &other_evidence, None).unwrap();
+    let other_context = RuleContext::new(&other_facts, &summaries, &other_evidence).unwrap();
+    assert_eq!(
+        other_context.composed_constraint_fixed_output(applied).err(),
+        Some(SummaryBlocker::WrongContext)
+    );
+    let other_handle = other_context
+        .facts()
+        .component_output_handle(lifted.hir.components()[1].id, &[], output, &[])
+        .unwrap();
+    let other_site = other_context.call_sites()[0].id();
+    let other_applied =
+        other_context.applied_component_port(other_site, &other_handle).unwrap().unwrap();
+    let other_composed =
+        other_context.composed_constraint_fixed_output(other_applied.certified().unwrap()).unwrap();
+    assert!(other_composed.unavailable().is_some());
 }
 
 #[test]
