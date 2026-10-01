@@ -1,10 +1,14 @@
 //! Output-use proofs scoped to a validated, closed `main` root.
 
-use parser::hir::{AccessStep, ArrayIndex, DefinitionRef, PortSchema};
+use std::collections::BTreeSet;
+
+use abstract_interpretation::graph::FlowGraph;
+use parser::hir::{AccessStep, ArrayIndex, CallTarget, DefinitionRef, ExprId, ExprKind, PortSchema};
 use parser::new_frontend::PortDirection;
 
-use crate::hir_cfg::Origin;
+use crate::hir_cfg::{CfgNodeKind, Origin};
 use crate::hir_facts::{AccessHandle, AnalysisFacts};
+use crate::interprocedural::input_relation::ready_instance_at_use;
 
 use super::component::LocalOutputUse;
 use super::summary::certified;
@@ -65,7 +69,11 @@ impl ProjectOutputUse {
 }
 
 impl ProjectSummaries<'_> {
-    /// Prove use or non-use of an exact, no-input direct child of validated main.
+    /// Prove use or non-use of an exact direct child of validated main.
+    ///
+    /// An input-bearing child requires a scalar component and certified scalar
+    /// bindings. It is the only reachable component instance in this bounded
+    /// project closure.
     pub fn closed_main_component_output_use(
         &self,
         facts: &AnalysisFacts<'_>,
@@ -86,12 +94,24 @@ impl ProjectSummaries<'_> {
             return Err(SummaryBlocker::WrongInstance);
         };
         let template = self.hir().template(child).ok_or(SummaryBlocker::ForeignDefinition)?;
+        let mut has_inputs = false;
         for id in &template.ports {
             let port = self.hir().port(*id).ok_or(SummaryBlocker::ForeignDefinition)?;
             if port.direction == Some(PortDirection::Input) {
-                return Err(SummaryBlocker::UnsupportedContext);
+                has_inputs = true;
             }
         }
+        self.check_parent_components_complete(facts)?;
+        self.check_direct_siblings(facts, applied, has_inputs)?;
+        if has_inputs {
+            let root = applied.handle().path().root;
+            let component = self.hir().symbol(root).ok_or(SummaryBlocker::ForeignDefinition)?;
+            if component.rank != 0 {
+                return Err(SummaryBlocker::UnsupportedContext);
+            }
+            ready_instance_at_use(facts, applied, child)?;
+        }
+        self.check_child_has_no_components(child, applied)?;
         let use_state = self.local_output_use_result(facts, applied)?;
         let use_state = match use_state {
             LocalOutputUse::Read(sites) => LocalOutputUse::Read(sites),
@@ -106,6 +126,148 @@ impl ProjectSummaries<'_> {
             target: OutputTarget::Component(Box::new(applied.clone())),
             status,
             source_reads,
+        })
+    }
+
+    fn check_parent_components_complete(
+        &self,
+        facts: &AnalysisFacts<'_>,
+    ) -> Result<(), SummaryBlocker> {
+        for component in self.hir().components() {
+            if !facts.cfg().owns_symbol(component.symbol) {
+                continue;
+            }
+            self.check_component_complete(facts, component)?;
+        }
+        Ok(())
+    }
+
+    fn check_component_complete(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        component: &parser::hir::Component,
+    ) -> Result<(), SummaryBlocker> {
+        let bounds =
+            facts.component_bounds(component.id).map_err(|_| SummaryBlocker::UnsupportedContext)?;
+        let expected = match bounds.as_slice() {
+            [] => 1,
+            [bound] => *bound,
+            [_, _, ..] => return Err(SummaryBlocker::UnsupportedContext),
+        };
+        let mut instantiated = BTreeSet::new();
+        for id in facts.cfg().nodes() {
+            let Some(CfgNodeKind::Instantiate { target, .. }) =
+                facts.cfg().node(*id).map(|node| &node.kind)
+            else {
+                continue;
+            };
+            if target.root != component.symbol || !*certified(&facts.reachable_node(*id))? {
+                continue;
+            }
+            if !*certified(&facts.must_execute(*id))? {
+                return Err(SummaryBlocker::UnsupportedContext);
+            }
+            let index = Self::exact_instance_index(&target.steps, bounds.as_slice())?;
+            if !instantiated.insert(index) {
+                return Err(SummaryBlocker::UnsupportedContext);
+            }
+        }
+        if instantiated.len() != expected {
+            return Err(SummaryBlocker::UnsupportedContext);
+        }
+        Ok(())
+    }
+
+    fn exact_instance_index(
+        steps: &[AccessStep],
+        bounds: &[usize],
+    ) -> Result<usize, SummaryBlocker> {
+        match (steps, bounds) {
+            ([], []) => Ok(0),
+            ([AccessStep::Index { index: ArrayIndex::Constant(index), .. }], [bound]) => {
+                let index = index.parse().map_err(|_| SummaryBlocker::UnsupportedContext)?;
+                if index < *bound {
+                    Ok(index)
+                } else {
+                    Err(SummaryBlocker::UnsupportedContext)
+                }
+            }
+            _ => Err(SummaryBlocker::UnsupportedContext),
+        }
+    }
+
+    fn check_direct_siblings(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        applied: &AppliedComponentPort,
+        has_inputs: bool,
+    ) -> Result<(), SummaryBlocker> {
+        for id in facts.cfg().nodes() {
+            if *id == applied.instantiation() {
+                continue;
+            }
+            let Some(CfgNodeKind::Instantiate { value, .. }) =
+                facts.cfg().node(*id).map(|node| &node.kind)
+            else {
+                continue;
+            };
+            if !*certified(&facts.reachable_node(*id))? {
+                continue;
+            }
+            if has_inputs {
+                return Err(SummaryBlocker::UnsupportedContext);
+            }
+            self.check_no_input_sibling(*value)?;
+        }
+        Ok(())
+    }
+
+    fn check_no_input_sibling(&self, value: ExprId) -> Result<(), SummaryBlocker> {
+        let expression = self.hir().expression(value).ok_or(SummaryBlocker::ExternalSummary)?;
+        let Some(CallTarget::Template(template)) = expression.call_target() else {
+            return Err(SummaryBlocker::ExternalSummary);
+        };
+        let template = self.hir().template(*template).ok_or(SummaryBlocker::ForeignDefinition)?;
+        for port in &template.ports {
+            let port = self.hir().port(*port).ok_or(SummaryBlocker::ForeignDefinition)?;
+            if port.direction == Some(PortDirection::Input) {
+                return Err(SummaryBlocker::UnsupportedContext);
+            }
+        }
+        for site in
+            self.graph().calls_from(CallOwner::Definition(DefinitionRef::Template(template.id)))
+        {
+            if let Some(DefinitionRef::Function(_)) = site.resolved() {
+                continue;
+            }
+            return Err(SummaryBlocker::UnsupportedContext);
+        }
+        Ok(())
+    }
+
+    fn check_child_has_no_components(
+        &self,
+        child: parser::hir::TemplateId,
+        applied: &AppliedComponentPort,
+    ) -> Result<(), SummaryBlocker> {
+        self.with_local_template(child, applied.callee_evidence().context(), |_, cfg, facts| {
+            for id in cfg.nodes() {
+                let node = cfg.node(*id).ok_or(SummaryBlocker::ExternalSummary)?;
+                let mut nested = false;
+                if let CfgNodeKind::Instantiate { .. } = &node.kind {
+                    nested = true;
+                }
+                if let CfgNodeKind::Evaluate(id) = &node.kind {
+                    let expr = self.hir().expression(*id).ok_or(SummaryBlocker::ExternalSummary)?;
+                    if let ExprKind::AnonymousComponent { .. } = &expr.kind {
+                        nested = true;
+                    }
+                }
+                if nested && *certified(&facts.reachable_node(*id))? {
+                    return Err(SummaryBlocker::UnsupportedContext);
+                }
+            }
+            Ok(())
         })
     }
 

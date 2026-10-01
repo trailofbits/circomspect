@@ -245,6 +245,26 @@ impl AnalysisFacts<'_> {
         })
     }
 
+    pub(crate) fn component_bounds(
+        &self,
+        component: ComponentId,
+    ) -> Result<Vec<usize>, AccessHandleError> {
+        let component = self.hir.component(component).ok_or(AccessHandleError::ForeignComponent)?;
+        if !self.cfg.owns_symbol(component.symbol) {
+            return Err(AccessHandleError::ForeignComponent);
+        }
+        let symbol =
+            self.hir.symbol(component.symbol).ok_or(AccessHandleError::ForeignComponent)?;
+        if !symbol.shape_checked || symbol.dimensions.len() != symbol.rank {
+            return Err(AccessHandleError::UnprovedShape);
+        }
+        let mut bounds = Vec::with_capacity(symbol.rank);
+        for dimension in &symbol.dimensions {
+            bounds.push(self.dimension_bound(*dimension)?);
+        }
+        Ok(bounds)
+    }
+
     fn checked_indices(
         &self,
         symbol: &Symbol,

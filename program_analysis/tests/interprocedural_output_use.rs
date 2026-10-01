@@ -62,9 +62,16 @@ fn internal_use_at(
             lifted.hir.port(*id).is_some_and(|port| port.direction == Some(PortDirection::Output))
         })
         .unwrap();
-    let component = lifted.hir.components()[0].id;
-    let handle =
-        facts.component_output_handle(component, &[index], output, output_indices).unwrap();
+    let component = lifted
+        .hir
+        .components()
+        .iter()
+        .find(|item| lifted.hir.symbol(item.symbol).is_some_and(|symbol| symbol.name == "c"))
+        .unwrap();
+    let symbol = lifted.hir.symbol(component.symbol).unwrap();
+    let indices = if symbol.rank == 0 { Vec::new() } else { vec![index] };
+    let handle = facts.component_output_handle(component.id, &indices, output, output_indices);
+    let handle = handle.unwrap();
     let site = provider.graph().calls_from(CallOwner::Definition(parent))[index];
     let CallReachability::Reachable(call) = provider.graph().reachable_call(site.id(), &facts)
     else {
@@ -187,16 +194,227 @@ fn symbolic_facts_cannot_borrow_a_concrete_main_output_use_proof() {
 }
 
 #[test]
-fn an_input_bearing_child_needs_a_full_ready_instance_proof() {
-    let result = internal_use(
+fn fully_bound_scalar_child_outputs_have_closed_project_use() {
+    let unused = internal_use(
         concat!(
             "template Child(){signal input in;signal output out;out<==in;} ",
-            "template Parent(){component c[2];c[0]=Child();c[1]=Child();",
-            "c[0].in<==1;c[1].in<==2;} component main=Parent();"
+            "template Parent(){component c=Child();",
+            "c.in<==2;} component main=Parent();"
         ),
-        1,
+        0,
     );
-    assert!(result.certified().is_none());
+    assert_eq!(unused.certified().map(ProjectOutputUse::status), Some(ProjectOutputStatus::Unused));
+    let read = internal_use(
+        concat!(
+            "template Child(){signal input in;signal output out;out<==in;} ",
+            "template Parent(){component c=Child();",
+            "c.in<==2;signal output y;y<==c.out;} ",
+            "component main=Parent();"
+        ),
+        0,
+    );
+    assert_eq!(read.certified().map(ProjectOutputUse::status), Some(ProjectOutputStatus::Read));
+    assert_eq!(read.certified().map(|proof| proof.source_reads().len()), Some(1));
+}
+
+#[test]
+fn missing_or_partial_scalar_input_cannot_prove_output_use() {
+    for child_and_bindings in
+        [("signal input in;", ""), ("signal input a;signal input b;", "c.a<==1;")]
+    {
+        let (ports, bindings) = child_and_bindings;
+        let source = format!(
+            "template Child(){{{ports}signal output out;out<==1;}} \
+             template Parent(){{component c=Child();{bindings}}} \
+             component main=Parent();"
+        );
+        assert!(internal_use(&source, 0)
+            .unavailable()
+            .is_some_and(|reasons| reasons.contains(&SummaryBlocker::MissingInputBinding)));
+    }
+}
+
+#[test]
+fn competing_input_writes_and_early_output_reads_abstain() {
+    for body in [
+        "if(1<<1){c.in<==1;}else{c.in<==2;}",
+        "c.in<==1;c.in<==1;",
+        "var t=Missing();c.in<==1;",
+        "signal output y;y<==c.out;c.in<==1;",
+    ] {
+        let source = format!(
+            "template Child(){{signal input in;signal output out;out<==in;}} \
+             template Parent(){{component c=Child();{body}}} \
+             component main=Parent();"
+        );
+        assert!(internal_use(&source, 0).certified().is_none());
+    }
+}
+
+#[test]
+fn symbolic_or_aggregate_child_inputs_cannot_close_an_unused_claim() {
+    let symbolic = concat!(
+        "template Child(){signal input in;signal output out;out<==in;} ",
+        "template Parent(k){component c[2];c[0]=Child();c[1]=Child();",
+        "c[0].in<==2;c[k].in<==3;} component main=Parent(0);"
+    );
+    let lifted = fixture(symbolic);
+    assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
+    assert!(internal_use(symbolic, 0).certified().is_none());
+    let array = concat!(
+        "template Child(){signal input in[2];signal output out;out<==in[0];} ",
+        "template Parent(){component c=Child();",
+        "c.in[0]<==1;c.in[1]<==2;} component main=Parent();"
+    );
+    assert!(internal_use(array, 0)
+        .unavailable()
+        .is_some_and(|reasons| reasons.contains(&SummaryBlocker::UnsupportedContext)));
+    let bus = concat!(
+        "bus B(){signal x;} ",
+        "template Child(){B input in;signal output out;out<==in.x;} ",
+        "template Parent(){component c=Child();",
+        "c.in.x<==1;} component main=Parent();"
+    );
+    assert!(internal_use(bus, 0)
+        .unavailable()
+        .is_some_and(|reasons| reasons.contains(&SummaryBlocker::UnsupportedContext)));
+}
+
+#[test]
+fn incomplete_project_blocks_a_bound_child_unused_claim() {
+    let source = concat!(
+        "template Child(){signal input in;signal output out;out<==in;} ",
+        "template Parent(){component c=Child();c.in<==1;} ",
+        "template Broken(){Missing();} component main=Parent();"
+    );
+    assert!(internal_use(source, 0)
+        .unavailable()
+        .is_some_and(|reasons| reasons.contains(&SummaryBlocker::ExternalSummary)));
+}
+
+#[test]
+fn an_exhausted_scalar_input_analysis_cannot_claim_unused() {
+    let source = concat!(
+        "template Child(){signal input in;signal output out;out<==in;} ",
+        "template Parent(){component c=Child();c.in<==1;} component main=Parent();"
+    );
+    assert!(internal_use_at(source, 0, &[], Some(0)).certified().is_none());
+}
+
+#[test]
+fn unproved_sibling_inputs_block_project_wide_unused_claims() {
+    for bindings in ["c[1].in<==2;", "c[0].in<==1;c[1].in<==2;"] {
+        let same_child = format!(
+            "template Child(){{signal input in;signal output out;out<==in;}} \
+             template Parent(){{component c[2];c[0]=Child();c[1]=Child();{bindings}}} \
+             component main=Parent();"
+        );
+        assert!(internal_use(&same_child, 1)
+            .unavailable()
+            .is_some_and(|reasons| reasons.contains(&SummaryBlocker::UnsupportedContext)));
+    }
+    let other_child = concat!(
+        "template Child(){signal output out;out<==1;} ",
+        "template Needs(){signal input in;signal output out;out<==in;} ",
+        "template Parent(){component c[1];c[0]=Child();component d=Needs();} ",
+        "component main=Parent();"
+    );
+    assert!(internal_use(other_child, 0)
+        .unavailable()
+        .is_some_and(|reasons| reasons.contains(&SummaryBlocker::UnsupportedContext)));
+    let nested_sibling = concat!(
+        "template Child(){signal output out;out<==1;} ",
+        "template Needs(){signal input in;signal output out;out<==in;} ",
+        "template Wrapper(){signal output out;out<==1;component d=Needs();} ",
+        "template Parent(){component c[1];c[0]=Child();component w=Wrapper();} ",
+        "component main=Parent();"
+    );
+    assert!(internal_use(nested_sibling, 0).certified().is_none());
+}
+
+#[test]
+fn an_uninstantiated_component_array_element_blocks_the_input_bearing_claim() {
+    let source = concat!(
+        "template Child(){signal input in;signal output out;out<==in;} ",
+        "template Parent(){component c[2];c[0]=Child();c[0].in<==1;} ",
+        "component main=Parent();"
+    );
+    assert!(internal_use(source, 0).certified().is_none());
+}
+
+#[test]
+fn an_uninstantiated_no_input_array_element_blocks_project_unused() {
+    let source = concat!(
+        "template Child(){signal output out;out<==1;} ",
+        "template Parent(){component c[2];c[0]=Child();} ",
+        "component main=Parent();"
+    );
+    assert!(internal_use(source, 0).certified().is_none());
+}
+
+#[test]
+fn a_reachable_assertion_failure_blocks_project_unused() {
+    let source = concat!(
+        "function Fail(){assert(0);return 1;} ",
+        "template Child(){signal output out;out<==1;} ",
+        "template Parent(){component c=Child();var t=Fail();} ",
+        "component main=Parent();"
+    );
+    assert!(internal_use(source, 0).certified().is_none());
+}
+
+#[test]
+fn an_indirect_child_of_main_cannot_borrow_the_direct_main_claim() {
+    let lifted = fixture(concat!(
+        "template Child(){signal input in;signal output out;out<==in;} ",
+        "template Parent(){component c=Child();c.in<==1;} ",
+        "template Grand(){component p=Parent();} component main=Grand();"
+    ));
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let parent = lifted.hir.definition("Parent").unwrap();
+    let DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap() else {
+        panic!("Child must be a template")
+    };
+    let cfg = build_cfg(&lifted.hir, parent).unwrap();
+    let root = provider.symbolic_root(parent).unwrap();
+    let facts = provider.analyze_for_evidence(&cfg, &root, None).unwrap();
+    let output = lifted.hir.template(child).unwrap().ports[1];
+    let handle =
+        facts.component_output_handle(lifted.hir.components()[0].id, &[], output, &[]).unwrap();
+    let site = provider.graph().calls_from(CallOwner::Definition(parent))[0];
+    let CallReachability::Reachable(call) = provider.graph().reachable_call(site.id(), &facts)
+    else {
+        panic!("child must be reachable")
+    };
+    let applied = provider.apply_component_output(&facts, &root, &call, &handle);
+    let applied = applied.certified().unwrap();
+    assert!(provider.closed_main_component_output_use(&facts, applied).certified().is_none());
+}
+
+#[test]
+fn a_nested_child_component_keeps_project_use_unavailable() {
+    let source = concat!(
+        "template Nested(){signal input in;signal output out;out<==in;} ",
+        "template Child(){signal input in;signal output out;out<==in;",
+        "component d=Nested();} ",
+        "template Parent(){component c=Child();c.in<==1;} ",
+        "component main=Parent();"
+    );
+    assert!(internal_use(source, 0).certified().is_none());
+}
+
+#[test]
+fn an_anonymous_sibling_cannot_complete_the_direct_child_project_scope() {
+    let source = concat!(
+        "template Child(){signal output out;out<==1;} ",
+        "template Nested(){signal input in;signal output out;out<==in;} ",
+        "template Parent(){component c[1];c[0]=Child();",
+        "signal output y;y<==c[0].out;signal output z;z<==Nested()(in<==1);} ",
+        "component main=Parent();"
+    );
+    let lifted = fixture(source);
+    assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
+    assert!(internal_use(source, 0).certified().is_none());
 }
 
 #[test]
