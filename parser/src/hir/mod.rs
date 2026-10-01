@@ -15,6 +15,10 @@ pub use lower::lower_project;
 
 static NEXT_PROJECT: AtomicU64 = AtomicU64::new(1);
 
+/// Nonforgeable identity shared by all arena IDs in one lowered HIR project.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ProjectIdentity(u64);
+
 macro_rules! arena_id {
     ($name:ident) => {
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -592,10 +596,26 @@ pub struct HirProject {
     expressions: Vec<Expr>,
     blocks: Vec<Block>,
     definitions: BTreeMap<String, Vec<DefinitionRef>>,
-    pub mains: Vec<Main>,
+    mains: Vec<Main>,
 }
 
 impl HirProject {
+    #[must_use]
+    pub fn identity(&self) -> ProjectIdentity {
+        ProjectIdentity(self.key)
+    }
+
+    /// Read-only root instances of the lowered project.
+    ///
+    /// ```compile_fail
+    /// use circomspect_parser::hir::HirProject;
+    /// fn change(hir: &mut HirProject) { hir.mains.clear(); }
+    /// ```
+    #[must_use]
+    pub fn mains(&self) -> &[Main] {
+        &self.mains
+    }
+
     fn new() -> Self {
         Self {
             key: NEXT_PROJECT.fetch_add(1, Ordering::Relaxed),

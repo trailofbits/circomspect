@@ -3,7 +3,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use parser::hir::{
     AccessPath, AccessStep, AnonymousInputEffect, ArrayIndex, BlockId, CallTarget, ComponentId,
-    ControlGuard, DefinitionRef, Effect, ExprId, ExprKind, HirProject, IncompleteReason, SymbolId,
+    ControlGuard, DefinitionRef, Effect, ExprId, ExprKind, HirProject, IncompleteReason,
+    ProjectIdentity, SymbolId,
 };
 use parser::new_frontend::Span;
 
@@ -78,13 +79,8 @@ impl CallSite {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CallGraph {
     key: u64,
+    project: ProjectIdentity,
     sites: Vec<CallSite>,
-}
-
-impl Default for CallGraph {
-    fn default() -> Self {
-        Self { key: NEXT_GRAPH.fetch_add(1, Ordering::Relaxed), sites: Vec::new() }
-    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -147,6 +143,9 @@ impl CallGraph {
         id: CallSiteId,
         facts: &AnalysisFacts<'_>,
     ) -> CallReachability<'a> {
+        if self.project != facts.hir().identity() {
+            return CallReachability::Unavailable(CallBlocker::ForeignSite);
+        }
         let Some(site) = self.site(id) else {
             return CallReachability::Unavailable(CallBlocker::ForeignSite);
         };
@@ -199,13 +198,16 @@ impl CallGraph {
         id: CallSiteId,
         hir: &HirProject,
     ) -> CallReachability<'a> {
+        if self.project != hir.identity() {
+            return CallReachability::Unavailable(CallBlocker::ForeignSite);
+        }
         let Some(site) = self.site(id) else {
             return CallReachability::Unavailable(CallBlocker::ForeignSite);
         };
         let CallOwner::Main(index) = site.owner else {
             return CallReachability::Unavailable(CallBlocker::ForeignDefinition);
         };
-        let Some(main) = hir.mains.get(index) else {
+        let Some(main) = hir.mains().get(index) else {
             return CallReachability::Unavailable(CallBlocker::ForeignDefinition);
         };
         if site.expression.is_some() || site.target != main.target || site.span != main.span {
@@ -234,7 +236,11 @@ pub enum CallGraphError {
 /// # Errors
 /// Returns an error if an HIR reference is missing or belongs to another project.
 pub fn build_call_graph(hir: &HirProject) -> Result<CallGraph, CallGraphError> {
-    let mut graph = CallGraph::default();
+    let mut graph = CallGraph {
+        key: NEXT_GRAPH.fetch_add(1, Ordering::Relaxed),
+        project: hir.identity(),
+        sites: Vec::new(),
+    };
     for function in hir.functions() {
         let mut scanner = Scanner::new(
             hir,
@@ -259,7 +265,7 @@ pub fn build_call_graph(hir: &HirProject) -> Result<CallGraph, CallGraphError> {
         scanner.block(bus.body)?;
         scanner.unattached(bus.span)?;
     }
-    for (index, main) in hir.mains.iter().enumerate() {
+    for (index, main) in hir.mains().iter().enumerate() {
         let id = CallSiteId { index: graph.sites.len(), graph: graph.key };
         graph.sites.push(CallSite {
             id,

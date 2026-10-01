@@ -407,7 +407,7 @@ fn missing_targets_have_exact_order_level_and_name_spans() {
             })
             .collect();
     assert_eq!(diagnostic_fingerprint(&result), expected);
-    assert!(matches!(result.hir.mains[0].target, CallTarget::Missing { .. }));
+    assert!(matches!(result.hir.mains()[0].target, CallTarget::Missing { .. }));
 }
 
 #[test]
@@ -878,8 +878,8 @@ fn parallel_component_and_main_keep_modifier() {
         .expressions()
         .iter()
         .any(|item| { matches!(item.kind, ExprKind::Parallel(_)) }));
-    assert_eq!(result.hir.mains.len(), 1);
-    assert!(result.hir.mains[0].parallel);
+    assert_eq!(result.hir.mains().len(), 1);
+    assert!(result.hir.mains()[0].parallel);
 }
 
 #[test]

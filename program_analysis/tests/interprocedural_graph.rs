@@ -48,7 +48,7 @@ fn graph_finds_assignment_guard_nested_and_index_calls_without_main() {
     assert!(matches!(index_calls[0].target, CallTarget::Function(_)));
     assert_eq!(index_calls[0].provenance, CallProvenance::Unattached);
     assert!(index_calls[0].resolved().is_some());
-    assert!(hir.mains.is_empty());
+    assert!(hir.mains().is_empty());
 }
 
 #[test]
@@ -172,6 +172,19 @@ fn reachable_call_token_requires_a_checked_and_reachable_cfg_site() {
     let other_graph = build_call_graph(&hir).unwrap();
     assert!(matches!(
         other_graph.reachable_call(calls[1].id(), &facts),
+        CallReachability::Unavailable(_)
+    ));
+
+    let foreign = fixture(&[(
+        "reachability.circom",
+        "template Child(){} template Check(){if(0){component dead=Child();} \
+         component live=Child();}",
+    )]);
+    let foreign_graph = build_call_graph(&foreign).unwrap();
+    let foreign_call =
+        foreign_graph.calls_from(CallOwner::Definition(foreign.definition("Check").unwrap()))[1];
+    assert!(matches!(
+        foreign_graph.reachable_call(foreign_call.id(), &facts),
         CallReachability::Unavailable(_)
     ));
 }
