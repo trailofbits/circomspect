@@ -33,6 +33,7 @@ pub use access::{AccessKey, AccessKeyStep, IndexKey};
 pub use domains::{DegreeUpper as Degree, FieldRange as Range};
 pub use field::{FieldContext, FieldValue};
 pub use handles::{AccessHandle, AccessHandleError};
+pub(crate) use handles::InstanceRelation;
 
 pub(crate) fn exact_compile_time(
     hir: &HirProject,
@@ -240,6 +241,10 @@ fn forward_pruned_edges(
 }
 
 impl AnalysisFacts<'_> {
+    pub(crate) fn cfg(&self) -> &DefinitionCfg {
+        self.cfg
+    }
+
     pub(crate) fn resolved_deferred_assignment(&self, node: NodeId) -> bool {
         self.resolved_deferred.contains(&node)
     }
