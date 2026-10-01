@@ -241,6 +241,7 @@ pub fn lower_project(source: &LoadedProject) -> LoweredProject {
     });
     LoweredProject {
         hir: lowerer.hir,
+        version: source.policy.supported,
         diagnostics: lowerer.diagnostics,
         syntax_diagnostics: source.diagnostics.clone(),
         incomplete: lowerer.incomplete,

@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::new_frontend::{
     AssignmentOperator, BinaryOperator, DiagnosticLocation, InputAssignmentOperator, PortDirection,
-    PostfixOperator, Span, SyntaxDiagnostic, UnaryOperator,
+    PostfixOperator, Span, SyntaxDiagnostic, UnaryOperator, Version,
 };
 
 pub use lower::lower_project;
@@ -579,6 +579,7 @@ impl From<&DiagnosticLocation> for IncompleteLocation {
 #[derive(Clone, Debug)]
 pub struct LoweredProject {
     pub hir: HirProject,
+    pub version: Version,
     pub diagnostics: Vec<SemanticDiagnostic>,
     pub syntax_diagnostics: Vec<SyntaxDiagnostic>,
     pub incomplete: Vec<IncompleteRegion>,
