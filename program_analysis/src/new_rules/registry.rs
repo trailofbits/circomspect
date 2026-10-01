@@ -48,7 +48,7 @@ fn run_rules<'a>(
                     actual: abstention.kind,
                 });
             }
-            if context.summaries().check_context(&abstention.context).is_err() {
+            if &abstention.context != context.call_context() {
                 return Err(RuleRunError::ForeignAbstention(kind));
             }
         }
@@ -68,7 +68,7 @@ pub enum RuleRunError {
     WrongAbstentionKind { expected: RuleKind, actual: RuleKind },
     #[error("rule {0:?} emitted a finding for another call context")]
     ForeignFinding(RuleKind),
-    #[error("rule {0:?} recorded an abstention for another project")]
+    #[error("rule {0:?} recorded an abstention for another call context")]
     ForeignAbstention(RuleKind),
 }
 
@@ -82,7 +82,7 @@ mod tests {
 
     use crate::hir_cfg::build_cfg;
     use crate::hir_facts::{analyze, FieldContext};
-    use crate::interprocedural::ProjectSummaries;
+    use crate::interprocedural::{ArgumentValue, ProjectSummaries};
 
     use super::*;
     use crate::new_rules::{AbstentionReason, Finding, ScopedAbstention};
@@ -152,7 +152,7 @@ mod tests {
         ));
         fs::create_dir_all(&directory).unwrap();
         let path = directory.join("case.circom");
-        fs::write(&path, "template Check() {}\n").unwrap();
+        fs::write(&path, "template Check(n) {}\n").unwrap();
         let loaded = load_sources(&[path], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
         let lowered = lower_project(&loaded);
         let definition = lowered.hir.definition("Check").unwrap();
@@ -257,6 +257,38 @@ mod tests {
                     Some(RuleRunError::ForeignAbstention(RuleKind::Complexity))
                 );
             });
+        });
+    }
+
+    #[test]
+    fn registry_rejects_abstention_for_hypothetical_sibling_context() {
+        with_context(|context, span| {
+            let DefinitionRef::Template(definition) = context.call_context().definition() else {
+                panic!("template definition")
+            };
+            let field = FieldContext::for_curve(Curve::Bn254);
+            let hypothetical = context
+                .summaries()
+                .context_for(
+                    DefinitionRef::Template(definition),
+                    vec![ArgumentValue::Scalar(field.canonical(2.into()))],
+                )
+                .unwrap();
+            assert!(context.summaries().check_context(&hypothetical).is_ok());
+            assert_ne!(&hypothetical, context.call_context());
+            let rule = Returns {
+                finding: None,
+                abstention: Some(ScopedAbstention {
+                    kind: RuleKind::Complexity,
+                    context: hypothetical,
+                    span,
+                    reason: AbstentionReason::SymbolicParameters,
+                }),
+            };
+            assert_eq!(
+                run_rules(context, [&rule as &dyn Rule]).err(),
+                Some(RuleRunError::ForeignAbstention(RuleKind::Complexity))
+            );
         });
     }
 }
