@@ -1,6 +1,7 @@
 use circomspect_program_analysis::hir_facts::{FieldContext, Incidence, Range};
 use circomspect_program_analysis::interprocedural::{
-    ArgumentValue, FunctionEffect, ProjectSummaries, SummaryBlocker, WitnessProvenance,
+    ArgumentValue, FunctionEffect, ProjectSummaries, ReturnEvidence, SummaryBlocker,
+    WitnessProvenance,
 };
 use parser::hir::{lift_project, DefinitionRef, Effect, ExprKind, LiftedProject};
 use parser::new_frontend::{load_sources, Version, VersionPolicy};
@@ -57,11 +58,11 @@ fn concrete_scalar_function_summary_specializes_return_and_branch() {
     let zero_summary = provider.function(function, &zero);
     let one_summary = provider.function(function, &one);
     assert_eq!(
-        zero_summary.certified().unwrap().returns(),
+        zero_summary.certified().unwrap().complete_return().unwrap(),
         &Range::Exact(field.canonical(2.into()))
     );
     assert_eq!(
-        one_summary.certified().unwrap().returns(),
+        one_summary.certified().unwrap().complete_return().unwrap(),
         &Range::Exact(field.canonical(3.into()))
     );
     assert!(provider
@@ -89,7 +90,10 @@ fn deferred_variable_guard_specializes_for_scalar_but_not_symbolic_argument() {
             )
             .unwrap();
         assert_eq!(
-            provider.function(function, &context).certified().map(|fact| fact.returns()),
+            provider
+                .function(function, &context)
+                .certified()
+                .map(|fact| fact.complete_return().unwrap()),
             Some(&Range::Exact(field.canonical(expected.into())))
         );
     }
@@ -136,7 +140,7 @@ fn deferred_assignment_is_checked_even_when_later_overwritten() {
         )
         .unwrap();
     assert_eq!(
-        provider.function(function, &scalar).certified().unwrap().returns(),
+        provider.function(function, &scalar).certified().unwrap().complete_return().unwrap(),
         &Range::Exact(field.canonical(1.into()))
     );
 }
@@ -156,7 +160,7 @@ fn unused_array_argument_does_not_block_a_constant_return() {
         )
         .unwrap();
     assert_eq!(
-        provider.function(function, &context).certified().unwrap().returns(),
+        provider.function(function, &context).certified().unwrap().complete_return().unwrap(),
         &Range::Exact(field.canonical(7.into()))
     );
 }
@@ -177,12 +181,71 @@ fn constant_return_survives_an_unrelated_opaque_call() {
         let summary = provider.function(function, &context);
         let field = FieldContext::for_curve(Curve::Bn254);
         match expected {
-            Some(value) => assert_eq!(
-                summary.certified().map(|item| item.returns()),
-                Some(&Range::Exact(field.canonical(value.into())))
-            ),
+            Some(value) => {
+                let expected = Range::Exact(field.canonical(value.into()));
+                assert_eq!(
+                    summary.certified().unwrap().return_evidence(),
+                    ReturnEvidence::Conditional(&expected)
+                );
+            }
             None => assert!(summary.unavailable().is_some()),
         }
+    }
+}
+
+#[test]
+fn a_constant_value_after_an_opaque_call_is_conditional() {
+    let lifted = fixture("function F(){var t=Missing();return 7;}");
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else { panic!("F") };
+    let context = provider.symbolic_context_for(DefinitionRef::Function(f)).unwrap();
+    let summary = provider.function(f, &context);
+    let expected = Range::Exact(FieldContext::for_curve(Curve::Bn254).canonical(7.into()));
+    assert_eq!(
+        summary.certified().unwrap().return_evidence(),
+        ReturnEvidence::Conditional(&expected)
+    );
+}
+
+#[test]
+fn conditional_return_coverage_propagates_through_a_direct_call() {
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let lifted = fixture("function G(){var t=Missing();return 7;} function F(){return G();}");
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else { panic!("F") };
+    let context = provider.symbolic_context_for(DefinitionRef::Function(f)).unwrap();
+    let summary = provider.function(f, &context);
+    let expected = Range::Exact(field.canonical(7.into()));
+    assert_eq!(
+        summary.certified().unwrap().return_evidence(),
+        ReturnEvidence::Conditional(&expected)
+    );
+}
+
+#[test]
+fn a_structural_fallthrough_path_cannot_supply_complete_return_evidence() {
+    let lifted = fixture("function F(n){if(n){return 7;}}");
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else { panic!("F") };
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let one = provider
+        .context_for(
+            DefinitionRef::Function(f),
+            vec![ArgumentValue::Scalar(field.canonical(1.into()))],
+        )
+        .unwrap();
+    let summary = provider.function(f, &one);
+    let expected = Range::Exact(field.canonical(7.into()));
+    assert_eq!(
+        summary.certified().unwrap().return_evidence(),
+        ReturnEvidence::Conditional(&expected)
+    );
+    let symbolic = provider.symbolic_context_for(DefinitionRef::Function(f)).unwrap();
+    let symbolic_summary = provider.function(f, &symbolic);
+    if let Some(summary) = symbolic_summary.certified() {
+        let ReturnEvidence::Conditional(_) = summary.return_evidence() else {
+            panic!("symbolic fallthrough cannot prove a complete return")
+        };
     }
 }
 
@@ -217,7 +280,10 @@ fn symbolic_library_root_certifies_a_parameter_independent_return() {
     let context = provider.symbolic_context_for(DefinitionRef::Function(function)).unwrap();
     let summary = provider.function(function, &context);
     let field = FieldContext::for_curve(Curve::Bn254);
-    assert_eq!(summary.certified().unwrap().returns(), &Range::Exact(field.canonical(7.into())));
+    assert_eq!(
+        summary.certified().unwrap().complete_return().unwrap(),
+        &Range::Exact(field.canonical(7.into()))
+    );
     assert!(summary.certified().unwrap().input_dependencies().is_empty());
 }
 
@@ -257,7 +323,10 @@ fn direct_resolved_function_call_agrees_with_inlined_return() {
         )
         .unwrap();
     let summary = provider.function(outer, &context);
-    assert_eq!(summary.certified().unwrap().returns(), &Range::Exact(field.canonical(5.into())));
+    assert_eq!(
+        summary.certified().unwrap().complete_return().unwrap(),
+        &Range::Exact(field.canonical(5.into()))
+    );
     assert_eq!(
         summary.certified().unwrap().input_dependencies(),
         &std::collections::BTreeSet::from([0])
@@ -282,7 +351,7 @@ fn included_function_summary_composes_across_source_files() {
         )
         .unwrap();
     assert_eq!(
-        provider.function(outer, &context).certified().unwrap().returns(),
+        provider.function(outer, &context).certified().unwrap().complete_return().unwrap(),
         &Range::Exact(field.canonical(9.into()))
     );
 }
@@ -303,7 +372,7 @@ fn finite_recursive_contexts_reach_a_base_case_without_certifying_a_cycle() {
         .unwrap();
     let summary = provider.function(function, &concrete);
     assert_eq!(
-        summary.certified().map(|item| item.returns()),
+        summary.certified().map(|item| item.complete_return().unwrap()),
         Some(&Range::Exact(field.canonical(0.into()))),
         "{:?}",
         summary.unavailable()
@@ -334,6 +403,44 @@ fn finite_recursive_contexts_reach_a_base_case_without_certifying_a_cycle() {
         cyclic_provider.function(cyclic_id, &context).unavailable(),
         Some(&std::collections::BTreeSet::from([SummaryBlocker::RecursiveCycle]))
     );
+}
+
+#[test]
+fn mutually_recursive_concrete_contexts_reach_the_same_base_return() {
+    let lifted = fixture(
+        "function F(n){if(n){return G(n-1);}return 0;} \
+         function G(n){if(n){return F(n-1);}return 0;}",
+    );
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else { panic!("F") };
+    let DefinitionRef::Function(g) = lifted.hir.definition("G").unwrap() else { panic!("G") };
+    let field = FieldContext::for_curve(Curve::Bn254);
+    for (function, value) in [(f, 4), (g, 3)] {
+        let context = provider
+            .context_for(
+                DefinitionRef::Function(function),
+                vec![ArgumentValue::Scalar(field.canonical(value.into()))],
+            )
+            .unwrap();
+        let summary = provider.function(function, &context);
+        assert_eq!(
+            summary.certified().map(|item| item.complete_return().unwrap()),
+            Some(&Range::Exact(field.canonical(0.into()))),
+            "{value}: {:?}",
+            summary.unavailable()
+        );
+    }
+    let symbolic = provider.symbolic_context_for(DefinitionRef::Function(f)).unwrap();
+    assert!(provider.function(f, &symbolic).unavailable().is_some());
+}
+
+#[test]
+fn a_self_call_before_a_constant_return_cannot_certify_termination() {
+    let lifted = fixture("function F(){var ignored=F();return 7;}");
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else { panic!("F") };
+    let context = provider.symbolic_context_for(DefinitionRef::Function(f)).unwrap();
+    assert!(provider.function(f, &context).unavailable().is_some());
 }
 
 #[test]
@@ -396,7 +503,7 @@ fn unreachable_and_unrelated_opaque_calls_do_not_invent_effects() {
     assert!(!clean_effects.certified().unwrap().contains(FunctionEffect::Log));
     assert!(provider.function_effects(broken, &broken_context).unavailable().is_some());
     assert_eq!(
-        provider.function(clean, &clean_context).certified().unwrap().returns(),
+        provider.function(clean, &clean_context).certified().unwrap().complete_return().unwrap(),
         &Range::Exact(FieldContext::for_curve(Curve::Bn254).canonical(1.into()))
     );
 }

@@ -1,8 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use abstract_interpretation::lattice::Lattice;
+use abstract_interpretation::graph::{IndexedGraph, NodeId};
 use abstract_interpretation::graph::FlowGraph;
-use parser::hir::{DefinitionRef, ExprId, ExprKind, Function, FunctionId, SymbolId};
+use abstract_interpretation::lattice::Lattice;
+use abstract_interpretation::solver::{
+    solve, Blocker, DataflowAnalysis, Forward, SolveResult, Transfer, TransferOutcome,
+};
+use parser::hir::{DefinitionRef, ExprId, ExprKind, Function, FunctionId};
 
 use crate::hir_cfg::{build_cfg, CfgNodeKind, DefinitionCfg};
 use crate::hir_facts::{
@@ -11,7 +15,7 @@ use crate::hir_facts::{
 
 use super::{CallContext, CallOwner, CallReachability, ProjectSummaries, SummaryBlocker};
 
-/// A summary certificate is created only after the relevant CFG and calls are complete.
+/// Provider-owned evidence for a scoped summary; value-specific coverage remains explicit.
 ///
 /// ```compile_fail
 /// use circomspect_program_analysis::interprocedural::SummaryFact;
@@ -64,17 +68,48 @@ pub(super) fn certified<T>(fact: &Fact<T>) -> Result<&T, SummaryBlocker> {
         .ok_or_else(|| SummaryBlocker::LocalFacts(fact.unavailable().cloned().unwrap_or_default()))
 }
 
+/// A return value's proof scope, which callers must inspect explicitly.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReturnEvidence<'a> {
+    Complete(&'a Range),
+    Conditional(&'a Range),
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum ReturnCoverage {
+    Complete,
+    Conditional,
+}
+
 /// Return evidence for one scalar function context.
+///
+/// A conditional value describes a return only if execution reaches it; it cannot establish
+/// termination or complete return coverage. Repeated call contexts never produce a summary.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FunctionSummary {
     returns: Range,
     input_dependencies: BTreeSet<usize>,
+    coverage: ReturnCoverage,
 }
 
 impl FunctionSummary {
+    /// Return a value only when every reachable path completes a return.
     #[must_use]
-    pub fn returns(&self) -> &Range {
-        &self.returns
+    pub fn complete_return(&self) -> Option<&Range> {
+        if self.coverage == ReturnCoverage::Complete {
+            Some(&self.returns)
+        } else {
+            None
+        }
+    }
+
+    /// Distinguish a complete return from a value conditional on reaching it.
+    #[must_use]
+    pub fn return_evidence(&self) -> ReturnEvidence<'_> {
+        match self.coverage {
+            ReturnCoverage::Complete => ReturnEvidence::Complete(&self.returns),
+            ReturnCoverage::Conditional => ReturnEvidence::Conditional(&self.returns),
+        }
     }
 
     #[must_use]
@@ -83,59 +118,199 @@ impl FunctionSummary {
     }
 }
 
-#[derive(Default)]
-struct Evaluation {
-    active: BTreeSet<CallContext>,
-    memo: BTreeMap<CallContext, SummaryFact<FunctionSummary>>,
+impl Lattice for FunctionSummary {
+    fn bottom() -> Self {
+        Self {
+            returns: Range::Unreachable,
+            input_dependencies: BTreeSet::new(),
+            coverage: ReturnCoverage::Complete,
+        }
+    }
+
+    fn leq(&self, other: &Self) -> bool {
+        self.returns.leq(&other.returns)
+            && self.input_dependencies.is_subset(&other.input_dependencies)
+            && self.coverage <= other.coverage
+    }
+
+    fn join_assign(&mut self, other: &Self) -> bool {
+        let changed_range = self.returns.join_assign(&other.returns);
+        let prior = self.input_dependencies.len();
+        self.input_dependencies.extend(&other.input_dependencies);
+        let prior_coverage = self.coverage;
+        self.coverage = self.coverage.max(other.coverage);
+        changed_range || self.input_dependencies.len() != prior || self.coverage != prior_coverage
+    }
 }
 
-struct CalleeReturn {
-    summary: FunctionSummary,
-    arguments: Vec<ExprId>,
+#[derive(Clone)]
+struct ReturnCall {
+    callee: CallContext,
+    arguments: Vec<Result<BTreeSet<usize>, SummaryBlocker>>,
+}
+
+struct ReturnRecord {
+    local: FunctionSummary,
+    return_calls: Vec<ReturnCall>,
+    control_callees: BTreeSet<CallContext>,
+}
+
+enum ReturnNode {
+    Source,
+    Context(FunctionSummary),
+}
+
+enum ReturnEdge {
+    Source,
+    Coverage,
+    Call {
+        arguments: Vec<Result<BTreeSet<usize>, SummaryBlocker>>,
+        all_parameters: BTreeSet<usize>,
+    },
+}
+
+struct ReturnAnalysis;
+
+impl DataflowAnalysis<IndexedGraph<ReturnNode, ReturnEdge>> for ReturnAnalysis {
+    type State = FunctionSummary;
+    type Reason = SummaryBlocker;
+
+    fn boundary(&self, _: NodeId) -> Self::State {
+        FunctionSummary::bottom()
+    }
+}
+
+impl Transfer<ReturnAnalysis, FunctionSummary, SummaryBlocker> for ReturnNode {
+    fn apply(
+        &self,
+        _: &ReturnAnalysis,
+        input: &FunctionSummary,
+    ) -> TransferOutcome<FunctionSummary, SummaryBlocker> {
+        let mut output = input.clone();
+        if let Self::Context(local) = self {
+            output.join_assign(local);
+        }
+        TransferOutcome::Known(output)
+    }
+}
+
+impl Transfer<ReturnAnalysis, FunctionSummary, SummaryBlocker> for ReturnEdge {
+    fn apply(
+        &self,
+        _: &ReturnAnalysis,
+        input: &FunctionSummary,
+    ) -> TransferOutcome<FunctionSummary, SummaryBlocker> {
+        let (arguments, all_parameters) = match self {
+            Self::Source => return TransferOutcome::Known(input.clone()),
+            Self::Coverage => {
+                let mut coverage = FunctionSummary::bottom();
+                coverage.coverage = input.coverage;
+                return TransferOutcome::Known(coverage);
+            }
+            Self::Call { arguments, all_parameters } => (arguments, all_parameters),
+        };
+        if input.returns == Range::Unreachable {
+            return TransferOutcome::Known(FunctionSummary::bottom());
+        }
+        let mut dependencies = BTreeSet::new();
+        for index in &input.input_dependencies {
+            let Some(argument) = arguments.get(*index) else {
+                return TransferOutcome::Opaque {
+                    provisional: FunctionSummary {
+                        returns: input.returns.clone(),
+                        input_dependencies: all_parameters.clone(),
+                        coverage: input.coverage,
+                    },
+                    reason: SummaryBlocker::WrongContext,
+                };
+            };
+            match argument {
+                Ok(used) => dependencies.extend(used),
+                Err(blocker) => {
+                    return TransferOutcome::Opaque {
+                        provisional: FunctionSummary {
+                            returns: input.returns.clone(),
+                            input_dependencies: all_parameters.clone(),
+                            coverage: input.coverage,
+                        },
+                        reason: blocker.clone(),
+                    };
+                }
+            }
+        }
+        TransferOutcome::Known(FunctionSummary {
+            returns: input.returns.clone(),
+            input_dependencies: dependencies,
+            coverage: input.coverage,
+        })
+    }
 }
 
 impl ProjectSummaries<'_> {
     /// Summarize a scalar function using checked CFG reachability and resolved call sites.
     pub fn function(&self, id: FunctionId, context: &CallContext) -> SummaryFact<FunctionSummary> {
-        self.function_inner(id, context, &mut Evaluation::default())
+        if self.hir().function(id).is_none() {
+            return SummaryFact::blocked(SummaryBlocker::ForeignDefinition);
+        }
+        if context.definition() != DefinitionRef::Function(id) {
+            return SummaryFact::blocked(SummaryBlocker::WrongContext);
+        }
+        SummaryFact::from_result(self.compute_function(context))
     }
 
-    fn function_inner(
-        &self,
-        id: FunctionId,
-        context: &CallContext,
-        evaluation: &mut Evaluation,
-    ) -> SummaryFact<FunctionSummary> {
+    fn compute_function(&self, context: &CallContext) -> Result<FunctionSummary, SummaryBlocker> {
         const MAX_CONTEXTS: usize = 64;
-        if let Some(cached) = evaluation.memo.get(context) {
-            return cached.clone();
+        let mut records = BTreeMap::new();
+        let mut pending = vec![context.clone()];
+        while let Some(next) = pending.pop() {
+            if records.contains_key(&next) {
+                continue;
+            }
+            if records.len() >= MAX_CONTEXTS {
+                return Err(SummaryBlocker::ContextBudget);
+            }
+            let record = self.return_record(&next)?;
+            pending.extend(record.control_callees.iter().cloned());
+            records.insert(next, record);
         }
-        if evaluation.active.contains(context) {
-            return SummaryFact::blocked(SummaryBlocker::RecursiveCycle);
+        // Immutable compile-time arguments make a repeated context the same invocation state.
+        if has_reachable_cycle(&records, context) {
+            return Err(SummaryBlocker::RecursiveCycle);
         }
-        if evaluation.active.len() + evaluation.memo.len() >= MAX_CONTEXTS {
-            return SummaryFact::blocked(SummaryBlocker::ContextBudget);
+        let solution = solve_returns(&records, context)?;
+        if solution.returns == Range::Unreachable {
+            return Err(SummaryBlocker::MissingReturn);
         }
-        evaluation.active.insert(context.clone());
-        let result = SummaryFact::from_result(self.compute_function(id, context, evaluation));
-        evaluation.active.remove(context);
-        evaluation.memo.insert(context.clone(), result.clone());
-        result
+        Ok(solution)
     }
 
-    fn compute_function(
-        &self,
-        id: FunctionId,
-        context: &CallContext,
-        evaluation: &mut Evaluation,
-    ) -> Result<FunctionSummary, SummaryBlocker> {
+    fn return_record(&self, context: &CallContext) -> Result<ReturnRecord, SummaryBlocker> {
+        let DefinitionRef::Function(id) = context.definition() else {
+            return Err(SummaryBlocker::WrongContext);
+        };
         self.with_local_function(id, context, |function, cfg, facts| {
-            if let Some(summary) = self.closed_constant_return(cfg) {
-                return Ok(summary);
+            let calls = self.reachable_function_calls(id, function, facts)?;
+            let (mut local, return_calls) = self.local_returns(function, cfg, facts, &calls)?;
+            if self.has_opaque_call(id, facts) || has_unreturned_path(cfg, facts) {
+                local.coverage = ReturnCoverage::Conditional;
             }
-            let calls = self.collect_calls(id, facts, evaluation)?;
-            self.summarize_returns(function, cfg, facts, &calls)
+            let control_callees = calls.values().map(|call| call.callee.clone()).collect();
+            Ok(ReturnRecord { local, return_calls, control_callees })
         })
+    }
+
+    fn has_opaque_call(&self, id: FunctionId, facts: &AnalysisFacts<'_>) -> bool {
+        let owner = CallOwner::Definition(DefinitionRef::Function(id));
+        for site in self.graph().calls_from(owner) {
+            if let Some(DefinitionRef::Function(_)) = site.resolved() {
+                continue;
+            }
+            let Some(expression) = site.expression else { return true };
+            if facts.reachable_expression(expression).certified() != Some(&false) {
+                return true;
+            }
+        }
+        false
     }
 
     fn closed_constant_return(&self, cfg: &DefinitionCfg) -> Option<FunctionSummary> {
@@ -163,7 +338,11 @@ impl ProjectSummaries<'_> {
             }
             current = next?;
         }
-        Some(FunctionSummary { returns: Range::Exact(value?), input_dependencies: BTreeSet::new() })
+        Some(FunctionSummary {
+            returns: Range::Exact(value?),
+            input_dependencies: BTreeSet::new(),
+            coverage: ReturnCoverage::Complete,
+        })
     }
 
     pub(super) fn with_local_function<T>(
@@ -193,22 +372,20 @@ impl ProjectSummaries<'_> {
         work(function, &cfg, &facts)
     }
 
-    fn collect_calls(
+    fn reachable_function_calls(
         &self,
         id: FunctionId,
+        function: &Function,
         facts: &AnalysisFacts<'_>,
-        evaluation: &mut Evaluation,
-    ) -> Result<BTreeMap<ExprId, CalleeReturn>, SummaryBlocker> {
+    ) -> Result<BTreeMap<ExprId, ReturnCall>, SummaryBlocker> {
         let owner = CallOwner::Definition(DefinitionRef::Function(id));
         let mut calls = BTreeMap::new();
         for site in self.graph().calls_from(owner) {
+            let Some(DefinitionRef::Function(_)) = site.resolved() else { continue };
             let call = match self.graph().reachable_call(site.id(), facts) {
                 CallReachability::Unreachable => continue,
                 CallReachability::Reachable(call) => call,
                 CallReachability::Unavailable(_) => return Err(SummaryBlocker::ExternalSummary),
-            };
-            let DefinitionRef::Function(callee) = call.callee() else {
-                return Err(SummaryBlocker::ExternalSummary);
             };
             let expression = site.expression.ok_or(SummaryBlocker::UnsupportedCallForm)?;
             let Some(ExprKind::Call { arguments, .. }) =
@@ -216,30 +393,52 @@ impl ProjectSummaries<'_> {
             else {
                 return Err(SummaryBlocker::UnsupportedCallForm);
             };
-            let context = self.call_context(&call, facts)?;
-            let summary = self.function_inner(callee, &context, evaluation);
-            let Some(summary) = summary.certified() else {
-                let blocker = summary.unavailable().and_then(|items| items.iter().next()).cloned();
-                return Err(blocker.unwrap_or(SummaryBlocker::ExternalSummary));
-            };
-            calls.insert(
-                expression,
-                CalleeReturn { summary: summary.clone(), arguments: arguments.clone() },
-            );
+            let callee = self.call_context(&call, facts)?;
+            let arguments = self.argument_dependencies(function, arguments, facts);
+            calls.insert(expression, ReturnCall { callee, arguments });
         }
         Ok(calls)
     }
 
-    fn summarize_returns(
+    fn argument_dependencies(
         &self,
         function: &Function,
-        cfg: &crate::hir_cfg::DefinitionCfg,
+        arguments: &[ExprId],
         facts: &AnalysisFacts<'_>,
-        calls: &BTreeMap<ExprId, CalleeReturn>,
-    ) -> Result<FunctionSummary, SummaryBlocker> {
-        let mut returns = Range::Unreachable;
+    ) -> Vec<Result<BTreeSet<usize>, SummaryBlocker>> {
+        let mut result = Vec::with_capacity(arguments.len());
+        for argument in arguments {
+            let dependencies = facts.dependencies(*argument);
+            let mapped = certified(&dependencies).and_then(|keys| {
+                let mut indices = BTreeSet::new();
+                for key in keys {
+                    let index = function
+                        .parameters
+                        .iter()
+                        .position(|item| *item == key.root)
+                        .ok_or(SummaryBlocker::ExternalSummary)?;
+                    indices.insert(index);
+                }
+                Ok(indices)
+            });
+            result.push(mapped);
+        }
+        result
+    }
+
+    fn local_returns(
+        &self,
+        function: &Function,
+        cfg: &DefinitionCfg,
+        facts: &AnalysisFacts<'_>,
+        calls: &BTreeMap<ExprId, ReturnCall>,
+    ) -> Result<(FunctionSummary, Vec<ReturnCall>), SummaryBlocker> {
+        if let Some(summary) = self.closed_constant_return(cfg) {
+            return Ok((summary, Vec::new()));
+        }
+        let mut local = FunctionSummary::bottom();
+        let mut return_calls = Vec::new();
         let mut observed = false;
-        let mut dependencies = BTreeSet::new();
         for node in cfg.nodes() {
             let Some(CfgNodeKind::Return(expression)) = cfg.node(*node).map(|item| &item.kind)
             else {
@@ -248,44 +447,275 @@ impl ProjectSummaries<'_> {
             if !*certified(&facts.reachable_expression(*expression))? {
                 continue;
             }
-            let (range, used) = self.return_fact(*expression, facts, calls)?;
-            returns.join_assign(&range);
             observed = true;
-            for symbol in used {
+            if let Some(call) = calls.get(expression) {
+                return_calls.push(call.clone());
+                continue;
+            }
+            if let Some(ExprKind::Call { .. }) =
+                self.hir().expression(*expression).map(|expr| &expr.kind)
+            {
+                return Err(SummaryBlocker::ExternalSummary);
+            }
+            let range = certified(&facts.range(*expression))?.clone();
+            let dependencies = facts.dependencies(*expression);
+            let mut used = BTreeSet::new();
+            for key in certified(&dependencies)? {
                 let index = function
                     .parameters
                     .iter()
-                    .position(|item| *item == symbol)
+                    .position(|item| *item == key.root)
                     .ok_or(SummaryBlocker::ExternalSummary)?;
-                dependencies.insert(index);
+                used.insert(index);
             }
+            local.join_assign(&FunctionSummary {
+                returns: range,
+                input_dependencies: used,
+                coverage: ReturnCoverage::Complete,
+            });
         }
         if !observed {
             return Err(SummaryBlocker::MissingReturn);
         }
-        Ok(FunctionSummary { returns, input_dependencies: dependencies })
+        Ok((local, return_calls))
+    }
+}
+
+enum ReturnPathStep {
+    Continue,
+    Returned,
+    Unreturned,
+}
+
+fn return_path_step(
+    cfg: &DefinitionCfg,
+    facts: &AnalysisFacts<'_>,
+    current: NodeId,
+) -> ReturnPathStep {
+    match facts.reachable_node(current).certified() {
+        Some(false) => return ReturnPathStep::Returned,
+        None => return ReturnPathStep::Unreturned,
+        Some(true) => {}
+    }
+    if current == cfg.exit() {
+        return ReturnPathStep::Unreturned;
+    }
+    let Some(node) = cfg.node(current) else { return ReturnPathStep::Unreturned };
+    if let CfgNodeKind::Return(_) = node.kind {
+        ReturnPathStep::Returned
+    } else {
+        ReturnPathStep::Continue
+    }
+}
+
+fn has_unreturned_path(cfg: &DefinitionCfg, facts: &AnalysisFacts<'_>) -> bool {
+    fn visit(
+        cfg: &DefinitionCfg,
+        facts: &AnalysisFacts<'_>,
+        current: NodeId,
+        active: &mut BTreeSet<NodeId>,
+        complete: &mut BTreeSet<NodeId>,
+    ) -> bool {
+        match return_path_step(cfg, facts, current) {
+            ReturnPathStep::Continue => {}
+            ReturnPathStep::Returned => return false,
+            ReturnPathStep::Unreturned => return true,
+        }
+        if active.contains(&current) {
+            return true;
+        }
+        if complete.contains(&current) {
+            return false;
+        }
+        active.insert(current);
+        for id in cfg.edges() {
+            let Some(edge) = cfg.edge(*id) else { return true };
+            if edge.source == current && visit(cfg, facts, edge.target, active, complete) {
+                return true;
+            }
+        }
+        active.remove(&current);
+        complete.insert(current);
+        false
     }
 
-    fn return_fact(
-        &self,
-        expression: ExprId,
-        facts: &AnalysisFacts<'_>,
-        calls: &BTreeMap<ExprId, CalleeReturn>,
-    ) -> Result<(Range, BTreeSet<SymbolId>), SummaryBlocker> {
-        if let Some(call) = calls.get(&expression) {
-            let mut used = BTreeSet::new();
-            for index in call.summary.input_dependencies() {
-                let argument = call.arguments.get(*index).ok_or(SummaryBlocker::WrongContext)?;
-                let dependencies = facts.dependencies(*argument);
-                used.extend(certified(&dependencies)?.iter().map(|key| key.root));
-            }
-            return Ok((call.summary.returns().clone(), used));
+    visit(cfg, facts, cfg.entry(), &mut BTreeSet::new(), &mut BTreeSet::new())
+}
+
+fn solve_returns(
+    records: &BTreeMap<CallContext, ReturnRecord>,
+    root: &CallContext,
+) -> Result<FunctionSummary, SummaryBlocker> {
+    let mut nodes = vec![ReturnNode::Source];
+    let mut indices = BTreeMap::new();
+    for (context, record) in records {
+        let id = NodeId::new(nodes.len());
+        indices.insert(context.clone(), id);
+        nodes.push(ReturnNode::Context(record.local.clone()));
+    }
+    let mut edges = Vec::new();
+    for (context, record) in records {
+        let caller = *indices.get(context).ok_or(SummaryBlocker::WrongContext)?;
+        edges.push((NodeId::new(0), caller, ReturnEdge::Source));
+        for callee in &record.control_callees {
+            let callee = *indices.get(callee).ok_or(SummaryBlocker::WrongContext)?;
+            edges.push((callee, caller, ReturnEdge::Coverage));
         }
-        let range = facts.range(expression);
-        let dependencies = facts.dependencies(expression);
-        Ok((
-            certified(&range)?.clone(),
-            certified(&dependencies)?.iter().map(|key| key.root).collect(),
-        ))
+        let all_parameters: BTreeSet<usize> = (0..context.arguments().len()).collect();
+        for call in &record.return_calls {
+            let callee = *indices.get(&call.callee).ok_or(SummaryBlocker::WrongContext)?;
+            edges.push((
+                callee,
+                caller,
+                ReturnEdge::Call {
+                    arguments: call.arguments.clone(),
+                    all_parameters: all_parameters.clone(),
+                },
+            ));
+        }
+    }
+    let root = *indices.get(root).ok_or(SummaryBlocker::WrongContext)?;
+    let graph = IndexedGraph::new(nodes, edges, vec![NodeId::new(0)], vec![root])
+        .map_err(|error| SummaryBlocker::LocalAnalysis(format!("{error:?}")))?;
+    let result = solve::<_, _, Forward>(&graph, &ReturnAnalysis, Some(100_000))
+        .map_err(|error| SummaryBlocker::LocalAnalysis(format!("{error:?}")))?;
+    let facts = match result {
+        SolveResult::Complete(facts) => facts,
+        SolveResult::Incomplete { blockers, .. } => {
+            for blocker in blockers {
+                if let Blocker::OpaqueNode { reason, .. } | Blocker::OpaqueEdge { reason, .. } =
+                    blocker
+                {
+                    return Err(reason);
+                }
+            }
+            return Err(SummaryBlocker::ContextBudget);
+        }
+    };
+    facts
+        .get(&root)
+        .and_then(|item| item.output.clone())
+        .ok_or(SummaryBlocker::LocalAnalysis("missing root return state".into()))
+}
+
+fn has_reachable_cycle(records: &BTreeMap<CallContext, ReturnRecord>, root: &CallContext) -> bool {
+    fn visit(
+        records: &BTreeMap<CallContext, ReturnRecord>,
+        context: &CallContext,
+        active: &mut BTreeSet<CallContext>,
+        complete: &mut BTreeSet<CallContext>,
+    ) -> bool {
+        if active.contains(context) {
+            return true;
+        }
+        if complete.contains(context) {
+            return false;
+        }
+        active.insert(context.clone());
+        let Some(record) = records.get(context) else { return true };
+        for callee in &record.control_callees {
+            if visit(records, callee, active, complete) {
+                return true;
+            }
+        }
+        active.remove(context);
+        complete.insert(context.clone());
+        false
+    }
+
+    visit(records, root, &mut BTreeSet::new(), &mut BTreeSet::new())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use abstract_interpretation::lattice::Lattice;
+    use abstract_interpretation::solver::{Transfer, TransferOutcome};
+    use program_structure::utils::constants::Curve;
+
+    use crate::hir_facts::{FieldContext, Range};
+
+    use super::{
+        FunctionSummary, ReturnAnalysis, ReturnCoverage, ReturnEdge, ReturnNode, SummaryBlocker,
+    };
+
+    fn output(outcome: TransferOutcome<FunctionSummary, SummaryBlocker>) -> FunctionSummary {
+        match outcome {
+            TransferOutcome::Known(state) => state,
+            TransferOutcome::Opaque { provisional, .. } => provisional,
+        }
+    }
+
+    #[test]
+    fn production_return_join_and_transfers_are_monotone() {
+        let field = FieldContext::for_curve(Curve::Bn254);
+        let exact = Range::Exact(field.canonical(0.into()));
+        let other = Range::Exact(field.canonical(1.into()));
+        let states = [
+            FunctionSummary::bottom(),
+            FunctionSummary {
+                returns: exact.clone(),
+                input_dependencies: BTreeSet::new(),
+                coverage: ReturnCoverage::Complete,
+            },
+            FunctionSummary {
+                returns: exact,
+                input_dependencies: BTreeSet::from([0]),
+                coverage: ReturnCoverage::Complete,
+            },
+            FunctionSummary {
+                returns: Range::Exact(field.canonical(0.into())),
+                input_dependencies: BTreeSet::from([0]),
+                coverage: ReturnCoverage::Conditional,
+            },
+            FunctionSummary {
+                returns: other,
+                input_dependencies: BTreeSet::new(),
+                coverage: ReturnCoverage::Conditional,
+            },
+            FunctionSummary {
+                returns: Range::Canonical,
+                input_dependencies: BTreeSet::from([0]),
+                coverage: ReturnCoverage::Complete,
+            },
+            FunctionSummary {
+                returns: Range::Canonical,
+                input_dependencies: BTreeSet::from([0, 1]),
+                coverage: ReturnCoverage::Conditional,
+            },
+        ];
+        let local = states[2].clone();
+        let nodes = [ReturnNode::Source, ReturnNode::Context(local)];
+        let edges = [
+            ReturnEdge::Source,
+            ReturnEdge::Coverage,
+            ReturnEdge::Call {
+                arguments: vec![Ok(BTreeSet::from([1])), Ok(BTreeSet::from([0]))],
+                all_parameters: BTreeSet::from([0, 1]),
+            },
+            ReturnEdge::Call {
+                arguments: vec![Err(SummaryBlocker::ExternalSummary)],
+                all_parameters: BTreeSet::from([0, 1]),
+            },
+        ];
+        for left in &states {
+            for right in &states {
+                let mut joined = left.clone();
+                joined.join_assign(right);
+                assert!(left.leq(&joined) && right.leq(&joined));
+                if !left.leq(right) {
+                    continue;
+                }
+                for node in &nodes {
+                    assert!(output(node.apply(&ReturnAnalysis, left))
+                        .leq(&output(node.apply(&ReturnAnalysis, right))));
+                }
+                for edge in &edges {
+                    assert!(output(edge.apply(&ReturnAnalysis, left))
+                        .leq(&output(edge.apply(&ReturnAnalysis, right))));
+                }
+            }
+        }
     }
 }
