@@ -3,11 +3,15 @@
 use std::collections::BTreeMap;
 
 use abstract_interpretation::graph::{FlowGraph, NodeId};
-use parser::hir::{AccessPath, AccessStep, DefinitionRef, Effect, ExprId, ExprKind, PortId};
+use parser::hir::{
+    AccessPath, AccessStep, DefinitionRef, Effect, ExprId, ExprKind, PortId, PortSchema, SymbolId,
+};
 use parser::new_frontend::PortDirection;
 
-use crate::hir_cfg::{CfgNodeKind, Origin};
-use crate::hir_facts::{AccessHandle, AnalysisFacts, FieldValue, InstanceRelation, Range};
+use crate::hir_cfg::{CfgNodeKind, DefinitionCfg, Origin};
+use crate::hir_facts::{
+    AccessHandle, AnalysisFacts, FieldValue, InstanceRelation, Range, VisitAccesses,
+};
 
 use super::summary::certified;
 use super::{
@@ -39,12 +43,20 @@ struct ConstrainedInputBinding {
     node: NodeId,
 }
 
+#[derive(Clone, Copy)]
+enum ChildOutputEffect {
+    Witness,
+    Constraint,
+    Opaque,
+}
+
 /// An output fixed by a child equality and an exact generated caller input binding.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ComposedConstraintFixedOutput {
     value: FieldValue,
     child_equality: Origin,
     caller_input: Origin,
+    applied: AppliedComponentPort,
 }
 
 impl ComposedConstraintFixedOutput {
@@ -61,6 +73,11 @@ impl ComposedConstraintFixedOutput {
     #[must_use]
     pub fn caller_input(&self) -> Origin {
         self.caller_input
+    }
+
+    #[must_use]
+    pub fn applied_port(&self) -> &AppliedComponentPort {
+        &self.applied
     }
 }
 
@@ -125,6 +142,7 @@ impl ProjectSummaries<'_> {
             value: binding.value,
             child_equality: equality.origin,
             caller_input: binding.origin,
+            applied: applied.clone(),
         })
     }
 
@@ -255,6 +273,11 @@ impl ProjectSummaries<'_> {
         self.with_local_template(child, applied.callee.context(), |template, cfg, facts| {
             let output =
                 self.hir().port(applied.port.port()).ok_or(SummaryBlocker::ForeignDefinition)?;
+            let symbol =
+                self.hir().symbol(output.symbol).ok_or(SummaryBlocker::ForeignDefinition)?;
+            if symbol.rank != 0 || output.schema != PortSchema::Signal {
+                return Err(SummaryBlocker::UnsupportedContext);
+            }
             let mut result = None;
             for id in cfg.nodes() {
                 let Some(node) = cfg.node(*id) else { continue };
@@ -282,8 +305,99 @@ impl ProjectSummaries<'_> {
                     .ok_or(SummaryBlocker::LocalAnalysis("missing child equality origin".into()))?;
                 result = Some(GeneratedPortEquality { input, origin });
             }
-            result.ok_or(SummaryBlocker::ExternalSummary)
+            let equality = result.ok_or(SummaryBlocker::ExternalSummary)?;
+            self.check_child_output_effects(cfg, facts, output.symbol, equality.origin)?;
+            Ok(equality)
         })
+    }
+
+    fn check_child_output_effects(
+        &self,
+        cfg: &DefinitionCfg,
+        facts: &AnalysisFacts<'_>,
+        output: SymbolId,
+        selected: Origin,
+    ) -> Result<(), SummaryBlocker> {
+        let mut witnesses = 0;
+        let mut constraints = 0;
+        for id in cfg.nodes() {
+            let Some(node) = cfg.node(*id) else { continue };
+            if !*certified(&facts.reachable_node(*id))? {
+                continue;
+            }
+            match self.child_output_effect(&node.kind, output)? {
+                Some(ChildOutputEffect::Witness) if node.origin == Some(selected) => {
+                    witnesses += 1;
+                }
+                Some(ChildOutputEffect::Constraint) if node.origin == Some(selected) => {
+                    constraints += 1;
+                }
+                Some(ChildOutputEffect::Witness | ChildOutputEffect::Constraint)
+                | Some(ChildOutputEffect::Opaque) => {
+                    return Err(SummaryBlocker::ExternalSummary);
+                }
+                None => {}
+            }
+        }
+        if witnesses == 1 && constraints == 1 {
+            Ok(())
+        } else {
+            Err(SummaryBlocker::ExternalSummary)
+        }
+    }
+
+    fn child_output_effect(
+        &self,
+        node: &CfgNodeKind,
+        output: SymbolId,
+    ) -> Result<Option<ChildOutputEffect>, SummaryBlocker> {
+        if let CfgNodeKind::Witness { target, .. } = node {
+            return Ok((target.root == output).then_some(ChildOutputEffect::Witness));
+        }
+        if let CfgNodeKind::Constraint { target, left, right } = node {
+            let touches = self.constraint_touches_output(target.as_ref(), *left, *right, output)?;
+            return Ok(touches.then_some(ChildOutputEffect::Constraint));
+        }
+        if let CfgNodeKind::OpaqueAssignment { target, .. } = node {
+            return Ok((target.root == output).then_some(ChildOutputEffect::Opaque));
+        }
+        if let CfgNodeKind::OpaqueEquality { left, right, .. } = node {
+            let touches = self.expression_touches_output(*left, output)?
+                || self.expression_touches_output(*right, output)?;
+            return Ok(touches.then_some(ChildOutputEffect::Opaque));
+        }
+        Ok(None)
+    }
+
+    fn constraint_touches_output(
+        &self,
+        target: Option<&AccessPath>,
+        left: ExprId,
+        right: Option<ExprId>,
+        output: SymbolId,
+    ) -> Result<bool, SummaryBlocker> {
+        let Some(target) = target else {
+            let left_touches = self.expression_touches_output(left, output)?;
+            let right_touches = match right {
+                Some(value) => self.expression_touches_output(value, output)?,
+                None => false,
+            };
+            return Ok(left_touches || right_touches);
+        };
+        Ok(target.root == output)
+    }
+
+    fn expression_touches_output(
+        &self,
+        expression: ExprId,
+        output: SymbolId,
+    ) -> Result<bool, SummaryBlocker> {
+        let mut touches = false;
+        if expression.visit_accesses(self.hir(), &mut |path| touches |= path.root == output) {
+            Ok(touches)
+        } else {
+            Err(SummaryBlocker::ExternalSummary)
+        }
     }
 
     fn exact_input_port(

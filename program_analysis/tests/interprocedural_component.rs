@@ -276,6 +276,7 @@ fn repeated_instances_compose_only_their_own_checked_inputs() {
     let output = lifted.hir.template(child).unwrap().ports[1];
     let calls = provider.graph().calls_from(CallOwner::Definition(parent));
     let field = FieldContext::for_curve(Curve::Bn254);
+    let mut certificates = Vec::new();
     for (index, expected) in [(0, 3), (1, 5)] {
         let handle = facts
             .component_output_handle(lifted.hir.components()[0].id, &[index], output, &[])
@@ -291,7 +292,13 @@ fn repeated_instances_compose_only_their_own_checked_inputs() {
             value.certified().map(|item| item.value()),
             Some(&field.canonical(expected.into()))
         );
+        let certificate = value.certified().unwrap();
+        assert_eq!(certificate.applied_port().handle(), &handle);
+        assert_eq!(certificate.applied_port().caller_evidence(), &scope);
+        assert_eq!(certificate.applied_port().callee_evidence().context().arguments(), &[]);
+        certificates.push(certificate.clone());
     }
+    assert_ne!(certificates[0].applied_port().handle(), certificates[1].applied_port().handle());
 }
 
 #[test]
@@ -574,4 +581,37 @@ fn symbolic_component_index_may_alias_a_checked_input_binding() {
         .composed_constraint_fixed_output(&facts, applied.certified().unwrap())
         .unavailable()
         .is_some());
+}
+
+#[test]
+fn competing_child_output_writes_cannot_borrow_the_first_equality() {
+    for extra in ["out<==2;", "out<--2;", "out===2;"] {
+        let source = format!(
+            "template Child(){{signal input in;signal output out;out<==in;{extra}}} \
+             template Parent(){{component c=Child();c.in<==7;}}"
+        );
+        let lifted = fixture(&source);
+        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let parent = lifted.hir.definition("Parent").unwrap();
+        let DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap() else {
+            panic!("Child must be a template")
+        };
+        let cfg = build_cfg(&lifted.hir, parent).unwrap();
+        let scope = provider.symbolic_root(parent).unwrap();
+        let facts = provider.analyze_for_evidence(&cfg, &scope, None).unwrap();
+        let output = lifted.hir.template(child).unwrap().ports[1];
+        let handle =
+            facts.component_output_handle(lifted.hir.components()[0].id, &[], output, &[]).unwrap();
+        let site = provider.graph().calls_from(CallOwner::Definition(parent))[0];
+        let CallReachability::Reachable(call) = provider.graph().reachable_call(site.id(), &facts)
+        else {
+            panic!("component call must be reachable")
+        };
+        let applied = provider.apply_component_output(&facts, &scope, &call, &handle);
+        assert!(applied.certified().is_some());
+        assert!(provider
+            .composed_constraint_fixed_output(&facts, applied.certified().unwrap())
+            .unavailable()
+            .is_some());
+    }
 }
