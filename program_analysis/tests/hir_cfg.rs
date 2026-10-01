@@ -1,10 +1,10 @@
 use abstract_interpretation::graph::FlowGraph;
 use circomspect_program_analysis::hir_cfg::{build_cfg, BuildError, CfgNodeKind, EdgeKind};
-use parser::hir::{lower_project, ControlGuard, DefinitionRef};
+use parser::hir::{lift_project, ControlGuard, DefinitionRef};
 use parser::new_frontend::{load_sources, Version, VersionPolicy};
 use std::fs;
 
-fn fixture(source: &str) -> (parser::hir::LoweredProject, DefinitionRef) {
+fn fixture(source: &str) -> (parser::hir::LiftedProject, DefinitionRef) {
     let directory = std::env::temp_dir().join(format!(
         "circomspect-phase4-cfg-{}-{:?}",
         std::process::id(),
@@ -14,11 +14,11 @@ fn fixture(source: &str) -> (parser::hir::LoweredProject, DefinitionRef) {
     let path = directory.join("case.circom");
     fs::write(&path, source).unwrap();
     let loaded = load_sources(&[path], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
-    let lowered = lower_project(&loaded);
-    assert!(lowered.syntax_diagnostics.is_empty(), "{:?}", lowered.syntax_diagnostics);
-    assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
-    let definition = lowered.hir.definition("Check").unwrap();
-    (lowered, definition)
+    let lifted = lift_project(&loaded);
+    assert!(lifted.syntax_diagnostics.is_empty(), "{:?}", lifted.syntax_diagnostics);
+    assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
+    let definition = lifted.hir.definition("Check").unwrap();
+    (lifted, definition)
 }
 
 #[test]

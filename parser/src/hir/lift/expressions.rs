@@ -1,7 +1,7 @@
-use crate::hir::lower::*;
+use crate::hir::lift::*;
 
-impl Lowerer<'_> {
-    pub(super) fn lower_access(&mut self, expression: &Expression) -> Option<AccessPath> {
+impl Lifter<'_> {
+    pub(super) fn lift_access(&mut self, expression: &Expression) -> Option<AccessPath> {
         let Expression::Name { identifier, access, span } = expression else { return None };
         let Some(root) = self.scopes.resolve(&identifier.name) else {
             self.diagnostic(
@@ -66,7 +66,7 @@ impl Lowerer<'_> {
             self.incomplete(span, IncompleteReason::InvalidAssignment);
             return false;
         }
-        let id = self.lower_expression(expression);
+        let id = self.lift_expression(expression);
         if !self.valid_index_expression(id, expression.span()) {
             return false;
         }
@@ -286,7 +286,7 @@ impl Lowerer<'_> {
         None
     }
 
-    pub(super) fn lower_expression(&mut self, expression: &Expression) -> ExprId {
+    pub(super) fn lift_expression(&mut self, expression: &Expression) -> ExprId {
         let span = expression.span();
         match expression {
             Expression::Number { text, .. } => self.add_expression(
@@ -295,18 +295,18 @@ impl Lowerer<'_> {
                 span,
                 ValueType::Plain,
             ),
-            Expression::Name { .. } => self.lower_named_expression(expression),
+            Expression::Name { .. } => self.lift_named_expression(expression),
             Expression::Call { name, arguments, .. } => {
-                self.lower_function_call(name, arguments, span)
+                self.lift_function_call(name, arguments, span)
             }
-            Expression::AnonymousCall(call) => self.lower_anonymous(call),
-            Expression::Array { elements, .. } => self.lower_collection(elements, span, true),
-            Expression::Tuple { elements, .. } => self.lower_collection(elements, span, false),
+            Expression::AnonymousCall(call) => self.lift_anonymous(call),
+            Expression::Array { elements, .. } => self.lift_collection(elements, span, true),
+            Expression::Tuple { elements, .. } => self.lift_collection(elements, span, false),
             Expression::Unary { .. }
             | Expression::Binary { .. }
             | Expression::Ternary { .. }
-            | Expression::Parallel { .. } => self.lower_operation(expression),
-            Expression::Group { expression, .. } => self.lower_expression(expression),
+            | Expression::Parallel { .. } => self.lift_operation(expression),
+            Expression::Group { expression, .. } => self.lift_expression(expression),
             Expression::Error { .. } => {
                 self.incomplete(span, IncompleteReason::Syntax);
                 self.add_expression(
@@ -319,9 +319,9 @@ impl Lowerer<'_> {
         }
     }
 
-    pub(super) fn lower_named_expression(&mut self, expression: &Expression) -> ExprId {
+    pub(super) fn lift_named_expression(&mut self, expression: &Expression) -> ExprId {
         let span = expression.span();
-        let Some(path) = self.lower_access(expression) else {
+        let Some(path) = self.lift_access(expression) else {
             return self.add_expression(
                 ExprKind::Opaque(IncompleteReason::UnknownType),
                 Knownness::Opaque,
@@ -348,13 +348,13 @@ impl Lowerer<'_> {
         self.add_expression(ExprKind::Access(path), knownness, span, ty)
     }
 
-    pub(super) fn lower_function_call(
+    pub(super) fn lift_function_call(
         &mut self,
         name: &Identifier,
         values: &[Expression],
         span: Span,
     ) -> ExprId {
-        let arguments: Vec<_> = values.iter().map(|value| self.lower_expression(value)).collect();
+        let arguments: Vec<_> = values.iter().map(|value| self.lift_expression(value)).collect();
         let mut target = self.resolve_call(name, DefinitionKind::Function);
         if !self.check_arity(&target, arguments.len(), span) {
             target = CallTarget::Opaque {
@@ -385,13 +385,13 @@ impl Lowerer<'_> {
         )
     }
 
-    pub(super) fn lower_collection(
+    pub(super) fn lift_collection(
         &mut self,
         values: &[Expression],
         span: Span,
         array: bool,
     ) -> ExprId {
-        let elements: Vec<_> = values.iter().map(|value| self.lower_expression(value)).collect();
+        let elements: Vec<_> = values.iter().map(|value| self.lift_expression(value)).collect();
         let knownness =
             elements.iter().fold(Knownness::Constant, |acc, id| acc.join(self.knownness(*id)));
         let ty = if elements.iter().all(|id| self.expression_is_checked(*id)) {
@@ -407,11 +407,11 @@ impl Lowerer<'_> {
         }
     }
 
-    pub(super) fn lower_operation(&mut self, expression: &Expression) -> ExprId {
+    pub(super) fn lift_operation(&mut self, expression: &Expression) -> ExprId {
         let span = expression.span();
         match expression {
             Expression::Unary { operator, operand, .. } => {
-                let operand = self.lower_expression(operand);
+                let operand = self.lift_expression(operand);
                 let shape = self.scalar_shape(operand);
                 if shape == ScalarShape::Invalid {
                     return self.opaque_expression(span);
@@ -429,8 +429,8 @@ impl Lowerer<'_> {
                 )
             }
             Expression::Binary { operator, left, right, .. } => {
-                let left = self.lower_expression(left);
-                let right = self.lower_expression(right);
+                let left = self.lift_expression(left);
+                let right = self.lift_expression(right);
                 let shape = self.scalar_shape(left).join(self.scalar_shape(right));
                 if shape == ScalarShape::Invalid {
                     return self.opaque_expression(span);
@@ -448,9 +448,9 @@ impl Lowerer<'_> {
                 )
             }
             Expression::Ternary { condition, yes, no, .. } => {
-                let condition = self.lower_expression(condition);
-                let yes = self.lower_expression(yes);
-                let no = self.lower_expression(no);
+                let condition = self.lift_expression(condition);
+                let yes = self.lift_expression(yes);
+                let no = self.lift_expression(no);
                 if self.scalar_shape(condition) == ScalarShape::Invalid {
                     return self.opaque_expression(span);
                 }
@@ -671,10 +671,10 @@ impl Lowerer<'_> {
         (span.source().index(), span.start(), span.end())
     }
 
-    pub(super) fn lower_anonymous(&mut self, call: &AnonymousCallExpr) -> ExprId {
+    pub(super) fn lift_anonymous(&mut self, call: &AnonymousCallExpr) -> ExprId {
         let mut target = self.resolve_call(&call.name, DefinitionKind::Template);
         let arguments: Vec<_> =
-            call.parameters.iter().map(|value| self.lower_expression(value)).collect();
+            call.parameters.iter().map(|value| self.lift_expression(value)).collect();
         let valid_arity = self.check_arity(&target, arguments.len(), call.span);
         let valid_arguments = self.check_template_arguments(&arguments, call.span);
         if !valid_arity {
@@ -689,7 +689,7 @@ impl Lowerer<'_> {
             .inputs
             .iter()
             .enumerate()
-            .map(|(position, input)| self.lower_anonymous_input(template, input, position))
+            .map(|(position, input)| self.lift_anonymous_input(template, input, position))
             .collect();
         let valid_inputs = template.is_some_and(|template| {
             self.validate_anonymous_inputs(template, &mut inputs, call.span)
@@ -718,7 +718,7 @@ impl Lowerer<'_> {
         )
     }
 
-    pub(super) fn lower_anonymous_input(
+    pub(super) fn lift_anonymous_input(
         &mut self,
         template: Option<TemplateId>,
         input: &AnonymousInput,
@@ -732,7 +732,7 @@ impl Lowerer<'_> {
                 (Some(name), *operator, value, *span)
             }
         };
-        let value = self.lower_expression(value);
+        let value = self.lift_expression(value);
         let Some(template) = template else {
             return AnonymousInputEffect {
                 target: AnonymousInputTarget::Opaque(IncompleteReason::UnknownType),
@@ -892,7 +892,7 @@ impl Lowerer<'_> {
         !missing
     }
 
-    pub(super) fn lower_mains(&mut self) {
+    pub(super) fn lift_mains(&mut self) {
         for file in &self.source.files {
             for item in &file.outcome.ast.items {
                 let Item::Main { instance, span, .. } = item else { continue };
@@ -911,7 +911,7 @@ impl Lowerer<'_> {
                 if let Some((name, arguments, parallel)) = call {
                     self.scopes.enter();
                     let arguments: Vec<_> =
-                        arguments.iter().map(|value| self.lower_expression(value)).collect();
+                        arguments.iter().map(|value| self.lift_expression(value)).collect();
                     self.scopes.leave();
                     let mut target = self.resolve_call(name, DefinitionKind::Template);
                     let valid_arity = self.check_arity(&target, arguments.len(), *span);

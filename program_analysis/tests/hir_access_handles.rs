@@ -1,6 +1,6 @@
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::hir_facts::{analyze, AccessHandleError, FactBlocker, FieldContext};
-use parser::hir::{lower_project, DefinitionRef, HirProject};
+use parser::hir::{lift_project, DefinitionRef, HirProject};
 use parser::new_frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
 use std::fs;
@@ -15,10 +15,10 @@ fn project(source: &str) -> HirProject {
     let file = directory.join("case.circom");
     fs::write(&file, source).unwrap();
     let loaded = load_sources(&[file], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
-    let lowered = lower_project(&loaded);
-    assert!(lowered.syntax_diagnostics.is_empty(), "{:?}", lowered.syntax_diagnostics);
-    assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
-    lowered.hir
+    let lifted = lift_project(&loaded);
+    assert!(lifted.syntax_diagnostics.is_empty(), "{:?}", lifted.syntax_diagnostics);
+    assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
+    lifted.hir
 }
 
 #[test]

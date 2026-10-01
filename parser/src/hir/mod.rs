@@ -1,6 +1,6 @@
 //! Checked, resolved semantic representation of an owned Circom source project.
 
-mod lower;
+mod lift;
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -11,7 +11,7 @@ use crate::new_frontend::{
     PostfixOperator, Span, SyntaxDiagnostic, UnaryOperator,
 };
 
-pub use lower::lower_project;
+pub use lift::lift_project;
 
 static NEXT_PROJECT: AtomicU64 = AtomicU64::new(1);
 
@@ -550,7 +550,7 @@ impl From<&DiagnosticLocation> for IncompleteLocation {
 }
 
 #[derive(Clone, Debug)]
-pub struct LoweredProject {
+pub struct LiftedProject {
     pub hir: HirProject,
     pub diagnostics: Vec<SemanticDiagnostic>,
     pub syntax_diagnostics: Vec<SyntaxDiagnostic>,

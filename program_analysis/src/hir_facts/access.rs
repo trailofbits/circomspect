@@ -165,7 +165,7 @@ pub fn key_for_path(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use parser::hir::{lower_project, ExprKind};
+    use parser::hir::{lift_project, ExprKind};
     use parser::new_frontend::{load_sources, Version, VersionPolicy};
     use program_structure::utils::constants::Curve;
     use std::fs;
@@ -223,7 +223,7 @@ mod tests {
         let file = directory.join("case.circom");
         fs::write(&file, source).unwrap();
         let loaded = load_sources(&[file], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
-        let project = lower_project(&loaded);
+        let project = lift_project(&loaded);
         assert!(project.syntax_diagnostics.is_empty());
         assert!(project.diagnostics.is_empty(), "{:?}", project.diagnostics);
         let paths = project

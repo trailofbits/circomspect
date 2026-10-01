@@ -1,6 +1,6 @@
-use crate::hir::lower::*;
+use crate::hir::lift::*;
 
-impl Lowerer<'_> {
+impl Lifter<'_> {
     fn invalidate_component_evidence(&mut self, symbol: SymbolId) {
         let reason = IncompleteReason::InvalidAssignment;
         let mut call_values = Vec::new();
@@ -43,34 +43,34 @@ impl Lowerer<'_> {
         }
     }
 
-    pub(super) fn lower_statement(&mut self, statement: &Statement) -> Vec<Effect> {
+    pub(super) fn lift_statement(&mut self, statement: &Statement) -> Vec<Effect> {
         match statement {
             Statement::Block(_)
             | Statement::Declaration(_)
             | Statement::Assignment { .. }
             | Statement::PostfixUpdate { .. }
-            | Statement::Constraint { .. } => self.lower_local_statement(statement),
+            | Statement::Constraint { .. } => self.lift_local_statement(statement),
             Statement::If { .. } | Statement::For { .. } | Statement::While { .. } => {
-                self.lower_control_statement(statement)
+                self.lift_control_statement(statement)
             }
             Statement::Return { .. }
             | Statement::Assert { .. }
             | Statement::Log { .. }
             | Statement::AnonymousCall { .. }
-            | Statement::Error { .. } => self.lower_terminal_statement(statement),
+            | Statement::Error { .. } => self.lift_terminal_statement(statement),
         }
     }
 
-    pub(super) fn lower_local_statement(&mut self, statement: &Statement) -> Vec<Effect> {
+    pub(super) fn lift_local_statement(&mut self, statement: &Statement) -> Vec<Effect> {
         let span = statement.span();
         match statement {
-            Statement::Block(_) => vec![Effect::Block(self.lower_branch(statement))],
-            Statement::Declaration(declaration) => self.lower_declaration(declaration),
+            Statement::Block(_) => vec![Effect::Block(self.lift_branch(statement))],
+            Statement::Declaration(declaration) => self.lift_declaration(declaration),
             Statement::Assignment { target, operator, value, .. } => {
-                vec![self.lower_assignment(target, *operator, value, span)]
+                vec![self.lift_assignment(target, *operator, value, span)]
             }
             Statement::PostfixUpdate { target, operator, .. } => {
-                let Some(path) = self.lower_access(target) else {
+                let Some(path) = self.lift_access(target) else {
                     return vec![self.opaque(span, IncompleteReason::InvalidAssignment)];
                 };
                 if self.hir.symbols[path.root.index].kind != SymbolKind::Variable {
@@ -98,8 +98,8 @@ impl Lowerer<'_> {
                         IncompleteReason::Unsupported("constraint in function".into()),
                     )];
                 }
-                let left = self.lower_expression(left);
-                let right = self.lower_expression(right);
+                let left = self.lift_expression(left);
+                let right = self.lift_expression(right);
                 match self.equality_shape(left, right) {
                     ShapeCheck::Valid => vec![Effect::EqualityConstraint { left, right, span }],
                     ShapeCheck::Unknown => {
@@ -119,16 +119,16 @@ impl Lowerer<'_> {
         }
     }
 
-    pub(super) fn lower_control_statement(&mut self, statement: &Statement) -> Vec<Effect> {
+    pub(super) fn lift_control_statement(&mut self, statement: &Statement) -> Vec<Effect> {
         let span = statement.span();
         match statement {
             Statement::If { condition, then_branch, else_branch, .. } => {
-                let condition = self.lower_expression(condition);
+                let condition = self.lift_expression(condition);
                 let before = self.snapshot_knownness();
-                let then_block = self.lower_branch(then_branch);
+                let then_block = self.lift_branch(then_branch);
                 let after_then = self.snapshot_knownness();
                 self.restore_knownness(&before);
-                let else_block = else_branch.as_ref().map(|branch| self.lower_branch(branch));
+                let else_block = else_branch.as_ref().map(|branch| self.lift_branch(branch));
                 let after_else = self.snapshot_knownness();
                 self.join_knownness(&after_then, &after_else);
                 let guard = match self.control_guard(condition) {
@@ -146,12 +146,12 @@ impl Lowerer<'_> {
             Statement::For { initializer, condition, step, body, .. } => {
                 self.scopes.enter();
                 let initializer_block = self.hir.add_block(initializer.span());
-                self.lower_block_into(std::slice::from_ref(initializer), initializer_block, false);
+                self.lift_block_into(std::slice::from_ref(initializer), initializer_block, false);
                 let before_loop = self.snapshot_knownness();
-                let condition = self.lower_expression(condition);
-                let body = self.lower_branch(body);
+                let condition = self.lift_expression(condition);
+                let body = self.lift_branch(body);
                 let after_body = self.snapshot_knownness();
-                let step = self.lower_branch(step);
+                let step = self.lift_branch(step);
                 let stable_condition = self.loop_condition_is_stable(condition, &before_loop);
                 self.join_knownness(&before_loop, &after_body);
                 self.scopes.leave();
@@ -176,8 +176,8 @@ impl Lowerer<'_> {
             }
             Statement::While { condition, body, .. } => {
                 let before = self.snapshot_knownness();
-                let condition = self.lower_expression(condition);
-                let body = self.lower_branch(body);
+                let condition = self.lift_expression(condition);
+                let body = self.lift_branch(body);
                 let stable_condition = self.loop_condition_is_stable(condition, &before);
                 self.join_knownness(&before, &before);
                 let guard = match self.control_guard(condition) {
@@ -313,7 +313,7 @@ impl Lowerer<'_> {
         }
     }
 
-    pub(super) fn lower_terminal_statement(&mut self, statement: &Statement) -> Vec<Effect> {
+    pub(super) fn lift_terminal_statement(&mut self, statement: &Statement) -> Vec<Effect> {
         let span = statement.span();
         match statement {
             Statement::Return { value, .. } => {
@@ -329,10 +329,10 @@ impl Lowerer<'_> {
                         IncompleteReason::Unsupported("return outside function".into()),
                     )];
                 }
-                vec![Effect::Return { value: self.lower_expression(value), span }]
+                vec![Effect::Return { value: self.lift_expression(value), span }]
             }
             Statement::Assert { condition, .. } => {
-                let condition = self.lower_expression(condition);
+                let condition = self.lift_expression(condition);
                 if !self.scalar_arithmetic_operand(condition) {
                     return vec![self.opaque(span, IncompleteReason::UnknownType)];
                 }
@@ -343,13 +343,13 @@ impl Lowerer<'_> {
                     .iter()
                     .filter_map(|argument| match argument {
                         LogArgument::String { .. } => None,
-                        LogArgument::Expression(value) => Some(self.lower_expression(value)),
+                        LogArgument::Expression(value) => Some(self.lift_expression(value)),
                     })
                     .collect();
                 vec![Effect::Log { values, span }]
             }
             Statement::AnonymousCall { call, .. } => {
-                let expression = self.lower_anonymous(call);
+                let expression = self.lift_anonymous(call);
                 vec![Effect::AnonymousComponent { expression, span }]
             }
             Statement::Error { .. } => vec![self.opaque(span, IncompleteReason::Syntax)],
@@ -503,7 +503,7 @@ impl Lowerer<'_> {
         Some(id)
     }
 
-    pub(super) fn lower_declaration(&mut self, declaration: &Declaration) -> Vec<Effect> {
+    pub(super) fn lift_declaration(&mut self, declaration: &Declaration) -> Vec<Effect> {
         if matches!(self.current_definition, Some(DefinitionRef::Function(_)))
             && !matches!(declaration.kind, DeclarationKind::Variable)
         {
@@ -530,11 +530,11 @@ impl Lowerer<'_> {
             }
             DeclarationKind::Variable | DeclarationKind::Component => &[],
         };
-        let bus_arguments = self.lower_bus_arguments(declaration);
-        let bus_type = self.lower_bus_type(declaration, &bus_arguments);
+        let bus_arguments = self.lift_bus_arguments(declaration);
+        let bus_type = self.lift_bus_type(declaration, &bus_arguments);
         let mut effects = Vec::new();
         for declared in &declaration.symbols {
-            effects.extend(self.lower_declared_symbol(
+            effects.extend(self.lift_declared_symbol(
                 declared,
                 kind,
                 bus_type.clone(),
@@ -542,24 +542,24 @@ impl Lowerer<'_> {
                 tags,
             ));
         }
-        effects.extend(self.lower_tuple_initialization(declaration));
+        effects.extend(self.lift_tuple_initialization(declaration));
         effects
     }
 
-    pub(super) fn lower_bus_arguments(&mut self, declaration: &Declaration) -> Vec<ExprId> {
+    pub(super) fn lift_bus_arguments(&mut self, declaration: &Declaration) -> Vec<ExprId> {
         let DeclarationKind::Bus { arguments, .. } = &declaration.kind else { return Vec::new() };
         arguments
             .values()
             .iter()
             .map(|argument| {
-                let id = self.lower_expression(argument);
+                let id = self.lift_expression(argument);
                 self.expect_compile_time(id, argument.span(), false);
                 id
             })
             .collect()
     }
 
-    pub(super) fn lower_bus_type(
+    pub(super) fn lift_bus_type(
         &mut self,
         declaration: &Declaration,
         arguments: &[ExprId],
@@ -602,7 +602,7 @@ impl Lowerer<'_> {
         bus_type
     }
 
-    pub(super) fn lower_declared_symbol(
+    pub(super) fn lift_declared_symbol(
         &mut self,
         declared: &DeclaredSymbol,
         kind: SymbolKind,
@@ -628,7 +628,7 @@ impl Lowerer<'_> {
         self.hir.symbols[symbol.index].rank = declared.dimensions.len();
         let mut valid_shape = true;
         for dimension in &declared.dimensions {
-            let id = self.lower_expression(dimension);
+            let id = self.lift_expression(dimension);
             valid_shape &= self.expect_compile_time(id, dimension.span(), true);
             self.hir.symbols[symbol.index].dimensions.push(id);
         }
@@ -652,7 +652,7 @@ impl Lowerer<'_> {
         effects
     }
 
-    pub(super) fn lower_tuple_initialization(&mut self, declaration: &Declaration) -> Vec<Effect> {
+    pub(super) fn lift_tuple_initialization(&mut self, declaration: &Declaration) -> Vec<Effect> {
         let Some((operator, value)) = &declaration.tuple_initialization else { return Vec::new() };
         let mut effects = Vec::new();
         if let Expression::Tuple { elements, .. } = value {
@@ -728,28 +728,28 @@ impl Lowerer<'_> {
         };
         let kind = self.hir.symbols[symbol.index].kind;
         let value = if kind == SymbolKind::Component {
-            self.lower_component_value(symbol, value)
+            self.lift_component_value(symbol, value)
         } else {
-            self.lower_expression(value)
+            self.lift_expression(value)
         };
         self.assignment_effect(path, kind, operator, value, span)
     }
 
-    pub(super) fn lower_assignment(
+    pub(super) fn lift_assignment(
         &mut self,
         target: &Expression,
         operator: AssignmentOperator,
         value: &Expression,
         span: Span,
     ) -> Effect {
-        let Some(path) = self.lower_access(target) else {
+        let Some(path) = self.lift_access(target) else {
             return self.opaque(span, IncompleteReason::InvalidAssignment);
         };
         let kind = self.hir.symbols[path.terminal.index].kind;
         let value = if kind == SymbolKind::Component {
-            self.lower_component_value(path.root, value)
+            self.lift_component_value(path.root, value)
         } else {
-            self.lower_expression(value)
+            self.lift_expression(value)
         };
         if path.component_output {
             return self.invalid_assignment(span, "cannot assign a component output port");
@@ -849,7 +849,7 @@ impl Lowerer<'_> {
         }
     }
 
-    pub(super) fn lower_component_value(&mut self, symbol: SymbolId, value: &Expression) -> ExprId {
+    pub(super) fn lift_component_value(&mut self, symbol: SymbolId, value: &Expression) -> ExprId {
         let call = match value {
             Expression::Call { name, arguments, span } => {
                 Some((name, arguments.as_slice(), *span, false))
@@ -877,8 +877,7 @@ impl Lowerer<'_> {
                 ValueType::Unknown,
             );
         };
-        let arguments: Vec<_> =
-            arguments.iter().map(|value| self.lower_expression(value)).collect();
+        let arguments: Vec<_> = arguments.iter().map(|value| self.lift_expression(value)).collect();
         let mut target = self.resolve_call(name, DefinitionKind::Template);
         let valid_arity = self.check_arity(&target, arguments.len(), span);
         let valid_arguments = self.check_template_arguments(&arguments, span);

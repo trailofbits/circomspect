@@ -1,7 +1,7 @@
 use abstract_interpretation::lattice::Lattice;
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::hir_facts::{analyze, Degree, FieldContext, Range};
-use parser::hir::{lower_project, ExprKind};
+use parser::hir::{lift_project, ExprKind};
 use parser::new_frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
 use std::fmt::Debug;
@@ -77,9 +77,9 @@ fn real_hir_range_degree_and_dependencies_are_distinct() {
     let path = directory.join("domains.circom");
     fs::write(&path, "template Check(){signal input x; signal output y; y <== x*x;}").unwrap();
     let loaded = load_sources(&[path], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
-    let lowered = lower_project(&loaded);
-    assert!(lowered.diagnostics.is_empty());
-    let hir = &lowered.hir;
+    let lifted = lift_project(&loaded);
+    assert!(lifted.diagnostics.is_empty());
+    let hir = &lifted.hir;
     let cfg = build_cfg(hir, hir.definition("Check").unwrap()).unwrap();
     let field = FieldContext::for_curve(Curve::Bn254);
     let facts = analyze(hir, &cfg, &field, None).unwrap();
