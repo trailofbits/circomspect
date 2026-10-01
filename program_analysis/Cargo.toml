@@ -21,3 +21,4 @@ program_structure = { package = "circomspect-program-structure", version = "2.1.
 [dev-dependencies]
 parser = { package = "circomspect-parser", version = "2.2.0", path = "../parser" }
 program_structure = { package = "circomspect-program-structure", version = "2.1.4", path = "../program_structure" }
+serde_json = "=1.0.151"

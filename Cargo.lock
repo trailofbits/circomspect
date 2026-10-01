@@ -204,6 +204,7 @@ dependencies = [
  "log",
  "num-bigint-dig",
  "num-traits",
+ "serde_json",
  "thiserror",
 ]
 
