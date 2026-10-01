@@ -3,7 +3,8 @@ use std::fs;
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::hir_facts::FieldContext;
 use circomspect_program_analysis::interprocedural::{
-    CallOwner, CallReachability, ComposedConstraintFixedOutput, ProjectSummaries, SummaryFact,
+    CallOwner, CallReachability, ComposedConstraintFixedOutput, ProjectSummaries, SummaryBlocker,
+    SummaryFact,
 };
 use parser::hir::{lift_project, DefinitionRef, LiftedProject};
 use parser::new_frontend::{load_sources, PortDirection, Version, VersionPolicy};
@@ -146,4 +147,19 @@ fn caller_loop_and_exhausted_budget_cannot_promote_binding() {
         "template Parent(){component c=Child();c.in<==7;}"
     );
     assert!(composed(straight, Some(0)).certified().is_none());
+}
+
+#[test]
+fn an_unproved_array_index_cannot_fix_a_child_input() {
+    let result = composed(
+        concat!(
+            "template Child(){signal input in;signal output out;out<==in;} ",
+            "template Parent(){var values[1]=[7];component c=Child();",
+            "c.in<==values[1];signal output y;y<==c.out;}"
+        ),
+        None,
+    );
+    assert!(result
+        .unavailable()
+        .is_some_and(|reasons| reasons.contains(&SummaryBlocker::UnsupportedContext)));
 }
