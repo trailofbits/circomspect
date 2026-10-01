@@ -4,6 +4,7 @@ mod access;
 mod domains;
 mod field;
 mod forward;
+mod handles;
 mod liveness;
 mod walk;
 
@@ -29,6 +30,7 @@ use walk::VisitAccesses;
 pub use access::{AccessKey, AccessKeyStep, IndexKey};
 pub use domains::{DegreeUpper as Degree, FieldRange as Range};
 pub use field::{FieldContext, FieldValue};
+pub use handles::{AccessHandle, AccessHandleError};
 
 /// A reporting fact whose certified constructor is private to the analysis.
 ///
@@ -436,8 +438,52 @@ impl AnalysisFacts<'_> {
         Fact::known(state.contains_alias(&key).unwrap_or(false))
     }
 
+    /// Whether a schema-backed port is read in this definition's reachable body.
+    /// Interprocedural component effects remain unavailable until summarized.
+    pub fn read_handle(&self, handle: &AccessHandle) -> Fact<bool> {
+        if handle.definition != self.cfg.definition {
+            return Fact::blocked(BTreeSet::from([FactBlocker::ForeignDefinition]));
+        }
+        if handle.curve != *self.field.curve() {
+            return Fact::blocked(BTreeSet::from([FactBlocker::ForeignQuery]));
+        }
+        let blockers = self.backward_blockers_query(&handle.path, true);
+        if !blockers.is_empty() {
+            return Fact::blocked(blockers);
+        }
+        let SolveResult::Complete(facts) = &self.backward else {
+            return Fact::blocked(BTreeSet::from([FactBlocker::MissingExit]));
+        };
+        let key = key_for_path(self.hir, self.field, &handle.path, &BTreeMap::new());
+        let mut observed = false;
+        for node in self.cfg.nodes() {
+            let Some(state) = facts.get(node).and_then(|facts| facts.input.as_ref()) else {
+                continue;
+            };
+            let Some(read) = state.contains_alias(&key) else {
+                continue;
+            };
+            observed = true;
+            if read {
+                return Fact::known(true);
+            }
+        }
+        if !observed {
+            return Fact::blocked(BTreeSet::from([FactBlocker::MissingExit]));
+        }
+        Fact::known(false)
+    }
+
     fn backward_blockers(&self, path: &AccessPath) -> BTreeSet<FactBlocker> {
-        let mut blockers = self.blockers_for(path);
+        self.backward_blockers_query(path, false)
+    }
+
+    fn backward_blockers_query(
+        &self,
+        path: &AccessPath,
+        schema_checked: bool,
+    ) -> BTreeSet<FactBlocker> {
+        let mut blockers = self.blockers_for_query(path, schema_checked);
         let SolveResult::Incomplete { blockers: backward, .. } = &self.backward else {
             return blockers;
         };
@@ -576,8 +622,12 @@ impl AnalysisFacts<'_> {
     }
 
     fn blockers_for(&self, path: &AccessPath) -> BTreeSet<FactBlocker> {
+        self.blockers_for_query(path, false)
+    }
+
+    fn blockers_for_query(&self, path: &AccessPath, schema_checked: bool) -> BTreeSet<FactBlocker> {
         let mut blockers = BTreeSet::new();
-        if let Some(blocker) = self.validate_query_path(path) {
+        if let Some(blocker) = self.validate_query_path(path, schema_checked) {
             blockers.insert(blocker);
             return blockers;
         }
@@ -648,7 +698,7 @@ impl AnalysisFacts<'_> {
         blockers
     }
 
-    fn validate_query_path(&self, path: &AccessPath) -> Option<FactBlocker> {
+    fn validate_query_path(&self, path: &AccessPath, schema_checked: bool) -> Option<FactBlocker> {
         if self.hir.symbol(path.root).is_none() || self.hir.symbol(path.terminal).is_none() {
             return Some(FactBlocker::ForeignQuery);
         }
@@ -681,7 +731,7 @@ impl AnalysisFacts<'_> {
                 return Some(FactBlocker::ForeignQuery);
             }
         }
-        if terminal != path.terminal || !self.cfg.owns_path(path) {
+        if terminal != path.terminal || (!schema_checked && !self.cfg.owns_path(path)) {
             return Some(FactBlocker::ForeignQuery);
         }
         None
