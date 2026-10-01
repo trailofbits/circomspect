@@ -368,13 +368,15 @@ fn unresolved_witness_call_never_generates_a_constraint() {
 fn anonymous_constrained_input_under_witness_assignment_blocks_its_source() {
     let (hir, definition) = fixture(
         "template Child(){signal input in;signal output out;out<==in;} \
-         template Check(){signal input x;signal output y;y<--Child()(in<==x);}",
+         template Check(){signal input x;signal output y,z;y<--Child()(in<==x);z<==1;}",
     );
     let cfg = build_cfg(&hir, definition).unwrap();
     let field = FieldContext::for_curve(Curve::Bn254);
     let facts = analyze(&hir, &cfg, &field, None).unwrap();
     let x = expression_path(&hir, "x", 0);
+    let z = assigned_path(&hir, definition, "z");
     assert!(facts.incidence(&x).unavailable().is_some());
+    assert_eq!(facts.incidence(&z).certified(), Some(&Incidence::Must));
 }
 
 #[test]
