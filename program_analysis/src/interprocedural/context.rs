@@ -334,6 +334,11 @@ impl<'a> ProjectSummaries<'a> {
         let seeds = evidence.context.scalar_seeds(parameters)?;
         let mut facts = analyze_with_scalar_parameters(self.hir(), cfg, &self.field, seeds, budget)
             .map_err(|error| SummaryBlocker::LocalAnalysis(format!("{error:?}")))?;
+        if let Some(expression) =
+            self.invalid_deferred_assignment(cfg, parameters, evidence.context(), &facts)
+        {
+            return Err(SummaryBlocker::InvalidAssignment(expression));
+        }
         facts.bind_context(evidence.context.clone());
         Ok(facts)
     }
@@ -466,6 +471,7 @@ impl<'a> ProjectSummaries<'a> {
 
 #[cfg(test)]
 mod tests {
+    use super::ContextEvidence;
     use std::collections::BTreeMap;
 
     use parser::hir::{lift_project, DefinitionRef};
@@ -524,5 +530,40 @@ mod tests {
             provider.check_facts_for_evidence(&wrong, &evidence),
             Err(SummaryBlocker::WrongContext)
         );
+    }
+
+    #[test]
+    fn invalid_deferred_write_cannot_bind_complete_array_context_facts() {
+        let directory = std::env::temp_dir().join(format!(
+            "circomspect-array-binding-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let source = directory.join("case.circom");
+        std::fs::write(
+            &source,
+            "template T(n){var x=n;x=1;signal output y;y<==1;} component main=T(0);",
+        )
+        .unwrap();
+        let loaded =
+            load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
+        let lifted = lift_project(&loaded);
+        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let definition = lifted.hir.definition("T").unwrap();
+        let main = provider.graph.calls_from(CallOwner::Main(0))[0];
+        let CallReachability::Reachable(call) =
+            provider.graph.reachable_main_call(main.id(), provider.hir())
+        else {
+            panic!("main call")
+        };
+        let origin = provider.main_evidence(&call).unwrap().origin();
+        let context = provider.context_for(definition, vec![ArgumentValue::Array(vec![])]).unwrap();
+        let evidence = ContextEvidence { context, origin };
+        let cfg = build_cfg(provider.hir(), definition).unwrap();
+        assert!(matches!(
+            provider.analyze_for_evidence(&cfg, &evidence, None),
+            Err(SummaryBlocker::InvalidAssignment(_))
+        ));
     }
 }
