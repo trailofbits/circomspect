@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use parser::hir::{
     AccessPath, AccessStep, AnonymousInputEffect, ArrayIndex, BlockId, CallTarget, ComponentId,
-    DefinitionRef, Effect, ExprId, ExprKind, HirProject, IncompleteReason, SymbolId,
+    ControlGuard, DefinitionRef, Effect, ExprId, ExprKind, HirProject, IncompleteReason, SymbolId,
 };
 use parser::new_frontend::Span;
 
@@ -13,9 +13,11 @@ pub enum CallOwner {
     Main(usize),
 }
 
+/// Source validation of a may-call site; reachability is checked in the CFG.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CallProvenance {
     EffectOwned,
+    Provisional,
     Unattached,
 }
 
@@ -178,36 +180,46 @@ impl<'a> Scanner<'a> {
                 }
             }
             Effect::VariableAssignment { target, value, .. }
-            | Effect::DeferredVariableAssignment { target, value, .. }
             | Effect::ComponentInstantiation { target, value, .. }
             | Effect::WitnessAssignment { target, value, .. }
-            | Effect::ConstraintAssignment { target, value, .. }
-            | Effect::OpaqueAssignment { target, value, .. } => {
+            | Effect::ConstraintAssignment { target, value, .. } => {
                 self.path(target)?;
                 self.expression(*value)?;
             }
-            Effect::EqualityConstraint { left, right, .. }
-            | Effect::OpaqueEquality { left, right, .. } => {
+            Effect::DeferredVariableAssignment { target, value, .. }
+            | Effect::OpaqueAssignment { target, value, .. } => {
+                self.provisional(|scanner| {
+                    scanner.path(target)?;
+                    scanner.expression(*value)
+                })?;
+            }
+            Effect::EqualityConstraint { left, right, .. } => {
                 self.expression(*left)?;
                 self.expression(*right)?;
             }
+            Effect::OpaqueEquality { left, right, .. } => {
+                self.provisional(|scanner| {
+                    scanner.expression(*left)?;
+                    scanner.expression(*right)
+                })?;
+            }
             Effect::Update { target, .. } => self.path(target)?,
-            Effect::If { condition, then_block, else_block, .. } => {
-                self.expression(*condition)?;
-                self.block(*then_block)?;
-                if let Some(id) = else_block {
-                    self.block(*id)?;
-                }
+            Effect::If { condition, guard, then_block, else_block, .. } => {
+                self.if_effect(*condition, *guard, *then_block, *else_block)?
             }
-            Effect::While { condition, body, .. } => {
-                self.expression(*condition)?;
-                self.block(*body)?;
+            Effect::While { condition, guard, body, .. } => {
+                self.control(*guard, |scanner| {
+                    scanner.expression(*condition)?;
+                    scanner.block(*body)
+                })?;
             }
-            Effect::For { initializer, condition, step, body, .. } => {
+            Effect::For { initializer, condition, guard, step, body, .. } => {
                 self.block(*initializer)?;
-                self.expression(*condition)?;
-                self.block(*body)?;
-                self.block(*step)?;
+                self.control(*guard, |scanner| {
+                    scanner.expression(*condition)?;
+                    scanner.block(*body)?;
+                    scanner.block(*step)
+                })?;
             }
             Effect::Return { value, .. } | Effect::AnonymousComponent { expression: value, .. } => {
                 self.expression(*value)?
@@ -222,6 +234,47 @@ impl<'a> Scanner<'a> {
             Effect::Opaque { .. } => {}
         }
         Ok(())
+    }
+
+    fn if_effect(
+        &mut self,
+        condition: ExprId,
+        guard: ControlGuard,
+        then_block: BlockId,
+        else_block: Option<BlockId>,
+    ) -> Result<(), CallGraphError> {
+        self.control(guard, |scanner| {
+            scanner.expression(condition)?;
+            scanner.block(then_block)?;
+            if let Some(id) = else_block {
+                scanner.block(id)?;
+            }
+            Ok(())
+        })
+    }
+
+    fn control(
+        &mut self,
+        guard: ControlGuard,
+        work: impl FnOnce(&mut Self) -> Result<(), CallGraphError>,
+    ) -> Result<(), CallGraphError> {
+        match guard {
+            ControlGuard::DeferredScalar => self.provisional(work),
+            ControlGuard::CheckedCompileTime | ControlGuard::WitnessOnly => work(self),
+        }
+    }
+
+    fn provisional(
+        &mut self,
+        work: impl FnOnce(&mut Self) -> Result<(), CallGraphError>,
+    ) -> Result<(), CallGraphError> {
+        let previous = self.provenance;
+        if self.provenance == CallProvenance::EffectOwned {
+            self.provenance = CallProvenance::Provisional;
+        }
+        let result = work(self);
+        self.provenance = previous;
+        result
     }
 
     fn path(&mut self, path: &AccessPath) -> Result<(), CallGraphError> {

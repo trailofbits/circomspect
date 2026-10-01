@@ -116,3 +116,28 @@ fn main_argument_call_is_not_owned_by_an_adjacent_definition() {
     assert!(main_calls.iter().any(|site| matches!(site.target, CallTarget::Function(_))));
     assert!(main_calls.iter().any(|site| site.expression.is_none()));
 }
+
+#[test]
+fn opaque_assignment_call_is_owned_but_provisional() {
+    let hir = fixture(&[(
+        "opaque.circom",
+        "function Id(a){return a;} template Check(){signal output y;y<==Id(1);}",
+    )]);
+    let graph = build_call_graph(&hir).unwrap();
+    let check = hir.definition("Check").unwrap();
+    let calls = graph.calls_from(CallOwner::Definition(check));
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].provenance, CallProvenance::Provisional);
+}
+
+#[test]
+fn deferred_guard_makes_nested_component_call_provisional() {
+    let hir = fixture(&[(
+        "guard.circom",
+        "template Child(){} template Check(n){if(n){component c=Child();}}",
+    )]);
+    let graph = build_call_graph(&hir).unwrap();
+    let calls = graph.calls_from(CallOwner::Definition(hir.definition("Check").unwrap()));
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].provenance, CallProvenance::Provisional);
+}

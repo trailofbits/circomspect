@@ -161,6 +161,16 @@ fn forward_pruned_edges(
 }
 
 impl AnalysisFacts<'_> {
+    #[must_use]
+    pub fn hir(&self) -> &HirProject {
+        self.hir
+    }
+
+    #[must_use]
+    pub fn definition(&self) -> DefinitionRef {
+        self.cfg.definition
+    }
+
     /// A compile-time exact value or the full canonical field range.
     pub fn range(&self, expression: ExprId) -> Fact<FieldRange> {
         let scalar_blockers = self.scalar_blockers(expression);
