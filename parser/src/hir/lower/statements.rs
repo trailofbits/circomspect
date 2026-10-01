@@ -1,6 +1,48 @@
 use crate::hir::lower::*;
 
 impl Lowerer<'_> {
+    fn invalidate_component_evidence(&mut self, symbol: SymbolId) {
+        let reason = IncompleteReason::InvalidAssignment;
+        let mut call_values = Vec::new();
+        for block in &mut self.hir.blocks {
+            for effect in &mut block.effects {
+                let Effect::ComponentInstantiation { target, value, span } = effect else {
+                    continue;
+                };
+                if target.root != symbol {
+                    continue;
+                }
+                call_values.push(*value);
+                *effect = Effect::OpaqueAssignment {
+                    target: target.clone(),
+                    value: *value,
+                    operator: AssignmentOperator::Assign,
+                    reason: reason.clone(),
+                    span: *span,
+                };
+            }
+        }
+        for value in call_values {
+            let inner = match self.hir.expressions[value.index].kind {
+                ExprKind::Parallel(inner) => Some(inner),
+                _ => None,
+            };
+            if let Some(inner) = inner {
+                self.hir.expressions[inner.index].kind = ExprKind::Opaque(reason.clone());
+                self.expression_types[inner.index] = ValueType::Unknown;
+            }
+            self.hir.expressions[value.index].kind = ExprKind::Opaque(reason.clone());
+            self.expression_types[value.index] = ValueType::Unknown;
+        }
+        for (index, expression) in self.hir.expressions.iter_mut().enumerate() {
+            let ExprKind::Access(path) = &expression.kind else { continue };
+            if path.root == symbol {
+                expression.kind = ExprKind::Opaque(reason.clone());
+                self.expression_types[index] = ValueType::Unknown;
+            }
+        }
+    }
+
     pub(super) fn lower_statement(&mut self, statement: &Statement) -> Vec<Effect> {
         match statement {
             Statement::Block(_)
@@ -926,6 +968,7 @@ impl Lowerer<'_> {
                     "all instances of a component must use the same template".into(),
                 );
                 self.incomplete(span, IncompleteReason::InvalidAssignment);
+                self.invalidate_component_evidence(symbol);
                 target = CallTarget::Opaque { reason: IncompleteReason::InvalidAssignment };
             }
             self.hir.components[component.index].target = Some(target.clone());
