@@ -1333,6 +1333,43 @@ fn variable_assignments_require_compatible_shapes() {
 }
 
 #[test]
+fn checked_variable_assignments_keep_their_operator() {
+    let source = "function F(){var x=1;x+=2;x/=3;return x;}";
+    let result = lift(&[("compound_variable.circom", source)], Version::new(2, 2, 3));
+    assert!(result.diagnostics.is_empty(), "{:?}", result.diagnostics);
+    let operators: Vec<_> = effect_for_function(&result, "F")
+        .iter()
+        .filter_map(|effect| match effect {
+            Effect::VariableAssignment { operator, .. } => Some(*operator),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        operators,
+        [AssignmentOperator::Assign, AssignmentOperator::Add, AssignmentOperator::Divide]
+    );
+}
+
+#[test]
+fn compound_assignment_after_deferred_write_retains_prior_dependency() {
+    let source = "function F(n){var x=n;x+=1;return x;}";
+    let result = lift(&[("deferred_compound.circom", source)], Version::new(2, 2, 3));
+    let effects = effect_for_function(&result, "F");
+    let Some((target, operator)) = effects.iter().find_map(|effect| {
+        let Effect::VariableAssignment { target, operator, .. } = effect else {
+            return None;
+        };
+        (*operator == AssignmentOperator::Add).then_some((target, operator))
+    }) else {
+        panic!("checked compound assignment")
+    };
+    assert_eq!(*operator, AssignmentOperator::Add);
+    let symbol = result.hir.symbol(target.root).unwrap();
+    assert_eq!(symbol.knownness, Knownness::ParameterDependent);
+    assert_eq!(symbol.value_evidence, ValueEvidence::Deferred);
+}
+
+#[test]
 fn array_condition_is_opaque_but_scalar_condition_is_checked() {
     let invalid = "function F(){if([1,2]){return 1;} return 0;}";
     let result = lift(&[("array_condition.circom", invalid)], Version::new(2, 2, 3));

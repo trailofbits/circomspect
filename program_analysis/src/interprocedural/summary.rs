@@ -7,7 +7,7 @@ use abstract_interpretation::solver::{
     solve, Blocker, DataflowAnalysis, Forward, SolveResult, Transfer, TransferOutcome,
 };
 use parser::hir::{CallTarget, DefinitionRef, ExprId, ExprKind, Function, FunctionId};
-use parser::new_frontend::BinaryOperator;
+use parser::new_frontend::{AssignmentOperator, BinaryOperator};
 
 use crate::hir_cfg::{build_cfg, CfgNodeKind, DefinitionCfg};
 use crate::hir_facts::{
@@ -348,7 +348,10 @@ impl ProjectSummaries<'_> {
             | CfgNodeKind::Instantiate { .. }
             | CfgNodeKind::Witness { .. }
             | CfgNodeKind::Constraint { .. } => true,
-            CfgNodeKind::DeferredAssignment { .. } => !facts.resolved_deferred_assignment(id),
+            CfgNodeKind::Assignment { operator, .. } => *operator != AssignmentOperator::Assign,
+            CfgNodeKind::DeferredAssignment { operator, .. } => {
+                *operator != AssignmentOperator::Assign || !facts.resolved_deferred_assignment(id)
+            }
             CfgNodeKind::Evaluate(expression) => {
                 self.expression_may_fail(*expression, facts, field)
             }
@@ -356,7 +359,6 @@ impl ProjectSummaries<'_> {
             | CfgNodeKind::Exit
             | CfgNodeKind::LoopHeader
             | CfgNodeKind::Branch { .. }
-            | CfgNodeKind::Assignment { .. }
             | CfgNodeKind::Update { .. }
             | CfgNodeKind::Declaration { .. }
             | CfgNodeKind::Return(_)

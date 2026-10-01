@@ -289,6 +289,29 @@ fn division_by_zero_before_return_does_not_certify_completion() {
 }
 
 #[test]
+fn compound_assignments_cannot_borrow_plain_assignment_return_facts() {
+    let cases = [
+        ("function F(){var x=1;x/=0;return 7;}", false),
+        ("function F(){var x=1;x+=1;return x;}", false),
+        ("function F(){var x=1;return x;}", true),
+    ];
+    for (source, complete) in cases {
+        let lifted = fixture(source);
+        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else { panic!("F") };
+        let context = provider.symbolic_context_for(DefinitionRef::Function(f)).unwrap();
+        let summary = provider.function(f, &context);
+        let exact_one = Range::Exact(FieldContext::for_curve(Curve::Bn254).canonical(1.into()));
+        assert_eq!(
+            summary.certified().and_then(|item| item.complete_return()),
+            if complete { Some(&exact_one) } else { None },
+            "{source}: {:?}",
+            summary.unavailable()
+        );
+    }
+}
+
+#[test]
 fn conditional_return_coverage_propagates_through_a_direct_call() {
     let field = FieldContext::for_curve(Curve::Bn254);
     let lifted = fixture("function G(){var t=Missing();return 7;} function F(){return G();}");

@@ -324,6 +324,7 @@ pub enum Effect {
     VariableAssignment {
         target: AccessPath,
         value: ExprId,
+        operator: AssignmentOperator,
         span: Span,
     },
     DeferredVariableAssignment {
