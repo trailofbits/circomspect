@@ -2,7 +2,10 @@ mod support;
 
 use std::fs;
 
-use circomspect_program_analysis::new_rules::{Finding, RenderError, SourceMap};
+use circomspect_program_analysis::new_rules::{
+    AbstentionReason, Finding, RenderError, RuleResult, ScopedAbstention, SourceMap,
+};
+use parser::hir::lower_project;
 use parser::new_frontend::{load_sources, SourceId, Span, Version, VersionPolicy};
 use program_structure::report::MessageCategory;
 use program_structure::report_code::ReportCode;
@@ -29,6 +32,31 @@ fn finding(code: ReportCode, category: MessageCategory, span: Span) -> Finding {
         primary_label: "evidence".to_string(),
         secondary: Vec::new(),
     }
+}
+
+#[test]
+fn abstention_keeps_an_unproved_predicate_out_of_reports() {
+    let loaded = load_fixture("abstain", "template Check(n) { signal output y; y <-- n; }\n");
+    let lowered = lower_project(&loaded);
+    let definition = lowered.hir.definition("Check").unwrap();
+    let source = &loaded.files[0];
+    let span = Span::checked(source.id, 0..8, &source.text).unwrap();
+    let sources = SourceMap::from_loaded(&loaded, &[source.id]).unwrap();
+    let mut result = RuleResult::default();
+    result.add_abstention(ScopedAbstention {
+        definition,
+        span,
+        reason: AbstentionReason::SymbolicParameters,
+    });
+    assert!(result.findings().is_empty());
+    assert_eq!(result.abstentions().len(), 1);
+    let output = source.path.with_extension("sarif.json");
+    assert_eq!(
+        support::render(result.findings(), &sources, MessageCategory::Info, &[], &output).unwrap(),
+        (0, 0)
+    );
+    let sarif: Value = serde_json::from_str(&fs::read_to_string(output).unwrap()).unwrap();
+    assert_eq!(sarif["runs"][0]["results"].as_array().unwrap().len(), 0);
 }
 
 #[test]
