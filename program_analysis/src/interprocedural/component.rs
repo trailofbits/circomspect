@@ -3,16 +3,13 @@
 use std::collections::BTreeMap;
 
 use abstract_interpretation::graph::{FlowGraph, NodeId};
-use parser::hir::{
-    AccessPath, AccessStep, DefinitionRef, Effect, ExprId, ExprKind, PortId, PortSchema, SymbolId,
-};
+use parser::hir::{AccessPath, DefinitionRef, ExprId, ExprKind, PortId, PortSchema, SymbolId};
 use parser::new_frontend::PortDirection;
 
 use crate::hir_cfg::{CfgNodeKind, DefinitionCfg, Origin};
-use crate::hir_facts::{
-    AccessHandle, AnalysisFacts, FieldValue, InstanceRelation, Range, VisitAccesses,
-};
+use crate::hir_facts::{AccessHandle, AnalysisFacts, FieldValue, InstanceRelation, VisitAccesses};
 
+use crate::interprocedural::input_relation::ready_instance_at_use;
 use super::summary::certified;
 use super::{
     ContextEvidence, PortSummary, ProjectSummaries, ReachableCall, SummaryBlocker, SummaryFact,
@@ -64,13 +61,6 @@ struct GeneratedPortEquality {
     origin: Origin,
 }
 
-struct ConstrainedInputBinding {
-    port: PortId,
-    value: FieldValue,
-    origin: Origin,
-    node: NodeId,
-}
-
 #[derive(Clone, Copy)]
 enum ChildOutputEffect {
     Witness,
@@ -83,7 +73,7 @@ enum ChildOutputEffect {
 pub struct ComposedConstraintFixedOutput {
     value: FieldValue,
     child_equality: Origin,
-    caller_input: Origin,
+    caller_inputs: Vec<Origin>,
     applied: AppliedComponentPort,
 }
 
@@ -99,8 +89,8 @@ impl ComposedConstraintFixedOutput {
     }
 
     #[must_use]
-    pub fn caller_input(&self) -> Origin {
-        self.caller_input
+    pub fn caller_inputs(&self) -> &[Origin] {
+        &self.caller_inputs
     }
 
     #[must_use]
@@ -128,6 +118,10 @@ impl AppliedComponentPort {
     #[must_use]
     pub fn port_summary(&self) -> &PortSummary {
         &self.port
+    }
+
+    pub(super) fn instantiation(&self) -> NodeId {
+        self.instantiation
     }
 }
 
@@ -263,7 +257,6 @@ impl ProjectSummaries<'_> {
         if !applied.handle.matches_context(applied.caller.context()) {
             return Err(SummaryBlocker::WrongContext);
         }
-        let order = self.linear_caller_path(facts)?;
         if !*certified(&facts.must_execute(applied.instantiation))? {
             return Err(SummaryBlocker::ExternalSummary);
         }
@@ -271,18 +264,12 @@ impl ProjectSummaries<'_> {
             return Err(SummaryBlocker::WrongInstance);
         };
         let equality = self.child_output_equality(child, applied)?;
-        let bindings = self.all_input_bindings(facts, applied, child, &order)?;
-        for binding in &bindings {
-            self.check_output_read_order(facts, applied, binding.node, &order)?;
-        }
-        let binding = bindings
-            .into_iter()
-            .find(|item| item.port == equality.input)
-            .ok_or(SummaryBlocker::MissingInputBinding)?;
+        let ready = ready_instance_at_use(facts, applied, child)?;
+        let binding = ready.binding(equality.input).ok_or(SummaryBlocker::MissingInputBinding)?;
         Ok(ComposedConstraintFixedOutput {
-            value: binding.value,
+            value: binding.value.clone(),
             child_equality: equality.origin,
-            caller_input: binding.origin,
+            caller_inputs: binding.origins.clone(),
             applied: applied.clone(),
         })
     }
@@ -570,139 +557,6 @@ impl ProjectSummaries<'_> {
                 port.symbol == source.root && port.direction == Some(PortDirection::Input)
             })
         })
-    }
-
-    fn all_input_bindings(
-        &self,
-        facts: &AnalysisFacts<'_>,
-        applied: &AppliedComponentPort,
-        child: parser::hir::TemplateId,
-        order: &BTreeMap<NodeId, usize>,
-    ) -> Result<Vec<ConstrainedInputBinding>, SummaryBlocker> {
-        let template = self.hir().template(child).ok_or(SummaryBlocker::ForeignDefinition)?;
-        let mut bindings = Vec::new();
-        for id in &template.ports {
-            let port = self.hir().port(*id).ok_or(SummaryBlocker::ForeignDefinition)?;
-            if port.direction != Some(PortDirection::Input) {
-                continue;
-            }
-            let symbol = self.hir().symbol(port.symbol).ok_or(SummaryBlocker::ForeignDefinition)?;
-            if symbol.rank != 0 {
-                return Err(SummaryBlocker::UnsupportedContext);
-            }
-            bindings.push(self.caller_input_binding(facts, applied, *id, order)?);
-        }
-        Ok(bindings)
-    }
-
-    fn caller_input_binding(
-        &self,
-        facts: &AnalysisFacts<'_>,
-        applied: &AppliedComponentPort,
-        input: PortId,
-        order: &BTreeMap<NodeId, usize>,
-    ) -> Result<ConstrainedInputBinding, SummaryBlocker> {
-        let cfg = facts.cfg();
-        let mut binding = None;
-        for id in cfg.nodes() {
-            let Some(node) = cfg.node(*id) else { continue };
-            let CfgNodeKind::Witness { target, value } = &node.kind else { continue };
-            if target.root != applied.handle.path().root || !self.targets_port(target, input) {
-                continue;
-            }
-            let relation = facts.instance_relation(&applied.handle, target);
-            if relation == InstanceRelation::Separate {
-                continue;
-            }
-            if !*certified(&facts.reachable_node(*id))? {
-                continue;
-            }
-            if relation == InstanceRelation::Possible {
-                return Err(SummaryBlocker::SymbolicInstance);
-            }
-            if binding.is_some() {
-                return Err(SummaryBlocker::DuplicateInputBinding);
-            }
-            let origin = node
-                .origin
-                .ok_or(SummaryBlocker::LocalAnalysis("missing caller input origin".into()))?;
-            self.checked_input_effect(origin)?;
-            let current = order.get(id).ok_or(SummaryBlocker::ExternalSummary)?;
-            let instantiated =
-                order.get(&applied.instantiation).ok_or(SummaryBlocker::ExternalSummary)?;
-            if current <= instantiated || !*certified(&facts.must_execute(*id))? {
-                return Err(SummaryBlocker::ExternalSummary);
-            }
-            let value = match certified(&facts.range(*value))? {
-                Range::Exact(value) => value.clone(),
-                Range::Canonical | Range::Unreachable => {
-                    return Err(SummaryBlocker::UnsupportedContext);
-                }
-            };
-            binding = Some(ConstrainedInputBinding { port: input, value, origin, node: *id });
-        }
-        binding.ok_or(SummaryBlocker::MissingInputBinding)
-    }
-
-    fn targets_port(&self, target: &AccessPath, port: PortId) -> bool {
-        let steps = &target.steps;
-        let Some(position) = steps.iter().position(|step| match step {
-            AccessStep::Port { .. } => true,
-            AccessStep::Index { .. } | AccessStep::Tag { .. } => false,
-        }) else {
-            return false;
-        };
-        match steps.get(position) {
-            Some(AccessStep::Port { port: actual, .. }) => {
-                *actual == port && position + 1 == steps.len()
-            }
-            Some(AccessStep::Index { .. } | AccessStep::Tag { .. }) | None => false,
-        }
-    }
-
-    fn checked_input_effect(&self, origin: Origin) -> Result<(), SummaryBlocker> {
-        let effect = self
-            .hir()
-            .block(origin.block)
-            .and_then(|block| block.effects.get(origin.effect_index))
-            .ok_or(SummaryBlocker::ExternalSummary)?;
-        match effect {
-            Effect::ConstraintAssignment { .. } => Ok(()),
-            Effect::WitnessAssignment { .. } => Err(SummaryBlocker::WitnessOnlyInput),
-            _ => Err(SummaryBlocker::ExternalSummary),
-        }
-    }
-
-    fn check_output_read_order(
-        &self,
-        facts: &AnalysisFacts<'_>,
-        applied: &AppliedComponentPort,
-        input: NodeId,
-        order: &BTreeMap<NodeId, usize>,
-    ) -> Result<(), SummaryBlocker> {
-        let bound_at = order.get(&input).ok_or(SummaryBlocker::ExternalSummary)?;
-        for id in facts.cfg().nodes() {
-            let Some(CfgNodeKind::Evaluate(expr)) = facts.cfg().node(*id).map(|node| &node.kind)
-            else {
-                continue;
-            };
-            let Some(ExprKind::Access(path)) = self.hir().expression(*expr).map(|item| &item.kind)
-            else {
-                continue;
-            };
-            if path.root != applied.handle.path().root
-                || path.terminal != applied.handle.path().terminal
-                || facts.instance_relation(&applied.handle, path) == InstanceRelation::Separate
-            {
-                continue;
-            }
-            if order.get(id).is_some_and(|position| position <= bound_at)
-                && *certified(&facts.reachable_node(*id))?
-            {
-                return Err(SummaryBlocker::ExternalSummary);
-            }
-        }
-        Ok(())
     }
 
     fn direct_call_expression(&self, expression: ExprId) -> Option<ExprId> {
