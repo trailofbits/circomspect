@@ -1,4 +1,4 @@
-use circomspect_program_analysis::hir_facts::{FieldContext, Range};
+use circomspect_program_analysis::hir_facts::{FieldContext, Incidence, Range};
 use circomspect_program_analysis::interprocedural::{
     ArgumentValue, FunctionEffect, ProjectSummaries, SummaryBlocker,
 };
@@ -249,4 +249,77 @@ fn unreachable_and_unrelated_opaque_calls_do_not_invent_effects() {
         provider.function(clean, &clean_context).certified().unwrap().returns(),
         &Range::Exact(FieldContext::for_curve(Curve::Bn254).canonical(1.into()))
     );
+}
+
+#[test]
+fn template_port_summary_specializes_constraint_provenance() {
+    let lowered = fixture("template T(n){signal output x;if(n){x<==1;}else{x<--1;}}");
+    let provider = ProjectSummaries::build(&lowered, Curve::Bn254).unwrap();
+    let DefinitionRef::Template(template) = lowered.hir.definition("T").unwrap() else {
+        panic!("template T")
+    };
+    let port = lowered.hir.template(template).unwrap().ports[0];
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let one = provider
+        .context_for(
+            DefinitionRef::Template(template),
+            vec![ArgumentValue::Scalar(field.canonical(1.into()))],
+        )
+        .unwrap();
+    let zero = provider
+        .context_for(
+            DefinitionRef::Template(template),
+            vec![ArgumentValue::Scalar(field.canonical(0.into()))],
+        )
+        .unwrap();
+    let symbolic = provider.symbolic_context_for(DefinitionRef::Template(template)).unwrap();
+    let constrained = provider.template_port(template, &one, port);
+    assert_eq!(constrained.certified().unwrap().incidence(), Incidence::Must);
+    assert_eq!(constrained.certified().unwrap().fixed_value(), Some(&field.canonical(1.into())));
+    assert_eq!(
+        provider.template_port(template, &zero, port).certified().unwrap().incidence(),
+        Incidence::Zero
+    );
+    assert!(provider.template_port(template, &symbolic, port).unavailable().is_some());
+    assert!(lowered.hir.mains().is_empty());
+}
+
+#[test]
+fn template_port_summary_keeps_witness_and_read_evidence_separate() {
+    let lowered = fixture("template T(){signal input x;signal output y,z;y<--x;z<==1;}");
+    let provider = ProjectSummaries::build(&lowered, Curve::Bn254).unwrap();
+    let DefinitionRef::Template(template) = lowered.hir.definition("T").unwrap() else {
+        panic!("template T")
+    };
+    let ports = &lowered.hir.template(template).unwrap().ports;
+    let context = provider.symbolic_context_for(DefinitionRef::Template(template)).unwrap();
+    assert_eq!(provider.template_port_read(template, &context, ports[0]).certified(), Some(&true));
+    assert_eq!(
+        provider.template_port_witnesses(template, &context, ports[1]).certified().map(Vec::len),
+        Some(1)
+    );
+    assert_eq!(
+        provider.template_port(template, &context, ports[1]).certified().unwrap().incidence(),
+        Incidence::Zero
+    );
+    assert_eq!(
+        provider.template_port_witnesses(template, &context, ports[2]).certified().map(Vec::len),
+        Some(1)
+    );
+    assert_eq!(
+        provider.template_port(template, &context, ports[2]).certified().unwrap().incidence(),
+        Incidence::Must
+    );
+}
+
+#[test]
+fn opaque_witness_write_cannot_certify_an_empty_witness_summary() {
+    let lowered = fixture("template T(){signal output y;y<--Missing();}");
+    let provider = ProjectSummaries::build(&lowered, Curve::Bn254).unwrap();
+    let DefinitionRef::Template(template) = lowered.hir.definition("T").unwrap() else {
+        panic!("template T")
+    };
+    let port = lowered.hir.template(template).unwrap().ports[0];
+    let context = provider.symbolic_context_for(DefinitionRef::Template(template)).unwrap();
+    assert!(provider.template_port_witnesses(template, &context, port).unavailable().is_some());
 }

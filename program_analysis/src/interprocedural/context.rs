@@ -1,6 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use parser::hir::{DefinitionRef, ExprId, ExprKind, HirProject, LoweredProject, ProjectIdentity};
+use parser::hir::{
+    DefinitionRef, ExprId, ExprKind, HirProject, LoweredProject, ProjectIdentity, SymbolId,
+};
 use parser::new_frontend::Version;
 use program_structure::utils::constants::Curve;
 
@@ -69,6 +71,25 @@ impl CallContext {
     #[must_use]
     pub fn arguments(&self) -> &[ArgumentValue] {
         &self.arguments
+    }
+
+    pub(crate) fn scalar_seeds(
+        &self,
+        parameters: &[SymbolId],
+    ) -> Result<BTreeMap<SymbolId, FieldValue>, SummaryBlocker> {
+        let mut values = BTreeMap::new();
+        for (symbol, argument) in parameters.iter().zip(&self.arguments) {
+            match argument {
+                ArgumentValue::Scalar(value) => {
+                    values.insert(*symbol, value.clone());
+                }
+                ArgumentValue::Symbolic(_) => {}
+                ArgumentValue::Array(_) | ArgumentValue::Bus(_) => {
+                    return Err(SummaryBlocker::UnsupportedContext);
+                }
+            }
+        }
+        Ok(values)
     }
 }
 

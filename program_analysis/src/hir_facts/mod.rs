@@ -640,7 +640,22 @@ impl AnalysisFacts<'_> {
 
     /// Whether a local access can occur in a generated constraint.
     pub fn incidence(&self, path: &AccessPath) -> Fact<Incidence> {
-        let blockers = self.blockers_for(path);
+        self.incidence_query(path, false)
+    }
+
+    /// Constraint incidence for a schema-backed port without a source occurrence.
+    pub fn incidence_handle(&self, handle: &AccessHandle) -> Fact<Incidence> {
+        if handle.definition != self.cfg.definition {
+            return Fact::blocked(BTreeSet::from([FactBlocker::ForeignDefinition]));
+        }
+        if handle.curve != *self.field.curve() {
+            return Fact::blocked(BTreeSet::from([FactBlocker::ForeignQuery]));
+        }
+        self.incidence_query(&handle.path, true)
+    }
+
+    fn incidence_query(&self, path: &AccessPath, schema_checked: bool) -> Fact<Incidence> {
+        let blockers = self.blockers_for_query(path, schema_checked);
         if !blockers.is_empty() {
             return Fact::blocked(blockers);
         }
@@ -668,7 +683,26 @@ impl AnalysisFacts<'_> {
 
     /// An exact value proved by a generated equality on every reachable path.
     pub fn constraint_fixed(&self, path: &AccessPath) -> Fact<Option<FieldValue>> {
-        let blockers = self.blockers_for(path);
+        self.constraint_fixed_query(path, false)
+    }
+
+    /// Fixed value for a schema-backed port without a source occurrence.
+    pub fn constraint_fixed_handle(&self, handle: &AccessHandle) -> Fact<Option<FieldValue>> {
+        if handle.definition != self.cfg.definition {
+            return Fact::blocked(BTreeSet::from([FactBlocker::ForeignDefinition]));
+        }
+        if handle.curve != *self.field.curve() {
+            return Fact::blocked(BTreeSet::from([FactBlocker::ForeignQuery]));
+        }
+        self.constraint_fixed_query(&handle.path, true)
+    }
+
+    fn constraint_fixed_query(
+        &self,
+        path: &AccessPath,
+        schema_checked: bool,
+    ) -> Fact<Option<FieldValue>> {
+        let blockers = self.blockers_for_query(path, schema_checked);
         if !blockers.is_empty() {
             return Fact::blocked(blockers);
         }
@@ -753,10 +787,6 @@ impl AnalysisFacts<'_> {
         let analysis = ForwardAnalysis::new(self.hir, self.field);
         forward::expression_dependencies(&analysis, id, values, dependencies)
             .map_or(true, |accesses| accesses.iter().any(|key| key.may_alias(query)))
-    }
-
-    fn blockers_for(&self, path: &AccessPath) -> BTreeSet<FactBlocker> {
-        self.blockers_for_query(path, false)
     }
 
     fn blockers_for_query(&self, path: &AccessPath, schema_checked: bool) -> BTreeSet<FactBlocker> {

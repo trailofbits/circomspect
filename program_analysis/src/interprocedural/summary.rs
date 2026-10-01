@@ -7,7 +7,7 @@ use parser::hir::{DefinitionRef, ExprId, ExprKind, Function, FunctionId, SymbolI
 use crate::hir_cfg::{build_cfg, CfgNodeKind, DefinitionCfg};
 use crate::hir_facts::{analyze_with_scalar_parameters, AnalysisFacts, Fact, FieldContext, Range};
 
-use super::{ArgumentValue, CallContext, CallOwner, CallReachability, ProjectSummaries, SummaryBlocker};
+use super::{CallContext, CallOwner, CallReachability, ProjectSummaries, SummaryBlocker};
 
 /// A summary certificate is created only after the relevant CFG and calls are complete.
 ///
@@ -146,18 +146,7 @@ impl ProjectSummaries<'_> {
             return Err(SummaryBlocker::WrongContext);
         }
         self.check_context(context)?;
-        let mut parameters = BTreeMap::new();
-        for (symbol, argument) in function.parameters.iter().zip(context.arguments()) {
-            match argument {
-                ArgumentValue::Scalar(value) => {
-                    parameters.insert(*symbol, value.clone());
-                }
-                ArgumentValue::Symbolic(_) => {}
-                ArgumentValue::Array(_) | ArgumentValue::Bus(_) => {
-                    return Err(SummaryBlocker::UnsupportedContext);
-                }
-            }
-        }
+        let parameters = context.scalar_seeds(&function.parameters)?;
         let cfg = build_cfg(self.hir(), DefinitionRef::Function(id))
             .map_err(|error| SummaryBlocker::LocalAnalysis(format!("{error:?}")))?;
         let field = FieldContext::for_curve(self.curve().clone());
