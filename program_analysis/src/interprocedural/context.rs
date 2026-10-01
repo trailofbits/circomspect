@@ -1,12 +1,14 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use parser::hir::{DefinitionRef, HirProject, LoweredProject, ProjectIdentity};
+use parser::hir::{DefinitionRef, ExprId, ExprKind, HirProject, LoweredProject, ProjectIdentity};
 use parser::new_frontend::Version;
 use program_structure::utils::constants::Curve;
 
-use crate::hir_facts::{FieldContext, FieldValue};
+use crate::hir_facts::{
+    exact_compile_time, AnalysisFacts, FactBlocker, FieldContext, FieldValue, Range,
+};
 
-use super::{build_call_graph, CallGraph, CallGraphError};
+use super::{build_call_graph, CallGraph, CallGraphError, CallOwner, CallSiteId, ReachableCall};
 
 /// Shape of a compile-time argument before a concrete value is known.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -70,12 +72,43 @@ impl CallContext {
     }
 }
 
+/// Origin of a summary scope. Symbolic roots require universal proof before reporting.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum ContextOrigin {
+    SymbolicRoot,
+    Main(CallSiteId),
+    Call(CallSiteId),
+}
+
+/// A nonforgeable scope linking a context to a library root or reachable call.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ContextEvidence {
+    context: CallContext,
+    origin: ContextOrigin,
+}
+
+impl ContextEvidence {
+    #[must_use]
+    pub fn context(&self) -> &CallContext {
+        &self.context
+    }
+
+    #[must_use]
+    pub fn origin(&self) -> ContextOrigin {
+        self.origin
+    }
+}
+
 /// Why a context cannot be used as certified summary evidence.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SummaryBlocker {
     ForeignDefinition,
+    ForeignCall,
     WrongContext,
     WrongArity { expected: usize, actual: usize },
+    UnprovenArgument(ExprId),
+    UnsupportedCallForm,
+    LocalFacts(BTreeSet<FactBlocker>),
 }
 
 /// Owns the validated field and graph used to construct summary contexts.
@@ -149,6 +182,142 @@ impl<'a> ProjectSummaries<'a> {
             return Err(SummaryBlocker::WrongArity { expected, actual: context.arguments.len() });
         }
         Ok(())
+    }
+
+    /// A library definition is a scope even without a `main` instantiation.
+    /// A finding still needs a predicate proved for all symbolic values.
+    pub fn symbolic_root(
+        &self,
+        definition: DefinitionRef,
+    ) -> Result<ContextEvidence, SummaryBlocker> {
+        Ok(ContextEvidence {
+            context: self.symbolic_context_for(definition)?,
+            origin: ContextOrigin::SymbolicRoot,
+        })
+    }
+
+    /// Bind a checked `main` call to independently proved compile-time arguments.
+    pub fn main_evidence(
+        &self,
+        call: &ReachableCall<'_>,
+    ) -> Result<ContextEvidence, SummaryBlocker> {
+        let site = call.site();
+        let CallOwner::Main(index) = site.owner else { return Err(SummaryBlocker::ForeignCall) };
+        if self.graph.site(site.id()) != Some(site) {
+            return Err(SummaryBlocker::ForeignCall);
+        }
+        let main = self.hir().mains().get(index).ok_or(SummaryBlocker::ForeignCall)?;
+        if site.target != main.target || site.span != main.span {
+            return Err(SummaryBlocker::ForeignCall);
+        }
+        let arguments = self.exact_main_arguments(&main.arguments)?;
+        let context = self.context_for(call.callee(), arguments)?;
+        Ok(ContextEvidence { context, origin: ContextOrigin::Main(site.id()) })
+    }
+
+    /// Bind a checked reachable definition call to certified exact argument values.
+    pub fn call_evidence(
+        &self,
+        call: &ReachableCall<'_>,
+        facts: &AnalysisFacts<'_>,
+    ) -> Result<ContextEvidence, SummaryBlocker> {
+        let site = call.site();
+        if self.hir().identity() != facts.hir().identity()
+            || self.curve() != facts.curve()
+            || self.graph.site(site.id()) != Some(site)
+        {
+            return Err(SummaryBlocker::ForeignCall);
+        }
+        let CallOwner::Definition(owner) = site.owner else {
+            return Err(SummaryBlocker::ForeignCall);
+        };
+        if owner != facts.definition() {
+            return Err(SummaryBlocker::ForeignCall);
+        }
+        let expression = site.expression.ok_or(SummaryBlocker::UnsupportedCallForm)?;
+        let reachable = facts.reachable_expression(expression);
+        match reachable.certified() {
+            Some(true) => {}
+            Some(false) => return Err(SummaryBlocker::ForeignCall),
+            None => {
+                return Err(SummaryBlocker::LocalFacts(
+                    reachable.unavailable().cloned().unwrap_or_default(),
+                ));
+            }
+        }
+        let Some(expr) = self.hir().expression(expression) else {
+            return Err(SummaryBlocker::ForeignCall);
+        };
+        let arguments = match &expr.kind {
+            ExprKind::Call { arguments, .. } | ExprKind::AnonymousComponent { arguments, .. } => {
+                arguments
+            }
+            _ => return Err(SummaryBlocker::UnsupportedCallForm),
+        };
+        let arguments = self.exact_call_arguments(arguments, facts)?;
+        let context = self.context_for(call.callee(), arguments)?;
+        Ok(ContextEvidence { context, origin: ContextOrigin::Call(site.id()) })
+    }
+
+    /// Revalidate a scope before a rule combines it with local facts.
+    pub fn check_evidence(&self, evidence: &ContextEvidence) -> Result<(), SummaryBlocker> {
+        self.check_context(&evidence.context)?;
+        match evidence.origin {
+            ContextOrigin::SymbolicRoot => {
+                if evidence
+                    .context
+                    .arguments
+                    .iter()
+                    .all(|value| matches!(value, ArgumentValue::Symbolic(ArgumentShape::Unknown)))
+                {
+                    Ok(())
+                } else {
+                    Err(SummaryBlocker::WrongContext)
+                }
+            }
+            ContextOrigin::Main(id) | ContextOrigin::Call(id) => {
+                let site = self.graph.site(id).ok_or(SummaryBlocker::ForeignCall)?;
+                if site.resolved() == Some(evidence.context.definition) {
+                    Ok(())
+                } else {
+                    Err(SummaryBlocker::ForeignCall)
+                }
+            }
+        }
+    }
+
+    fn exact_main_arguments(
+        &self,
+        arguments: &[ExprId],
+    ) -> Result<Vec<ArgumentValue>, SummaryBlocker> {
+        let mut values = Vec::with_capacity(arguments.len());
+        for expression in arguments {
+            let value = exact_compile_time(self.hir(), &self.field, *expression)
+                .ok_or(SummaryBlocker::UnprovenArgument(*expression))?;
+            values.push(ArgumentValue::Scalar(value));
+        }
+        Ok(values)
+    }
+
+    fn exact_call_arguments(
+        &self,
+        arguments: &[ExprId],
+        facts: &AnalysisFacts<'_>,
+    ) -> Result<Vec<ArgumentValue>, SummaryBlocker> {
+        let mut values = Vec::with_capacity(arguments.len());
+        for expression in arguments {
+            let range = facts.range(*expression);
+            let Some(range) = range.certified() else {
+                return Err(SummaryBlocker::LocalFacts(
+                    range.unavailable().cloned().unwrap_or_default(),
+                ));
+            };
+            let Range::Exact(value) = range else {
+                return Err(SummaryBlocker::UnprovenArgument(*expression));
+            };
+            values.push(ArgumentValue::Scalar(value.clone()));
+        }
+        Ok(values)
     }
 
     fn parameter_count(&self, definition: DefinitionRef) -> Option<usize> {
