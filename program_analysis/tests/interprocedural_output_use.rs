@@ -3,7 +3,7 @@ use std::fs;
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::interprocedural::{
     CallOwner, CallReachability, ProjectOutputStatus, ProjectOutputUse, ProjectSummaries,
-    SummaryFact,
+    SummaryBlocker, SummaryFact,
 };
 use parser::hir::{lift_project, DefinitionRef, LiftedProject};
 use parser::new_frontend::{load_sources, PortDirection, Version, VersionPolicy};
@@ -130,6 +130,60 @@ fn opaque_caller_behavior_blocks_a_global_unused_claim() {
         1,
     );
     assert!(result.certified().is_none());
+}
+
+#[test]
+fn incomplete_unrelated_definition_blocks_a_project_wide_unused_claim() {
+    let result = internal_use(
+        concat!(
+            "template Child(){signal output out;out<==1;} ",
+            "template Parent(){component c[2];c[0]=Child();c[1]=Child();} ",
+            "template Broken(){Missing();} component main=Parent();"
+        ),
+        1,
+    );
+    assert!(result
+        .unavailable()
+        .is_some_and(|reasons| reasons.contains(&SummaryBlocker::ExternalSummary)));
+}
+
+#[test]
+fn symbolic_facts_cannot_borrow_a_concrete_main_output_use_proof() {
+    let lifted = fixture(concat!(
+        "template Child(){signal output out;out<==1;} ",
+        "template Parent(n){component c;c=Child();} component main=Parent(0);"
+    ));
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let parent = lifted.hir.definition("Parent").unwrap();
+    let DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap() else {
+        panic!("Child must be a template")
+    };
+    let site = provider.graph().calls_from(CallOwner::Main(0))[0];
+    let CallReachability::Reachable(main) =
+        provider.graph().reachable_main_call(site.id(), &lifted.hir)
+    else {
+        panic!("main must resolve")
+    };
+    let concrete = provider.main_evidence(&main).unwrap();
+    let cfg = build_cfg(&lifted.hir, parent).unwrap();
+    let concrete_facts = provider.analyze_for_evidence(&cfg, &concrete, None).unwrap();
+    let output = lifted.hir.template(child).unwrap().ports[0];
+    let component = lifted.hir.components()[0].id;
+    let handle = concrete_facts.component_output_handle(component, &[], output, &[]).unwrap();
+    let call_site = provider.graph().calls_from(CallOwner::Definition(parent))[0];
+    let CallReachability::Reachable(call) =
+        provider.graph().reachable_call(call_site.id(), &concrete_facts)
+    else {
+        panic!("child must be reachable")
+    };
+    let applied = provider.apply_component_output(&concrete_facts, &concrete, &call, &handle);
+    let applied = applied.certified().unwrap();
+    let symbolic = provider.symbolic_root(parent).unwrap();
+    let symbolic_facts = provider.analyze_for_evidence(&cfg, &symbolic, None).unwrap();
+    let result = provider.closed_main_component_output_use(&symbolic_facts, applied);
+    assert!(result
+        .unavailable()
+        .is_some_and(|reasons| reasons.contains(&SummaryBlocker::WrongContext)));
 }
 
 #[test]
