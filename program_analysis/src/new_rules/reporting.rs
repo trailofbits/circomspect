@@ -197,7 +197,6 @@ mod tests {
     use program_structure::utils::constants::Curve;
 
     use crate::hir_cfg::build_cfg;
-    use crate::hir_facts::{analyze, FieldContext};
     use crate::interprocedural::ProjectSummaries;
     use crate::new_rules::RuleContext;
 
@@ -217,10 +216,9 @@ mod tests {
         let lowered = lower_project(&loaded);
         let definition = lowered.hir.definition("Check").unwrap();
         let cfg = build_cfg(&lowered.hir, definition).unwrap();
-        let field = FieldContext::for_curve(Curve::Bn254);
-        let facts = analyze(&lowered.hir, &cfg, &field, None).unwrap();
         let summaries = ProjectSummaries::build(&lowered, Curve::Bn254).unwrap();
         let evidence = summaries.symbolic_root(definition).unwrap();
+        let facts = summaries.analyze_for_evidence(&cfg, &evidence, None).unwrap();
         let context = RuleContext::new(&facts, &summaries, &evidence).unwrap();
         let primary = Span::checked(loaded.files[0].id, 22..30, &loaded.files[0].text).unwrap();
         let finding = context.finding(

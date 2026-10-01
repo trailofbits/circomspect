@@ -44,6 +44,9 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
         if facts.definition() != evidence.context().definition() {
             return Err(RuleContextError::WrongDefinition);
         }
+        summaries
+            .check_facts_for_evidence(facts, evidence)
+            .map_err(RuleContextError::MismatchedFacts)?;
         Ok(Self { facts, summaries, evidence })
     }
 
@@ -95,4 +98,6 @@ pub enum RuleContextError {
     WrongDefinition,
     #[error("summary evidence is invalid for this project: {0:?}")]
     InvalidEvidence(SummaryBlocker),
+    #[error("local facts were not computed for the summary evidence context: {0:?}")]
+    MismatchedFacts(SummaryBlocker),
 }

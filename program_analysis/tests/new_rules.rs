@@ -10,7 +10,9 @@ use circomspect_program_analysis::new_rules::{
 use circomspect_program_analysis::hir_facts::FieldContext;
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::hir_facts::analyze;
-use circomspect_program_analysis::interprocedural::{ArgumentValue, ProjectSummaries};
+use circomspect_program_analysis::interprocedural::{
+    ArgumentValue, CallOwner, CallReachability, ProjectSummaries, SummaryBlocker,
+};
 use parser::hir::lower_project;
 use parser::new_frontend::{load_sources, SourceId, Span, Version, VersionPolicy};
 use program_structure::report::{MessageCategory, Report};
@@ -37,12 +39,10 @@ fn rule_context_requires_matching_certified_scope() {
     let first = lowered.hir.definition("First").unwrap();
     let second = lowered.hir.definition("Second").unwrap();
     let cfg = build_cfg(&lowered.hir, first).unwrap();
-    let bn_field = FieldContext::for_curve(Curve::Bn254);
-    let gold_field = FieldContext::for_curve(Curve::Goldilocks);
-    let facts = analyze(&lowered.hir, &cfg, &bn_field, None).unwrap();
     let summaries = ProjectSummaries::build(&lowered, Curve::Bn254).unwrap();
     let first_root = summaries.symbolic_root(first).unwrap();
     let second_root = summaries.symbolic_root(second).unwrap();
+    let facts = summaries.analyze_for_evidence(&cfg, &first_root, None).unwrap();
     let context = RuleContext::new(&facts, &summaries, &first_root).unwrap();
     assert_eq!(context.hir().identity(), lowered.hir.identity());
     assert_eq!(context.call_context(), first_root.context());
@@ -65,10 +65,51 @@ fn rule_context_requires_matching_certified_scope() {
         RuleContext::new(&facts, &foreign_provider, &foreign_root).err(),
         Some(RuleContextError::ForeignProject)
     );
-    let gold_facts = analyze(&lowered.hir, &cfg, &gold_field, None).unwrap();
+    let gold_facts = gold.analyze_for_evidence(&cfg, &gold_root, None).unwrap();
     assert_eq!(
         RuleContext::new(&gold_facts, &summaries, &first_root).err(),
         Some(RuleContextError::WrongCurve)
+    );
+}
+
+#[test]
+fn concrete_rule_context_rejects_unbound_and_wrong_seed_facts() {
+    let loaded = load_fixture(
+        "rule-seed",
+        "template Child(n){} template One(){component c=Child(1);}\
+         template Two(){component c=Child(2);}\n",
+    );
+    let lowered = lower_project(&loaded);
+    let child = lowered.hir.definition("Child").unwrap();
+    let summaries = ProjectSummaries::build(&lowered, Curve::Bn254).unwrap();
+    let mut child_evidence = Vec::new();
+    for name in ["One", "Two"] {
+        let parent = lowered.hir.definition(name).unwrap();
+        let root = summaries.symbolic_root(parent).unwrap();
+        let parent_cfg = build_cfg(&lowered.hir, parent).unwrap();
+        let parent_facts = summaries.analyze_for_evidence(&parent_cfg, &root, None).unwrap();
+        let site = summaries.graph().calls_from(CallOwner::Definition(parent))[0];
+        let CallReachability::Reachable(call) =
+            summaries.graph().reachable_call(site.id(), &parent_facts)
+        else {
+            panic!("checked child call")
+        };
+        child_evidence.push(summaries.call_evidence(&call, &parent_facts).unwrap());
+    }
+    assert_eq!(child_evidence.len(), 2);
+    assert_ne!(child_evidence[0].context(), child_evidence[1].context());
+    let child_cfg = build_cfg(&lowered.hir, child).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let unbound = analyze(&lowered.hir, &child_cfg, &field, None).unwrap();
+    assert_eq!(
+        RuleContext::new(&unbound, &summaries, &child_evidence[0]).err(),
+        Some(RuleContextError::MismatchedFacts(SummaryBlocker::WrongContext))
+    );
+    let seeded = summaries.analyze_for_evidence(&child_cfg, &child_evidence[0], None).unwrap();
+    assert!(RuleContext::new(&seeded, &summaries, &child_evidence[0]).is_ok());
+    assert_eq!(
+        RuleContext::new(&seeded, &summaries, &child_evidence[1]).err(),
+        Some(RuleContextError::MismatchedFacts(SummaryBlocker::WrongContext))
     );
 }
 
