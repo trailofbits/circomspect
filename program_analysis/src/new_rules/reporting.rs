@@ -8,8 +8,7 @@ use program_structure::report_code::ReportCode;
 /// Source files and their legacy renderer IDs, created in parser source order.
 pub struct SourceMap<'a> {
     files: FileLibrary,
-    ids: BTreeMap<SourceId, FileID>,
-    project: &'a LoadedProject,
+    sources: BTreeMap<SourceId, (FileID, &'a str)>,
 }
 
 impl<'a> SourceMap<'a> {
@@ -19,21 +18,24 @@ impl<'a> SourceMap<'a> {
         roots: &[SourceId],
     ) -> Result<Self, RenderError> {
         let mut files = FileLibrary::new();
-        let mut ids = BTreeMap::new();
+        let mut sources = BTreeMap::new();
         for source in &project.files {
+            if sources.contains_key(&source.id) {
+                return Err(RenderError::DuplicateSource(source.id));
+            }
             let file = files.add_file(
                 source.path.to_string_lossy().into_owned(),
                 source.text.clone(),
                 roots.contains(&source.id),
             );
-            ids.insert(source.id, file);
+            sources.insert(source.id, (file, source.text.as_str()));
         }
         for root in roots {
-            if !ids.contains_key(root) {
+            if !sources.contains_key(root) {
                 return Err(RenderError::UnknownRoot(*root));
             }
         }
-        Ok(Self { files, ids, project })
+        Ok(Self { files, sources })
     }
 
     #[must_use]
@@ -42,26 +44,17 @@ impl<'a> SourceMap<'a> {
     }
 
     fn location(&self, span: Span) -> Result<(FileID, std::ops::Range<usize>), RenderError> {
-        let file = self
-            .ids
-            .get(&span.source())
-            .copied()
-            .ok_or(RenderError::UnknownSource(span.source()))?;
-        let source = self
-            .project
-            .files
-            .iter()
-            .find(|source| source.id == span.source())
-            .ok_or(RenderError::UnknownSource(span.source()))?;
+        let (file, text) =
+            self.sources.get(&span.source()).ok_or(RenderError::UnknownSource(span.source()))?;
         let range = span.start()..span.end();
         if range.start > range.end
-            || range.end > source.text.len()
-            || !source.text.is_char_boundary(range.start)
-            || !source.text.is_char_boundary(range.end)
+            || range.end > text.len()
+            || !text.is_char_boundary(range.start)
+            || !text.is_char_boundary(range.end)
         {
             return Err(RenderError::InvalidSpan(span));
         }
-        Ok((file, range))
+        Ok((*file, range))
     }
 }
 
@@ -94,9 +87,14 @@ impl Finding {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum RenderError {
+    #[error("root source {0:?} is absent from the loaded Circom project")]
     UnknownRoot(SourceId),
+    #[error("source {0:?} is absent from the loaded Circom project")]
     UnknownSource(SourceId),
+    #[error("source {0:?} occurs more than once in the loaded Circom project")]
+    DuplicateSource(SourceId),
+    #[error("source span {0:?} is outside the loaded source text or a UTF-8 boundary")]
     InvalidSpan(Span),
 }

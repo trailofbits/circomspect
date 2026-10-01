@@ -3,7 +3,7 @@ mod support;
 use std::fs;
 
 use circomspect_program_analysis::new_rules::{
-    AbstentionReason, Finding, RenderError, RuleResult, ScopedAbstention, SourceMap,
+    AbstentionReason, Finding, RenderError, RuleKind, RuleResult, ScopedAbstention, SourceMap,
 };
 use parser::hir::lower_project;
 use parser::new_frontend::{load_sources, SourceId, Span, Version, VersionPolicy};
@@ -31,6 +31,48 @@ fn finding(code: ReportCode, category: MessageCategory, span: Span) -> Finding {
         primary: span,
         primary_label: "evidence".to_string(),
         secondary: Vec::new(),
+    }
+}
+
+#[test]
+fn new_rule_ids_have_distinct_renderer_descriptors() {
+    let incomplete = RuleKind::IncompleteCoverage;
+    assert_eq!(incomplete.code().id(), "CS0020");
+    assert_eq!(incomplete.code().name(), "incomplete-analysis");
+    assert_eq!(incomplete.category(), MessageCategory::Warning);
+    let redundant = RuleKind::RedundantWitnessAssignment;
+    assert_eq!(redundant.code().id(), "CS0021");
+    assert_eq!(redundant.code().name(), "redundant-witness-assignment");
+    assert_eq!(redundant.category(), MessageCategory::Warning);
+    assert_ne!(ReportCode::UnnecessarySignalAssignment.id(), "CS0021");
+    assert_eq!(RuleKind::BitwiseComplement.code().id(), "CS0004");
+    assert_eq!(RuleKind::BitwiseComplement.category(), MessageCategory::Info);
+}
+
+#[test]
+fn every_new_rule_kind_has_a_frozen_id_and_level() {
+    use RuleKind::*;
+    let expected = [
+        (BitwiseComplement, "CS0004", MessageCategory::Info),
+        (Bn254SpecificCircuit, "CS0016", MessageCategory::Warning),
+        (ConstantConditional, "CS0009", MessageCategory::Warning),
+        (FieldArithmetic, "CS0004", MessageCategory::Info),
+        (FieldComparison, "CS0003", MessageCategory::Info),
+        (NonstrictBinaryConversion, "CS0010", MessageCategory::Warning),
+        (UnconstrainedDivision, "CS0015", MessageCategory::Warning),
+        (SignalAssignment, "CS0005", MessageCategory::Warning),
+        (RedundantWitnessAssignment, "CS0021", MessageCategory::Warning),
+        (UnderConstrainedSignal, "CS0017", MessageCategory::Warning),
+        (UnconstrainedLessThan, "CS0014", MessageCategory::Warning),
+        (SideEffectFreeAssignment, "CS0008", MessageCategory::Warning),
+        (UnusedOutputSignal, "CS0018", MessageCategory::Warning),
+        (Complexity, "CS0011", MessageCategory::Warning),
+        (TooManyArguments, "CS0012", MessageCategory::Warning),
+        (IncompleteCoverage, "CS0020", MessageCategory::Warning),
+    ];
+    for (kind, id, level) in expected {
+        assert_eq!(kind.code().id(), id, "{kind:?}");
+        assert_eq!(kind.category(), level, "{kind:?}");
     }
 }
 
@@ -158,6 +200,12 @@ fn unknown_source_and_invalid_spans_fail_before_rendering() {
     assert_eq!(
         SourceMap::from_loaded(&loaded, &[SourceId::new(42)]).err(),
         Some(RenderError::UnknownRoot(SourceId::new(42)))
+    );
+    let mut duplicated = loaded.clone();
+    duplicated.files.push(loaded.files[0].clone());
+    assert_eq!(
+        SourceMap::from_loaded(&duplicated, &[source.id]).err(),
+        Some(RenderError::DuplicateSource(source.id))
     );
     let unknown = Span::checked(SourceId::new(42), 0..0, "").unwrap();
     assert_eq!(
