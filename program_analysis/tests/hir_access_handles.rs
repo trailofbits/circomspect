@@ -147,6 +147,28 @@ fn component_array_handle_does_not_graft_another_elements_instantiation() {
 }
 
 #[test]
+fn declared_output_array_handle_checks_its_own_index() {
+    let hir = project(concat!(
+        "template Child(){signal output out[2];} ",
+        "template Check(){component c=Child();}"
+    ));
+    let definition = hir.definition("Check").unwrap();
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let DefinitionRef::Template(child) = hir.definition("Child").unwrap() else {
+        panic!("expected template")
+    };
+    let output = hir.template(child).unwrap().ports[0];
+    let component = hir.components()[0].id;
+    assert!(facts.component_output_handle(component, &[], output, &[1]).is_ok());
+    assert_eq!(
+        facts.component_output_handle(component, &[], output, &[2]).unwrap_err(),
+        AccessHandleError::IndexOutOfBounds
+    );
+}
+
+#[test]
 fn handles_cannot_cross_project_definition_or_curve() {
     let source = "template Check(){signal input x;} template Else(){signal input x;}";
     let hir = project(source);
