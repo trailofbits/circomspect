@@ -638,14 +638,21 @@ impl Transfer<ForwardAnalysis<'_>, ForwardState, String> for CfgNode {
                 }
             }
             CfgNodeKind::Declaration { symbol } => {
-                if analysis
-                    .hir
-                    .symbol(*symbol)
-                    .is_some_and(|declared| declared.kind == SymbolKind::Variable)
-                {
-                    variables.remove(symbol);
-                    degrees.remove(symbol);
+                let Some(declared) = analysis.hir.symbol(*symbol) else {
+                    return TransferOutcome::Opaque {
+                        provisional: output,
+                        reason: "missing declaration symbol".into(),
+                    };
+                };
+                if declared.kind == SymbolKind::Variable {
                     dependencies.insert(*symbol, MayAccessSet::default());
+                    if declared.rank == 0 && declared.shape_checked {
+                        variables.insert(*symbol, analysis.field.canonical(0.into()));
+                        degrees.insert(*symbol, DegreeUpper::Constant);
+                    } else {
+                        variables.remove(symbol);
+                        degrees.remove(symbol);
+                    }
                 }
             }
             CfgNodeKind::Update { target, operator } => {

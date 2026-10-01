@@ -358,6 +358,43 @@ fn fresh_local_without_signal_dependencies_preserves_neighboring_constraint_fact
 }
 
 #[test]
+fn scalar_local_declaration_has_compiler_default_zero_without_a_constraint() {
+    let (hir, definition) = fixture("function Check(){var t;return t;}");
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let t = expression_path(&hir, "t", 0);
+    let expression = hir
+        .expressions()
+        .iter()
+        .find(|expression| matches!(&expression.kind, ExprKind::Access(path) if path == &t))
+        .unwrap()
+        .id;
+    let declaration = cfg
+        .nodes()
+        .iter()
+        .find(|id| matches!(cfg.node(**id).unwrap().kind, CfgNodeKind::Declaration { .. }))
+        .copied()
+        .unwrap();
+    assert_eq!(facts.range(expression).certified(), Some(&Range::Exact(field.canonical(0.into()))));
+    assert_eq!(facts.live_before(declaration, &t).certified(), Some(&false));
+    assert!(cfg
+        .nodes()
+        .iter()
+        .all(|id| !matches!(cfg.node(*id).unwrap().kind, CfgNodeKind::Constraint { .. })));
+}
+
+#[test]
+fn default_zero_local_fixes_output_only_through_a_generated_assignment() {
+    let (hir, definition) = fixture("template Check(){var t;signal output y;y<==t;}");
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let y = assigned_path(&hir, definition, "y");
+    assert_eq!(facts.constraint_fixed(&y).certified(), Some(&Some(field.canonical(0.into()))));
+}
+
+#[test]
 fn anonymous_output_dependencies_leave_neighboring_constraint_certified() {
     let (hir, definition) = fixture(
         "template Child(){signal input in;signal output out;out<==in;} \

@@ -132,6 +132,9 @@ impl Transfer<LivenessAnalysis<'_>, LiveState, String> for CfgNode {
                     live.remove(&key);
                 }
             }
+            CfgNodeKind::Declaration { symbol } => {
+                live.retain(|key| key.root != *symbol);
+            }
             CfgNodeKind::Update { target, .. } => {
                 live.insert(key_for_path(analysis.hir, analysis.field, target, &empty));
             }
@@ -168,11 +171,8 @@ impl Transfer<LivenessAnalysis<'_>, LiveState, String> for CfgNode {
                     reason: "external component summary".into(),
                 };
             }
-            CfgNodeKind::Entry
-            | CfgNodeKind::Exit
-            | CfgNodeKind::LoopHeader
-            | CfgNodeKind::Declaration { .. }
-            | CfgNodeKind::Log => {}
+            CfgNodeKind::Entry | CfgNodeKind::Exit | CfgNodeKind::LoopHeader | CfgNodeKind::Log => {
+            }
         }
         if complete {
             TransferOutcome::Known(output)
