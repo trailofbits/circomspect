@@ -847,7 +847,24 @@ impl Lowerer<'_> {
         } else if !valid_arguments {
             target = CallTarget::Opaque { reason: IncompleteReason::NonCompileTime };
         }
-        if let Some(component) = self.components.get(&symbol) {
+        if let Some(component) = self.components.get(&symbol).copied() {
+            let previous = self.hir.components[component.index].target.as_ref();
+            let already_invalid = match previous {
+                Some(CallTarget::Opaque { reason: IncompleteReason::InvalidAssignment }) => true,
+                Some(_) | None => false,
+            };
+            if already_invalid {
+                target = CallTarget::Opaque { reason: IncompleteReason::InvalidAssignment };
+            } else if previous.is_some_and(|old| old != &target) {
+                self.diagnostic(
+                    SemanticCode::InvalidAssignment,
+                    Severity::Error,
+                    span,
+                    "all instances of a component must use the same template".into(),
+                );
+                self.incomplete(span, IncompleteReason::InvalidAssignment);
+                target = CallTarget::Opaque { reason: IncompleteReason::InvalidAssignment };
+            }
             self.hir.components[component.index].target = Some(target.clone());
         }
         let ty = match target {
