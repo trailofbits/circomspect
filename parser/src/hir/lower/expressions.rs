@@ -611,16 +611,19 @@ impl Lowerer<'_> {
         }
     }
 
-    pub(super) fn compatible_equality_operands(&self, left: ExprId, right: ExprId) -> bool {
+    pub(super) fn equality_shape(&self, left: ExprId, right: ExprId) -> ShapeCheck {
         if !self.expression_is_checked(left) || !self.expression_is_checked(right) {
-            return false;
+            return ShapeCheck::Invalid(SemanticCode::WrongAssignmentExpression);
         }
         let ty = self.expression_type(left);
-        if !matches!(ty, ValueType::Plain | ValueType::Bus(_)) {
-            return false;
+        match ty {
+            ValueType::Plain | ValueType::Bus(_) => {
+                let Some(rank) = self.expression_rank(left) else { return ShapeCheck::Unknown };
+                self.check_value_shape(ty, rank, right)
+            }
+            ValueType::Unknown => ShapeCheck::Unknown,
+            ValueType::Component(_) => ShapeCheck::Invalid(SemanticCode::WrongAssignmentExpression),
         }
-        let Some(rank) = self.expression_rank(left) else { return false };
-        self.check_value_shape(ty, rank, right) == ShapeCheck::Valid
     }
 
     fn opaque_expression(&mut self, span: Span) -> ExprId {

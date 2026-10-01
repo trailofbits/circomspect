@@ -649,6 +649,13 @@ impl Transfer<ForwardAnalysis<'_>, ForwardState, String> for CfgNode {
                     reason: format!("{reason:?}"),
                 };
             }
+            CfgNodeKind::OpaqueAssignment { reason, .. }
+            | CfgNodeKind::OpaqueEquality { reason, .. } => {
+                return TransferOutcome::Opaque {
+                    provisional: output,
+                    reason: format!("{reason:?}"),
+                };
+            }
             CfgNodeKind::Instantiate { .. } => {
                 return TransferOutcome::Opaque {
                     provisional: output,

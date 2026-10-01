@@ -253,6 +253,131 @@ fn liveness_ignores_a_branch_pruned_by_a_known_local_value() {
 }
 
 #[test]
+fn no_argument_function_call_does_not_touch_an_unrelated_signal() {
+    let (hir, definition) = fixture(
+        "function F(){return 1;} template Check(){signal input x;var t=x;signal output y;y<==F();}",
+    );
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let x = expression_path(&hir, "x", 0);
+    assert_eq!(facts.incidence(&x).certified(), Some(&Incidence::Zero));
+}
+
+#[test]
+fn function_call_blocks_only_argument_dependent_incidence() {
+    let (hir, definition) = fixture(
+        "function F(a){return a;} template Check(){signal input x;signal output y,z;\
+         y<==F(x);z<==1;}",
+    );
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let x = expression_path(&hir, "x", 0);
+    let y = hir
+        .template(match definition {
+            DefinitionRef::Template(id) => id,
+            _ => panic!("template"),
+        })
+        .unwrap();
+    let y = hir
+        .block(y.body)
+        .unwrap()
+        .effects
+        .iter()
+        .find_map(|effect| {
+            let Effect::OpaqueAssignment { target, .. } = effect else { return None };
+            Some(target)
+        })
+        .unwrap();
+    let z = assigned_path(&hir, definition, "z");
+    assert!(facts
+        .incidence(&x)
+        .unavailable()
+        .is_some_and(|blockers| { blockers.contains(&FactBlocker::ExternalSummary) }));
+    assert!(facts.incidence(y).unavailable().is_some());
+    assert_eq!(facts.incidence(&z).certified(), Some(&Incidence::Must));
+    assert_eq!(
+        cfg.nodes()
+            .iter()
+            .filter_map(|id| cfg.node(*id))
+            .filter(|node| matches!(node.kind, CfgNodeKind::Constraint { .. }))
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn opaque_function_equality_blocks_only_its_argument() {
+    for equality in ["F(x)===1", "1===F(x)"] {
+        let source = format!(
+            "function F(a){{return a;}} template Check(){{signal input x;signal output z;\
+             {equality};z<==1;}}"
+        );
+        let (hir, definition) = fixture(&source);
+        let cfg = build_cfg(&hir, definition).unwrap();
+        let field = FieldContext::for_curve(Curve::Bn254);
+        let facts = analyze(&hir, &cfg, &field, None).unwrap();
+        let x = expression_path(&hir, "x", 0);
+        let z = assigned_path(&hir, definition, "z");
+        assert!(facts.incidence(&x).unavailable().is_some());
+        assert_eq!(facts.incidence(&z).certified(), Some(&Incidence::Must));
+        assert_eq!(
+            cfg.nodes()
+                .iter()
+                .filter_map(|id| cfg.node(*id))
+                .filter(|node| matches!(node.kind, CfgNodeKind::Constraint { .. }))
+                .count(),
+            1
+        );
+    }
+}
+
+#[test]
+fn no_argument_function_equality_does_not_touch_unrelated_signal() {
+    let (hir, definition) = fixture(
+        "function F(){return 1;} template Check(){signal input x;var t=x;signal output z;\
+         F()===1;z<==1;}",
+    );
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let x = expression_path(&hir, "x", 0);
+    let z = assigned_path(&hir, definition, "z");
+    assert_eq!(facts.incidence(&x).certified(), Some(&Incidence::Zero));
+    assert_eq!(facts.incidence(&z).certified(), Some(&Incidence::Must));
+}
+
+#[test]
+fn unresolved_witness_call_never_generates_a_constraint() {
+    let (hir, definition) = fixture(
+        "function F(a){return a;} template Check(){signal input x;signal output y;y<--F(x);}",
+    );
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let x = expression_path(&hir, "x", 0);
+    assert_eq!(facts.incidence(&x).certified(), Some(&Incidence::Zero));
+    assert!(cfg
+        .nodes()
+        .iter()
+        .all(|id| { !matches!(cfg.node(*id).unwrap().kind, CfgNodeKind::Constraint { .. }) }));
+}
+
+#[test]
+fn anonymous_constrained_input_under_witness_assignment_blocks_its_source() {
+    let (hir, definition) = fixture(
+        "template Child(){signal input in;signal output out;out<==in;} \
+         template Check(){signal input x;signal output y;y<--Child()(in<==x);}",
+    );
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let x = expression_path(&hir, "x", 0);
+    assert!(facts.incidence(&x).unavailable().is_some());
+}
+
+#[test]
 fn signed_field_comparison_selects_the_negative_branch() {
     let (hir, definition) =
         fixture("template Check(){signal output y; if(-1<0){y<==1;}else{y<--1;}}");

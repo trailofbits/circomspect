@@ -13,7 +13,10 @@ use abstract_interpretation::graph::{EdgeId, FlowGraph, GraphError, NodeId};
 use abstract_interpretation::solver::{
     solve, Backward, Blocker, Forward, SolveResult, Transfer, TransferOutcome,
 };
-use parser::hir::{AccessPath, AccessStep, ArrayIndex, DefinitionRef, ExprId, ExprKind, HirProject};
+use parser::hir::{
+    AccessPath, AccessStep, ArrayIndex, CallTarget, DefinitionRef, ExprId, ExprKind, HirProject,
+};
+use parser::new_frontend::{AssignmentOperator, InputAssignmentOperator};
 
 use crate::hir_cfg::{CfgNodeKind, DefinitionCfg};
 use access::key_for_path;
@@ -652,7 +655,8 @@ impl AnalysisFacts<'_> {
                 Blocker::PendingNode(node)
                     if (!potential_sites.is_empty()
                         && self.can_reach_any(*node, &queried_exit))
-                        || self.opaque_relevant(*node, path) && self.is_opaque_node(*node) =>
+                        || self.opaque_constraint_relevant(*node, path)
+                            && self.is_opaque_node(*node) =>
                 {
                     blockers.insert(FactBlocker::Budget(*node));
                 }
@@ -665,8 +669,14 @@ impl AnalysisFacts<'_> {
                         blockers.insert(FactBlocker::OpaqueEdge(*edge, reason.clone()));
                     }
                 }
-                Blocker::OpaqueNode { node, reason } if self.opaque_relevant(*node, path) => {
-                    blockers.insert(FactBlocker::OpaqueNode(*node, reason.clone()));
+                Blocker::OpaqueNode { node, reason }
+                    if self.opaque_constraint_relevant(*node, path) =>
+                {
+                    if self.is_function_call_effect(*node) {
+                        blockers.insert(FactBlocker::ExternalSummary);
+                    } else {
+                        blockers.insert(FactBlocker::OpaqueNode(*node, reason.clone()));
+                    }
                 }
                 Blocker::OpaqueNode { .. } => {}
             }
@@ -766,7 +776,10 @@ impl AnalysisFacts<'_> {
     fn is_opaque_node(&self, id: NodeId) -> bool {
         let Some(node) = self.cfg.node(id) else { return true };
         match &node.kind {
-            CfgNodeKind::Opaque(_) | CfgNodeKind::Instantiate { .. } => true,
+            CfgNodeKind::Opaque(_)
+            | CfgNodeKind::OpaqueAssignment { .. }
+            | CfgNodeKind::OpaqueEquality { .. }
+            | CfgNodeKind::Instantiate { .. } => true,
             CfgNodeKind::Evaluate(expr) => {
                 self.hir.expression(*expr).map_or(true, |item| match &item.kind {
                     ExprKind::Opaque(_) | ExprKind::AnonymousComponent { .. } => true,
@@ -796,6 +809,45 @@ impl AnalysisFacts<'_> {
         }
     }
 
+    fn is_function_call_effect(&self, node: NodeId) -> bool {
+        let Some(node) = self.cfg.node(node) else { return false };
+        match &node.kind {
+            CfgNodeKind::OpaqueAssignment { value, .. } => self.is_function_call(*value),
+            CfgNodeKind::OpaqueEquality { left, right, .. } => {
+                self.is_function_call(*left) || self.is_function_call(*right)
+            }
+            _ => false,
+        }
+    }
+
+    fn is_function_call(&self, id: ExprId) -> bool {
+        let Some(expression) = self.hir.expression(id) else { return false };
+        if let ExprKind::Call { target: CallTarget::Function(_), .. } = &expression.kind {
+            return true;
+        }
+        false
+    }
+
+    fn opaque_constraint_relevant(&self, node: NodeId, path: &AccessPath) -> bool {
+        if let Some(CfgNodeKind::OpaqueAssignment {
+            target,
+            operator: AssignmentOperator::Witness | AssignmentOperator::ReverseWitness,
+            ..
+        }) = self.cfg.node(node).map(|item| &item.kind)
+        {
+            let Some(symbol) = self.hir.symbol(target.terminal) else {
+                return self.opaque_relevant(node, path);
+            };
+            if let parser::hir::SymbolKind::Signal | parser::hir::SymbolKind::Bus = symbol.kind {
+                if !self.is_function_call_effect(node) {
+                    return self.opaque_relevant(node, path);
+                }
+                return false;
+            }
+        }
+        self.opaque_relevant(node, path)
+    }
+
     fn aggregate_site_touches(&self, site: NodeId, query: &AccessKey) -> bool {
         let Some(node) = self.cfg.node(site) else { return true };
         let CfgNodeKind::Constraint { target, left, right } = &node.kind else { return false };
@@ -818,6 +870,37 @@ impl AnalysisFacts<'_> {
 
     fn opaque_relevant(&self, node_id: NodeId, path: &AccessPath) -> bool {
         let Some(node) = self.cfg.node(node_id) else { return true };
+        if let CfgNodeKind::Evaluate(id) = &node.kind {
+            if self.anonymous_constraint_input_relevant(*id, path) {
+                return true;
+            }
+        }
+        if let CfgNodeKind::OpaqueAssignment { target, value, .. } = &node.kind {
+            let query = key_for_path(self.hir, self.field, path, &BTreeMap::new());
+            let mut relevant = false;
+            target.visit_accesses(self.hir, &mut |used| {
+                relevant |=
+                    key_for_path(self.hir, self.field, used, &BTreeMap::new()).may_alias(&query);
+            });
+            value.visit_accesses(self.hir, &mut |used| {
+                relevant |=
+                    key_for_path(self.hir, self.field, used, &BTreeMap::new()).may_alias(&query);
+            });
+            return relevant;
+        }
+        if let CfgNodeKind::OpaqueEquality { left, right, .. } = &node.kind {
+            let query = key_for_path(self.hir, self.field, path, &BTreeMap::new());
+            let mut relevant = false;
+            left.visit_accesses(self.hir, &mut |used| {
+                relevant |=
+                    key_for_path(self.hir, self.field, used, &BTreeMap::new()).may_alias(&query);
+            });
+            right.visit_accesses(self.hir, &mut |used| {
+                relevant |=
+                    key_for_path(self.hir, self.field, used, &BTreeMap::new()).may_alias(&query);
+            });
+            return relevant;
+        }
         if let CfgNodeKind::Opaque(_) = &node.kind {
             return true;
         }
@@ -832,10 +915,45 @@ impl AnalysisFacts<'_> {
             | parser::hir::Effect::ComponentInstantiation { target, .. } => {
                 target.root == path.root
             }
-            parser::hir::Effect::ConstraintAssignment { .. }
+            parser::hir::Effect::Declaration { .. }
+            | parser::hir::Effect::OpaqueAssignment { .. }
+            | parser::hir::Effect::OpaqueEquality { .. }
+            | parser::hir::Effect::ConstraintAssignment { .. }
             | parser::hir::Effect::EqualityConstraint { .. }
-            | parser::hir::Effect::VariableAssignment { .. } => true,
-            _ => true,
+            | parser::hir::Effect::VariableAssignment { .. }
+            | parser::hir::Effect::Update { .. }
+            | parser::hir::Effect::If { .. }
+            | parser::hir::Effect::While { .. }
+            | parser::hir::Effect::For { .. }
+            | parser::hir::Effect::Return { .. }
+            | parser::hir::Effect::Assert { .. }
+            | parser::hir::Effect::Log { .. }
+            | parser::hir::Effect::AnonymousComponent { .. }
+            | parser::hir::Effect::Block(_)
+            | parser::hir::Effect::Opaque { .. } => true,
         }
+    }
+
+    fn anonymous_constraint_input_relevant(&self, expression: ExprId, path: &AccessPath) -> bool {
+        let Some(ExprKind::AnonymousComponent { inputs, .. }) =
+            self.hir.expression(expression).map(|item| &item.kind)
+        else {
+            return false;
+        };
+        let query = key_for_path(self.hir, self.field, path, &BTreeMap::new());
+        for input in inputs {
+            if input.operator == InputAssignmentOperator::Witness {
+                continue;
+            }
+            let mut relevant = false;
+            let complete = input.value.visit_accesses(self.hir, &mut |used| {
+                relevant |=
+                    key_for_path(self.hir, self.field, used, &BTreeMap::new()).may_alias(&query);
+            });
+            if relevant || !complete {
+                return true;
+            }
+        }
+        false
     }
 }

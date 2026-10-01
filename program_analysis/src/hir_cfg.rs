@@ -7,7 +7,7 @@ use parser::hir::{
     AccessPath, AccessStep, BlockId, ControlGuard, DefinitionRef, Effect, ExprId, ExprKind,
     HirProject, IncompleteReason, SymbolId,
 };
-use parser::new_frontend::{BinaryOperator, PostfixOperator, Span};
+use parser::new_frontend::{AssignmentOperator, BinaryOperator, PostfixOperator, Span};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Origin {
@@ -23,15 +23,47 @@ pub enum CfgNodeKind {
     Exit,
     Evaluate(ExprId),
     LoopHeader,
-    Branch { condition: ExprId, guard: ControlGuard },
-    Witness { target: AccessPath, value: ExprId },
-    Constraint { target: Option<AccessPath>, left: ExprId, right: Option<ExprId> },
-    Assignment { target: AccessPath, value: ExprId },
-    Update { target: AccessPath, operator: PostfixOperator },
-    Instantiate { target: AccessPath, value: ExprId },
+    Branch {
+        condition: ExprId,
+        guard: ControlGuard,
+    },
+    Witness {
+        target: AccessPath,
+        value: ExprId,
+    },
+    Constraint {
+        target: Option<AccessPath>,
+        left: ExprId,
+        right: Option<ExprId>,
+    },
+    Assignment {
+        target: AccessPath,
+        value: ExprId,
+    },
+    Update {
+        target: AccessPath,
+        operator: PostfixOperator,
+    },
+    Instantiate {
+        target: AccessPath,
+        value: ExprId,
+    },
+    OpaqueAssignment {
+        target: AccessPath,
+        value: ExprId,
+        operator: AssignmentOperator,
+        reason: IncompleteReason,
+    },
+    OpaqueEquality {
+        left: ExprId,
+        right: ExprId,
+        reason: IncompleteReason,
+    },
     Declaration,
     Return(ExprId),
-    Assert { condition: ExprId },
+    Assert {
+        condition: ExprId,
+    },
     Log,
     Opaque(IncompleteReason),
 }
@@ -312,13 +344,27 @@ impl Builder<'_> {
             Effect::VariableAssignment { .. }
             | Effect::ComponentInstantiation { .. }
             | Effect::WitnessAssignment { .. }
-            | Effect::ConstraintAssignment { .. } => self.assignment_effect(tails, effect, origin),
+            | Effect::ConstraintAssignment { .. }
+            | Effect::OpaqueAssignment { .. } => self.assignment_effect(tails, effect, origin),
             Effect::EqualityConstraint { left, right, .. } => {
                 let tails = self.evaluate(tails, *left, origin)?;
                 let tails = self.evaluate(tails, *right, origin)?;
                 Ok(self.append(
                     tails,
                     CfgNodeKind::Constraint { target: None, left: *left, right: Some(*right) },
+                    Origin { expression: Some(*left), ..origin },
+                ))
+            }
+            Effect::OpaqueEquality { left, right, reason, .. } => {
+                let tails = self.evaluate(tails, *left, origin)?;
+                let tails = self.evaluate(tails, *right, origin)?;
+                Ok(self.append(
+                    tails,
+                    CfgNodeKind::OpaqueEquality {
+                        left: *left,
+                        right: *right,
+                        reason: reason.clone(),
+                    },
                     Origin { expression: Some(*left), ..origin },
                 ))
             }
@@ -376,7 +422,8 @@ impl Builder<'_> {
             Effect::VariableAssignment { target, value, .. }
             | Effect::ComponentInstantiation { target, value, .. }
             | Effect::WitnessAssignment { target, value, .. }
-            | Effect::ConstraintAssignment { target, value, .. } => (target, *value),
+            | Effect::ConstraintAssignment { target, value, .. }
+            | Effect::OpaqueAssignment { target, value, .. } => (target, *value),
             _ => return Err(BuildError::UnexpectedEffect),
         };
         let tails = self.evaluate_target(tails, target, origin)?;
@@ -414,6 +461,16 @@ impl Builder<'_> {
                     effect_origin,
                 ))
             }
+            Effect::OpaqueAssignment { operator, reason, .. } => Ok(self.append(
+                tails,
+                CfgNodeKind::OpaqueAssignment {
+                    target: target.clone(),
+                    value,
+                    operator: *operator,
+                    reason: reason.clone(),
+                },
+                effect_origin,
+            )),
             _ => Err(BuildError::UnexpectedEffect),
         }
     }
@@ -564,6 +621,7 @@ impl Builder<'_> {
             | Effect::WitnessAssignment { .. }
             | Effect::ConstraintAssignment { .. }
             | Effect::EqualityConstraint { .. }
+            | Effect::OpaqueEquality { .. }
             | Effect::Assert { .. }
             | Effect::Log { .. } => false,
             Effect::ComponentInstantiation { .. }
@@ -573,6 +631,7 @@ impl Builder<'_> {
             | Effect::Return { .. }
             | Effect::AnonymousComponent { .. }
             | Effect::Block(_)
+            | Effect::OpaqueAssignment { .. }
             | Effect::Opaque { .. } => true,
         }
     }
@@ -661,7 +720,9 @@ fn effect_span(effect: &Effect, block_span: Span) -> Span {
         | Effect::ComponentInstantiation { span, .. }
         | Effect::WitnessAssignment { span, .. }
         | Effect::ConstraintAssignment { span, .. }
+        | Effect::OpaqueAssignment { span, .. }
         | Effect::EqualityConstraint { span, .. }
+        | Effect::OpaqueEquality { span, .. }
         | Effect::Update { span, .. }
         | Effect::If { span, .. }
         | Effect::While { span, .. }

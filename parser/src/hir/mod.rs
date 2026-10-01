@@ -7,8 +7,8 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::new_frontend::{
-    BinaryOperator, DiagnosticLocation, InputAssignmentOperator, PortDirection, PostfixOperator,
-    Span, SyntaxDiagnostic, UnaryOperator,
+    AssignmentOperator, BinaryOperator, DiagnosticLocation, InputAssignmentOperator, PortDirection,
+    PostfixOperator, Span, SyntaxDiagnostic, UnaryOperator,
 };
 
 pub use lower::lower_project;
@@ -320,9 +320,22 @@ pub enum Effect {
         value: ExprId,
         span: Span,
     },
+    OpaqueAssignment {
+        target: AccessPath,
+        value: ExprId,
+        operator: AssignmentOperator,
+        reason: IncompleteReason,
+        span: Span,
+    },
     EqualityConstraint {
         left: ExprId,
         right: ExprId,
+        span: Span,
+    },
+    OpaqueEquality {
+        left: ExprId,
+        right: ExprId,
+        reason: IncompleteReason,
         span: Span,
     },
     Update {
