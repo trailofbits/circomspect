@@ -1431,7 +1431,7 @@ fn unresolved_function_result_keeps_assignment_target_and_call() {
 #[test]
 fn parameter_shaped_variable_write_keeps_deferred_guard() {
     let source = "function F(n){var x=n;if(x){return 1;}return 0;}";
-    let result = lower(&[("deferred_var.circom", source)], Version::new(2, 2, 3));
+    let result = lift(&[("deferred_var.circom", source)], Version::new(2, 2, 3));
     let effects = effect_for_function(&result, "F");
     let Some(Effect::DeferredVariableAssignment { target, value, .. }) =
         effects.iter().find(|effect| matches!(effect, Effect::DeferredVariableAssignment { .. }))
@@ -1449,7 +1449,7 @@ fn parameter_shaped_variable_write_keeps_deferred_guard() {
 #[test]
 fn later_scalar_overwrite_does_not_erase_deferred_variable_evidence() {
     let source = "function F(n){var x=n;x=0;if(x){return 1;}return 0;}";
-    let result = lower(&[("deferred_overwrite.circom", source)], Version::new(2, 2, 3));
+    let result = lift(&[("deferred_overwrite.circom", source)], Version::new(2, 2, 3));
     let effects = effect_for_function(&result, "F");
     assert!(effects
         .iter()
@@ -1463,7 +1463,7 @@ fn deferred_shape_propagates_through_copy_arithmetic_and_select() {
     for assigned in ["x", "x+1", "1 ? x : 2"] {
         let source =
             format!("function F(n){{var x=n;var y={assigned};if(y){{return 1;}}return 0;}}");
-        let result = lower(&[("deferred_transitive.circom", &source)], Version::new(2, 2, 3));
+        let result = lift(&[("deferred_transitive.circom", &source)], Version::new(2, 2, 3));
         let effects = effect_for_function(&result, "F");
         assert!(
             effects.iter().any(|effect| matches!(

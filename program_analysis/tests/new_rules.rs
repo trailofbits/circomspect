@@ -14,7 +14,7 @@ use circomspect_program_analysis::hir_facts::analyze;
 use circomspect_program_analysis::interprocedural::{
     ArgumentValue, CallOwner, CallReachability, ProjectSummaries, SummaryBlocker,
 };
-use parser::hir::lower_project;
+use parser::hir::lift_project;
 use parser::new_frontend::{load_sources, SourceId, Span, Version, VersionPolicy};
 use program_structure::report::{MessageCategory, Report};
 use program_structure::report_code::ReportCode;
@@ -36,29 +36,29 @@ fn load_fixture(name: &str, source: &str) -> parser::new_frontend::LoadedProject
 #[test]
 fn rule_context_requires_matching_certified_scope() {
     let loaded = load_fixture("rule-context", "template First() {} template Second() {}\n");
-    let lowered = lower_project(&loaded);
-    let first = lowered.hir.definition("First").unwrap();
-    let second = lowered.hir.definition("Second").unwrap();
-    let cfg = build_cfg(&lowered.hir, first).unwrap();
-    let summaries = ProjectSummaries::build(&lowered, Curve::Bn254).unwrap();
+    let lifted = lift_project(&loaded);
+    let first = lifted.hir.definition("First").unwrap();
+    let second = lifted.hir.definition("Second").unwrap();
+    let cfg = build_cfg(&lifted.hir, first).unwrap();
+    let summaries = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
     let first_root = summaries.symbolic_root(first).unwrap();
     let second_root = summaries.symbolic_root(second).unwrap();
     let facts = summaries.analyze_for_evidence(&cfg, &first_root, None).unwrap();
     let context = RuleContext::new(&facts, &summaries, &first_root).unwrap();
-    assert_eq!(context.hir().identity(), lowered.hir.identity());
+    assert_eq!(context.hir().identity(), lifted.hir.identity());
     assert_eq!(context.call_context(), first_root.context());
     assert_eq!(
         RuleContext::new(&facts, &summaries, &second_root).err(),
         Some(RuleContextError::WrongDefinition)
     );
-    let gold = ProjectSummaries::build(&lowered, Curve::Goldilocks).unwrap();
+    let gold = ProjectSummaries::build(&lifted, Curve::Goldilocks).unwrap();
     let gold_root = gold.symbolic_root(first).unwrap();
     assert_eq!(
         RuleContext::new(&facts, &gold, &gold_root).err(),
         Some(RuleContextError::WrongCurve)
     );
     let foreign_loaded = load_fixture("foreign-context", "template First() {}\n");
-    let foreign = lower_project(&foreign_loaded);
+    let foreign = lift_project(&foreign_loaded);
     let foreign_provider = ProjectSummaries::build(&foreign, Curve::Bn254).unwrap();
     let foreign_root =
         foreign_provider.symbolic_root(foreign.hir.definition("First").unwrap()).unwrap();
@@ -80,14 +80,14 @@ fn concrete_rule_context_rejects_unbound_and_wrong_seed_facts() {
         "template Child(n){signal output y;if(n){y<==1;}else{y<==2;}} \
          template One(){component c=Child(1);} template Two(){component c=Child(0);}\n",
     );
-    let lowered = lower_project(&loaded);
-    let child = lowered.hir.definition("Child").unwrap();
-    let summaries = ProjectSummaries::build(&lowered, Curve::Bn254).unwrap();
+    let lifted = lift_project(&loaded);
+    let child = lifted.hir.definition("Child").unwrap();
+    let summaries = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
     let mut child_evidence = Vec::new();
     for name in ["One", "Two"] {
-        let parent = lowered.hir.definition(name).unwrap();
+        let parent = lifted.hir.definition(name).unwrap();
         let root = summaries.symbolic_root(parent).unwrap();
-        let parent_cfg = build_cfg(&lowered.hir, parent).unwrap();
+        let parent_cfg = build_cfg(&lifted.hir, parent).unwrap();
         let parent_facts = summaries.analyze_for_evidence(&parent_cfg, &root, None).unwrap();
         let site = summaries.graph().calls_from(CallOwner::Definition(parent))[0];
         let CallReachability::Reachable(call) =
@@ -99,9 +99,9 @@ fn concrete_rule_context_rejects_unbound_and_wrong_seed_facts() {
     }
     assert_eq!(child_evidence.len(), 2);
     assert_ne!(child_evidence[0].context(), child_evidence[1].context());
-    let child_cfg = build_cfg(&lowered.hir, child).unwrap();
+    let child_cfg = build_cfg(&lifted.hir, child).unwrap();
     let field = FieldContext::for_curve(Curve::Bn254);
-    let unbound = analyze(&lowered.hir, &child_cfg, &field, None).unwrap();
+    let unbound = analyze(&lifted.hir, &child_cfg, &field, None).unwrap();
     assert_eq!(
         RuleContext::new(&unbound, &summaries, &child_evidence[0]).err(),
         Some(RuleContextError::MismatchedFacts(SummaryBlocker::WrongContext))
@@ -109,7 +109,7 @@ fn concrete_rule_context_rejects_unbound_and_wrong_seed_facts() {
     let seeded = summaries.analyze_for_evidence(&child_cfg, &child_evidence[0], None).unwrap();
     let scoped = RuleContext::new(&seeded, &summaries, &child_evidence[0]).unwrap();
     let parser::hir::DefinitionRef::Template(child_id) = child else { panic!("template") };
-    let port = lowered.hir.template(child_id).unwrap().ports[0];
+    let port = lifted.hir.template(child_id).unwrap().ports[0];
     let summary = scoped.template_port(port, &[]).unwrap();
     let summary = summary.certified().unwrap();
     assert_eq!(summary.context(), child_evidence[0].context());
@@ -134,11 +134,11 @@ fn concrete_rule_context_rejects_unbound_and_wrong_seed_facts() {
 #[test]
 fn function_summaries_are_bound_to_the_active_definition() {
     let loaded = load_fixture("function-scope", "function F(){return 1;}\n");
-    let lowered = lower_project(&loaded);
-    let definition = lowered.hir.definition("F").unwrap();
-    let summaries = ProjectSummaries::build(&lowered, Curve::Bn254).unwrap();
+    let lifted = lift_project(&loaded);
+    let definition = lifted.hir.definition("F").unwrap();
+    let summaries = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
     let evidence = summaries.symbolic_root(definition).unwrap();
-    let cfg = build_cfg(&lowered.hir, definition).unwrap();
+    let cfg = build_cfg(&lifted.hir, definition).unwrap();
     let facts = summaries.analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let context = RuleContext::new(&facts, &summaries, &evidence).unwrap();
     let field = FieldContext::for_curve(Curve::Bn254);
@@ -214,9 +214,9 @@ fn rule_families_partition_the_planned_rules() {
 #[test]
 fn abstention_keeps_an_unproved_predicate_out_of_reports() {
     let loaded = load_fixture("abstain", "template Check(n) { signal output y; y <-- n; }\n");
-    let lowered = lower_project(&loaded);
-    let definition = lowered.hir.definition("Check").unwrap();
-    let summaries = ProjectSummaries::build(&lowered, Curve::Bn254).unwrap();
+    let lifted = lift_project(&loaded);
+    let definition = lifted.hir.definition("Check").unwrap();
+    let summaries = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
     let context = summaries.symbolic_context_for(definition).unwrap();
     let symbolic_context = context.clone();
     let source = &loaded.files[0];

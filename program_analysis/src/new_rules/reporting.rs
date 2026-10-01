@@ -192,7 +192,7 @@ pub enum RenderError {
 mod tests {
     use std::fs;
 
-    use parser::hir::lower_project;
+    use parser::hir::lift_project;
     use parser::new_frontend::{load_sources, LoadedProject, SourceId, Span, Version, VersionPolicy};
     use program_structure::report::MessageCategory;
     use program_structure::utils::constants::Curve;
@@ -213,10 +213,10 @@ mod tests {
         fs::write(&root, "include \"lib.circom\"; template Check() {} // π\n").unwrap();
         fs::write(directory.join("lib.circom"), "template Library() {}\n").unwrap();
         let loaded = load_sources(&[root], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
-        let lowered = lower_project(&loaded);
-        let definition = lowered.hir.definition("Check").unwrap();
-        let cfg = build_cfg(&lowered.hir, definition).unwrap();
-        let summaries = ProjectSummaries::build(&lowered, Curve::Bn254).unwrap();
+        let lifted = lift_project(&loaded);
+        let definition = lifted.hir.definition("Check").unwrap();
+        let cfg = build_cfg(&lifted.hir, definition).unwrap();
+        let summaries = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
         let evidence = summaries.symbolic_root(definition).unwrap();
         let facts = summaries.analyze_for_evidence(&cfg, &evidence, None).unwrap();
         let context = RuleContext::new(&facts, &summaries, &evidence).unwrap();
