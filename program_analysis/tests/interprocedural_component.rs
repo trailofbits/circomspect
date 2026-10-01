@@ -1,7 +1,7 @@
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::hir_facts::{analyze, FieldContext, Incidence};
 use circomspect_program_analysis::interprocedural::{
-    CallOwner, CallReachability, ProjectSummaries, SummaryBlocker,
+    CallOwner, CallReachability, CallerOutputRead, ProjectSummaries, SummaryBlocker, SummaryFact,
 };
 use parser::hir::{lift_project, DefinitionRef, LiftedProject};
 use parser::new_frontend::{load_sources, Version, VersionPolicy};
@@ -19,6 +19,107 @@ fn fixture(source: &str) -> LiftedProject {
     fs::write(&path, source).unwrap();
     let loaded = load_sources(&[path], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
     lift_project(&loaded)
+}
+
+fn output_read(source: &str, instance: usize) -> SummaryFact<CallerOutputRead> {
+    let lifted = fixture(source);
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let parent = lifted.hir.definition("Parent").unwrap();
+    let DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap() else {
+        panic!("Child must be a template")
+    };
+    let cfg = build_cfg(&lifted.hir, parent).unwrap();
+    let scope = provider.symbolic_root(parent).unwrap();
+    let facts = provider.analyze_for_evidence(&cfg, &scope, None).unwrap();
+    let output = lifted.hir.template(child).unwrap().ports[0];
+    let handle = facts
+        .component_output_handle(lifted.hir.components()[0].id, &[instance], output, &[])
+        .unwrap();
+    let site = provider.graph().calls_from(CallOwner::Definition(parent))[instance];
+    let CallReachability::Reachable(call) = provider.graph().reachable_call(site.id(), &facts)
+    else {
+        panic!("component call must be reachable")
+    };
+    let applied = provider.apply_component_output(&facts, &scope, &call, &handle);
+    provider.caller_output_read(&facts, applied.certified().unwrap())
+}
+
+#[test]
+fn nested_exact_output_access_is_a_caller_read() {
+    let read = output_read(
+        concat!(
+            "template Child(){signal output out;out<==1;} ",
+            "template Parent(){component c[2];c[0]=Child();c[1]=Child();",
+            "signal output y;y<==c[0].out+1;}"
+        ),
+        0,
+    );
+    assert_eq!(read.certified().unwrap().read_origins().len(), 1);
+}
+
+#[test]
+fn an_independent_opaque_call_does_not_hide_an_exact_read() {
+    let read = output_read(
+        concat!(
+            "template Child(){signal output out;out<==1;} ",
+            "template Parent(){component c[2];c[0]=Child();c[1]=Child();",
+            "signal output y;y<==c[0].out;var t=Missing();}"
+        ),
+        0,
+    );
+    assert_eq!(read.certified().unwrap().read_origins().len(), 1);
+}
+
+#[test]
+fn sibling_output_cannot_borrow_another_instances_read() {
+    let read = output_read(
+        concat!(
+            "template Child(){signal output out;out<==1;} ",
+            "template Parent(){component c[2];c[0]=Child();c[1]=Child();",
+            "signal output y;y<==c[0].out;}"
+        ),
+        1,
+    );
+    assert!(read.certified().is_none());
+}
+
+#[test]
+fn symbolic_output_index_cannot_prove_an_exact_read() {
+    let read = output_read(
+        concat!(
+            "template Child(){signal output out;out<==1;} ",
+            "template Parent(){component c[2];c[0]=Child();c[1]=Child();",
+            "signal input i;signal output y;y<==c[i].out;}"
+        ),
+        0,
+    );
+    assert!(read.certified().is_none());
+}
+
+#[test]
+fn opaque_expression_cannot_prove_an_output_read() {
+    let read = output_read(
+        concat!(
+            "template Child(){signal output out;out<==1;} ",
+            "template Parent(){component c[2];c[0]=Child();c[1]=Child();",
+            "signal output y;y<==c[0].out+Missing();}"
+        ),
+        0,
+    );
+    assert!(read.certified().is_none());
+}
+
+#[test]
+fn statically_pruned_output_read_is_not_observed() {
+    let read = output_read(
+        concat!(
+            "template Child(){signal output out;out<==1;} ",
+            "template Parent(){component c[2];c[0]=Child();c[1]=Child();",
+            "signal output y;if(0){y<==c[0].out;}else{y<==1;}}"
+        ),
+        0,
+    );
+    assert!(read.certified().is_none());
 }
 
 #[test]
