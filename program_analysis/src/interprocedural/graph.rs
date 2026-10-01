@@ -86,7 +86,7 @@ pub struct CallGraph {
     sites: Vec<CallSite>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum CallBlocker {
     ForeignSite,
     ForeignDefinition,
