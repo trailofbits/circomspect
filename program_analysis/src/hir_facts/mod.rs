@@ -577,47 +577,8 @@ impl AnalysisFacts<'_> {
 
     fn blockers_for(&self, path: &AccessPath) -> BTreeSet<FactBlocker> {
         let mut blockers = BTreeSet::new();
-        if self.hir.symbol(path.root).is_none() || self.hir.symbol(path.terminal).is_none() {
-            blockers.insert(FactBlocker::ForeignQuery);
-            return blockers;
-        }
-        if !self.cfg.owns_symbol(path.root) {
-            blockers.insert(FactBlocker::ForeignDefinition);
-            return blockers;
-        }
-        let mut terminal = path.root;
-        for step in &path.steps {
-            let valid = match step {
-                AccessStep::Index { index: ArrayIndex::Constant(value), .. } => {
-                    self.field.parse(value).is_some()
-                }
-                AccessStep::Index { index: ArrayIndex::Symbolic(id), .. } => {
-                    self.hir.expression(*id).is_some()
-                }
-                AccessStep::Port { port, .. } => {
-                    if let Some(port) = self.hir.port(*port) {
-                        terminal = port.symbol;
-                        true
-                    } else {
-                        false
-                    }
-                }
-                AccessStep::Tag { symbol, .. } => {
-                    terminal = *symbol;
-                    self.hir.symbol(*symbol).is_some()
-                }
-            };
-            if !valid {
-                blockers.insert(FactBlocker::ForeignQuery);
-                return blockers;
-            }
-        }
-        if terminal != path.terminal {
-            blockers.insert(FactBlocker::ForeignQuery);
-            return blockers;
-        }
-        if !self.cfg.owns_path(path) {
-            blockers.insert(FactBlocker::ForeignQuery);
+        if let Some(blocker) = self.validate_query_path(path) {
+            blockers.insert(blocker);
             return blockers;
         }
         let query = key_for_path(self.hir, self.field, path, &BTreeMap::new());
@@ -643,6 +604,9 @@ impl AnalysisFacts<'_> {
                 for site in may {
                     if self.aggregate_site_touches(*site, &query) {
                         blockers.insert(FactBlocker::AggregateConstraint(*site));
+                    }
+                    if let Some(expression) = self.unresolved_site_dependency(*site) {
+                        blockers.insert(FactBlocker::OpaqueExpression(expression));
                     }
                 }
             }
@@ -682,6 +646,45 @@ impl AnalysisFacts<'_> {
             }
         }
         blockers
+    }
+
+    fn validate_query_path(&self, path: &AccessPath) -> Option<FactBlocker> {
+        if self.hir.symbol(path.root).is_none() || self.hir.symbol(path.terminal).is_none() {
+            return Some(FactBlocker::ForeignQuery);
+        }
+        if !self.cfg.owns_symbol(path.root) {
+            return Some(FactBlocker::ForeignDefinition);
+        }
+        let mut terminal = path.root;
+        for step in &path.steps {
+            let valid = match step {
+                AccessStep::Index { index: ArrayIndex::Constant(value), .. } => {
+                    self.field.parse(value).is_some()
+                }
+                AccessStep::Index { index: ArrayIndex::Symbolic(id), .. } => {
+                    self.hir.expression(*id).is_some()
+                }
+                AccessStep::Port { port, .. } => {
+                    if let Some(port) = self.hir.port(*port) {
+                        terminal = port.symbol;
+                        true
+                    } else {
+                        false
+                    }
+                }
+                AccessStep::Tag { symbol, .. } => {
+                    terminal = *symbol;
+                    self.hir.symbol(*symbol).is_some()
+                }
+            };
+            if !valid {
+                return Some(FactBlocker::ForeignQuery);
+            }
+        }
+        if terminal != path.terminal || !self.cfg.owns_path(path) {
+            return Some(FactBlocker::ForeignQuery);
+        }
+        None
     }
 
     fn potential_sites(&self, query: &AccessKey) -> BTreeSet<NodeId> {
@@ -866,6 +869,30 @@ impl AnalysisFacts<'_> {
             right.visit_accesses(self.hir, &mut |path| found |= aggregate(path));
         }
         found
+    }
+
+    fn unresolved_site_dependency(&self, site: NodeId) -> Option<ExprId> {
+        let node = self.cfg.node(site)?;
+        let CfgNodeKind::Constraint { target, left, right } = &node.kind else { return None };
+        let state = self.site_state(site)?;
+        let values = state.variables()?;
+        let dependencies = state.dependencies()?;
+        let analysis = ForwardAnalysis { hir: self.hir, field: self.field };
+        let unresolved =
+            |id| forward::expression_dependencies(&analysis, id, values, dependencies).is_none();
+        if let Some(target) = target {
+            for step in &target.steps {
+                if let AccessStep::Index { index: ArrayIndex::Symbolic(id), .. } = step {
+                    if unresolved(*id) {
+                        return Some(*id);
+                    }
+                }
+            }
+        }
+        if unresolved(*left) {
+            return Some(*left);
+        }
+        right.filter(|id| unresolved(*id))
     }
 
     fn opaque_relevant(&self, node_id: NodeId, path: &AccessPath) -> bool {

@@ -4,7 +4,7 @@ use std::cmp::Ordering;
 use abstract_interpretation::graph::NodeId;
 use abstract_interpretation::lattice::Lattice;
 use abstract_interpretation::solver::{DataflowAnalysis, Transfer, TransferOutcome};
-use parser::hir::{AccessPath, ExprId, ExprKind, HirProject, SymbolId, SymbolKind};
+use parser::hir::{AccessPath, CallTarget, ExprId, ExprKind, HirProject, SymbolId, SymbolKind};
 use parser::new_frontend::{BinaryOperator, PostfixOperator, UnaryOperator};
 
 use crate::hir_cfg::{CfgEdge, CfgNode, CfgNodeKind, DefinitionCfg, EdgeKind};
@@ -420,6 +420,9 @@ pub fn expression_dependencies(
         ExprKind::Array(items) | ExprKind::Tuple(items) => {
             expression_list_dependencies(analysis, items, values, variables)
         }
+        ExprKind::Call { target: CallTarget::Function(_), arguments } => {
+            expression_list_dependencies(analysis, arguments, values, variables)
+        }
         ExprKind::Call { .. } | ExprKind::AnonymousComponent { .. } | ExprKind::Opaque(_) => None,
     }
 }
@@ -649,8 +652,22 @@ impl Transfer<ForwardAnalysis<'_>, ForwardState, String> for CfgNode {
                     reason: format!("{reason:?}"),
                 };
             }
-            CfgNodeKind::OpaqueAssignment { reason, .. }
-            | CfgNodeKind::OpaqueEquality { reason, .. } => {
+            CfgNodeKind::OpaqueAssignment { target, value, reason, .. } => {
+                if analysis
+                    .hir
+                    .symbol(target.root)
+                    .is_some_and(|symbol| symbol.kind == SymbolKind::Variable)
+                {
+                    assign_degree(analysis, target, *value, variables, degrees);
+                    assign_dependencies(analysis, target, *value, variables, dependencies);
+                    assign_value(analysis, target, *value, variables);
+                }
+                return TransferOutcome::Opaque {
+                    provisional: output,
+                    reason: format!("{reason:?}"),
+                };
+            }
+            CfgNodeKind::OpaqueEquality { reason, .. } => {
                 return TransferOutcome::Opaque {
                     provisional: output,
                     reason: format!("{reason:?}"),
@@ -1031,6 +1048,47 @@ mod tests {
         let precise = precise.dependencies().unwrap().get(&t).unwrap();
         let unknown = unknown.dependencies().unwrap().get(&t).unwrap();
         assert!(precise.leq(unknown));
+    }
+
+    #[test]
+    fn opaque_call_assignment_propagates_argument_may_dependencies_monotonically() {
+        let directory = std::env::temp_dir()
+            .join(format!("circomspect-phase4-call-law-{}", std::process::id()));
+        fs::create_dir_all(&directory).unwrap();
+        let source = directory.join("case.circom");
+        fs::write(
+            &source,
+            "function F(a){return a;} template T(){signal input x;var u=x;var t=F(u);\
+             signal output y;y<==t;}",
+        )
+        .unwrap();
+        let loaded =
+            load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
+        let hir = lower_project(&loaded).hir;
+        let cfg = crate::hir_cfg::build_cfg(&hir, hir.definition("T").unwrap()).unwrap();
+        let field = FieldContext::for_curve(Curve::Bn254);
+        let x = hir.symbols().iter().find(|symbol| symbol.name == "x").unwrap().id;
+        let u = hir.symbols().iter().find(|symbol| symbol.name == "u").unwrap().id;
+        let t = hir.symbols().iter().find(|symbol| symbol.name == "t").unwrap().id;
+        let key = AccessKey { root: x, instance: None, steps: Vec::new() };
+        let node = cfg
+            .nodes()
+            .iter()
+            .filter_map(|id| cfg.node(*id))
+            .find(|node| match &node.kind {
+                CfgNodeKind::OpaqueAssignment { target, .. } => target.root == t,
+                _ => false,
+            })
+            .unwrap();
+        let analysis = ForwardAnalysis { hir: &hir, field: &field };
+        check_transfer_order(node, &analysis, &variable_states(u, key.clone(), &field));
+        let mut state = ForwardState::boundary();
+        let ForwardState::Reached { dependencies, .. } = &mut state else { panic!("reached") };
+        dependencies.insert(u, MayAccessSet::from_keys(BTreeSet::from([key.clone()])));
+        let outcome = node.apply(&analysis, &state);
+        assert!(matches!(outcome, TransferOutcome::Opaque { .. }));
+        let state = transfer_state(outcome);
+        assert!(state.dependencies().unwrap().get(&t).unwrap().iter().any(|item| item == &key));
     }
 
     fn transfer_state(outcome: TransferOutcome<ForwardState, String>) -> ForwardState {
