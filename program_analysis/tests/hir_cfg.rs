@@ -175,7 +175,7 @@ fn deferred_variable_write_remains_targeted_and_cannot_generate_a_constraint() {
     let kinds: Vec<_> = cfg.nodes().iter().map(|id| &cfg.node(*id).unwrap().kind).collect();
     assert!(kinds.iter().any(|kind| matches!(
         kind,
-        CfgNodeKind::OpaqueAssignment { target, .. }
+        CfgNodeKind::DeferredAssignment { target, .. }
             if project.hir.symbol(target.root).unwrap().name == "x"
     )));
     assert!(kinds.iter().any(|kind| matches!(

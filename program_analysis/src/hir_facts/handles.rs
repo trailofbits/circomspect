@@ -16,6 +16,7 @@ use program_structure::utils::constants::Curve;
 use super::access::{key_for_path, AccessKey};
 use super::{AnalysisFacts, Range};
 use crate::hir_cfg::{CfgNode, CfgNodeKind};
+use crate::interprocedural::CallContext;
 
 /// A checked port access. Its source path cannot be assembled by callers.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -24,6 +25,14 @@ pub struct AccessHandle {
     pub(super) curve: Curve,
     pub(super) path: AccessPath,
     component: Option<ComponentId>,
+    context: Option<CallContext>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum InstanceRelation {
+    Exact,
+    Possible,
+    Separate,
 }
 
 impl AccessHandle {
@@ -35,6 +44,31 @@ impl AccessHandle {
     #[must_use]
     pub fn span(&self) -> parser::new_frontend::Span {
         self.path.span
+    }
+
+    pub(crate) fn path(&self) -> &AccessPath {
+        &self.path
+    }
+
+    pub(crate) fn matches_context(&self, context: &CallContext) -> bool {
+        self.context.as_ref() == Some(context)
+    }
+
+    pub(crate) fn output_port(&self) -> Option<(PortId, Vec<usize>)> {
+        self.component?;
+        let mut steps = self.path.steps.iter();
+        let port = steps.find_map(|step| match step {
+            AccessStep::Port { port, .. } => Some(*port),
+            AccessStep::Index { .. } | AccessStep::Tag { .. } => None,
+        })?;
+        let mut indices = Vec::new();
+        for step in steps {
+            let AccessStep::Index { index: ArrayIndex::Constant(value), .. } = step else {
+                return None;
+            };
+            indices.push(value.parse().ok()?);
+        }
+        Some((port, indices))
     }
 }
 
@@ -64,6 +98,36 @@ pub enum AccessHandleError {
 }
 
 impl AnalysisFacts<'_> {
+    pub(crate) fn instance_relation(
+        &self,
+        handle: &AccessHandle,
+        target: &AccessPath,
+    ) -> InstanceRelation {
+        let Some(port_position) = handle.path.steps.iter().position(|step| match step {
+            AccessStep::Port { .. } => true,
+            AccessStep::Index { .. } | AccessStep::Tag { .. } => false,
+        }) else {
+            return InstanceRelation::Possible;
+        };
+        let instance = AccessPath {
+            root: handle.path.root,
+            steps: handle.path.steps[..port_position].to_vec(),
+            terminal: handle.path.root,
+            component_input: false,
+            component_output: false,
+            span: handle.path.span,
+        };
+        let requested = key_for_path(self.hir, self.field, &instance, &BTreeMap::new());
+        let actual = key_for_path(self.hir, self.field, target, &BTreeMap::new());
+        if requested.exact_alias(&actual) {
+            InstanceRelation::Exact
+        } else if requested.may_alias(&actual) {
+            InstanceRelation::Possible
+        } else {
+            InstanceRelation::Separate
+        }
+    }
+
     /// Name a declared local template or bus port, even with no source occurrence.
     pub fn port_handle(
         &self,
@@ -103,6 +167,7 @@ impl AnalysisFacts<'_> {
             curve: self.field.curve().clone(),
             path,
             component: None,
+            context: self.context_binding.clone(),
         })
     }
 
@@ -151,6 +216,7 @@ impl AnalysisFacts<'_> {
             curve: self.field.curve().clone(),
             path,
             component: Some(component.id),
+            context: self.context_binding.clone(),
         })
     }
 

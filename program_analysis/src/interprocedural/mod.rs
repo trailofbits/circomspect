@@ -5,6 +5,7 @@ mod summary;
 mod effects;
 mod template;
 mod context;
+mod component;
 
 pub use context::{
     ArgumentShape, ArgumentValue, CallContext, ContextEvidence, ContextOrigin, ProjectSummaries,
@@ -18,3 +19,4 @@ pub use graph::{
 pub use summary::{FunctionSummary, SummaryFact};
 pub use effects::{FunctionEffect, FunctionEffects};
 pub use template::{PortSummary, WitnessProvenance, WitnessSite};
+pub use component::AppliedComponentPort;

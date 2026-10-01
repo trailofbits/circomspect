@@ -660,6 +660,23 @@ impl Transfer<ForwardAnalysis<'_>, ForwardState, String> for CfgNode {
                     assign_value(analysis, target, *value, variables);
                 }
             }
+            CfgNodeKind::DeferredAssignment { target, value } => {
+                let scalar = target.steps.is_empty()
+                    && analysis
+                        .hir
+                        .symbol(target.root)
+                        .is_some_and(|symbol| symbol.kind == SymbolKind::Variable)
+                    && eval_expression(analysis.hir, analysis.field, *value, variables).is_some();
+                if !scalar {
+                    return TransferOutcome::Opaque {
+                        provisional: output,
+                        reason: "deferred assignment shape".into(),
+                    };
+                }
+                assign_degree(analysis, target, *value, variables, degrees);
+                assign_dependencies(analysis, target, *value, variables, dependencies);
+                assign_value(analysis, target, *value, variables);
+            }
             CfgNodeKind::Declaration { symbol } => {
                 let Some(declared) = analysis.hir.symbol(*symbol) else {
                     return TransferOutcome::Opaque {
@@ -721,12 +738,7 @@ impl Transfer<ForwardAnalysis<'_>, ForwardState, String> for CfgNode {
                     reason: format!("{reason:?}"),
                 };
             }
-            CfgNodeKind::Instantiate { .. } => {
-                return TransferOutcome::Opaque {
-                    provisional: output,
-                    reason: "external component summary".into(),
-                };
-            }
+            CfgNodeKind::Instantiate { .. } => {}
             CfgNodeKind::Entry
             | CfgNodeKind::Exit
             | CfgNodeKind::LoopHeader
@@ -868,6 +880,52 @@ mod tests {
         let one = FieldContext::for_curve(Curve::Bn254).canonical(1.into());
         assert_eq!(exit_value("1"), Some(one));
         assert_eq!(exit_value("2"), None);
+    }
+
+    #[test]
+    fn deferred_assignment_transfer_is_monotone_when_scalar_shape_is_proved() {
+        let directory = std::env::temp_dir().join(format!(
+            "circomspect-deferred-transfer-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let source = directory.join("case.circom");
+        fs::write(&source, "function F(n){var x=n;return x;}").unwrap();
+        let loaded =
+            load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
+        let hir = lift_project(&loaded).hir;
+        let definition = hir.definition("F").unwrap();
+        let cfg = crate::hir_cfg::build_cfg(&hir, definition).unwrap();
+        let node = cfg
+            .nodes()
+            .iter()
+            .filter_map(|id| cfg.node(*id))
+            .find(|node| matches!(node.kind, CfgNodeKind::DeferredAssignment { .. }))
+            .unwrap();
+        let field = FieldContext::for_curve(Curve::Bn254);
+        let parameter = hir.symbols().iter().find(|symbol| symbol.name == "n").unwrap().id;
+        let local = hir.symbols().iter().find(|symbol| symbol.name == "x").unwrap().id;
+        let one = field.canonical(1.into());
+        let mut precise =
+            ForwardState::with_scalar_parameters(&BTreeMap::from([(parameter, one.clone())]));
+        let broad = precise.clone();
+        let ForwardState::Reached { variables, .. } = &mut precise else { panic!("reached") };
+        variables.insert(local, field.canonical(0.into()));
+        assert!(precise.leq(&broad));
+        let analysis = ForwardAnalysis::new(&hir, &field);
+        let TransferOutcome::Known(left) = node.apply(&analysis, &precise) else {
+            panic!("proved scalar transfer")
+        };
+        let TransferOutcome::Known(right) = node.apply(&analysis, &broad) else {
+            panic!("proved scalar transfer")
+        };
+        assert!(left.leq(&right));
+        assert_eq!(right.variables().unwrap().get(&local), Some(&one));
+        assert!(matches!(
+            node.apply(&analysis, &ForwardState::boundary()),
+            TransferOutcome::Opaque { .. }
+        ));
     }
 
     #[test]

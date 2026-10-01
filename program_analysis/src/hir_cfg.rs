@@ -40,6 +40,10 @@ pub enum CfgNodeKind {
         target: AccessPath,
         value: ExprId,
     },
+    DeferredAssignment {
+        target: AccessPath,
+        value: ExprId,
+    },
     Update {
         target: AccessPath,
         operator: PostfixOperator,
@@ -497,14 +501,9 @@ impl Builder<'_> {
                     effect_origin,
                 ))
             }
-            Effect::DeferredVariableAssignment { operator, .. } => Ok(self.append(
+            Effect::DeferredVariableAssignment { .. } => Ok(self.append(
                 tails,
-                CfgNodeKind::OpaqueAssignment {
-                    target: target.clone(),
-                    value,
-                    operator: *operator,
-                    reason: IncompleteReason::UnknownType,
-                },
+                CfgNodeKind::DeferredAssignment { target: target.clone(), value },
                 origin,
             )),
             Effect::OpaqueAssignment { operator, reason, .. } => Ok(self.append(

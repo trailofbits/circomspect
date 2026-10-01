@@ -65,6 +65,7 @@ pub struct LivenessAnalysis<'a> {
     pub field: &'a FieldContext,
     pub observable_outputs: BTreeSet<SymbolId>,
     pruned_edges: BTreeSet<EdgeId>,
+    resolved_deferred: BTreeSet<NodeId>,
 }
 
 impl LivenessAnalysis<'_> {
@@ -84,11 +85,22 @@ impl LivenessAnalysis<'_> {
             .filter(|port| port.direction == Some(PortDirection::Output))
             .map(|port| port.symbol)
             .collect();
-        LivenessAnalysis { hir, field, observable_outputs, pruned_edges: BTreeSet::new() }
+        LivenessAnalysis {
+            hir,
+            field,
+            observable_outputs,
+            pruned_edges: BTreeSet::new(),
+            resolved_deferred: BTreeSet::new(),
+        }
     }
 
     pub fn with_pruned_edges(mut self, edges: BTreeSet<EdgeId>) -> Self {
         self.pruned_edges = edges;
+        self
+    }
+
+    pub fn with_resolved_deferred(mut self, nodes: BTreeSet<NodeId>) -> Self {
+        self.resolved_deferred = nodes;
         self
     }
 }
@@ -127,6 +139,18 @@ impl Transfer<LivenessAnalysis<'_>, LiveState, String> for CfgNode {
                 }
             }
             CfgNodeKind::Assignment { target, .. } => {
+                let key = key_for_path(analysis.hir, analysis.field, target, &empty);
+                if key.exact_alias(&key) {
+                    live.remove(&key);
+                }
+            }
+            CfgNodeKind::DeferredAssignment { target, .. } => {
+                if !analysis.resolved_deferred.contains(&self.id) {
+                    return TransferOutcome::Opaque {
+                        provisional: output,
+                        reason: "deferred assignment shape".into(),
+                    };
+                }
                 let key = key_for_path(analysis.hir, analysis.field, target, &empty);
                 if key.exact_alias(&key) {
                     live.remove(&key);

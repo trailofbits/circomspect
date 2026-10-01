@@ -123,6 +123,11 @@ impl ProjectSummaries<'_> {
                 let effect = match &node.kind {
                     CfgNodeKind::Assert { .. } => Some(Ok(FunctionEffect::Assert)),
                     CfgNodeKind::Log => Some(Ok(FunctionEffect::Log)),
+                    CfgNodeKind::DeferredAssignment { .. }
+                        if !facts.resolved_deferred_assignment(*id) =>
+                    {
+                        Some(Err(SummaryBlocker::UnsupportedContext))
+                    }
                     CfgNodeKind::Opaque(_)
                     | CfgNodeKind::OpaqueAssignment { .. }
                     | CfgNodeKind::OpaqueEquality { .. }
