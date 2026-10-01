@@ -25,6 +25,8 @@ pub enum RuleKind {
 }
 
 impl RuleKind {
+    /// Preserve existing diagnostic families: complement reduction and modular arithmetic
+    /// both describe field-element arithmetic behavior under legacy `CS0004`.
     #[must_use]
     pub const fn code(self) -> ReportCode {
         use RuleKind::*;

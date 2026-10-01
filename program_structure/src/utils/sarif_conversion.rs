@@ -1,7 +1,7 @@
 use codespan_reporting::files::Files;
 use log::{debug, trace};
 use serde_sarif::sarif;
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 use std::fmt;
 use std::ops::Range;
 use std::path::PathBuf;
@@ -36,7 +36,7 @@ impl ToSarif for ReportCollection {
         let rules = self
             .iter()
             .map(|report| (report.name(), report.id()))
-            .collect::<HashSet<_>>()
+            .collect::<BTreeSet<_>>()
             .iter()
             .map(|(name, id)| {
                 sarif::ReportingDescriptorBuilder::default().name(name).id(id).build()

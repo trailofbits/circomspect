@@ -237,7 +237,7 @@ fn unreachable_component_call_has_no_applied_port_fact() {
 }
 
 #[test]
-fn new_rule_ids_have_distinct_renderer_descriptors() {
+fn new_ids_and_shared_legacy_family_are_stable() {
     let incomplete = RuleKind::IncompleteCoverage;
     assert_eq!(incomplete.code().id(), "CS0020");
     assert_eq!(incomplete.code().name(), "incomplete-analysis");
@@ -249,6 +249,8 @@ fn new_rule_ids_have_distinct_renderer_descriptors() {
     assert_ne!(ReportCode::UnnecessarySignalAssignment.id(), "CS0021");
     assert_eq!(RuleKind::BitwiseComplement.code().id(), "CS0004");
     assert_eq!(RuleKind::BitwiseComplement.category(), MessageCategory::Info);
+    assert_eq!(RuleKind::BitwiseComplement.code().id(), RuleKind::FieldArithmetic.code().id());
+    assert_eq!(RuleKind::BitwiseComplement.code().name(), "field-element-arithmetic");
     assert_eq!(RuleKind::UnconstrainedSignal.code().id(), "CA01");
     assert_eq!(ReportCode::UnderConstrainedSignal.id(), "CS0017");
 }
@@ -379,8 +381,100 @@ fn abstention_keeps_an_unproved_predicate_out_of_reports() {
         support::render(result.findings(), &sources, MessageCategory::Info, &[], &output).unwrap(),
         (0, 0)
     );
-    let sarif: Value = serde_json::from_str(&fs::read_to_string(output).unwrap()).unwrap();
+    let sarif: Value = serde_json::from_str(&fs::read_to_string(&output).unwrap()).unwrap();
     assert_eq!(sarif["runs"][0]["results"].as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn validated_findings_render_with_fixed_ids_spans_and_filters() {
+    let loaded = load_fixture("finding-render", "template Check() {}\n");
+    let lifted = lift_project(&loaded);
+    let definition = lifted.hir.definition("Check").unwrap();
+    let parser::hir::DefinitionRef::Template(template) = definition else {
+        panic!("Check is a template")
+    };
+    let summaries = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let evidence = summaries.symbolic_root(definition).unwrap();
+    let cfg = build_cfg(&lifted.hir, definition).unwrap();
+    let facts = summaries.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let context = RuleContext::new(&facts, &summaries, &evidence).unwrap();
+    let source = &loaded.files[0];
+    let primary = lifted.hir.template(template).unwrap().name_span;
+    let secondary = Span::checked(source.id, 0..8, &source.text).unwrap();
+    let warning = context
+        .finding(RuleKind::TooManyArguments, "proved warning".into(), primary, "name".into())
+        .with_secondary(secondary, "declaration".into());
+    let note =
+        context.finding(RuleKind::FieldArithmetic, "proved note".into(), primary, "name".into());
+    let sources = SourceMap::from_loaded(&loaded, &[source.id]).unwrap();
+    let output = source.path.with_extension("sarif.json");
+
+    assert_eq!(
+        support::render(
+            &[warning.clone(), note.clone()],
+            &sources,
+            MessageCategory::Warning,
+            &[],
+            &output
+        )
+        .unwrap(),
+        (1, 1)
+    );
+    let sarif: Value = serde_json::from_str(&fs::read_to_string(&output).unwrap()).unwrap();
+    let results = sarif["runs"][0]["results"].as_array().unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["ruleId"], "CS0012");
+    assert_eq!(results[0]["level"], "warning");
+    assert_eq!(results[0]["locations"][0]["physicalLocation"]["region"]["startLine"], 1);
+    assert_eq!(results[0]["locations"][0]["physicalLocation"]["region"]["startColumn"], 10);
+    assert_eq!(results[0]["locations"][0]["physicalLocation"]["region"]["endColumn"], 15);
+    assert_eq!(results[0]["relatedLocations"][0]["physicalLocation"]["region"]["startColumn"], 1);
+    assert_eq!(results[0]["relatedLocations"][0]["physicalLocation"]["region"]["endColumn"], 9);
+
+    assert_eq!(
+        support::render(&[warning, note], &sources, MessageCategory::Info, &["CS0012"], &output)
+            .unwrap(),
+        (1, 1)
+    );
+    let sarif: Value = serde_json::from_str(&fs::read_to_string(&output).unwrap()).unwrap();
+    let results = sarif["runs"][0]["results"].as_array().unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["ruleId"], "CS0004");
+    assert_eq!(results[0]["level"], "note");
+
+    let ordered = [
+        context.finding(RuleKind::FieldArithmetic, "proved note".into(), primary, "name".into()),
+        context.finding(
+            RuleKind::TooManyArguments,
+            "proved warning".into(),
+            primary,
+            "name".into(),
+        ),
+    ];
+    assert_eq!(
+        support::render(&ordered, &sources, MessageCategory::Info, &[], &output).unwrap(),
+        (2, 2)
+    );
+    let first = fs::read_to_string(&output).unwrap();
+    let sarif: Value = serde_json::from_str(&first).unwrap();
+    let results = sarif["runs"][0]["results"].as_array().unwrap();
+    assert_eq!(
+        results.iter().map(|result| result["ruleId"].as_str().unwrap()).collect::<Vec<_>>(),
+        ["CS0004", "CS0012"]
+    );
+    let descriptors = sarif["runs"][0]["tool"]["driver"]["rules"].as_array().unwrap();
+    assert_eq!(
+        descriptors.iter().map(|rule| rule["id"].as_str().unwrap()).collect::<Vec<_>>(),
+        ["CS0004", "CS0012"]
+    );
+    assert_eq!(
+        support::render(&ordered, &sources, MessageCategory::Info, &[], &output).unwrap(),
+        (2, 2)
+    );
+    let second = fs::read_to_string(&output).unwrap();
+    let repeated: Value = serde_json::from_str(&second).unwrap();
+    assert_eq!(repeated["runs"][0]["results"], sarif["runs"][0]["results"]);
+    assert_eq!(second, first);
 }
 
 #[test]
