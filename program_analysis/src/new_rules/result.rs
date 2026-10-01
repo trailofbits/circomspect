@@ -64,24 +64,7 @@ impl RuleResult {
     }
 
     pub(super) fn sort(&mut self) {
-        self.findings.sort_by(|left, right| {
-            (
-                left.kind(),
-                left.context(),
-                left.primary().source(),
-                left.primary().start(),
-                left.primary().end(),
-                left.message(),
-            )
-                .cmp(&(
-                    right.kind(),
-                    right.context(),
-                    right.primary().source(),
-                    right.primary().start(),
-                    right.primary().end(),
-                    right.message(),
-                ))
-        });
+        self.findings.sort_by(Finding::compare_output);
         self.abstentions.sort_by(|left, right| {
             (
                 left.kind,

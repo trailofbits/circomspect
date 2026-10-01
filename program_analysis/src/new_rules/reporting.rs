@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::cmp::Ordering;
 
 use parser::new_frontend::{LoadedProject, SourceId, Span};
 use program_structure::file_definition::{FileID, FileLibrary};
@@ -123,12 +124,38 @@ impl Finding {
         &self.context
     }
 
-    pub(super) const fn primary(&self) -> Span {
-        self.primary
-    }
-
-    pub(super) fn message(&self) -> &str {
-        &self.message
+    pub(super) fn compare_output(&self, other: &Self) -> Ordering {
+        let primary = (
+            self.kind,
+            &self.context,
+            self.primary.source(),
+            self.primary.start(),
+            self.primary.end(),
+            &self.message,
+            &self.primary_label,
+        )
+            .cmp(&(
+                other.kind,
+                &other.context,
+                other.primary.source(),
+                other.primary.start(),
+                other.primary.end(),
+                &other.message,
+                &other.primary_label,
+            ));
+        if primary != Ordering::Equal {
+            return primary;
+        }
+        for ((left_span, left_label), (right_span, right_label)) in
+            self.secondary.iter().zip(&other.secondary)
+        {
+            let secondary = (left_span.source(), left_span.start(), left_span.end(), left_label)
+                .cmp(&(right_span.source(), right_span.start(), right_span.end(), right_label));
+            if secondary != Ordering::Equal {
+                return secondary;
+            }
+        }
+        self.secondary.len().cmp(&other.secondary.len())
     }
 
     /// Convert a checked source span to the existing report representation.
@@ -248,5 +275,20 @@ mod tests {
             );
             assert_eq!(forged.to_report(&sources).err(), Some(expected));
         }
+    }
+
+    #[test]
+    fn same_primary_findings_have_stable_secondary_order() {
+        let (loaded, finding) = fixture();
+        let secondary = Span::checked(loaded.files[1].id, 0..8, &loaded.files[1].text).unwrap();
+        let mut result = crate::new_rules::RuleResult::default();
+        result.add_finding(finding.clone().with_secondary(secondary, "z".to_string()));
+        result.add_finding(finding.with_secondary(secondary, "a".to_string()));
+        result.sort();
+        let sources = SourceMap::from_loaded(&loaded, &[loaded.files[0].id]).unwrap();
+        let first = result.findings()[0].to_report(&sources).unwrap();
+        let second = result.findings()[1].to_report(&sources).unwrap();
+        assert_eq!(first.secondary()[0].message, "a");
+        assert_eq!(second.secondary()[0].message, "z");
     }
 }
