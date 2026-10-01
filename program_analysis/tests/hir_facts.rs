@@ -5,14 +5,14 @@ use circomspect_program_analysis::hir_facts::{
 };
 use parser::hir::{
     lower_project, AccessPath, AccessStep, ArrayIndex, ControlGuard, DefinitionRef, Effect,
-    ExprKind, HirProject,
+    ExprKind, HirProject, LoweredProject, SemanticCode,
 };
 use parser::new_frontend::{load_sources, Version, VersionPolicy};
 use std::collections::BTreeSet;
 use std::fs;
 use program_structure::utils::constants::Curve;
 
-fn fixture(source: &str) -> (HirProject, DefinitionRef) {
+fn lower_fixture(source: &str) -> LoweredProject {
     let directory = std::env::temp_dir().join(format!(
         "circomspect-phase4-facts-{}-{:?}",
         std::process::id(),
@@ -22,7 +22,11 @@ fn fixture(source: &str) -> (HirProject, DefinitionRef) {
     let path = directory.join("case.circom");
     fs::write(&path, source).unwrap();
     let loaded = load_sources(&[path], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
-    let lowered = lower_project(&loaded);
+    lower_project(&loaded)
+}
+
+fn fixture(source: &str) -> (HirProject, DefinitionRef) {
+    let lowered = lower_fixture(source);
     assert!(lowered.syntax_diagnostics.is_empty(), "{:?}", lowered.syntax_diagnostics);
     assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
     let definition = lowered.hir.definition("Check").unwrap();
@@ -262,6 +266,21 @@ fn no_argument_function_call_does_not_touch_an_unrelated_signal() {
     let facts = analyze(&hir, &cfg, &field, None).unwrap();
     let x = expression_path(&hir, "x", 0);
     assert_eq!(facts.incidence(&x).certified(), Some(&Incidence::Zero));
+}
+
+#[test]
+fn missing_call_inside_constraint_cannot_certify_zero_for_known_operand() {
+    let lowered =
+        lower_fixture("template Check(){signal input x;signal output y;y<==x+Missing();}");
+    assert_eq!(lowered.diagnostics.len(), 1);
+    assert_eq!(lowered.diagnostics[0].code, SemanticCode::MissingCall);
+    let hir = lowered.hir;
+    let definition = hir.definition("Check").unwrap();
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let x = expression_path(&hir, "x", 0);
+    assert!(facts.incidence(&x).unavailable().is_some());
 }
 
 #[test]
