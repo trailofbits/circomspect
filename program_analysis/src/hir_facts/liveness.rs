@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use abstract_interpretation::graph::NodeId;
+use abstract_interpretation::graph::{EdgeId, NodeId};
 use abstract_interpretation::lattice::Lattice;
 use abstract_interpretation::solver::{DataflowAnalysis, Transfer, TransferOutcome};
 use parser::hir::{DefinitionRef, ExprId, HirProject, SymbolId};
@@ -64,6 +64,7 @@ pub struct LivenessAnalysis<'a> {
     pub hir: &'a HirProject,
     pub field: &'a FieldContext,
     pub observable_outputs: BTreeSet<SymbolId>,
+    pruned_edges: BTreeSet<EdgeId>,
 }
 
 impl LivenessAnalysis<'_> {
@@ -83,7 +84,12 @@ impl LivenessAnalysis<'_> {
             .filter(|port| port.direction == Some(PortDirection::Output))
             .map(|port| port.symbol)
             .collect();
-        LivenessAnalysis { hir, field, observable_outputs }
+        LivenessAnalysis { hir, field, observable_outputs, pruned_edges: BTreeSet::new() }
+    }
+
+    pub fn with_pruned_edges(mut self, edges: BTreeSet<EdgeId>) -> Self {
+        self.pruned_edges = edges;
+        self
     }
 }
 
@@ -189,6 +195,9 @@ impl Transfer<LivenessAnalysis<'_>, LiveState, String> for CfgEdge {
         analysis: &LivenessAnalysis<'_>,
         input: &LiveState,
     ) -> TransferOutcome<LiveState, String> {
+        if analysis.pruned_edges.contains(&self.id) {
+            return TransferOutcome::Known(LiveState::Unreachable);
+        }
         let Some(condition) = self.condition else {
             return TransferOutcome::Known(input.clone());
         };

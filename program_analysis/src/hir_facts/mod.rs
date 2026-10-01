@@ -10,7 +10,9 @@ mod walk;
 use std::collections::{BTreeMap, BTreeSet};
 
 use abstract_interpretation::graph::{EdgeId, FlowGraph, GraphError, NodeId};
-use abstract_interpretation::solver::{solve, Backward, Blocker, Forward, SolveResult};
+use abstract_interpretation::solver::{
+    solve, Backward, Blocker, Forward, SolveResult, Transfer, TransferOutcome,
+};
 use parser::hir::{AccessPath, AccessStep, ArrayIndex, DefinitionRef, ExprId, ExprKind, HirProject};
 
 use crate::hir_cfg::{CfgNodeKind, DefinitionCfg};
@@ -127,10 +129,32 @@ pub fn analyze<'a>(
     let budget = Some(budget.unwrap_or(DEFAULT_UPDATE_BUDGET));
     let forward = solve::<_, _, Forward>(cfg, &ForwardAnalysis { hir, field }, budget)
         .map_err(AnalysisError::InvalidGraph)?;
+    let pruned_edges = forward_pruned_edges(hir, cfg, field, &forward);
+    let liveness =
+        LivenessAnalysis::new(hir, field, cfg.definition).with_pruned_edges(pruned_edges);
     let backward =
-        solve::<_, _, Backward>(cfg, &LivenessAnalysis::new(hir, field, cfg.definition), budget)
-            .map_err(AnalysisError::InvalidGraph)?;
+        solve::<_, _, Backward>(cfg, &liveness, budget).map_err(AnalysisError::InvalidGraph)?;
     Ok(AnalysisFacts { hir, cfg, field, forward, backward })
+}
+
+fn forward_pruned_edges(
+    hir: &HirProject,
+    cfg: &DefinitionCfg,
+    field: &FieldContext,
+    result: &ForwardResult,
+) -> BTreeSet<EdgeId> {
+    let SolveResult::Complete(facts) = result else { return BTreeSet::new() };
+    let analysis = ForwardAnalysis { hir, field };
+    cfg.edges()
+        .iter()
+        .filter_map(|id| {
+            let edge = cfg.edge(*id)?;
+            let source = facts.get(&edge.source)?.output.as_ref()?;
+            let transfer = edge.payload.apply(&analysis, source);
+            let TransferOutcome::Known(ForwardState::Unreachable) = transfer else { return None };
+            Some(*id)
+        })
+        .collect()
 }
 
 impl AnalysisFacts<'_> {

@@ -55,6 +55,7 @@ pub enum EdgeKind {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CfgEdge {
+    pub id: EdgeId,
     pub kind: EdgeKind,
     pub condition: Option<ExprId>,
     pub guard: Option<ControlGuard>,
@@ -180,7 +181,8 @@ impl Builder<'_> {
                 .conditions
                 .get(&source)
                 .map_or((None, None), |(condition, guard)| (Some(*condition), Some(*guard)));
-            self.edges.push((source, node, CfgEdge { kind, condition, guard }));
+            let id = EdgeId::new(self.edges.len());
+            self.edges.push((source, node, CfgEdge { id, kind, condition, guard }));
         }
     }
 

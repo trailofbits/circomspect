@@ -232,6 +232,27 @@ fn algebraically_cancelled_access_has_zero_generated_constraint_incidence() {
 }
 
 #[test]
+fn liveness_ignores_a_branch_pruned_by_a_known_local_value() {
+    let (hir, definition) =
+        fixture("function Check(){var x=0; var t=0; if(t){return x;} return 1;}");
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let x = expression_path(&hir, "x", 0);
+    let t = hir.symbols().iter().find(|symbol| symbol.name == "t").unwrap().id;
+    let after_x_write = cfg
+        .nodes()
+        .iter()
+        .find_map(|id| {
+            let node = cfg.node(*id)?;
+            let CfgNodeKind::Assignment { target, .. } = &node.kind else { return None };
+            (target.root == t).then_some(*id)
+        })
+        .unwrap();
+    assert_eq!(facts.live_before(after_x_write, &x).certified(), Some(&false));
+}
+
+#[test]
 fn signed_field_comparison_selects_the_negative_branch() {
     let (hir, definition) =
         fixture("template Check(){signal output y; if(-1<0){y<==1;}else{y<--1;}}");
