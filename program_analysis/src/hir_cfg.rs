@@ -95,16 +95,48 @@ pub struct CfgEdge {
     pub guard: Option<ControlGuard>,
 }
 
+/// A graph bound to the definition from which it was built.
+///
+/// ```compile_fail
+/// use circomspect_program_analysis::hir_cfg::DefinitionCfg;
+/// use parser::hir::DefinitionRef;
+/// fn forge(mut cfg: DefinitionCfg, value: DefinitionRef) { cfg.definition = value; }
+/// ```
+/// ```compile_fail
+/// use circomspect_program_analysis::hir_cfg::DefinitionCfg;
+/// use abstract_interpretation::graph::NodeId;
+/// fn forge(mut cfg: DefinitionCfg, value: NodeId) { cfg.entry = value; }
+/// ```
+/// ```compile_fail
+/// use circomspect_program_analysis::hir_cfg::DefinitionCfg;
+/// use abstract_interpretation::graph::NodeId;
+/// fn forge(mut cfg: DefinitionCfg, value: NodeId) { cfg.exit = value; }
+/// ```
 pub struct DefinitionCfg {
     graph: IndexedGraph<CfgNode, CfgEdge>,
     local_symbols: BTreeSet<SymbolId>,
     checked_paths: Vec<AccessPath>,
-    pub definition: DefinitionRef,
-    pub entry: NodeId,
-    pub exit: NodeId,
+    definition: DefinitionRef,
+    entry: NodeId,
+    exit: NodeId,
 }
 
 impl DefinitionCfg {
+    #[must_use]
+    pub fn definition(&self) -> DefinitionRef {
+        self.definition
+    }
+
+    #[must_use]
+    pub fn entry(&self) -> NodeId {
+        self.entry
+    }
+
+    #[must_use]
+    pub fn exit(&self) -> NodeId {
+        self.exit
+    }
+
     pub(crate) fn owns_symbol(&self, symbol: SymbolId) -> bool {
         self.local_symbols.contains(&symbol)
     }

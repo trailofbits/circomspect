@@ -70,7 +70,7 @@ impl AnalysisFacts<'_> {
         port: PortId,
         indices: &[usize],
     ) -> Result<AccessHandle, AccessHandleError> {
-        let ports = match self.cfg.definition {
+        let ports = match self.cfg.definition() {
             DefinitionRef::Function(_) => &[][..],
             DefinitionRef::Template(id) => {
                 &self.hir.template(id).ok_or(AccessHandleError::ForeignPort)?.ports
@@ -99,7 +99,7 @@ impl AnalysisFacts<'_> {
             span: port.span,
         };
         Ok(AccessHandle {
-            definition: self.cfg.definition,
+            definition: self.cfg.definition(),
             curve: self.field.curve().clone(),
             path,
             component: None,
@@ -147,7 +147,7 @@ impl AnalysisFacts<'_> {
             span: component.span,
         };
         Ok(AccessHandle {
-            definition: self.cfg.definition,
+            definition: self.cfg.definition(),
             curve: self.field.curve().clone(),
             path,
             component: Some(component.id),

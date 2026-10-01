@@ -323,11 +323,11 @@ impl<'a> ProjectSummaries<'a> {
         budget: Option<usize>,
     ) -> Result<AnalysisFacts<'b>, SummaryBlocker> {
         self.check_evidence(evidence)?;
-        if cfg.definition != evidence.context.definition {
+        if cfg.definition() != evidence.context.definition {
             return Err(SummaryBlocker::WrongContext);
         }
         let parameters =
-            self.parameters(cfg.definition).ok_or(SummaryBlocker::ForeignDefinition)?;
+            self.parameters(cfg.definition()).ok_or(SummaryBlocker::ForeignDefinition)?;
         let seeds = evidence.context.scalar_seeds(parameters)?;
         let mut facts = analyze_with_scalar_parameters(self.hir(), cfg, &self.field, seeds, budget)
             .map_err(|error| SummaryBlocker::LocalAnalysis(format!("{error:?}")))?;

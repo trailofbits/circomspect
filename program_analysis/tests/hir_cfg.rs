@@ -59,7 +59,7 @@ fn loop_back_edge_and_return_preserve_exit() {
         .map(|id| cfg.edge(*id).unwrap())
         .find(|edge| edge.payload.kind == EdgeKind::Return)
         .unwrap();
-    assert_eq!(return_edge.target, cfg.exit);
+    assert_eq!(return_edge.target, cfg.exit());
 }
 
 #[test]
@@ -236,5 +236,5 @@ fn effects_after_return_do_not_enter_the_cfg() {
         .filter(|edge| edge.payload.kind == EdgeKind::Return)
         .collect();
     assert_eq!(return_edges.len(), 1);
-    assert_eq!(return_edges[0].target, cfg.exit);
+    assert_eq!(return_edges[0].target, cfg.exit());
 }
