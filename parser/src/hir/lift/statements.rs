@@ -962,6 +962,9 @@ impl Lifter<'_> {
         if !self.expression_is_checked(value)
             || !Self::symbolic_indices(&path).all(|id| self.expression_is_checked(id))
         {
+            if kind == SymbolKind::Variable {
+                return self.unknown_shape_assignment(path, kind, operator, value, span);
+            }
             return self.opaque(span, IncompleteReason::UnknownType);
         }
         if matches!(

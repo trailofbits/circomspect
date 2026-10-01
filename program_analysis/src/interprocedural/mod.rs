@@ -8,8 +8,8 @@ mod context;
 mod component;
 
 pub use context::{
-    ArgumentShape, ArgumentValue, CallContext, ContextEvidence, ContextOrigin, ProjectSummaries,
-    SummaryBlocker,
+    AnalyzeEvidenceError, ArgumentShape, ArgumentValue, CallContext, ContextEvidence,
+    ContextOrigin, ProjectSummaries, SummaryBlocker,
 };
 
 pub use graph::{
@@ -19,4 +19,4 @@ pub use graph::{
 pub use summary::{FunctionSummary, SummaryFact};
 pub use effects::{FunctionEffect, FunctionEffects};
 pub use template::{PortSummary, WitnessProvenance, WitnessSite};
-pub use component::AppliedComponentPort;
+pub use component::{AppliedComponentPort, ComposedConstraintFixedOutput};

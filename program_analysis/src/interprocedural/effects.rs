@@ -153,8 +153,7 @@ impl ProjectSummaries<'_> {
                     }
                 };
                 if let DefinitionRef::Function(_) = call.callee() {
-                    let evidence = self.call_evidence(&call, facts)?;
-                    callees.insert(evidence.context().clone());
+                    callees.insert(self.call_context(&call, facts)?);
                 } else {
                     return Err(SummaryBlocker::ExternalSummary);
                 }

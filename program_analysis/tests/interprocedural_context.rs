@@ -1,11 +1,11 @@
 use circomspect_program_analysis::hir_facts::FieldContext;
 use circomspect_program_analysis::interprocedural::{
-    ArgumentShape, ArgumentValue, CallOwner, CallReachability, ContextOrigin, ProjectSummaries,
-    SummaryBlocker,
+    AnalyzeEvidenceError, ArgumentShape, ArgumentValue, CallOwner, CallReachability, ContextOrigin,
+    ProjectSummaries, SummaryBlocker,
 };
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::hir_facts::analyze;
-use parser::hir::{lift_project, LiftedProject};
+use parser::hir::{lift_project, LiftedProject, SemanticCode, Severity};
 use parser::new_frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
 use std::fs;
@@ -105,22 +105,180 @@ fn evidence_scope_distinguishes_universal_root_from_a_reachable_call() {
 
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
     let field = FieldContext::for_curve(Curve::Bn254);
-    let facts = analyze(&lifted.hir, &cfg, &field, None).unwrap();
+    let facts = summaries.analyze_for_evidence(&cfg, &main_evidence, None).unwrap();
     let site = summaries.graph().calls_from(CallOwner::Definition(parent))[0];
     let CallReachability::Reachable(call) = summaries.graph().reachable_call(site.id(), &facts)
     else {
         panic!("reachable child")
     };
-    let evidence = summaries.call_evidence(&call, &facts).unwrap();
+    let evidence = summaries.call_evidence(&call, &facts, &main_evidence).unwrap();
     assert_eq!(evidence.origin(), ContextOrigin::Call(site.id()));
     assert_eq!(evidence.context().definition(), child);
     assert_eq!(evidence.context().arguments(), [ArgumentValue::Scalar(field.canonical(2.into())),]);
     assert!(summaries.check_evidence(&evidence).is_ok());
     let gold_field = FieldContext::for_curve(Curve::Goldilocks);
     let wrong_curve = analyze(&lifted.hir, &cfg, &gold_field, None).unwrap();
-    assert_eq!(summaries.call_evidence(&call, &wrong_curve), Err(SummaryBlocker::ForeignCall));
-    let pending = analyze(&lifted.hir, &cfg, &field, Some(0)).unwrap();
-    assert!(matches!(summaries.call_evidence(&call, &pending), Err(SummaryBlocker::LocalFacts(_))));
+    assert_eq!(
+        summaries.call_evidence(&call, &wrong_curve, &main_evidence),
+        Err(SummaryBlocker::ForeignCall)
+    );
+    let pending = summaries.analyze_for_evidence(&cfg, &main_evidence, Some(0)).unwrap();
+    assert!(matches!(
+        summaries.call_evidence(&call, &pending, &main_evidence),
+        Err(SummaryBlocker::LocalFacts(_))
+    ));
+}
+
+#[test]
+fn unbound_local_facts_cannot_mint_reachable_child_evidence() {
+    let lifted = fixture(
+        "template Child(n){} template Parent(){component c=Child(2);}",
+        Version::new(2, 2, 3),
+    );
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let parent = lifted.hir.definition("Parent").unwrap();
+    let cfg = build_cfg(&lifted.hir, parent).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let unbound = analyze(&lifted.hir, &cfg, &field, None).unwrap();
+    let site = provider.graph().calls_from(CallOwner::Definition(parent))[0];
+    let CallReachability::Reachable(call) = provider.graph().reachable_call(site.id(), &unbound)
+    else {
+        panic!("checked call must be reachable")
+    };
+    let caller = provider.symbolic_root(parent).unwrap();
+    assert_eq!(provider.call_evidence(&call, &unbound, &caller), Err(SummaryBlocker::WrongContext));
+}
+
+#[test]
+fn reachable_array_call_preserves_shape_and_emits_a_located_assignment_error() {
+    let source = concat!(
+        "template Child(n){var x=n;x=1;signal output out;out<==1;} ",
+        "template Parent(){component c=Child([1,2]);} component main=Parent();"
+    );
+    let lifted = fixture(source, Version::new(2, 2, 3));
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let parent = lifted.hir.definition("Parent").unwrap();
+    let child = lifted.hir.definition("Child").unwrap();
+    let parent_cfg = build_cfg(&lifted.hir, parent).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let main = provider.graph().calls_from(CallOwner::Main(0))[0];
+    let CallReachability::Reachable(main_call) =
+        provider.graph().reachable_main_call(main.id(), provider.hir())
+    else {
+        panic!("main call must be reachable")
+    };
+    let caller = provider.main_evidence(&main_call).unwrap();
+    let parent_facts = provider.analyze_for_evidence(&parent_cfg, &caller, None).unwrap();
+    let site = provider.graph().calls_from(CallOwner::Definition(parent))[0];
+    let CallReachability::Reachable(call) =
+        provider.graph().reachable_call(site.id(), &parent_facts)
+    else {
+        panic!("array call must be reachable")
+    };
+    let evidence = provider.call_evidence(&call, &parent_facts, &caller).unwrap();
+    assert_eq!(
+        evidence.context().arguments(),
+        [ArgumentValue::Array(vec![
+            ArgumentValue::Scalar(field.canonical(1.into())),
+            ArgumentValue::Scalar(field.canonical(2.into())),
+        ])]
+    );
+    let child_cfg = build_cfg(&lifted.hir, child).unwrap();
+    let error = provider.analyze_for_evidence(&child_cfg, &evidence, None).err().unwrap();
+    let AnalyzeEvidenceError::InvalidAssignment { context, diagnostic } = error else {
+        panic!("aggregate argument must make the deferred scalar write invalid")
+    };
+    assert_eq!(*context, *evidence.context());
+    assert_eq!(diagnostic.code, SemanticCode::InvalidAssignment);
+    assert_eq!(diagnostic.code.as_str(), "T2000");
+    assert_eq!(diagnostic.severity, Severity::Error);
+    assert_eq!(&source[diagnostic.span.start()..diagnostic.span.end()], "n");
+}
+
+#[test]
+fn scalar_main_specializes_deferred_guard_while_symbolic_library_scope_abstains() {
+    let lifted = fixture(
+        "template T(n){var x=n;signal output y;if(x){y<==1;}else{y<==2;}} \
+         component main=T(0);",
+        Version::new(2, 2, 3),
+    );
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let definition = lifted.hir.definition("T").unwrap();
+    let parser::hir::DefinitionRef::Template(template) = definition else {
+        panic!("T must be a template")
+    };
+    let cfg = build_cfg(&lifted.hir, definition).unwrap();
+    let output = lifted.hir.template(template).unwrap().ports[0];
+    let main = provider.graph().calls_from(CallOwner::Main(0))[0];
+    let CallReachability::Reachable(call) =
+        provider.graph().reachable_main_call(main.id(), provider.hir())
+    else {
+        panic!("main call must be reachable")
+    };
+    let concrete = provider.main_evidence(&call).unwrap();
+    let concrete_facts = provider.analyze_for_evidence(&cfg, &concrete, None).unwrap();
+    let concrete_handle = concrete_facts.port_handle(output, &[]).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    assert_eq!(
+        concrete_facts.constraint_fixed_handle(&concrete_handle).certified(),
+        Some(&Some(field.canonical(2.into())))
+    );
+
+    let symbolic = provider.symbolic_root(definition).unwrap();
+    let symbolic_facts = provider.analyze_for_evidence(&cfg, &symbolic, None).unwrap();
+    let symbolic_handle = symbolic_facts.port_handle(output, &[]).unwrap();
+    assert!(symbolic_facts.constraint_fixed_handle(&symbolic_handle).unavailable().is_some());
+}
+
+#[test]
+fn aggregate_argument_in_dead_arm_or_call_argument_is_not_a_scalar_assignment_error() {
+    for source in [
+        "template T(n){var x=0?n:1;signal output y;y<==1;} component main=T([1,2]);",
+        "function First(a){return a[0];} template T(n){var x=First(n);signal output y;\
+         y<==1;} component main=T([1,2]);",
+        "template T(n){var c=n[0];var x=c?n:1;signal output y;y<==1;} \
+         component main=T([1,2]);",
+    ] {
+        let lifted = fixture(source, Version::new(2, 2, 3));
+        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let definition = lifted.hir.definition("T").unwrap();
+        let cfg = build_cfg(&lifted.hir, definition).unwrap();
+        let site = provider.graph().calls_from(CallOwner::Main(0))[0];
+        let CallReachability::Reachable(call) =
+            provider.graph().reachable_main_call(site.id(), provider.hir())
+        else {
+            panic!("main call must be reachable")
+        };
+        let evidence = provider.main_evidence(&call).unwrap();
+        let result = provider.analyze_for_evidence(&cfg, &evidence, None);
+        assert!(!matches!(result, Err(AnalyzeEvidenceError::InvalidAssignment { .. })));
+    }
+}
+
+#[test]
+fn raw_branch_bypass_abstains_even_when_concrete_guard_is_true() {
+    let lifted = fixture(
+        "template T(n){var x=1;if(1){x=n;}signal output y;y<==x;} \
+         component main=T([1,2]);",
+        Version::new(2, 2, 3),
+    );
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let definition = lifted.hir.definition("T").unwrap();
+    let parser::hir::DefinitionRef::Template(template) = definition else {
+        panic!("T must be a template")
+    };
+    let cfg = build_cfg(&lifted.hir, definition).unwrap();
+    let site = provider.graph().calls_from(CallOwner::Main(0))[0];
+    let CallReachability::Reachable(call) =
+        provider.graph().reachable_main_call(site.id(), provider.hir())
+    else {
+        panic!("main call must be reachable")
+    };
+    let evidence = provider.main_evidence(&call).unwrap();
+    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let output = lifted.hir.template(template).unwrap().ports[0];
+    let handle = facts.port_handle(output, &[]).unwrap();
+    assert!(facts.constraint_fixed_handle(&handle).unavailable().is_some());
 }
 
 #[test]
@@ -158,20 +316,29 @@ fn local_facts_must_match_the_exact_evidence_scope() {
     let parent = lifted.hir.definition("Parent").unwrap();
     let parent_cfg = build_cfg(&lifted.hir, parent).unwrap();
     let field = FieldContext::for_curve(Curve::Bn254);
-    let parent_facts = analyze(&lifted.hir, &parent_cfg, &field, None).unwrap();
+    let main = provider.graph().calls_from(CallOwner::Main(0))[0];
+    let CallReachability::Reachable(main_call) =
+        provider.graph().reachable_main_call(main.id(), provider.hir())
+    else {
+        panic!("main call must be reachable")
+    };
+    let caller = provider.main_evidence(&main_call).unwrap();
+    let parent_facts = provider.analyze_for_evidence(&parent_cfg, &caller, None).unwrap();
     let site = provider.graph().calls_from(CallOwner::Definition(parent))[0];
     let CallReachability::Reachable(call) =
         provider.graph().reachable_call(site.id(), &parent_facts)
     else {
         panic!("reachable component")
     };
-    let one = provider.call_evidence(&call, &parent_facts).unwrap();
+    let one = provider.call_evidence(&call, &parent_facts, &caller).unwrap();
     assert_eq!(one.context().definition(), template);
     let cfg = build_cfg(&lifted.hir, template).unwrap();
     let facts_one = provider.analyze_for_evidence(&cfg, &one, None).unwrap();
     assert_eq!(
         provider.analyze_for_evidence(&parent_cfg, &one, None).err(),
-        Some(SummaryBlocker::WrongContext)
+        Some(circomspect_program_analysis::interprocedural::AnalyzeEvidenceError::Blocked(
+            SummaryBlocker::WrongContext,
+        ))
     );
     let unseeded = analyze(&lifted.hir, &cfg, &field, None).unwrap();
     let root = provider.symbolic_root(template).unwrap();
