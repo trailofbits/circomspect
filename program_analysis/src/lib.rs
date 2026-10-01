@@ -12,6 +12,7 @@ pub mod analysis_runner;
 pub mod config;
 pub mod hir_cfg;
 pub mod hir_facts;
+pub mod new_rules;
 
 // Intra-process analysis passes.
 mod bitwise_complement;
