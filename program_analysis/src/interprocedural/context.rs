@@ -6,8 +6,10 @@ use parser::hir::{
 use parser::new_frontend::Version;
 use program_structure::utils::constants::Curve;
 
+use crate::hir_cfg::DefinitionCfg;
 use crate::hir_facts::{
-    exact_compile_time, AnalysisFacts, FactBlocker, FieldContext, FieldValue, Range,
+    analyze_with_scalar_parameters, exact_compile_time, AnalysisFacts, FactBlocker, FieldContext,
+    FieldValue, Range,
 };
 
 use super::{build_call_graph, CallGraph, CallGraphError, CallOwner, CallSiteId, ReachableCall};
@@ -313,6 +315,43 @@ impl<'a> ProjectSummaries<'a> {
         }
     }
 
+    /// Analyze one definition under a validated source scope and bind the result to it.
+    pub fn analyze_for_evidence<'b>(
+        &'b self,
+        cfg: &'b DefinitionCfg,
+        evidence: &ContextEvidence,
+        budget: Option<usize>,
+    ) -> Result<AnalysisFacts<'b>, SummaryBlocker> {
+        self.check_evidence(evidence)?;
+        if cfg.definition != evidence.context.definition {
+            return Err(SummaryBlocker::WrongContext);
+        }
+        let parameters =
+            self.parameters(cfg.definition).ok_or(SummaryBlocker::ForeignDefinition)?;
+        let seeds = evidence.context.scalar_seeds(parameters)?;
+        let mut facts = analyze_with_scalar_parameters(self.hir(), cfg, &self.field, seeds, budget)
+            .map_err(|error| SummaryBlocker::LocalAnalysis(format!("{error:?}")))?;
+        facts.bind_context(evidence.context.clone());
+        Ok(facts)
+    }
+
+    /// Check that local facts were computed under this exact certified source scope.
+    pub fn check_facts_for_evidence(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        evidence: &ContextEvidence,
+    ) -> Result<(), SummaryBlocker> {
+        self.check_evidence(evidence)?;
+        if facts.hir().identity() != self.hir().identity()
+            || facts.curve() != self.curve()
+            || facts.definition() != evidence.context.definition
+            || !facts.matches_context(&evidence.context)
+        {
+            return Err(SummaryBlocker::WrongContext);
+        }
+        Ok(())
+    }
+
     fn exact_main_arguments(
         &self,
         arguments: &[ExprId],
@@ -359,6 +398,18 @@ impl<'a> ProjectSummaries<'a> {
         }
     }
 
+    fn parameters(&self, definition: DefinitionRef) -> Option<&[SymbolId]> {
+        match definition {
+            DefinitionRef::Function(id) => {
+                self.hir().function(id).map(|item| item.parameters.as_slice())
+            }
+            DefinitionRef::Template(id) => {
+                self.hir().template(id).map(|item| item.parameters.as_slice())
+            }
+            DefinitionRef::Bus(id) => self.hir().bus(id).map(|item| item.parameters.as_slice()),
+        }
+    }
+
     fn canonicalize(&self, value: ArgumentValue) -> ArgumentValue {
         match value {
             ArgumentValue::Scalar(value) => {
@@ -372,5 +423,68 @@ impl<'a> ProjectSummaries<'a> {
             ),
             ArgumentValue::Symbolic(shape) => ArgumentValue::Symbolic(shape),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use parser::hir::{lower_project, DefinitionRef};
+    use parser::new_frontend::{load_sources, Version, VersionPolicy};
+    use program_structure::utils::constants::Curve;
+
+    use crate::hir_cfg::build_cfg;
+    use crate::hir_facts::analyze_with_scalar_parameters;
+    use crate::interprocedural::{
+        ArgumentValue, CallOwner, CallReachability, ProjectSummaries, SummaryBlocker,
+    };
+
+    #[test]
+    fn a_different_concrete_seed_cannot_borrow_a_reachable_origin() {
+        let directory = std::env::temp_dir().join(format!(
+            "circomspect-summary-binding-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let source = directory.join("case.circom");
+        std::fs::write(&source, "template T(n){signal output y;y<==n;} component main=T(1);")
+            .unwrap();
+        let loaded =
+            load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
+        let lowered = lower_project(&loaded);
+        let provider = ProjectSummaries::build(&lowered, Curve::Bn254).unwrap();
+        let DefinitionRef::Template(template) = lowered.hir.definition("T").unwrap() else {
+            panic!("template T")
+        };
+        let site = provider.graph.calls_from(CallOwner::Main(0))[0];
+        let CallReachability::Reachable(call) =
+            provider.graph.reachable_main_call(site.id(), provider.hir())
+        else {
+            panic!("main call")
+        };
+        let evidence = provider.main_evidence(&call).unwrap();
+        let two = provider
+            .context_for(
+                DefinitionRef::Template(template),
+                vec![ArgumentValue::Scalar(provider.field.canonical(2.into()))],
+            )
+            .unwrap();
+        let cfg = build_cfg(provider.hir(), DefinitionRef::Template(template)).unwrap();
+        let parameter = provider.hir().template(template).unwrap().parameters[0];
+        let mut wrong = analyze_with_scalar_parameters(
+            provider.hir(),
+            &cfg,
+            &provider.field,
+            BTreeMap::from([(parameter, provider.field.canonical(2.into()))]),
+            None,
+        )
+        .unwrap();
+        wrong.bind_context(two);
+        assert_eq!(
+            provider.check_facts_for_evidence(&wrong, &evidence),
+            Err(SummaryBlocker::WrongContext)
+        );
     }
 }

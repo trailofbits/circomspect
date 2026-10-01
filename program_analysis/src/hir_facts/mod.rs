@@ -21,6 +21,7 @@ use parser::hir::{
 use parser::new_frontend::{AssignmentOperator, InputAssignmentOperator};
 
 use crate::hir_cfg::{CfgNodeKind, DefinitionCfg};
+use crate::interprocedural::CallContext;
 use access::key_for_path;
 use abstract_interpretation::lattice::Lattice;
 use domains::{DegreeUpper, FieldRange};
@@ -123,6 +124,7 @@ pub struct AnalysisFacts<'a> {
     forward: ForwardResult,
     backward: BackwardResult,
     specialized_parameters: BTreeSet<SymbolId>,
+    context_binding: Option<CallContext>,
 }
 
 /// Compute local facts. External summaries are unavailable until Phase 5.
@@ -174,7 +176,15 @@ fn analyze_seeded<'a>(
         LivenessAnalysis::new(hir, field, cfg.definition).with_pruned_edges(pruned_edges);
     let backward =
         solve::<_, _, Backward>(cfg, &liveness, budget).map_err(AnalysisError::InvalidGraph)?;
-    Ok(AnalysisFacts { hir, cfg, field, forward, backward, specialized_parameters })
+    Ok(AnalysisFacts {
+        hir,
+        cfg,
+        field,
+        forward,
+        backward,
+        specialized_parameters,
+        context_binding: None,
+    })
 }
 
 fn forward_pruned_edges(
@@ -198,6 +208,14 @@ fn forward_pruned_edges(
 }
 
 impl AnalysisFacts<'_> {
+    pub(crate) fn bind_context(&mut self, context: CallContext) {
+        self.context_binding = Some(context);
+    }
+
+    pub(crate) fn matches_context(&self, context: &CallContext) -> bool {
+        self.context_binding.as_ref() == Some(context)
+    }
+
     pub(crate) fn reachable_node(&self, node: NodeId) -> Fact<bool> {
         if self.cfg.node(node).is_none() {
             return Fact::blocked(BTreeSet::from([FactBlocker::ForeignQuery]));
