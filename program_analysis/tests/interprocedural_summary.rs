@@ -1,5 +1,7 @@
 use circomspect_program_analysis::hir_facts::{FieldContext, Range};
-use circomspect_program_analysis::interprocedural::{ArgumentValue, ProjectSummaries, SummaryBlocker};
+use circomspect_program_analysis::interprocedural::{
+    ArgumentValue, FunctionEffect, ProjectSummaries, SummaryBlocker,
+};
 use parser::hir::{lower_project, DefinitionRef, Effect, ExprKind, LoweredProject};
 use parser::new_frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
@@ -181,5 +183,70 @@ fn finite_recursive_contexts_reach_a_base_case_without_certifying_a_cycle() {
     assert_eq!(
         cyclic_provider.function(cyclic_id, &context).unavailable(),
         Some(&std::collections::BTreeSet::from([SummaryBlocker::RecursiveCycle]))
+    );
+}
+
+#[test]
+fn recursive_scc_effects_reach_a_least_fixed_point() {
+    let lowered = fixture(
+        "function F(n){if(n){return G(n);}return 0;} \
+         function G(n){log(n);if(n){return F(n);}return 0;}",
+    );
+    let provider = ProjectSummaries::build(&lowered, Curve::Bn254).unwrap();
+    let DefinitionRef::Function(f) = lowered.hir.definition("F").unwrap() else { panic!("F") };
+    let DefinitionRef::Function(g) = lowered.hir.definition("G").unwrap() else { panic!("G") };
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let one = ArgumentValue::Scalar(field.canonical(1.into()));
+    let f_one = provider.context_for(DefinitionRef::Function(f), vec![one.clone()]).unwrap();
+    let g_one = provider.context_for(DefinitionRef::Function(g), vec![one]).unwrap();
+    assert!(provider
+        .function_effects(f, &f_one)
+        .certified()
+        .unwrap()
+        .contains(FunctionEffect::Log));
+    assert!(provider
+        .function_effects(g, &g_one)
+        .certified()
+        .unwrap()
+        .contains(FunctionEffect::Log));
+    assert_eq!(
+        provider.function(f, &f_one).unavailable(),
+        Some(&std::collections::BTreeSet::from([SummaryBlocker::RecursiveCycle]))
+    );
+    let f_zero = provider
+        .context_for(
+            DefinitionRef::Function(f),
+            vec![ArgumentValue::Scalar(field.canonical(0.into()))],
+        )
+        .unwrap();
+    assert!(!provider
+        .function_effects(f, &f_zero)
+        .certified()
+        .unwrap()
+        .contains(FunctionEffect::Log));
+}
+
+#[test]
+fn unreachable_and_unrelated_opaque_calls_do_not_invent_effects() {
+    let lowered = fixture(
+        "function G(){log(1);return 1;} \
+         function Clean(){if(0){return G();}return 1;} \
+         function Broken(){return Missing();}",
+    );
+    let provider = ProjectSummaries::build(&lowered, Curve::Bn254).unwrap();
+    let DefinitionRef::Function(clean) = lowered.hir.definition("Clean").unwrap() else {
+        panic!("Clean")
+    };
+    let DefinitionRef::Function(broken) = lowered.hir.definition("Broken").unwrap() else {
+        panic!("Broken")
+    };
+    let clean_context = provider.symbolic_context_for(DefinitionRef::Function(clean)).unwrap();
+    let broken_context = provider.symbolic_context_for(DefinitionRef::Function(broken)).unwrap();
+    let clean_effects = provider.function_effects(clean, &clean_context);
+    assert!(!clean_effects.certified().unwrap().contains(FunctionEffect::Log));
+    assert!(provider.function_effects(broken, &broken_context).unavailable().is_some());
+    assert_eq!(
+        provider.function(clean, &clean_context).certified().unwrap().returns(),
+        &Range::Exact(FieldContext::for_curve(Curve::Bn254).canonical(1.into()))
     );
 }

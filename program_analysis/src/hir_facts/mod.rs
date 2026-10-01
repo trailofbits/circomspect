@@ -198,6 +198,17 @@ fn forward_pruned_edges(
 }
 
 impl AnalysisFacts<'_> {
+    pub(crate) fn reachable_node(&self, node: NodeId) -> Fact<bool> {
+        if self.cfg.node(node).is_none() {
+            return Fact::blocked(BTreeSet::from([FactBlocker::ForeignQuery]));
+        }
+        let blockers = self.reachability_blockers(&BTreeSet::from([node]));
+        if !blockers.is_empty() {
+            return Fact::blocked(blockers);
+        }
+        Fact::known(self.site_state(node).is_some_and(|state| state.variables().is_some()))
+    }
+
     #[must_use]
     pub fn hir(&self) -> &HirProject {
         self.hir

@@ -2,6 +2,7 @@
 
 mod graph;
 mod summary;
+mod effects;
 mod context;
 
 pub use context::{
@@ -14,3 +15,4 @@ pub use graph::{
     CallReachability, CallSite, CallSiteId, ReachableCall,
 };
 pub use summary::{FunctionSummary, SummaryFact};
+pub use effects::{FunctionEffect, FunctionEffects};

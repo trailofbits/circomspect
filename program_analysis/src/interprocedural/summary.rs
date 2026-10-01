@@ -4,7 +4,7 @@ use abstract_interpretation::lattice::Lattice;
 use abstract_interpretation::graph::FlowGraph;
 use parser::hir::{DefinitionRef, ExprId, ExprKind, Function, FunctionId, SymbolId};
 
-use crate::hir_cfg::{build_cfg, CfgNodeKind};
+use crate::hir_cfg::{build_cfg, CfgNodeKind, DefinitionCfg};
 use crate::hir_facts::{analyze_with_scalar_parameters, AnalysisFacts, Fact, FieldContext, Range};
 
 use super::{ArgumentValue, CallContext, CallOwner, CallReachability, ProjectSummaries, SummaryBlocker};
@@ -33,7 +33,7 @@ impl<T> SummaryFact<T> {
         Self(SummaryState::Unavailable(BTreeSet::from([blocker])))
     }
 
-    fn from_result(result: Result<T, SummaryBlocker>) -> Self {
+    pub(super) fn from_result(result: Result<T, SummaryBlocker>) -> Self {
         match result {
             Ok(value) => Self::known(value),
             Err(blocker) => Self::blocked(blocker),
@@ -57,7 +57,7 @@ impl<T> SummaryFact<T> {
     }
 }
 
-fn certified<T>(fact: &Fact<T>) -> Result<&T, SummaryBlocker> {
+pub(super) fn certified<T>(fact: &Fact<T>) -> Result<&T, SummaryBlocker> {
     fact.certified()
         .ok_or_else(|| SummaryBlocker::LocalFacts(fact.unavailable().cloned().unwrap_or_default()))
 }
@@ -127,6 +127,18 @@ impl ProjectSummaries<'_> {
         context: &CallContext,
         evaluation: &mut Evaluation,
     ) -> Result<FunctionSummary, SummaryBlocker> {
+        self.with_local_function(id, context, |function, cfg, facts| {
+            let calls = self.collect_calls(id, facts, evaluation)?;
+            self.summarize_returns(function, cfg, facts, &calls)
+        })
+    }
+
+    pub(super) fn with_local_function<T>(
+        &self,
+        id: FunctionId,
+        context: &CallContext,
+        work: impl FnOnce(&Function, &DefinitionCfg, &AnalysisFacts<'_>) -> Result<T, SummaryBlocker>,
+    ) -> Result<T, SummaryBlocker> {
         let Some(function) = self.hir().function(id) else {
             return Err(SummaryBlocker::ForeignDefinition);
         };
@@ -151,8 +163,7 @@ impl ProjectSummaries<'_> {
         let field = FieldContext::for_curve(self.curve().clone());
         let facts = analyze_with_scalar_parameters(self.hir(), &cfg, &field, parameters, None)
             .map_err(|error| SummaryBlocker::LocalAnalysis(format!("{error:?}")))?;
-        let calls = self.collect_calls(id, &facts, evaluation)?;
-        self.summarize_returns(function, &cfg, &facts, &calls)
+        work(function, &cfg, &facts)
     }
 
     fn collect_calls(
