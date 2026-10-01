@@ -16,21 +16,32 @@ use abstract_interpretation::solver::{
 };
 use parser::hir::{
     AccessPath, AccessStep, ArrayIndex, CallTarget, DefinitionRef, ExprId, ExprKind, HirProject,
+    SymbolId,
 };
 use parser::new_frontend::{AssignmentOperator, InputAssignmentOperator};
 
 use crate::hir_cfg::{CfgNodeKind, DefinitionCfg};
+use crate::interprocedural::CallContext;
 use access::key_for_path;
 use abstract_interpretation::lattice::Lattice;
 use domains::{DegreeUpper, FieldRange};
 use forward::{ForwardAnalysis, ForwardState};
 use liveness::{LiveState, LivenessAnalysis};
-use walk::VisitAccesses;
+pub(crate) use walk::VisitAccesses;
 
 pub use access::{AccessKey, AccessKeyStep, IndexKey};
 pub use domains::{DegreeUpper as Degree, FieldRange as Range};
 pub use field::{FieldContext, FieldValue};
 pub use handles::{AccessHandle, AccessHandleError};
+pub(crate) use handles::InstanceRelation;
+
+pub(crate) fn exact_compile_time(
+    hir: &HirProject,
+    field: &FieldContext,
+    expression: ExprId,
+) -> Option<FieldValue> {
+    forward::eval_expression(hir, field, expression, &BTreeMap::new())
+}
 
 /// A reporting fact whose certified constructor is private to the analysis.
 ///
@@ -113,6 +124,9 @@ pub struct AnalysisFacts<'a> {
     field: &'a FieldContext,
     forward: ForwardResult,
     backward: BackwardResult,
+    specialized_parameters: BTreeSet<SymbolId>,
+    resolved_deferred: BTreeSet<NodeId>,
+    context_binding: Option<CallContext>,
 }
 
 /// Compute local facts. External summaries are unavailable until Phase 5.
@@ -122,8 +136,28 @@ pub fn analyze<'a>(
     field: &'a FieldContext,
     budget: Option<usize>,
 ) -> Result<AnalysisFacts<'a>, AnalysisError> {
+    analyze_seeded(hir, cfg, field, BTreeMap::new(), budget)
+}
+
+pub(crate) fn analyze_with_scalar_parameters<'a>(
+    hir: &'a HirProject,
+    cfg: &'a DefinitionCfg,
+    field: &'a FieldContext,
+    values: BTreeMap<SymbolId, FieldValue>,
+    budget: Option<usize>,
+) -> Result<AnalysisFacts<'a>, AnalysisError> {
+    analyze_seeded(hir, cfg, field, values, budget)
+}
+
+fn analyze_seeded<'a>(
+    hir: &'a HirProject,
+    cfg: &'a DefinitionCfg,
+    field: &'a FieldContext,
+    values: BTreeMap<SymbolId, FieldValue>,
+    budget: Option<usize>,
+) -> Result<AnalysisFacts<'a>, AnalysisError> {
     const DEFAULT_UPDATE_BUDGET: usize = 100_000;
-    let owned = match cfg.definition {
+    let owned = match cfg.definition() {
         DefinitionRef::Function(id) => hir.function(id).is_some(),
         DefinitionRef::Template(id) => hir.template(id).is_some(),
         DefinitionRef::Bus(id) => hir.bus(id).is_some(),
@@ -132,14 +166,58 @@ pub fn analyze<'a>(
         return Err(AnalysisError::ForeignProject);
     }
     let budget = Some(budget.unwrap_or(DEFAULT_UPDATE_BUDGET));
-    let forward = solve::<_, _, Forward>(cfg, &ForwardAnalysis { hir, field }, budget)
-        .map_err(AnalysisError::InvalidGraph)?;
+    let specialized_parameters = values.keys().copied().collect();
+    let forward = solve::<_, _, Forward>(
+        cfg,
+        &ForwardAnalysis::with_scalar_parameters(hir, field, values),
+        budget,
+    )
+    .map_err(AnalysisError::InvalidGraph)?;
+    let resolved_deferred = resolved_deferred_nodes(hir, cfg, field, &forward);
     let pruned_edges = forward_pruned_edges(hir, cfg, field, &forward);
-    let liveness =
-        LivenessAnalysis::new(hir, field, cfg.definition).with_pruned_edges(pruned_edges);
+    let liveness = LivenessAnalysis::new(hir, field, cfg.definition())
+        .with_pruned_edges(pruned_edges)
+        .with_resolved_deferred(resolved_deferred.clone());
     let backward =
         solve::<_, _, Backward>(cfg, &liveness, budget).map_err(AnalysisError::InvalidGraph)?;
-    Ok(AnalysisFacts { hir, cfg, field, forward, backward })
+    Ok(AnalysisFacts {
+        hir,
+        cfg,
+        field,
+        forward,
+        backward,
+        specialized_parameters,
+        resolved_deferred,
+        context_binding: None,
+    })
+}
+
+fn resolved_deferred_nodes(
+    hir: &HirProject,
+    cfg: &DefinitionCfg,
+    field: &FieldContext,
+    result: &ForwardResult,
+) -> BTreeSet<NodeId> {
+    let SolveResult::Complete(facts) = result else { return BTreeSet::new() };
+    let mut resolved = BTreeSet::new();
+    for id in cfg.nodes() {
+        let Some(CfgNodeKind::DeferredAssignment { target, value }) =
+            cfg.node(*id).map(|node| &node.kind)
+        else {
+            continue;
+        };
+        let Some(variables) =
+            facts.get(id).and_then(|item| item.input.as_ref()).and_then(ForwardState::variables)
+        else {
+            continue;
+        };
+        if target.steps.is_empty()
+            && forward::eval_expression(hir, field, *value, variables).is_some()
+        {
+            resolved.insert(*id);
+        }
+    }
+    resolved
 }
 
 fn forward_pruned_edges(
@@ -149,7 +227,7 @@ fn forward_pruned_edges(
     result: &ForwardResult,
 ) -> BTreeSet<EdgeId> {
     let SolveResult::Complete(facts) = result else { return BTreeSet::new() };
-    let analysis = ForwardAnalysis { hir, field };
+    let analysis = ForwardAnalysis::new(hir, field);
     cfg.edges()
         .iter()
         .filter_map(|id| {
@@ -163,6 +241,168 @@ fn forward_pruned_edges(
 }
 
 impl AnalysisFacts<'_> {
+    pub(crate) fn cfg(&self) -> &DefinitionCfg {
+        self.cfg
+    }
+
+    pub(crate) fn must_execute(&self, node: NodeId) -> Fact<bool> {
+        let reachable = self.reachable_node(node);
+        let Some(reachable) = reachable.certified() else {
+            return Fact::blocked(reachable.unavailable().cloned().unwrap_or_default());
+        };
+        if !reachable {
+            return Fact::known(false);
+        }
+        if let SolveResult::Incomplete { .. } = &self.forward {
+            return Fact::blocked(BTreeSet::from([FactBlocker::Budget(node)]));
+        }
+        let exit = self.reachable_node(self.cfg.exit());
+        let Some(exit_reachable) = exit.certified() else {
+            return Fact::blocked(exit.unavailable().cloned().unwrap_or_default());
+        };
+        if !exit_reachable {
+            return Fact::blocked(BTreeSet::from([FactBlocker::MissingExit]));
+        }
+        let pruned = forward_pruned_edges(self.hir, self.cfg, self.field, &self.forward);
+        Fact::known(!self.path_bypasses(node, &pruned))
+    }
+
+    /// Prove a site unavoidable on raw CFG paths; specialized taken branches may abstain.
+    pub(crate) fn structurally_must_execute(&self, node: NodeId) -> bool {
+        if self.cfg.node(node).is_none()
+            || !self.can_reach_any(self.cfg.entry(), &BTreeSet::from([self.cfg.exit()]))
+        {
+            return false;
+        }
+        !self.path_bypasses(node, &BTreeSet::new())
+    }
+
+    fn path_bypasses(&self, node: NodeId, pruned: &BTreeSet<EdgeId>) -> bool {
+        let mut visited = BTreeSet::new();
+        let mut pending = vec![self.cfg.entry()];
+        while let Some(current) = pending.pop() {
+            if current == node || !visited.insert(current) {
+                continue;
+            }
+            if current == self.cfg.exit() {
+                return true;
+            }
+            for id in self.cfg.edges() {
+                if pruned.contains(id) {
+                    continue;
+                }
+                if let Some(edge) = self.cfg.edge(*id) {
+                    if edge.source == current {
+                        pending.push(edge.target);
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    pub(crate) fn resolved_deferred_assignment(&self, node: NodeId) -> bool {
+        self.resolved_deferred.contains(&node)
+    }
+
+    pub(crate) fn bind_context(&mut self, context: CallContext) {
+        self.context_binding = Some(context);
+    }
+
+    pub(crate) fn matches_context(&self, context: &CallContext) -> bool {
+        self.context_binding.as_ref() == Some(context)
+    }
+
+    pub(crate) fn reachable_node(&self, node: NodeId) -> Fact<bool> {
+        if self.cfg.node(node).is_none() {
+            return Fact::blocked(BTreeSet::from([FactBlocker::ForeignQuery]));
+        }
+        let blockers = self.reachability_blockers(&BTreeSet::from([node]));
+        if !blockers.is_empty() {
+            return Fact::blocked(blockers);
+        }
+        Fact::known(self.site_state(node).is_some_and(|state| state.variables().is_some()))
+    }
+
+    #[must_use]
+    pub fn hir(&self) -> &HirProject {
+        self.hir
+    }
+
+    #[must_use]
+    pub fn definition(&self) -> DefinitionRef {
+        self.cfg.definition()
+    }
+
+    #[must_use]
+    pub fn curve(&self) -> &program_structure::utils::constants::Curve {
+        self.field.curve()
+    }
+
+    /// Whether an expression has a reachable CFG evaluation site.
+    pub fn reachable_expression(&self, expression: ExprId) -> Fact<bool> {
+        if self.hir.expression(expression).is_none() {
+            return Fact::blocked(BTreeSet::from([FactBlocker::ForeignQuery]));
+        }
+        let sites: BTreeSet<_> = self
+            .cfg
+            .nodes()
+            .iter()
+            .copied()
+            .filter(|id| {
+                matches!(
+                    self.cfg.node(*id).map(|node| &node.kind),
+                    Some(CfgNodeKind::Evaluate(value)) if *value == expression
+                )
+            })
+            .collect();
+        if sites.is_empty() {
+            return Fact::blocked(BTreeSet::from([FactBlocker::MissingExit]));
+        }
+        let blockers = self.reachability_blockers(&sites);
+        if !blockers.is_empty() {
+            return Fact::blocked(blockers);
+        }
+        let mut reachable = false;
+        for id in sites {
+            if self.site_state(id).is_some_and(|state| state.variables().is_some()) {
+                reachable = true;
+            }
+        }
+        Fact::known(reachable)
+    }
+
+    fn reachability_blockers(&self, sites: &BTreeSet<NodeId>) -> BTreeSet<FactBlocker> {
+        let mut blockers = self.deferred_control_blockers(sites);
+        let SolveResult::Incomplete { blockers: solver, .. } = &self.forward else {
+            return blockers;
+        };
+        for blocker in solver {
+            match blocker {
+                Blocker::PendingNode(node) if self.can_reach_any(*node, sites) => {
+                    blockers.insert(FactBlocker::Budget(*node));
+                }
+                Blocker::OpaqueNode { node, reason }
+                    if !sites.contains(node) && self.can_reach_any(*node, sites) =>
+                {
+                    blockers.insert(FactBlocker::OpaqueNode(*node, reason.clone()));
+                }
+                Blocker::OpaqueEdge { edge, reason }
+                    if self
+                        .cfg
+                        .edge(*edge)
+                        .is_some_and(|item| self.can_reach_any(item.target, sites)) =>
+                {
+                    blockers.insert(FactBlocker::OpaqueEdge(*edge, reason.clone()));
+                }
+                Blocker::PendingNode(_)
+                | Blocker::OpaqueNode { .. }
+                | Blocker::OpaqueEdge { .. } => {}
+            }
+        }
+        blockers
+    }
+
     /// A compile-time exact value or the full canonical field range.
     pub fn range(&self, expression: ExprId) -> Fact<FieldRange> {
         let scalar_blockers = self.scalar_blockers(expression);
@@ -204,7 +444,7 @@ impl AnalysisFacts<'_> {
         if !blockers.is_empty() {
             return Fact::blocked(blockers);
         }
-        let analysis = ForwardAnalysis { hir: self.hir, field: self.field };
+        let analysis = ForwardAnalysis::new(self.hir, self.field);
         let mut result = DegreeUpper::Unreachable;
         let mut observed = false;
         for id in self.cfg.nodes() {
@@ -236,7 +476,7 @@ impl AnalysisFacts<'_> {
         }
         let mut result = BTreeSet::new();
         let mut observed = false;
-        let analysis = ForwardAnalysis { hir: self.hir, field: self.field };
+        let analysis = ForwardAnalysis::new(self.hir, self.field);
         for id in self.cfg.nodes() {
             let Some(CfgNodeKind::Evaluate(value)) = self.cfg.node(*id).map(|node| &node.kind)
             else {
@@ -329,8 +569,10 @@ impl AnalysisFacts<'_> {
             return;
         }
         for id in self.cfg.nodes() {
-            let Some(CfgNodeKind::Assignment { target, value }) =
-                self.cfg.node(*id).map(|node| &node.kind)
+            let Some(
+                CfgNodeKind::Assignment { target, value }
+                | CfgNodeKind::DeferredAssignment { target, value },
+            ) = self.cfg.node(*id).map(|node| &node.kind)
             else {
                 continue;
             };
@@ -374,11 +616,39 @@ impl AnalysisFacts<'_> {
             }) {
                 blockers.insert(FactBlocker::AggregateAccess);
             }
+            if self.hir.symbol(path.terminal).is_some_and(|symbol| {
+                symbol.value_evidence == parser::hir::ValueEvidence::Deferred
+                    && !self.deferred_symbol_resolved(symbol.id)
+            }) {
+                blockers.insert(FactBlocker::DeferredShape(expression));
+            }
         });
         if self.depends_on_parameter(expression, &mut BTreeSet::new()) {
             blockers.insert(FactBlocker::DeferredShape(expression));
         }
         blockers
+    }
+
+    fn deferred_symbol_resolved(&self, symbol: SymbolId) -> bool {
+        let SolveResult::Complete(_) = &self.forward else { return false };
+        let mut found = false;
+        for id in self.cfg.nodes() {
+            let Some(CfgNodeKind::DeferredAssignment { target, .. }) =
+                self.cfg.node(*id).map(|node| &node.kind)
+            else {
+                continue;
+            };
+            if target.root != symbol {
+                continue;
+            }
+            found = true;
+            if self.site_state(*id).is_some_and(|state| state.variables().is_some())
+                && !self.resolved_deferred.contains(id)
+            {
+                return false;
+            }
+        }
+        found
     }
 
     fn depends_on_parameter(
@@ -393,7 +663,9 @@ impl AnalysisFacts<'_> {
             .symbol(path.root)
             .map(|symbol| symbol.kind)
         {
-            Some(parser::hir::SymbolKind::Parameter) => parameter = true,
+            Some(parser::hir::SymbolKind::Parameter) => {
+                parameter |= !self.specialized_parameters.contains(&path.root);
+            }
             Some(parser::hir::SymbolKind::Variable) => {
                 variables.insert(path.root);
             }
@@ -408,8 +680,10 @@ impl AnalysisFacts<'_> {
                 continue;
             }
             for id in self.cfg.nodes() {
-                let Some(CfgNodeKind::Assignment { target, value }) =
-                    self.cfg.node(*id).map(|node| &node.kind)
+                let Some(
+                    CfgNodeKind::Assignment { target, value }
+                    | CfgNodeKind::DeferredAssignment { target, value },
+                ) = self.cfg.node(*id).map(|node| &node.kind)
                 else {
                     continue;
                 };
@@ -441,7 +715,7 @@ impl AnalysisFacts<'_> {
     /// Whether a schema-backed port is read in this definition's reachable body.
     /// Interprocedural component effects remain unavailable until summarized.
     pub fn read_handle(&self, handle: &AccessHandle) -> Fact<bool> {
-        if handle.definition != self.cfg.definition {
+        if handle.definition != self.cfg.definition() {
             return Fact::blocked(BTreeSet::from([FactBlocker::ForeignDefinition]));
         }
         if handle.curve != *self.field.curve() {
@@ -506,7 +780,22 @@ impl AnalysisFacts<'_> {
 
     /// Whether a local access can occur in a generated constraint.
     pub fn incidence(&self, path: &AccessPath) -> Fact<Incidence> {
-        let blockers = self.blockers_for(path);
+        self.incidence_query(path, false)
+    }
+
+    /// Constraint incidence for a schema-backed port without a source occurrence.
+    pub fn incidence_handle(&self, handle: &AccessHandle) -> Fact<Incidence> {
+        if handle.definition != self.cfg.definition() {
+            return Fact::blocked(BTreeSet::from([FactBlocker::ForeignDefinition]));
+        }
+        if handle.curve != *self.field.curve() {
+            return Fact::blocked(BTreeSet::from([FactBlocker::ForeignQuery]));
+        }
+        self.incidence_query(&handle.path, true)
+    }
+
+    fn incidence_query(&self, path: &AccessPath, schema_checked: bool) -> Fact<Incidence> {
+        let blockers = self.blockers_for_query(path, schema_checked);
         if !blockers.is_empty() {
             return Fact::blocked(blockers);
         }
@@ -534,7 +823,26 @@ impl AnalysisFacts<'_> {
 
     /// An exact value proved by a generated equality on every reachable path.
     pub fn constraint_fixed(&self, path: &AccessPath) -> Fact<Option<FieldValue>> {
-        let blockers = self.blockers_for(path);
+        self.constraint_fixed_query(path, false)
+    }
+
+    /// Fixed value for a schema-backed port without a source occurrence.
+    pub fn constraint_fixed_handle(&self, handle: &AccessHandle) -> Fact<Option<FieldValue>> {
+        if handle.definition != self.cfg.definition() {
+            return Fact::blocked(BTreeSet::from([FactBlocker::ForeignDefinition]));
+        }
+        if handle.curve != *self.field.curve() {
+            return Fact::blocked(BTreeSet::from([FactBlocker::ForeignQuery]));
+        }
+        self.constraint_fixed_query(&handle.path, true)
+    }
+
+    fn constraint_fixed_query(
+        &self,
+        path: &AccessPath,
+        schema_checked: bool,
+    ) -> Fact<Option<FieldValue>> {
+        let blockers = self.blockers_for_query(path, schema_checked);
         if !blockers.is_empty() {
             return Fact::blocked(blockers);
         }
@@ -557,9 +865,9 @@ impl AnalysisFacts<'_> {
 
     fn exit_state(&self) -> Option<&ForwardState> {
         let facts = match &self.forward {
-            SolveResult::Complete(facts) => facts.get(&self.cfg.exit),
+            SolveResult::Complete(facts) => facts.get(&self.cfg.exit()),
             SolveResult::Incomplete { provisional_facts, .. } => {
-                provisional_facts.get(&self.cfg.exit)
+                provisional_facts.get(&self.cfg.exit())
             }
         }?;
         facts.output.as_ref()
@@ -584,7 +892,7 @@ impl AnalysisFacts<'_> {
         let CfgNodeKind::Constraint { target, left, right } = &node.kind else { return false };
         let empty = BTreeMap::new();
         let variables = state.variables().unwrap_or(&empty);
-        let analysis = ForwardAnalysis { hir: self.hir, field: self.field };
+        let analysis = ForwardAnalysis::new(self.hir, self.field);
         if let Some(touches) = forward::proven_linear_touches(&analysis, &node.kind, variables) {
             return touches.iter().any(|key| key.may_alias(query));
         }
@@ -616,13 +924,9 @@ impl AnalysisFacts<'_> {
         let values = state.variables().unwrap_or(&empty_values);
         let empty_dependencies = BTreeMap::new();
         let dependencies = state.dependencies().unwrap_or(&empty_dependencies);
-        let analysis = ForwardAnalysis { hir: self.hir, field: self.field };
+        let analysis = ForwardAnalysis::new(self.hir, self.field);
         forward::expression_dependencies(&analysis, id, values, dependencies)
             .map_or(true, |accesses| accesses.iter().any(|key| key.may_alias(query)))
-    }
-
-    fn blockers_for(&self, path: &AccessPath) -> BTreeSet<FactBlocker> {
-        self.blockers_for_query(path, false)
     }
 
     fn blockers_for_query(&self, path: &AccessPath, schema_checked: bool) -> BTreeSet<FactBlocker> {
@@ -633,7 +937,7 @@ impl AnalysisFacts<'_> {
         }
         let query = key_for_path(self.hir, self.field, path, &BTreeMap::new());
         let potential_sites = self.potential_sites(&query);
-        let queried_exit = BTreeSet::from([self.cfg.exit]);
+        let queried_exit = BTreeSet::from([self.cfg.exit()]);
         blockers.extend(self.deferred_control_blockers(&potential_sites));
         if self.hir.components().iter().any(|item| item.symbol == path.root) {
             blockers.insert(FactBlocker::ExternalSummary);
@@ -783,7 +1087,9 @@ impl AnalysisFacts<'_> {
         for site in sites {
             if let Some(node) = self.cfg.node(*site) {
                 for control in &node.deferred_controls {
-                    blockers.insert(FactBlocker::DeferredControl(*control));
+                    if !self.specialized_guard(*control) {
+                        blockers.insert(FactBlocker::DeferredControl(*control));
+                    }
                 }
             }
             for branch in self.cfg.nodes() {
@@ -797,12 +1103,30 @@ impl AnalysisFacts<'_> {
                 let target = BTreeSet::from([*site]);
                 if self.can_reach_any(*branch, &target)
                     && self.can_reach_exit_avoiding(*branch, *site)
+                    && !self.specialized_guard(*branch)
                 {
                     blockers.insert(FactBlocker::DeferredControl(*branch));
                 }
             }
         }
         blockers
+    }
+
+    fn specialized_guard(&self, branch: NodeId) -> bool {
+        let Some(CfgNodeKind::Branch {
+            condition,
+            guard: parser::hir::ControlGuard::DeferredScalar,
+        }) = self.cfg.node(branch).map(|node| &node.kind)
+        else {
+            return false;
+        };
+        if !self.scalar_blockers(*condition).is_empty() {
+            return false;
+        }
+        let Some(values) = self.site_state(branch).and_then(ForwardState::variables) else {
+            return false;
+        };
+        forward::eval_expression(self.hir, self.field, *condition, values).is_some()
     }
 
     fn can_reach_exit_avoiding(&self, start: NodeId, excluded: NodeId) -> bool {
@@ -812,7 +1136,7 @@ impl AnalysisFacts<'_> {
             if node == excluded || !visited.insert(node) {
                 continue;
             }
-            if node == self.cfg.exit {
+            if node == self.cfg.exit() {
                 return true;
             }
             for edge in self.cfg.edges() {
@@ -833,6 +1157,7 @@ impl AnalysisFacts<'_> {
             | CfgNodeKind::OpaqueAssignment { .. }
             | CfgNodeKind::OpaqueEquality { .. }
             | CfgNodeKind::Instantiate { .. } => true,
+            CfgNodeKind::DeferredAssignment { .. } => !self.resolved_deferred.contains(&id),
             CfgNodeKind::Evaluate(expr) => {
                 self.hir.expression(*expr).map_or(true, |item| match &item.kind {
                     ExprKind::Opaque(_) | ExprKind::AnonymousComponent { .. } => true,
@@ -865,7 +1190,8 @@ impl AnalysisFacts<'_> {
     fn is_function_call_effect(&self, node: NodeId) -> bool {
         let Some(node) = self.cfg.node(node) else { return false };
         match &node.kind {
-            CfgNodeKind::OpaqueAssignment { value, .. } => self.is_function_call(*value),
+            CfgNodeKind::OpaqueAssignment { value, .. }
+            | CfgNodeKind::DeferredAssignment { value, .. } => self.is_function_call(*value),
             CfgNodeKind::OpaqueEquality { left, right, .. } => {
                 self.is_function_call(*left) || self.is_function_call(*right)
             }
@@ -927,7 +1253,7 @@ impl AnalysisFacts<'_> {
         let state = self.site_state(site)?;
         let values = state.variables()?;
         let dependencies = state.dependencies()?;
-        let analysis = ForwardAnalysis { hir: self.hir, field: self.field };
+        let analysis = ForwardAnalysis::new(self.hir, self.field);
         let unresolved =
             |id| forward::expression_dependencies(&analysis, id, values, dependencies).is_none();
         if let Some(target) = target {
@@ -954,7 +1280,9 @@ impl AnalysisFacts<'_> {
                 return self.anonymous_constraint_input_relevant(*id, path);
             }
         }
-        if let CfgNodeKind::OpaqueAssignment { target, value, .. } = &node.kind {
+        if let CfgNodeKind::OpaqueAssignment { target, value, .. }
+        | CfgNodeKind::DeferredAssignment { target, value } = &node.kind
+        {
             let query = key_for_path(self.hir, self.field, path, &BTreeMap::new());
             let mut relevant = false;
             target.visit_accesses(self.hir, &mut |used| {
@@ -1000,6 +1328,7 @@ impl AnalysisFacts<'_> {
             | parser::hir::Effect::ConstraintAssignment { .. }
             | parser::hir::Effect::EqualityConstraint { .. }
             | parser::hir::Effect::VariableAssignment { .. }
+            | parser::hir::Effect::DeferredVariableAssignment { .. }
             | parser::hir::Effect::Update { .. }
             | parser::hir::Effect::If { .. }
             | parser::hir::Effect::While { .. }

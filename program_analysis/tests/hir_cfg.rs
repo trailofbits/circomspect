@@ -126,7 +126,7 @@ fn loop_back_edge_and_return_preserve_exit() {
         .map(|id| cfg.edge(*id).unwrap())
         .find(|edge| edge.payload.kind == EdgeKind::Return)
         .unwrap();
-    assert_eq!(return_edge.target, cfg.exit);
+    assert_eq!(return_edge.target, cfg.exit());
 }
 
 #[test]
@@ -166,6 +166,23 @@ fn foreign_definition_returns_a_typed_error() {
     let (other, _) = fixture("template Check() { signal x; }");
     assert!(matches!(build_cfg(&other.hir, definition), Err(BuildError::ForeignDefinition)));
     assert!(build_cfg(&first.hir, definition).is_ok());
+}
+
+#[test]
+fn deferred_variable_write_remains_targeted_and_cannot_generate_a_constraint() {
+    let (project, definition) = fixture("function Check(n){var x=n;if(x){return 1;}return 0;}");
+    let cfg = build_cfg(&project.hir, definition).unwrap();
+    let kinds: Vec<_> = cfg.nodes().iter().map(|id| &cfg.node(*id).unwrap().kind).collect();
+    assert!(kinds.iter().any(|kind| matches!(
+        kind,
+        CfgNodeKind::DeferredAssignment { target, .. }
+            if project.hir.symbol(target.root).unwrap().name == "x"
+    )));
+    assert!(kinds.iter().any(|kind| matches!(
+        kind,
+        CfgNodeKind::Branch { guard: ControlGuard::DeferredScalar, .. }
+    )));
+    assert!(kinds.iter().all(|kind| !matches!(kind, CfgNodeKind::Constraint { .. })));
 }
 
 #[test]
@@ -286,5 +303,5 @@ fn effects_after_return_do_not_enter_the_cfg() {
         .filter(|edge| edge.payload.kind == EdgeKind::Return)
         .collect();
     assert_eq!(return_edges.len(), 1);
-    assert_eq!(return_edges[0].target, cfg.exit);
+    assert_eq!(return_edges[0].target, cfg.exit());
 }

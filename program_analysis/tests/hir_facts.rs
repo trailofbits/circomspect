@@ -97,6 +97,89 @@ fn witness_value_and_assert_do_not_prove_constraint_incidence() {
 }
 
 #[test]
+fn deferred_variable_shape_blocks_exact_range_after_scalar_overwrite() {
+    let (hir, definition) = fixture("function Check(n){var x=n;x=0;return x;}");
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let returned = cfg
+        .nodes()
+        .iter()
+        .find_map(|id| match cfg.node(*id).map(|node| &node.kind) {
+            Some(CfgNodeKind::Return(value)) => Some(*value),
+            _ => None,
+        })
+        .unwrap();
+    assert!(facts.range(returned).certified().is_none());
+    assert!(facts
+        .range(returned)
+        .unavailable()
+        .unwrap()
+        .contains(&FactBlocker::DeferredShape(returned)));
+}
+
+#[test]
+fn statically_pruned_call_has_no_reachable_evaluation_site() {
+    let (hir, definition) = fixture(
+        "template Child(){signal output out;out<==1;} \
+         template Check(){if(0){component c=Child();}signal output y;y<==1;}",
+    );
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let call = hir
+        .expressions()
+        .iter()
+        .find_map(|expression| match &expression.kind {
+            ExprKind::Call { target: parser::hir::CallTarget::Template(_), .. } => {
+                Some(expression.id)
+            }
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(facts.reachable_expression(call).certified(), Some(&false));
+}
+
+#[test]
+fn component_call_is_reachable_before_its_opaque_effect() {
+    let (hir, definition) = fixture("template Child(){} template Check(){component c=Child();}");
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let call = hir
+        .expressions()
+        .iter()
+        .find_map(|expression| match &expression.kind {
+            ExprKind::Call { target: parser::hir::CallTarget::Template(_), .. } => {
+                Some(expression.id)
+            }
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(facts.reachable_expression(call).certified(), Some(&true));
+}
+
+#[test]
+fn deferred_control_cannot_certify_call_reachability() {
+    let (hir, definition) =
+        fixture("template Child(){} template Check(n){if(n){component c=Child();}}");
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let call = hir
+        .expressions()
+        .iter()
+        .find_map(|expression| match &expression.kind {
+            ExprKind::Call { target: parser::hir::CallTarget::Template(_), .. } => {
+                Some(expression.id)
+            }
+            _ => None,
+        })
+        .unwrap();
+    assert!(facts.reachable_expression(call).certified().is_none());
+}
+
+#[test]
 fn late_equality_revokes_zero_incidence() {
     let (hir, definition) = fixture("template Check() { signal output y; y <-- 7; y === 7; }");
     let cfg = build_cfg(&hir, definition).unwrap();

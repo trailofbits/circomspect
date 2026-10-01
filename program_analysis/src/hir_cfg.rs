@@ -40,6 +40,10 @@ pub enum CfgNodeKind {
         target: AccessPath,
         value: ExprId,
     },
+    DeferredAssignment {
+        target: AccessPath,
+        value: ExprId,
+    },
     Update {
         target: AccessPath,
         operator: PostfixOperator,
@@ -95,16 +99,48 @@ pub struct CfgEdge {
     pub guard: Option<ControlGuard>,
 }
 
+/// A graph bound to the definition from which it was built.
+///
+/// ```compile_fail
+/// use circomspect_program_analysis::hir_cfg::DefinitionCfg;
+/// use parser::hir::DefinitionRef;
+/// fn forge(mut cfg: DefinitionCfg, value: DefinitionRef) { cfg.definition = value; }
+/// ```
+/// ```compile_fail
+/// use circomspect_program_analysis::hir_cfg::DefinitionCfg;
+/// use abstract_interpretation::graph::NodeId;
+/// fn forge(mut cfg: DefinitionCfg, value: NodeId) { cfg.entry = value; }
+/// ```
+/// ```compile_fail
+/// use circomspect_program_analysis::hir_cfg::DefinitionCfg;
+/// use abstract_interpretation::graph::NodeId;
+/// fn forge(mut cfg: DefinitionCfg, value: NodeId) { cfg.exit = value; }
+/// ```
 pub struct DefinitionCfg {
     graph: IndexedGraph<CfgNode, CfgEdge>,
     local_symbols: BTreeSet<SymbolId>,
     checked_paths: Vec<AccessPath>,
-    pub definition: DefinitionRef,
-    pub entry: NodeId,
-    pub exit: NodeId,
+    definition: DefinitionRef,
+    entry: NodeId,
+    exit: NodeId,
 }
 
 impl DefinitionCfg {
+    #[must_use]
+    pub fn definition(&self) -> DefinitionRef {
+        self.definition
+    }
+
+    #[must_use]
+    pub fn entry(&self) -> NodeId {
+        self.entry
+    }
+
+    #[must_use]
+    pub fn exit(&self) -> NodeId {
+        self.exit
+    }
+
     pub(crate) fn owns_symbol(&self, symbol: SymbolId) -> bool {
         self.local_symbols.contains(&symbol)
     }
@@ -344,6 +380,7 @@ impl Builder<'_> {
                 Ok(self.append(tails, CfgNodeKind::Declaration { symbol: *symbol }, origin))
             }
             Effect::VariableAssignment { .. }
+            | Effect::DeferredVariableAssignment { .. }
             | Effect::ComponentInstantiation { .. }
             | Effect::WitnessAssignment { .. }
             | Effect::ConstraintAssignment { .. }
@@ -422,6 +459,7 @@ impl Builder<'_> {
     ) -> Result<Tails, BuildError> {
         let (target, value) = match effect {
             Effect::VariableAssignment { target, value, .. }
+            | Effect::DeferredVariableAssignment { target, value, .. }
             | Effect::ComponentInstantiation { target, value, .. }
             | Effect::WitnessAssignment { target, value, .. }
             | Effect::ConstraintAssignment { target, value, .. }
@@ -463,6 +501,11 @@ impl Builder<'_> {
                     effect_origin,
                 ))
             }
+            Effect::DeferredVariableAssignment { .. } => Ok(self.append(
+                tails,
+                CfgNodeKind::DeferredAssignment { target: target.clone(), value },
+                origin,
+            )),
             Effect::OpaqueAssignment { operator, reason, .. } => Ok(self.append(
                 tails,
                 CfgNodeKind::OpaqueAssignment {
@@ -616,9 +659,9 @@ impl Builder<'_> {
 
     fn may_write_variable(effect: &Effect, variable: SymbolId) -> bool {
         match effect {
-            Effect::VariableAssignment { target, .. } | Effect::Update { target, .. } => {
-                target.root == variable
-            }
+            Effect::VariableAssignment { target, .. }
+            | Effect::DeferredVariableAssignment { target, .. }
+            | Effect::Update { target, .. } => target.root == variable,
             Effect::Declaration { .. }
             | Effect::WitnessAssignment { .. }
             | Effect::ConstraintAssignment { .. }
@@ -719,6 +762,7 @@ fn effect_span(effect: &Effect, block_span: Span) -> Span {
     match effect {
         Effect::Declaration { span, .. }
         | Effect::VariableAssignment { span, .. }
+        | Effect::DeferredVariableAssignment { span, .. }
         | Effect::ComponentInstantiation { span, .. }
         | Effect::WitnessAssignment { span, .. }
         | Effect::ConstraintAssignment { span, .. }

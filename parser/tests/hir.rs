@@ -1,6 +1,7 @@
 use circomspect_parser::hir::{
     lift_project, AccessStep, BusTarget, CallTarget, ControlGuard, DefinitionRef, Effect, ExprKind,
     IncompleteLocation, IncompleteReason, Knownness, PortSchema, SemanticCode, Severity,
+    ValueEvidence,
 };
 use circomspect_parser::new_frontend::{AssignmentOperator, load_sources, Version, VersionPolicy};
 use proptest::prelude::*;
@@ -51,6 +52,25 @@ fn has_tag_access(result: &circomspect_parser::hir::LiftedProject) -> bool {
         }
         _ => false,
     })
+}
+
+#[test]
+fn missing_call_initializer_keeps_a_typed_targeted_effect() {
+    let result =
+        lift(&[("case.circom", "function F(){var t=Missing();return 7;}")], Version::new(2, 2, 3));
+    let Some(DefinitionRef::Function(id)) = result.hir.definition("F") else {
+        panic!("function F must be present")
+    };
+    let effects = &result.hir.block(result.hir.function(id).unwrap().body).unwrap().effects;
+    assert!(effects.iter().any(|effect| {
+        let Effect::OpaqueAssignment { target, value, operator, reason, .. } = effect else {
+            return false;
+        };
+        *operator == AssignmentOperator::Assign
+            && *reason == IncompleteReason::UnknownType
+            && result.hir.symbol(target.root).is_some_and(|symbol| symbol.name == "t")
+            && result.hir.expression(*value).is_some()
+    }));
 }
 
 #[test]
@@ -405,7 +425,7 @@ fn missing_targets_have_exact_order_level_and_name_spans() {
             })
             .collect();
     assert_eq!(diagnostic_fingerprint(&result), expected);
-    assert!(matches!(result.hir.mains[0].target, CallTarget::Missing { .. }));
+    assert!(matches!(result.hir.mains()[0].target, CallTarget::Missing { .. }));
 }
 
 #[test]
@@ -668,6 +688,20 @@ fn later_mixed_component_target_invalidates_earlier_call_and_port_read() {
     assert!(!result.hir.expressions().iter().any(|expression| {
         let ExprKind::Access(path) = &expression.kind else { return false };
         result.hir.symbol(path.root).is_some_and(|symbol| symbol.name == "c")
+    }));
+}
+
+#[test]
+fn mixed_component_target_preserves_independent_deferred_variable_write() {
+    let source = concat!(
+        "template A(){} template B(){} ",
+        "template Check(n){var t=n;component c[2];c[0]=A();c[1]=B();}"
+    );
+    let result = lift(&[("mixed_deferred.circom", source)], Version::new(2, 2, 3));
+    assert!(result.diagnostics.iter().any(|item| item.code == SemanticCode::InvalidAssignment));
+    assert!(effect_for(&result, "Check").iter().any(|effect| {
+        let Effect::DeferredVariableAssignment { target, .. } = effect else { return false };
+        result.hir.symbol(target.root).is_some_and(|symbol| symbol.name == "t")
     }));
 }
 
@@ -962,8 +996,8 @@ fn parallel_component_and_main_keep_modifier() {
         .expressions()
         .iter()
         .any(|item| { matches!(item.kind, ExprKind::Parallel(_)) }));
-    assert_eq!(result.hir.mains.len(), 1);
-    assert!(result.hir.mains[0].parallel);
+    assert_eq!(result.hir.mains().len(), 1);
+    assert!(result.hir.mains()[0].parallel);
 }
 
 #[test]
@@ -1425,6 +1459,61 @@ fn unresolved_function_result_keeps_assignment_target_and_call() {
     assert_eq!(*reason, IncompleteReason::UnknownType);
     let Some(expression) = result.hir.expression(*value) else { panic!("call expression") };
     assert!(matches!(expression.kind, ExprKind::Call { .. }));
+}
+
+#[test]
+fn parameter_shaped_variable_write_keeps_deferred_guard() {
+    let source = "function F(n){var x=n;if(x){return 1;}return 0;}";
+    let result = lift(&[("deferred_var.circom", source)], Version::new(2, 2, 3));
+    let effects = effect_for_function(&result, "F");
+    let Some(Effect::DeferredVariableAssignment { target, value, .. }) =
+        effects.iter().find(|effect| matches!(effect, Effect::DeferredVariableAssignment { .. }))
+    else {
+        panic!("parameter-shaped write must remain targeted")
+    };
+    assert_eq!(result.hir.symbol(target.root).unwrap().name, "x");
+    assert!(matches!(result.hir.expression(*value).unwrap().kind, ExprKind::Access(_)));
+    assert_eq!(result.hir.symbol(target.root).unwrap().value_evidence, ValueEvidence::Deferred);
+    assert!(effects
+        .iter()
+        .any(|effect| matches!(effect, Effect::If { guard: ControlGuard::DeferredScalar, .. })));
+}
+
+#[test]
+fn later_scalar_overwrite_does_not_erase_deferred_variable_evidence() {
+    let source = "function F(n){var x=n;x=0;if(x){return 1;}return 0;}";
+    let result = lift(&[("deferred_overwrite.circom", source)], Version::new(2, 2, 3));
+    let effects = effect_for_function(&result, "F");
+    assert!(effects
+        .iter()
+        .any(|effect| matches!(effect, Effect::If { guard: ControlGuard::DeferredScalar, .. })));
+    let x = result.hir.symbols().iter().find(|symbol| symbol.name == "x").unwrap();
+    assert_eq!(x.value_evidence, ValueEvidence::Deferred);
+}
+
+#[test]
+fn deferred_shape_propagates_through_copy_arithmetic_and_select() {
+    for assigned in ["x", "x+1", "1 ? x : 2"] {
+        let source =
+            format!("function F(n){{var x=n;var y={assigned};if(y){{return 1;}}return 0;}}");
+        let result = lift(&[("deferred_transitive.circom", &source)], Version::new(2, 2, 3));
+        let effects = effect_for_function(&result, "F");
+        assert!(
+            effects.iter().any(|effect| matches!(
+                effect,
+                Effect::DeferredVariableAssignment { target, .. }
+                    if result.hir.symbol(target.root).unwrap().name == "y"
+            )),
+            "{assigned}"
+        );
+        assert!(
+            effects.iter().any(|effect| matches!(
+                effect,
+                Effect::If { guard: ControlGuard::DeferredScalar, .. }
+            )),
+            "{assigned}"
+        );
+    }
 }
 
 #[test]

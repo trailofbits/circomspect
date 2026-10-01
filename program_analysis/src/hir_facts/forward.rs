@@ -45,6 +45,14 @@ impl ForwardState {
         }
     }
 
+    pub fn with_scalar_parameters(values: &BTreeMap<SymbolId, FieldValue>) -> Self {
+        let mut state = Self::boundary();
+        if let Self::Reached { variables, .. } = &mut state {
+            variables.extend(values.iter().map(|(symbol, value)| (*symbol, value.clone())));
+        }
+        state
+    }
+
     pub fn variables(&self) -> Option<&BTreeMap<SymbolId, FieldValue>> {
         let Self::Reached { variables, .. } = self else { return None };
         Some(variables)
@@ -174,6 +182,21 @@ impl Lattice for ForwardState {
 pub struct ForwardAnalysis<'a> {
     pub hir: &'a HirProject,
     pub field: &'a FieldContext,
+    initial_values: BTreeMap<SymbolId, FieldValue>,
+}
+
+impl<'a> ForwardAnalysis<'a> {
+    pub fn new(hir: &'a HirProject, field: &'a FieldContext) -> Self {
+        Self { hir, field, initial_values: BTreeMap::new() }
+    }
+
+    pub fn with_scalar_parameters(
+        hir: &'a HirProject,
+        field: &'a FieldContext,
+        values: BTreeMap<SymbolId, FieldValue>,
+    ) -> Self {
+        Self { hir, field, initial_values: values }
+    }
 }
 
 fn apply_update(
@@ -582,7 +605,7 @@ impl DataflowAnalysis<DefinitionCfg> for ForwardAnalysis<'_> {
     type Reason = String;
 
     fn boundary(&self, _: NodeId) -> Self::State {
-        ForwardState::boundary()
+        ForwardState::with_scalar_parameters(&self.initial_values)
     }
 }
 
@@ -636,6 +659,23 @@ impl Transfer<ForwardAnalysis<'_>, ForwardState, String> for CfgNode {
                     assign_dependencies(analysis, target, *value, variables, dependencies);
                     assign_value(analysis, target, *value, variables);
                 }
+            }
+            CfgNodeKind::DeferredAssignment { target, value } => {
+                let scalar = target.steps.is_empty()
+                    && analysis
+                        .hir
+                        .symbol(target.root)
+                        .is_some_and(|symbol| symbol.kind == SymbolKind::Variable)
+                    && eval_expression(analysis.hir, analysis.field, *value, variables).is_some();
+                if !scalar {
+                    return TransferOutcome::Opaque {
+                        provisional: output,
+                        reason: "deferred assignment shape".into(),
+                    };
+                }
+                assign_degree(analysis, target, *value, variables, degrees);
+                assign_dependencies(analysis, target, *value, variables, dependencies);
+                assign_value(analysis, target, *value, variables);
             }
             CfgNodeKind::Declaration { symbol } => {
                 let Some(declared) = analysis.hir.symbol(*symbol) else {
@@ -698,12 +738,7 @@ impl Transfer<ForwardAnalysis<'_>, ForwardState, String> for CfgNode {
                     reason: format!("{reason:?}"),
                 };
             }
-            CfgNodeKind::Instantiate { .. } => {
-                return TransferOutcome::Opaque {
-                    provisional: output,
-                    reason: "external component summary".into(),
-                };
-            }
+            CfgNodeKind::Instantiate { .. } => {}
             CfgNodeKind::Entry
             | CfgNodeKind::Exit
             | CfgNodeKind::LoopHeader
@@ -832,13 +867,12 @@ mod tests {
         let cfg = crate::hir_cfg::build_cfg(&hir, definition).unwrap();
         let field = FieldContext::for_curve(Curve::Bn254);
         let SolveResult::Complete(states) =
-            solve::<_, _, Forward>(&cfg, &ForwardAnalysis { hir: &hir, field: &field }, None)
-                .unwrap()
+            solve::<_, _, Forward>(&cfg, &ForwardAnalysis::new(&hir, &field), None).unwrap()
         else {
             panic!("complete local solver")
         };
         let x = hir.symbols().iter().find(|symbol| symbol.name == "x").unwrap().id;
-        states.get(&cfg.exit)?.output.as_ref()?.variables()?.get(&x).cloned()
+        states.get(&cfg.exit())?.output.as_ref()?.variables()?.get(&x).cloned()
     }
 
     #[test]
@@ -846,6 +880,52 @@ mod tests {
         let one = FieldContext::for_curve(Curve::Bn254).canonical(1.into());
         assert_eq!(exit_value("1"), Some(one));
         assert_eq!(exit_value("2"), None);
+    }
+
+    #[test]
+    fn deferred_assignment_transfer_is_monotone_when_scalar_shape_is_proved() {
+        let directory = std::env::temp_dir().join(format!(
+            "circomspect-deferred-transfer-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let source = directory.join("case.circom");
+        fs::write(&source, "function F(n){var x=n;return x;}").unwrap();
+        let loaded =
+            load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
+        let hir = lift_project(&loaded).hir;
+        let definition = hir.definition("F").unwrap();
+        let cfg = crate::hir_cfg::build_cfg(&hir, definition).unwrap();
+        let node = cfg
+            .nodes()
+            .iter()
+            .filter_map(|id| cfg.node(*id))
+            .find(|node| matches!(node.kind, CfgNodeKind::DeferredAssignment { .. }))
+            .unwrap();
+        let field = FieldContext::for_curve(Curve::Bn254);
+        let parameter = hir.symbols().iter().find(|symbol| symbol.name == "n").unwrap().id;
+        let local = hir.symbols().iter().find(|symbol| symbol.name == "x").unwrap().id;
+        let one = field.canonical(1.into());
+        let mut precise =
+            ForwardState::with_scalar_parameters(&BTreeMap::from([(parameter, one.clone())]));
+        let broad = precise.clone();
+        let ForwardState::Reached { variables, .. } = &mut precise else { panic!("reached") };
+        variables.insert(local, field.canonical(0.into()));
+        assert!(precise.leq(&broad));
+        let analysis = ForwardAnalysis::new(&hir, &field);
+        let TransferOutcome::Known(left) = node.apply(&analysis, &precise) else {
+            panic!("proved scalar transfer")
+        };
+        let TransferOutcome::Known(right) = node.apply(&analysis, &broad) else {
+            panic!("proved scalar transfer")
+        };
+        assert!(left.leq(&right));
+        assert_eq!(right.variables().unwrap().get(&local), Some(&one));
+        assert!(matches!(
+            node.apply(&analysis, &ForwardState::boundary()),
+            TransferOutcome::Opaque { .. }
+        ));
     }
 
     #[test]
@@ -869,8 +949,7 @@ mod tests {
             let cfg = crate::hir_cfg::build_cfg(&hir, definition).unwrap();
             let field = FieldContext::for_curve(Curve::Bn254);
             let SolveResult::Complete(states) =
-                solve::<_, _, Forward>(&cfg, &ForwardAnalysis { hir: &hir, field: &field }, None)
-                    .unwrap()
+                solve::<_, _, Forward>(&cfg, &ForwardAnalysis::new(&hir, &field), None).unwrap()
             else {
                 panic!("complete local solver")
             };
@@ -883,7 +962,7 @@ mod tests {
                 })
                 .unwrap();
             let key = super::super::access::key_for_path(&hir, &field, path, &BTreeMap::new());
-            let state = states.get(&cfg.exit)?.output.as_ref()?;
+            let state = states.get(&cfg.exit())?.output.as_ref()?;
             let values: BTreeSet<_> = state
                 .fixed_equations()?
                 .iter()
@@ -955,7 +1034,7 @@ mod tests {
                 Some(node)
             })
             .unwrap();
-        let analysis = ForwardAnalysis { hir: &hir, field: &field };
+        let analysis = ForwardAnalysis::new(&hir, &field);
         for left in &states {
             for right in &states {
                 if !left.leq(right) {
@@ -1061,7 +1140,7 @@ mod tests {
         let ForwardState::Reached { dependencies, .. } = &mut unknown else { panic!("reached") };
         dependencies.insert(i, MayAccessSet::default());
         assert!(precise.leq(&unknown));
-        let analysis = ForwardAnalysis { hir: &hir, field: &field };
+        let analysis = ForwardAnalysis::new(&hir, &field);
         let TransferOutcome::Known(precise) = assignment.apply(&analysis, &precise) else {
             panic!("known assignment")
         };
@@ -1104,7 +1183,7 @@ mod tests {
                 _ => false,
             })
             .unwrap();
-        let analysis = ForwardAnalysis { hir: &hir, field: &field };
+        let analysis = ForwardAnalysis::new(&hir, &field);
         check_transfer_order(node, &analysis, &variable_states(u, key.clone(), &field));
         let mut state = ForwardState::boundary();
         let ForwardState::Reached { dependencies, .. } = &mut state else { panic!("reached") };
@@ -1196,7 +1275,7 @@ mod tests {
         let x = hir.symbols().iter().find(|symbol| symbol.name == "x").unwrap().id;
         let key = AccessKey { root: x, instance: None, steps: Vec::new() };
         let states = variable_states(t, key, &field);
-        let analysis = ForwardAnalysis { hir: &hir, field: &field };
+        let analysis = ForwardAnalysis::new(&hir, &field);
         for id in cfg.nodes() {
             check_transfer_order(cfg.node(*id).unwrap(), &analysis, &states);
         }
@@ -1220,7 +1299,7 @@ mod tests {
         let t = hir.symbols().iter().find(|symbol| symbol.name == "t").unwrap().id;
         let key = AccessKey { root: t, instance: None, steps: Vec::new() };
         let states = variable_states(t, key, &field);
-        let analysis = ForwardAnalysis { hir: &hir, field: &field };
+        let analysis = ForwardAnalysis::new(&hir, &field);
         let edges: Vec<_> = cfg
             .edges()
             .iter()
@@ -1259,7 +1338,7 @@ mod tests {
         let t = hir.symbols().iter().find(|symbol| symbol.name == "t").unwrap().id;
         let x = hir.symbols().iter().find(|symbol| symbol.name == "x").unwrap().id;
         let key = AccessKey { root: x, instance: None, steps: Vec::new() };
-        let analysis = ForwardAnalysis { hir: &hir, field: &field };
+        let analysis = ForwardAnalysis::new(&hir, &field);
         let constraint = cfg
             .nodes()
             .iter()

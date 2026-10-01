@@ -68,6 +68,7 @@ impl Lifter<'_> {
                             }
                         }
                         Effect::VariableAssignment { target, value, .. }
+                        | Effect::DeferredVariableAssignment { target, value, .. }
                         | Effect::WitnessAssignment { target, value, .. }
                         | Effect::ConstraintAssignment { target, value, .. }
                         | Effect::OpaqueAssignment { target, value, .. } => {
@@ -132,6 +133,20 @@ impl Lifter<'_> {
     ) -> Option<Effect> {
         let reason = IncompleteReason::InvalidAssignment;
         match effect {
+            Effect::DeferredVariableAssignment { target, value, operator, span } => {
+                if !Self::path_depends_on_invalid(target, symbols, expressions)
+                    && !expressions.contains(value)
+                {
+                    return None;
+                }
+                Some(Effect::OpaqueAssignment {
+                    target: target.clone(),
+                    value: *value,
+                    operator: *operator,
+                    reason,
+                    span: *span,
+                })
+            }
             Effect::VariableAssignment { target, value, span }
             | Effect::ComponentInstantiation { target, value, span }
             | Effect::WitnessAssignment { target, value, span }
@@ -148,6 +163,7 @@ impl Lifter<'_> {
                         AssignmentOperator::Assign
                     }
                     Effect::Declaration { .. }
+                    | Effect::DeferredVariableAssignment { .. }
                     | Effect::OpaqueAssignment { .. }
                     | Effect::EqualityConstraint { .. }
                     | Effect::OpaqueEquality { .. }
@@ -284,13 +300,13 @@ impl Lifter<'_> {
         match statement {
             Statement::If { condition, then_branch, else_branch, .. } => {
                 let condition = self.lift_expression(condition);
-                let before = self.snapshot_knownness();
+                let before = self.snapshot_symbol_state();
                 let then_block = self.lift_branch(then_branch);
-                let after_then = self.snapshot_knownness();
-                self.restore_knownness(&before);
+                let after_then = self.snapshot_symbol_state();
+                self.restore_symbol_state(&before);
                 let else_block = else_branch.as_ref().map(|branch| self.lift_branch(branch));
-                let after_else = self.snapshot_knownness();
-                self.join_knownness(&after_then, &after_else);
+                let after_else = self.snapshot_symbol_state();
+                self.join_symbol_state(&after_then, &after_else);
                 let guard = match self.control_guard(condition) {
                     Ok(ControlGuard::WitnessOnly)
                         if !self.branch_is_witness_only(then_block)
@@ -307,13 +323,13 @@ impl Lifter<'_> {
                 self.scopes.enter();
                 let initializer_block = self.hir.add_block(initializer.span());
                 self.lift_block_into(std::slice::from_ref(initializer), initializer_block, false);
-                let before_loop = self.snapshot_knownness();
+                let before_loop = self.snapshot_symbol_state();
                 let condition = self.lift_expression(condition);
                 let body = self.lift_branch(body);
-                let after_body = self.snapshot_knownness();
+                let after_body = self.snapshot_symbol_state();
                 let step = self.lift_branch(step);
                 let stable_condition = self.loop_condition_is_stable(condition, &before_loop);
-                self.join_knownness(&before_loop, &after_body);
+                self.join_symbol_state(&before_loop, &after_body);
                 self.scopes.leave();
                 let guard = match self.control_guard(condition) {
                     Ok(ControlGuard::WitnessOnly) => {
@@ -335,11 +351,11 @@ impl Lifter<'_> {
                 }]
             }
             Statement::While { condition, body, .. } => {
-                let before = self.snapshot_knownness();
+                let before = self.snapshot_symbol_state();
                 let condition = self.lift_expression(condition);
                 let body = self.lift_branch(body);
                 let stable_condition = self.loop_condition_is_stable(condition, &before);
-                self.join_knownness(&before, &before);
+                self.join_symbol_state(&before, &before);
                 let guard = match self.control_guard(condition) {
                     Ok(ControlGuard::WitnessOnly) => {
                         return vec![self.opaque(span, IncompleteReason::NonCompileTime)];
@@ -435,6 +451,7 @@ impl Lifter<'_> {
             }
             Effect::Block(child) => self.branch_is_witness_only(*child),
             Effect::ComponentInstantiation { .. }
+            | Effect::DeferredVariableAssignment { .. }
             | Effect::ConstraintAssignment { .. }
             | Effect::EqualityConstraint { .. }
             | Effect::If { .. }
@@ -520,8 +537,15 @@ impl Lifter<'_> {
         }
     }
 
-    pub(super) fn snapshot_knownness(&self) -> Vec<Knownness> {
-        self.hir.symbols.iter().map(|symbol| symbol.knownness).collect()
+    pub(super) fn snapshot_symbol_state(&self) -> Vec<SymbolState> {
+        self.hir
+            .symbols
+            .iter()
+            .map(|symbol| SymbolState {
+                knownness: symbol.knownness,
+                value_evidence: symbol.value_evidence,
+            })
+            .collect()
     }
 
     pub(super) fn symbolic_indices(path: &AccessPath) -> impl Iterator<Item = ExprId> + '_ {
@@ -580,14 +604,21 @@ impl Lifter<'_> {
         }
     }
 
-    pub(super) fn loop_condition_is_stable(&self, condition: ExprId, before: &[Knownness]) -> bool {
+    pub(super) fn loop_condition_is_stable(
+        &self,
+        condition: ExprId,
+        before: &[SymbolState],
+    ) -> bool {
         let mut pending = vec![condition];
         while let Some(id) = pending.pop() {
             let Some(expression) = self.hir.expression(id) else { return false };
             match &expression.kind {
                 ExprKind::Access(path) => {
                     let Some(initial) = before.get(path.terminal.index) else { return false };
-                    if self.hir.symbols[path.terminal.index].knownness != *initial {
+                    if self.hir.symbols[path.terminal.index].knownness != initial.knownness
+                        || self.hir.symbols[path.terminal.index].value_evidence
+                            != initial.value_evidence
+                    {
                         return false;
                     }
                     pending.extend(Self::symbolic_indices(path));
@@ -611,16 +642,19 @@ impl Lifter<'_> {
         true
     }
 
-    pub(super) fn restore_knownness(&mut self, snapshot: &[Knownness]) {
-        for (symbol, knownness) in self.hir.symbols.iter_mut().zip(snapshot) {
-            symbol.knownness = *knownness;
+    pub(super) fn restore_symbol_state(&mut self, snapshot: &[SymbolState]) {
+        for (symbol, state) in self.hir.symbols.iter_mut().zip(snapshot) {
+            symbol.knownness = state.knownness;
+            symbol.value_evidence = state.value_evidence;
         }
     }
 
-    pub(super) fn join_knownness(&mut self, first: &[Knownness], second: &[Knownness]) {
+    pub(super) fn join_symbol_state(&mut self, first: &[SymbolState], second: &[SymbolState]) {
         for (index, (first, second)) in first.iter().zip(second).enumerate() {
-            let current = self.hir.symbols[index].knownness;
-            self.hir.symbols[index].knownness = current.join(*first).join(*second);
+            let symbol = &mut self.hir.symbols[index];
+            symbol.knownness = symbol.knownness.join(first.knownness).join(second.knownness);
+            symbol.value_evidence =
+                symbol.value_evidence.join(first.value_evidence).join(second.value_evidence);
         }
     }
 
@@ -928,6 +962,9 @@ impl Lifter<'_> {
         if !self.expression_is_checked(value)
             || !Self::symbolic_indices(&path).all(|id| self.expression_is_checked(id))
         {
+            if kind == SymbolKind::Variable {
+                return self.unknown_shape_assignment(path, kind, operator, value, span);
+            }
             return self.opaque(span, IncompleteReason::UnknownType);
         }
         if matches!(
@@ -949,14 +986,7 @@ impl Lifter<'_> {
                     return self.opaque(span, IncompleteReason::InvalidAssignment);
                 }
                 ShapeCheck::Unknown => {
-                    self.incomplete(span, IncompleteReason::UnknownType);
-                    return Effect::OpaqueAssignment {
-                        target: path,
-                        value,
-                        operator,
-                        reason: IncompleteReason::UnknownType,
-                        span,
-                    };
+                    return self.unknown_shape_assignment(path, kind, operator, value, span);
                 }
             }
         }
@@ -1006,6 +1036,58 @@ impl Lifter<'_> {
                 AssignmentOperator::Constraint | AssignmentOperator::ReverseConstraint,
             ) => Effect::ConstraintAssignment { target: path, value, span },
             _ => self.invalid_assignment(span, "assignment operator is invalid for target kind"),
+        }
+    }
+
+    fn unknown_shape_assignment(
+        &mut self,
+        path: AccessPath,
+        kind: SymbolKind,
+        operator: AssignmentOperator,
+        value: ExprId,
+        span: Span,
+    ) -> Effect {
+        self.incomplete(span, IncompleteReason::UnknownType);
+        if kind == SymbolKind::Variable {
+            match operator {
+                AssignmentOperator::Witness
+                | AssignmentOperator::Constraint
+                | AssignmentOperator::ReverseWitness
+                | AssignmentOperator::ReverseConstraint => {
+                    return self.invalid_assignment(
+                        span,
+                        "assignment operator is invalid for target kind",
+                    );
+                }
+                AssignmentOperator::Assign
+                | AssignmentOperator::Add
+                | AssignmentOperator::Subtract
+                | AssignmentOperator::Multiply
+                | AssignmentOperator::Divide
+                | AssignmentOperator::IntegerDivide
+                | AssignmentOperator::Modulo
+                | AssignmentOperator::Power
+                | AssignmentOperator::ShiftLeft
+                | AssignmentOperator::ShiftRight
+                | AssignmentOperator::BitAnd
+                | AssignmentOperator::BitOr
+                | AssignmentOperator::BitXor => {}
+            }
+        }
+        if kind == SymbolKind::Variable
+            && self.provisionally_compile_time(value)
+            && Self::symbolic_indices(&path).all(|index| self.provisionally_compile_time(index))
+        {
+            self.hir.symbols[path.terminal.index].knownness = self.knownness(value);
+            self.hir.symbols[path.terminal.index].value_evidence = ValueEvidence::Deferred;
+            return Effect::DeferredVariableAssignment { target: path, value, operator, span };
+        }
+        Effect::OpaqueAssignment {
+            target: path,
+            value,
+            operator,
+            reason: IncompleteReason::UnknownType,
+            span,
         }
     }
 
