@@ -198,6 +198,7 @@ name = "circomspect-program-analysis"
 version = "0.8.2"
 dependencies = [
  "anyhow",
+ "circomspect-abstract-interpretation",
  "circomspect-parser",
  "circomspect-program-structure",
  "log",

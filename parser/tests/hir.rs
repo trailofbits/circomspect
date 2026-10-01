@@ -2,7 +2,7 @@ use circomspect_parser::hir::{
     lower_project, AccessStep, BusTarget, CallTarget, ControlGuard, DefinitionRef, Effect,
     ExprKind, IncompleteLocation, IncompleteReason, Knownness, PortSchema, SemanticCode, Severity,
 };
-use circomspect_parser::new_frontend::{load_sources, Version, VersionPolicy};
+use circomspect_parser::new_frontend::{AssignmentOperator, load_sources, Version, VersionPolicy};
 use proptest::prelude::*;
 use std::fs;
 use std::path::PathBuf;
@@ -1324,6 +1324,35 @@ fn witness_guard_with_unproved_parameter_shape_stays_opaque() {
         effect,
         Effect::Opaque { reason: IncompleteReason::UnknownType, .. }
     )));
+}
+
+#[test]
+fn unresolved_function_result_keeps_assignment_target_and_call() {
+    let source = "function F(a){return a;} template T(){signal input x;signal output y;y<==F(x);}";
+    let result = lower(&[("opaque_call.circom", source)], Version::new(2, 2, 3));
+    let effects = effect_for(&result, "T");
+    let Some(Effect::OpaqueAssignment { target, value, operator, reason, .. }) = effects.last()
+    else {
+        panic!("expected target-aware opaque assignment")
+    };
+    assert_eq!(result.hir.symbol(target.root).unwrap().name, "y");
+    assert_eq!(*operator, AssignmentOperator::Constraint);
+    assert_eq!(*reason, IncompleteReason::UnknownType);
+    let Some(expression) = result.hir.expression(*value) else { panic!("call expression") };
+    assert!(matches!(expression.kind, ExprKind::Call { .. }));
+}
+
+#[test]
+fn unresolved_function_equality_keeps_both_checked_operands() {
+    let source = "function F(a){return a;} template T(){signal input x;F(x)===1;}";
+    let result = lower(&[("opaque_equality.circom", source)], Version::new(2, 2, 3));
+    let effects = effect_for(&result, "T");
+    let Some(Effect::OpaqueEquality { left, right, reason, .. }) = effects.last() else {
+        panic!("expected operand-aware opaque equality")
+    };
+    assert_eq!(*reason, IncompleteReason::UnknownType);
+    assert!(matches!(result.hir.expression(*left).unwrap().kind, ExprKind::Call { .. }));
+    assert!(matches!(result.hir.expression(*right).unwrap().kind, ExprKind::Number(_)));
 }
 
 #[test]

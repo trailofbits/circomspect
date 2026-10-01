@@ -58,10 +58,17 @@ impl Lowerer<'_> {
                 }
                 let left = self.lower_expression(left);
                 let right = self.lower_expression(right);
-                if !self.compatible_equality_operands(left, right) {
-                    return vec![self.opaque(span, IncompleteReason::UnknownType)];
+                match self.equality_shape(left, right) {
+                    ShapeCheck::Valid => vec![Effect::EqualityConstraint { left, right, span }],
+                    ShapeCheck::Unknown => {
+                        let reason = IncompleteReason::UnknownType;
+                        self.incomplete(span, reason.clone());
+                        vec![Effect::OpaqueEquality { left, right, reason, span }]
+                    }
+                    ShapeCheck::Invalid(_) => {
+                        vec![self.opaque(span, IncompleteReason::UnknownType)]
+                    }
                 }
-                vec![Effect::EqualityConstraint { left, right, span }]
             }
             _ => {
                 let reason = IncompleteReason::Unsupported("local statement form".into());
@@ -232,6 +239,8 @@ impl Lowerer<'_> {
             | Effect::While { .. }
             | Effect::For { .. }
             | Effect::AnonymousComponent { .. }
+            | Effect::OpaqueAssignment { .. }
+            | Effect::OpaqueEquality { .. }
             | Effect::Opaque { .. } => false,
         })
     }
@@ -723,10 +732,10 @@ impl Lowerer<'_> {
             kind,
             SymbolKind::Variable | SymbolKind::Signal | SymbolKind::Bus | SymbolKind::Tag
         ) {
-            let Some(rank) = self.access_rank(&path) else {
-                return self.opaque(span, IncompleteReason::UnknownType);
-            };
-            match self.check_value_shape(self.access_type(&path), rank, value) {
+            let shape = self.access_rank(&path).map_or(ShapeCheck::Unknown, |rank| {
+                self.check_value_shape(self.access_type(&path), rank, value)
+            });
+            match shape {
                 ShapeCheck::Valid => {}
                 ShapeCheck::Invalid(code) => {
                     self.diagnostic(
@@ -737,7 +746,16 @@ impl Lowerer<'_> {
                     );
                     return self.opaque(span, IncompleteReason::InvalidAssignment);
                 }
-                ShapeCheck::Unknown => return self.opaque(span, IncompleteReason::UnknownType),
+                ShapeCheck::Unknown => {
+                    self.incomplete(span, IncompleteReason::UnknownType);
+                    return Effect::OpaqueAssignment {
+                        target: path,
+                        value,
+                        operator,
+                        reason: IncompleteReason::UnknownType,
+                        span,
+                    };
+                }
             }
         }
         match (kind, operator) {
