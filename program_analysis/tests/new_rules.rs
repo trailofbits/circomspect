@@ -237,6 +237,46 @@ fn unreachable_component_call_has_no_applied_port_fact() {
 }
 
 #[test]
+fn exact_caller_output_read_does_not_certify_an_unused_sibling() {
+    let loaded = load_fixture(
+        "output-read-scope",
+        concat!(
+            "template Child(){signal output out;out<==1;} ",
+            "template Parent(){component c[2];c[0]=Child();c[1]=Child();",
+            "signal output y;y<==c[0].out+1;}"
+        ),
+    );
+    let lifted = lift_project(&loaded);
+    let parent = lifted.hir.definition("Parent").unwrap();
+    let parser::hir::DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap()
+    else {
+        panic!("Child is a template")
+    };
+    let output = lifted.hir.template(child).unwrap().ports[0];
+    let summaries = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let evidence = summaries.symbolic_root(parent).unwrap();
+    let cfg = build_cfg(&lifted.hir, parent).unwrap();
+    let facts = summaries.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let context = RuleContext::new(&facts, &summaries, &evidence).unwrap();
+    let sites = context.call_sites();
+    assert_eq!(sites.len(), 2);
+    for (index, site) in sites.iter().enumerate() {
+        let handle = context
+            .facts()
+            .component_output_handle(lifted.hir.components()[0].id, &[index], output, &[])
+            .unwrap();
+        let applied = context.applied_component_port(site.id(), &handle).unwrap().unwrap();
+        let read = context.caller_output_read(applied.certified().unwrap()).unwrap();
+        if index == 0 {
+            assert_eq!(read.certified().unwrap().read_origins().len(), 1);
+        } else {
+            assert!(read.certified().is_none());
+            assert!(read.unavailable().unwrap().contains(&SummaryBlocker::ExternalSummary));
+        }
+    }
+}
+
+#[test]
 fn composed_output_constraint_requires_the_active_caller_scope() {
     let loaded = load_fixture(
         "composed-output-scope",
@@ -278,6 +318,7 @@ fn composed_output_constraint_requires_the_active_caller_scope() {
         other_context.composed_constraint_fixed_output(applied).err(),
         Some(SummaryBlocker::WrongContext)
     );
+    assert_eq!(other_context.caller_output_read(applied).err(), Some(SummaryBlocker::WrongContext));
     let other_handle = other_context
         .facts()
         .component_output_handle(lifted.hir.components()[1].id, &[], output, &[])

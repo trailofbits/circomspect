@@ -4,8 +4,8 @@ use parser::new_frontend::Span;
 use crate::hir_facts::{AccessHandle, AnalysisFacts};
 use crate::interprocedural::{
     AppliedComponentPort, CallBlocker, CallContext, CallOwner, CallReachability, CallSite,
-    CallSiteId, ComposedConstraintFixedOutput, ContextEvidence, FunctionEffects, FunctionSummary,
-    PortSummary, ProjectSummaries, SummaryBlocker, SummaryFact, WitnessSite,
+    CallSiteId, CallerOutputRead, ComposedConstraintFixedOutput, ContextEvidence, FunctionEffects,
+    FunctionSummary, PortSummary, ProjectSummaries, SummaryBlocker, SummaryFact, WitnessSite,
 };
 
 use crate::new_rules::{Finding, RuleKind};
@@ -119,6 +119,20 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
             return Err(SummaryBlocker::WrongContext);
         }
         Ok(self.summaries.composed_constraint_fixed_output(self.facts, applied))
+    }
+
+    /// Prove an exact output read in this caller's reachable body.
+    ///
+    /// No local read returns unavailable evidence. It cannot prove that the
+    /// output is unused across the project or in an uninstantiated library.
+    pub fn caller_output_read(
+        &self,
+        applied: &AppliedComponentPort,
+    ) -> Result<SummaryFact<CallerOutputRead>, SummaryBlocker> {
+        if applied.caller_evidence() != self.evidence {
+            return Err(SummaryBlocker::WrongContext);
+        }
+        Ok(self.summaries.caller_output_read(self.facts, applied))
     }
 
     /// Return a summary only for the active function specialization.
