@@ -201,7 +201,7 @@ impl ProjectSummaries<'_> {
             return Err(SummaryBlocker::WrongInstance);
         }
         let instantiation = self.bind_instantiation(facts, call, handle)?;
-        let callee = self.call_evidence(call, facts)?;
+        let callee = self.call_evidence(call, facts, caller)?;
         let (port, indices) = handle.output_port().ok_or(SummaryBlocker::WrongInstance)?;
         let summary = self.template_port_at(template, callee.context(), port, &indices);
         let port = summary.certified().cloned().ok_or_else(|| {
@@ -271,6 +271,7 @@ impl ProjectSummaries<'_> {
             return Err(SummaryBlocker::UnsupportedContext);
         }
         self.with_local_template(child, applied.callee.context(), |template, cfg, facts| {
+            self.reject_reachable_child_loop(cfg, facts)?;
             let output =
                 self.hir().port(applied.port.port()).ok_or(SummaryBlocker::ForeignDefinition)?;
             let symbol =
@@ -309,6 +310,21 @@ impl ProjectSummaries<'_> {
             self.check_child_output_effects(cfg, facts, output.symbol, equality.origin)?;
             Ok(equality)
         })
+    }
+
+    fn reject_reachable_child_loop(
+        &self,
+        cfg: &DefinitionCfg,
+        facts: &AnalysisFacts<'_>,
+    ) -> Result<(), SummaryBlocker> {
+        for id in cfg.nodes() {
+            if let Some(CfgNodeKind::LoopHeader) = cfg.node(*id).map(|node| &node.kind) {
+                if *certified(&facts.reachable_node(*id))? {
+                    return Err(SummaryBlocker::UnsupportedContext);
+                }
+            }
+        }
+        Ok(())
     }
 
     fn check_child_output_effects(
