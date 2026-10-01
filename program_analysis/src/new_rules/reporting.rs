@@ -80,7 +80,7 @@ impl<'a> SourceMap<'a> {
 /// ```compile_fail
 /// use circomspect_program_analysis::new_rules::{Finding, RuleKind};
 /// use circomspect_program_analysis::interprocedural::CallContext;
-/// use circomspect_parser::new_frontend::{SourceId, Span};
+/// use parser::new_frontend::{SourceId, Span};
 /// fn forge(context: CallContext) {
 ///     let span = Span::checked(SourceId::new(0), 0..0, "").unwrap();
 ///     let _ = Finding::at(context, RuleKind::Complexity, String::new(), span, String::new());
