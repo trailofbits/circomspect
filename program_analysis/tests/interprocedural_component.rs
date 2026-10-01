@@ -544,3 +544,34 @@ fn opaque_competing_input_write_blocks_a_fixed_output() {
         .unavailable()
         .is_some());
 }
+
+#[test]
+fn symbolic_component_index_may_alias_a_checked_input_binding() {
+    let lifted = fixture(concat!(
+        "template Child(){signal input in;signal output out;out<==in;} ",
+        "template Parent(k){component c[2];c[0]=Child();c[1]=Child();",
+        "c[0].in<==7;c[k].in<==8;}"
+    ));
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let parent = lifted.hir.definition("Parent").unwrap();
+    let DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap() else {
+        panic!("Child must be a template")
+    };
+    let cfg = build_cfg(&lifted.hir, parent).unwrap();
+    let scope = provider.symbolic_root(parent).unwrap();
+    let facts = provider.analyze_for_evidence(&cfg, &scope, None).unwrap();
+    let output = lifted.hir.template(child).unwrap().ports[1];
+    let handle =
+        facts.component_output_handle(lifted.hir.components()[0].id, &[0], output, &[]).unwrap();
+    let site = provider.graph().calls_from(CallOwner::Definition(parent))[0];
+    let CallReachability::Reachable(call) = provider.graph().reachable_call(site.id(), &facts)
+    else {
+        panic!("component call must be reachable")
+    };
+    let applied = provider.apply_component_output(&facts, &scope, &call, &handle);
+    assert!(applied.certified().is_some());
+    assert!(provider
+        .composed_constraint_fixed_output(&facts, applied.certified().unwrap())
+        .unavailable()
+        .is_some());
+}
