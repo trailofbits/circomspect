@@ -145,3 +145,45 @@ fn hypothetical_context_does_not_create_a_reachable_scope() {
         CallReachability::Unreachable
     ));
 }
+
+#[test]
+fn local_facts_must_match_the_exact_evidence_scope() {
+    let lowered = fixture(
+        "template T(n){signal output y;if(n){y<==1;}else{y<--1;}} \
+         template Parent(){component a=T(1);} component main=Parent();",
+        Version::new(2, 2, 3),
+    );
+    let provider = ProjectSummaries::build(&lowered, Curve::Bn254).unwrap();
+    let template = lowered.hir.definition("T").unwrap();
+    let parent = lowered.hir.definition("Parent").unwrap();
+    let parent_cfg = build_cfg(&lowered.hir, parent).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let parent_facts = analyze(&lowered.hir, &parent_cfg, &field, None).unwrap();
+    let site = provider.graph().calls_from(CallOwner::Definition(parent))[0];
+    let CallReachability::Reachable(call) =
+        provider.graph().reachable_call(site.id(), &parent_facts)
+    else {
+        panic!("reachable component")
+    };
+    let one = provider.call_evidence(&call, &parent_facts).unwrap();
+    assert_eq!(one.context().definition(), template);
+    let cfg = build_cfg(&lowered.hir, template).unwrap();
+    let facts_one = provider.analyze_for_evidence(&cfg, &one, None).unwrap();
+    assert_eq!(
+        provider.analyze_for_evidence(&parent_cfg, &one, None).err(),
+        Some(SummaryBlocker::WrongContext)
+    );
+    let unseeded = analyze(&lowered.hir, &cfg, &field, None).unwrap();
+    let root = provider.symbolic_root(template).unwrap();
+    let symbolic = provider.analyze_for_evidence(&cfg, &root, None).unwrap();
+    assert!(provider.check_facts_for_evidence(&facts_one, &one).is_ok());
+    assert_eq!(
+        provider.check_facts_for_evidence(&unseeded, &one),
+        Err(SummaryBlocker::WrongContext)
+    );
+    assert_eq!(
+        provider.check_facts_for_evidence(&facts_one, &root),
+        Err(SummaryBlocker::WrongContext)
+    );
+    assert!(provider.check_facts_for_evidence(&symbolic, &root).is_ok());
+}

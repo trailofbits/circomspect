@@ -146,7 +146,14 @@ fn deferred_guard_makes_nested_component_call_provisional() {
     let graph = build_call_graph(&hir).unwrap();
     let calls = graph.calls_from(CallOwner::Definition(hir.definition("Check").unwrap()));
     assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].provenance, CallProvenance::Provisional);
+    assert_eq!(calls[0].provenance, CallProvenance::DeferredControl);
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let cfg = build_cfg(&hir, hir.definition("Check").unwrap()).unwrap();
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    assert!(matches!(
+        graph.reachable_call(calls[0].id(), &facts),
+        CallReachability::Unavailable(_)
+    ));
 }
 
 #[test]

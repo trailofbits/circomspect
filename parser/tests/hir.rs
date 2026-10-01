@@ -633,6 +633,62 @@ fn array_rank_is_checked_before_field_resolution() {
 }
 
 #[test]
+fn component_array_rejects_mixed_template_targets() {
+    let source = concat!(
+        "template A(){signal output out;} template B(){signal output out;} ",
+        "template Check(){component c[2]; c[0]=A(); c[1]=B(); ",
+        "signal output y; y <== c[0].out;}"
+    );
+    let result = lower(&[("mixed.circom", source)], Version::new(2, 2, 3));
+    assert!(result.diagnostics.iter().any(|item| item.code == SemanticCode::InvalidAssignment));
+    assert!(!result.hir.expressions().iter().any(|expression| {
+        let ExprKind::Access(path) = &expression.kind else { return false };
+        result.hir.symbol(path.root).is_some_and(|symbol| symbol.name == "c")
+            && path.component_output
+    }));
+}
+
+#[test]
+fn component_array_keeps_one_template_with_distinct_parameters() {
+    let source = concat!(
+        "template Child(n){signal output out; out <== n;} ",
+        "template Check(){component c[2]; c[0]=Child(1); c[1]=Child(2); ",
+        "signal output y; y <== c[0].out + c[1].out;}"
+    );
+    let result = lower(&[("same.circom", source)], Version::new(2, 2, 3));
+    assert!(result.diagnostics.is_empty(), "{:?}", result.diagnostics);
+    assert_eq!(
+        result
+            .hir
+            .expressions()
+            .iter()
+            .filter(|expression| {
+                let ExprKind::Access(path) = &expression.kind else { return false };
+                result.hir.symbol(path.root).is_some_and(|symbol| symbol.name == "c")
+                    && path.component_output
+            })
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn component_branches_reject_different_template_targets() {
+    let source = concat!(
+        "template A(){signal output out;} template B(){signal output out;} ",
+        "template Check(n){component c; if(n){c=A();} else {c=B();} ",
+        "signal output y; y <== c.out;}"
+    );
+    let result = lower(&[("branches.circom", source)], Version::new(2, 2, 3));
+    assert!(result.diagnostics.iter().any(|item| item.code == SemanticCode::InvalidAssignment));
+    assert!(!result.hir.expressions().iter().any(|expression| {
+        let ExprKind::Access(path) = &expression.kind else { return false };
+        result.hir.symbol(path.root).is_some_and(|symbol| symbol.name == "c")
+            && path.component_output
+    }));
+}
+
+#[test]
 fn forward_nested_bus_field_resolves_without_expanding_arrays() {
     let source = concat!(
         "template Early(){Outer b; signal output out; out <== b.nested.leaf;} ",

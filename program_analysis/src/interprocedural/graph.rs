@@ -29,6 +29,7 @@ pub enum CallOwner {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CallProvenance {
     EffectOwned,
+    DeferredControl,
     Provisional,
     Unattached,
 }
@@ -70,7 +71,9 @@ impl CallSite {
     pub(crate) fn validated_callee(&self) -> Option<DefinitionRef> {
         match self.provenance {
             CallProvenance::EffectOwned => self.resolved(),
-            CallProvenance::Provisional | CallProvenance::Unattached => None,
+            CallProvenance::DeferredControl
+            | CallProvenance::Provisional
+            | CallProvenance::Unattached => None,
         }
     }
 }
@@ -155,13 +158,14 @@ impl CallGraph {
         if owner != facts.definition() {
             return CallReachability::Unavailable(CallBlocker::ForeignDefinition);
         }
-        let Some(callee) = site.validated_callee() else {
-            return CallReachability::Unavailable(match site.provenance {
-                CallProvenance::EffectOwned => CallBlocker::UnresolvedTarget,
-                CallProvenance::Provisional | CallProvenance::Unattached => {
-                    CallBlocker::ProvisionalSite
-                }
-            });
+        let callee = match site.provenance {
+            CallProvenance::EffectOwned | CallProvenance::DeferredControl => site.resolved(),
+            CallProvenance::Provisional | CallProvenance::Unattached => {
+                return CallReachability::Unavailable(CallBlocker::ProvisionalSite);
+            }
+        };
+        let Some(callee) = callee else {
+            return CallReachability::Unavailable(CallBlocker::UnresolvedTarget);
         };
         let owned = match callee {
             DefinitionRef::Function(id) => facts.hir().function(id).is_some(),
@@ -424,9 +428,22 @@ impl<'a> Scanner<'a> {
         work: impl FnOnce(&mut Self) -> Result<(), CallGraphError>,
     ) -> Result<(), CallGraphError> {
         match guard {
-            ControlGuard::DeferredScalar => self.provisional(work),
+            ControlGuard::DeferredScalar => self.deferred_control(work),
             ControlGuard::CheckedCompileTime | ControlGuard::WitnessOnly => work(self),
         }
+    }
+
+    fn deferred_control(
+        &mut self,
+        work: impl FnOnce(&mut Self) -> Result<(), CallGraphError>,
+    ) -> Result<(), CallGraphError> {
+        let previous = self.provenance;
+        if self.provenance == CallProvenance::EffectOwned {
+            self.provenance = CallProvenance::DeferredControl;
+        }
+        let result = work(self);
+        self.provenance = previous;
+        result
     }
 
     fn provisional(
@@ -434,7 +451,7 @@ impl<'a> Scanner<'a> {
         work: impl FnOnce(&mut Self) -> Result<(), CallGraphError>,
     ) -> Result<(), CallGraphError> {
         let previous = self.provenance;
-        if self.provenance == CallProvenance::EffectOwned {
+        if self.provenance != CallProvenance::Unattached {
             self.provenance = CallProvenance::Provisional;
         }
         let result = work(self);
