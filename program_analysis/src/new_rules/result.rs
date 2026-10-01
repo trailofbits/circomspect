@@ -7,7 +7,7 @@ use crate::interprocedural::CallContext;
 use super::Finding;
 
 /// Why a rule cannot decide one source scope from certified evidence.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum AbstentionReason {
     Fact(FactBlocker),
     SummaryUnavailable(DefinitionRef),
@@ -55,5 +55,41 @@ impl RuleResult {
 
     pub fn add_abstention(&mut self, abstention: ScopedAbstention) {
         self.abstentions.push(abstention);
+    }
+
+    pub(super) fn append(&mut self, other: Self) {
+        self.findings.extend(other.findings);
+        self.abstentions.extend(other.abstentions);
+    }
+
+    pub(super) fn sort(&mut self) {
+        self.findings.sort_by(|left, right| {
+            (
+                left.kind(),
+                left.context(),
+                left.primary().source(),
+                left.primary().start(),
+                left.primary().end(),
+                left.message(),
+            )
+                .cmp(&(
+                    right.kind(),
+                    right.context(),
+                    right.primary().source(),
+                    right.primary().start(),
+                    right.primary().end(),
+                    right.message(),
+                ))
+        });
+        self.abstentions.sort_by(|left, right| {
+            (&left.context, left.span.source(), left.span.start(), left.span.end(), &left.reason)
+                .cmp(&(
+                    &right.context,
+                    right.span.source(),
+                    right.span.start(),
+                    right.span.end(),
+                    &right.reason,
+                ))
+        });
     }
 }

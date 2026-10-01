@@ -1,7 +1,10 @@
 use parser::hir::HirProject;
+use parser::new_frontend::Span;
 
 use crate::hir_facts::AnalysisFacts;
 use crate::interprocedural::{CallContext, ContextEvidence, ProjectSummaries, SummaryBlocker};
+
+use super::{Finding, RuleKind};
 
 /// Validated local facts and summary scope for one definition and selected curve.
 /// A hypothetical specialization key cannot authorize a rule run.
@@ -67,6 +70,18 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
     #[must_use]
     pub fn origin(&self) -> crate::interprocedural::ContextOrigin {
         self.evidence.origin()
+    }
+
+    /// Create a finding in this validated scope after the rule proves its predicate.
+    #[must_use]
+    pub fn finding(
+        &self,
+        kind: RuleKind,
+        message: String,
+        primary: Span,
+        primary_label: String,
+    ) -> Finding {
+        Finding::at(self.call_context().clone(), kind, message, primary, primary_label)
     }
 }
 

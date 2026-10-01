@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 use std::fs;
 
 use circomspect_program_analysis::new_rules::{
-    constraints, direct, numeric, uses, AbstentionReason, Finding, RenderError, RuleContext,
+    constraints, direct, numeric, uses, AbstentionReason, RenderError, RuleContext,
     RuleContextError, RuleKind, RuleResult, ScopedAbstention, SourceMap,
 };
 use circomspect_program_analysis::hir_facts::FieldContext;
@@ -28,10 +28,6 @@ fn load_fixture(name: &str, source: &str) -> parser::new_frontend::LoadedProject
     let path = directory.join("main.circom");
     fs::write(&path, source).unwrap();
     load_sources(&[path], &[directory], VersionPolicy::new(Version::new(2, 2, 3)))
-}
-
-fn finding(kind: RuleKind, span: Span) -> Finding {
-    Finding::at(kind, "proved property".to_string(), span, "evidence".to_string())
 }
 
 #[test]
@@ -187,44 +183,6 @@ fn abstention_keeps_an_unproved_predicate_out_of_reports() {
 }
 
 #[test]
-fn source_map_preserves_primary_secondary_and_diagnostic_fields() {
-    let loaded = load_fixture("locations", "include \"lib.circom\"; template Check() {}\n");
-    let directory = loaded.files[0].path.parent().unwrap();
-    fs::write(directory.join("lib.circom"), "template Library() {}\n").unwrap();
-    let loaded = load_sources(
-        &[loaded.files[0].path.clone()],
-        &[directory.to_path_buf()],
-        VersionPolicy::new(Version::new(2, 2, 3)),
-    );
-    let root = &loaded.files[0];
-    let included = &loaded.files[1];
-    let primary = Span::checked(root.id, 22..30, &root.text).unwrap();
-    let secondary = Span::checked(included.id, 0..8, &included.text).unwrap();
-    let sources = SourceMap::from_loaded(&loaded, &[root.id]).unwrap();
-    let finding = finding(RuleKind::TooManyArguments, primary)
-        .with_secondary(secondary, "related".to_string());
-    let report = finding.to_report(&sources).unwrap();
-    assert_eq!(report.id(), "CS0012");
-    assert_eq!(*report.category(), MessageCategory::Warning);
-    assert_eq!(report.primary()[0].range, 22..30);
-    assert_eq!(report.secondary()[0].range, 0..8);
-    assert_ne!(report.primary()[0].file_id, report.secondary()[0].file_id);
-    assert_eq!(sources.files().user_inputs().len(), 1);
-    let diagnostic = report.to_diagnostic(true);
-    assert_eq!(diagnostic.code.as_deref(), Some("CS0012"));
-    assert_eq!(diagnostic.labels.len(), 2);
-    let output = directory.join("locations.sarif.json");
-    assert_eq!(
-        support::render(&[finding], &sources, MessageCategory::Info, &[], &output).unwrap(),
-        (1, 1)
-    );
-    let sarif: Value = serde_json::from_str(&fs::read_to_string(output).unwrap()).unwrap();
-    let result = &sarif["runs"][0]["results"][0];
-    assert_eq!(result["locations"][0]["physicalLocation"]["region"]["startColumn"], 23);
-    assert_eq!(result["relatedLocations"][0]["physicalLocation"]["region"]["startColumn"], 1);
-}
-
-#[test]
 fn test_runner_applies_level_allow_and_root_filters_to_both_renderers() {
     let directory = std::env::temp_dir().join(format!(
         "circomspect-rule-render-{}-{:?}",
@@ -246,21 +204,28 @@ fn test_runner_applies_level_allow_and_root_filters_to_both_renderers() {
     let root_span = Span::checked(root.id, 22..30, &root.text).unwrap();
     let included_span = Span::checked(included.id, 0..8, &included.text).unwrap();
     let sources = SourceMap::from_loaded(&loaded, &[root.id]).unwrap();
-    let findings = [
-        finding(RuleKind::TooManyArguments, root_span),
-        finding(RuleKind::FieldArithmetic, root_span),
-        finding(RuleKind::UnconstrainedDivision, included_span),
-    ];
-    let mut reports =
-        findings.iter().map(|finding| finding.to_report(&sources).unwrap()).collect::<Vec<_>>();
-    let included_file = reports[2].primary_file_ids()[0];
+    let root_file = sources.file_id(root.id).unwrap();
+    let included_file = sources.file_id(included.id).unwrap();
+    let mut warning =
+        Report::warning("proved property".to_string(), RuleKind::TooManyArguments.code());
+    warning.add_primary(root_span.start()..root_span.end(), root_file, "evidence".to_string());
+    warning.add_secondary(0..8, included_file, Some("related".to_string()));
+    let mut note = Report::info("proved property".to_string(), RuleKind::FieldArithmetic.code());
+    note.add_primary(root_span.start()..root_span.end(), root_file, "evidence".to_string());
+    let mut hidden =
+        Report::warning("proved property".to_string(), RuleKind::UnconstrainedDivision.code());
+    hidden.add_primary(
+        included_span.start()..included_span.end(),
+        included_file,
+        "evidence".to_string(),
+    );
     let mut error = Report::error("missing function".to_string(), ReportCode::UndefinedFunction);
     error.add_primary(
         included_span.start()..included_span.end(),
         included_file,
         "call".to_string(),
     );
-    reports.push(error);
+    let reports = [warning, note, hidden, error];
     let output = directory.join("result.sarif.json");
     let count = support::render_reports(&reports, &sources, MessageCategory::Warning, &[], &output);
     assert_eq!(count, (2, 2));
@@ -271,6 +236,7 @@ fn test_runner_applies_level_allow_and_root_filters_to_both_renderers() {
     assert_eq!(results[0]["level"], "warning");
     assert_eq!(results[0]["locations"][0]["physicalLocation"]["region"]["startLine"], 1);
     assert_eq!(results[0]["locations"][0]["physicalLocation"]["region"]["startColumn"], 23);
+    assert_eq!(results[0]["relatedLocations"][0]["physicalLocation"]["region"]["startColumn"], 1);
     assert_eq!(results[1]["ruleId"], "T2001");
     assert_eq!(results[1]["level"], "error");
 
@@ -286,10 +252,9 @@ fn test_runner_applies_level_allow_and_root_filters_to_both_renderers() {
 }
 
 #[test]
-fn unknown_source_and_invalid_spans_fail_before_rendering() {
-    let loaded = load_fixture("invalid-span", "template Check() { signal output π; }\n");
+fn unknown_roots_and_duplicate_sources_fail_before_rendering() {
+    let loaded = load_fixture("invalid-source", "template Check() {}\n");
     let source = &loaded.files[0];
-    let sources = SourceMap::from_loaded(&loaded, &[source.id]).unwrap();
     assert_eq!(
         SourceMap::from_loaded(&loaded, &[SourceId::new(42)]).err(),
         Some(RenderError::UnknownRoot(SourceId::new(42)))
@@ -299,23 +264,5 @@ fn unknown_source_and_invalid_spans_fail_before_rendering() {
     assert_eq!(
         SourceMap::from_loaded(&duplicated, &[source.id]).err(),
         Some(RenderError::DuplicateSource(source.id))
-    );
-    let unknown = Span::checked(SourceId::new(42), 0..0, "").unwrap();
-    assert_eq!(
-        finding(RuleKind::TooManyArguments, unknown).to_report(&sources).err(),
-        Some(RenderError::UnknownSource(unknown.source()))
-    );
-
-    let too_long = Span::checked(source.id, 0..100, &"x".repeat(100)).unwrap();
-    assert_eq!(
-        finding(RuleKind::TooManyArguments, too_long).to_report(&sources).err(),
-        Some(RenderError::InvalidSpan(too_long))
-    );
-
-    let pi_start = source.text.find('π').unwrap();
-    let inside_pi = Span::checked(source.id, pi_start..pi_start + 1, &"x".repeat(100)).unwrap();
-    assert_eq!(
-        finding(RuleKind::TooManyArguments, inside_pi).to_report(&sources).err(),
-        Some(RenderError::InvalidSpan(inside_pi))
     );
 }

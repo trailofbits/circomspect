@@ -1,6 +1,6 @@
 //! Constraint and signal warning family.
 
-use super::RuleKind;
+use super::{Rule, RuleKind};
 
 pub const KINDS: &[RuleKind] = &[
     RuleKind::SignalAssignment,
@@ -8,3 +8,8 @@ pub const KINDS: &[RuleKind] = &[
     RuleKind::UnconstrainedSignal,
     RuleKind::UnconstrainedLessThan,
 ];
+
+/// Constraint rules enter the registry in this family's declared order.
+pub fn rules() -> &'static [&'static dyn Rule] {
+    &[]
+}

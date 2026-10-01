@@ -4,6 +4,8 @@ use parser::new_frontend::{LoadedProject, SourceId, Span};
 use program_structure::file_definition::{FileID, FileLibrary};
 use program_structure::report::{MessageCategory, Report};
 
+use crate::interprocedural::CallContext;
+
 use super::RuleKind;
 
 /// Source files and their legacy renderer IDs, created in parser source order.
@@ -44,6 +46,11 @@ impl<'a> SourceMap<'a> {
         &self.files
     }
 
+    #[must_use]
+    pub fn file_id(&self, source: SourceId) -> Option<FileID> {
+        self.sources.get(&source).map(|(file, _)| *file)
+    }
+
     fn location(&self, span: Span) -> Result<(FileID, std::ops::Range<usize>), RenderError> {
         let (file, text) =
             self.sources.get(&span.source()).ok_or(RenderError::UnknownSource(span.source()))?;
@@ -68,8 +75,19 @@ impl<'a> SourceMap<'a> {
 ///     finding.kind = RuleKind::BitwiseComplement;
 /// }
 /// ```
+///
+/// ```compile_fail
+/// use circomspect_program_analysis::new_rules::{Finding, RuleKind};
+/// use circomspect_program_analysis::interprocedural::CallContext;
+/// use circomspect_parser::new_frontend::{SourceId, Span};
+/// fn forge(context: CallContext) {
+///     let span = Span::checked(SourceId::new(0), 0..0, "").unwrap();
+///     let _ = Finding::at(context, RuleKind::Complexity, String::new(), span, String::new());
+/// }
+/// ```
 #[derive(Clone)]
 pub struct Finding {
+    context: CallContext,
     kind: RuleKind,
     message: String,
     primary: Span,
@@ -79,8 +97,14 @@ pub struct Finding {
 
 impl Finding {
     #[must_use]
-    pub fn at(kind: RuleKind, message: String, primary: Span, primary_label: String) -> Self {
-        Self { kind, message, primary, primary_label, secondary: Vec::new() }
+    pub(super) fn at(
+        context: CallContext,
+        kind: RuleKind,
+        message: String,
+        primary: Span,
+        primary_label: String,
+    ) -> Self {
+        Self { context, kind, message, primary, primary_label, secondary: Vec::new() }
     }
 
     #[must_use]
@@ -92,6 +116,19 @@ impl Finding {
     #[must_use]
     pub const fn kind(&self) -> RuleKind {
         self.kind
+    }
+
+    #[must_use]
+    pub fn context(&self) -> &CallContext {
+        &self.context
+    }
+
+    pub(super) const fn primary(&self) -> Span {
+        self.primary
+    }
+
+    pub(super) fn message(&self) -> &str {
+        &self.message
     }
 
     /// Convert a checked source span to the existing report representation.
@@ -122,4 +159,94 @@ pub enum RenderError {
     DuplicateSource(SourceId),
     #[error("source span {0:?} is outside the loaded source text or a UTF-8 boundary")]
     InvalidSpan(Span),
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use parser::hir::lower_project;
+    use parser::new_frontend::{load_sources, Version, VersionPolicy};
+    use program_structure::utils::constants::Curve;
+
+    use crate::hir_cfg::build_cfg;
+    use crate::hir_facts::{analyze, FieldContext};
+    use crate::interprocedural::ProjectSummaries;
+    use crate::new_rules::RuleContext;
+
+    use super::*;
+
+    fn fixture() -> (LoadedProject, Finding) {
+        let directory = std::env::temp_dir().join(format!(
+            "circomspect-report-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let root = directory.join("main.circom");
+        fs::write(&root, "include \"lib.circom\"; template Check() {} // π\n").unwrap();
+        fs::write(directory.join("lib.circom"), "template Library() {}\n").unwrap();
+        let loaded = load_sources(&[root], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
+        let lowered = lower_project(&loaded);
+        let definition = lowered.hir.definition("Check").unwrap();
+        let cfg = build_cfg(&lowered.hir, definition).unwrap();
+        let field = FieldContext::for_curve(Curve::Bn254);
+        let facts = analyze(&lowered.hir, &cfg, &field, None).unwrap();
+        let summaries = ProjectSummaries::build(&lowered, Curve::Bn254).unwrap();
+        let evidence = summaries.symbolic_root(definition).unwrap();
+        let context = RuleContext::new(&facts, &summaries, &evidence).unwrap();
+        let primary = Span::checked(loaded.files[0].id, 22..30, &loaded.files[0].text).unwrap();
+        let finding = context.finding(
+            RuleKind::TooManyArguments,
+            "proved property".to_string(),
+            primary,
+            "evidence".to_string(),
+        );
+        (loaded, finding)
+    }
+
+    #[test]
+    fn finding_bridge_preserves_fixed_code_level_and_related_location() {
+        let (loaded, finding) = fixture();
+        let included = &loaded.files[1];
+        let secondary = Span::checked(included.id, 0..8, &included.text).unwrap();
+        let finding = finding.with_secondary(secondary, "related".to_string());
+        let sources = SourceMap::from_loaded(&loaded, &[loaded.files[0].id]).unwrap();
+        let report = finding.to_report(&sources).unwrap();
+        assert_eq!(report.id(), "CS0012");
+        assert_eq!(*report.category(), MessageCategory::Warning);
+        assert_eq!(report.primary()[0].range, 22..30);
+        assert_eq!(report.secondary()[0].range, 0..8);
+        assert_ne!(report.primary()[0].file_id, report.secondary()[0].file_id);
+        assert_eq!(sources.files().user_inputs().len(), 1);
+        let diagnostic = report.to_diagnostic(true);
+        assert_eq!(diagnostic.code.as_deref(), Some("CS0012"));
+        assert_eq!(diagnostic.labels.len(), 2);
+    }
+
+    #[test]
+    fn finding_bridge_rejects_unknown_and_unchecked_spans() {
+        let (loaded, finding) = fixture();
+        let source = &loaded.files[0];
+        let sources = SourceMap::from_loaded(&loaded, &[source.id]).unwrap();
+        let unknown = Span::checked(SourceId::new(42), 0..0, "").unwrap();
+        let oversized = Span::checked(source.id, 0..100, &"x".repeat(100)).unwrap();
+        let pi_start = source.text.find('π').unwrap();
+        let split_utf8 =
+            Span::checked(source.id, pi_start..pi_start + 1, &"x".repeat(100)).unwrap();
+        for (span, expected) in [
+            (unknown, RenderError::UnknownSource(unknown.source())),
+            (oversized, RenderError::InvalidSpan(oversized)),
+            (split_utf8, RenderError::InvalidSpan(split_utf8)),
+        ] {
+            let forged = Finding::at(
+                finding.context().clone(),
+                finding.kind(),
+                "test".to_string(),
+                span,
+                "label".to_string(),
+            );
+            assert_eq!(forged.to_report(&sources).err(), Some(expected));
+        }
+    }
 }
