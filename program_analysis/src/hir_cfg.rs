@@ -59,7 +59,9 @@ pub enum CfgNodeKind {
         right: ExprId,
         reason: IncompleteReason,
     },
-    Declaration,
+    Declaration {
+        symbol: SymbolId,
+    },
     Return(ExprId),
     Assert {
         condition: ExprId,
@@ -339,7 +341,7 @@ impl Builder<'_> {
                 for &dimension in &declared.dimensions {
                     tails = self.evaluate(tails, dimension, origin)?;
                 }
-                Ok(self.append(tails, CfgNodeKind::Declaration, origin))
+                Ok(self.append(tails, CfgNodeKind::Declaration { symbol: *symbol }, origin))
             }
             Effect::VariableAssignment { .. }
             | Effect::ComponentInstantiation { .. }

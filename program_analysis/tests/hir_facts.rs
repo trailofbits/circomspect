@@ -344,14 +344,33 @@ fn opaque_variable_call_does_not_invent_unrelated_constraint_dependency() {
 }
 
 #[test]
-fn unknown_variable_dependency_does_not_certify_unrelated_may_incidence() {
+fn fresh_local_without_signal_dependencies_preserves_neighboring_constraint_facts() {
     let (hir, definition) =
-        fixture("template Check(){signal input z;var u=z;var t;signal output y;y<==t;}");
+        fixture("template Check(){signal input z;var u=z;var t;signal output y,w;y<==t;w<==1;}");
     let cfg = build_cfg(&hir, definition).unwrap();
     let field = FieldContext::for_curve(Curve::Bn254);
     let facts = analyze(&hir, &cfg, &field, None).unwrap();
     let z = expression_path(&hir, "z", 0);
-    assert!(facts.incidence(&z).unavailable().is_some());
+    let w = assigned_path(&hir, definition, "w");
+    assert_eq!(facts.incidence(&z).certified(), Some(&Incidence::Zero));
+    assert_eq!(facts.incidence(&w).certified(), Some(&Incidence::Must));
+    assert_eq!(facts.constraint_fixed(&w).certified(), Some(&Some(field.canonical(1.into()))));
+}
+
+#[test]
+fn anonymous_output_dependencies_leave_neighboring_constraint_certified() {
+    let (hir, definition) = fixture(
+        "template Child(){signal input in;signal output out;out<==in;} \
+         template Check(){signal input x;var t=Child()(in<==x);\
+         signal output y,w;y<==t;w<==1;}",
+    );
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let x = expression_path(&hir, "x", 0);
+    let w = assigned_path(&hir, definition, "w");
+    assert!(facts.incidence(&x).unavailable().is_some());
+    assert_eq!(facts.incidence(&w).certified(), Some(&Incidence::Must));
 }
 
 #[test]

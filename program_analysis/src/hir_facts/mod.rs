@@ -805,7 +805,7 @@ impl AnalysisFacts<'_> {
             | CfgNodeKind::Constraint { .. }
             | CfgNodeKind::Assignment { .. }
             | CfgNodeKind::Update { .. }
-            | CfgNodeKind::Declaration
+            | CfgNodeKind::Declaration { .. }
             | CfgNodeKind::Return(_)
             | CfgNodeKind::Assert { .. }
             | CfgNodeKind::Log => false,
@@ -898,8 +898,10 @@ impl AnalysisFacts<'_> {
     fn opaque_relevant(&self, node_id: NodeId, path: &AccessPath) -> bool {
         let Some(node) = self.cfg.node(node_id) else { return true };
         if let CfgNodeKind::Evaluate(id) = &node.kind {
-            if self.anonymous_constraint_input_relevant(*id, path) {
-                return true;
+            if let Some(ExprKind::AnonymousComponent { .. }) =
+                self.hir.expression(*id).map(|expression| &expression.kind)
+            {
+                return self.anonymous_constraint_input_relevant(*id, path);
             }
         }
         if let CfgNodeKind::OpaqueAssignment { target, value, .. } = &node.kind {

@@ -110,7 +110,7 @@ fn declaration_dimensions_are_evaluated_before_declaration() {
         .iter()
         .filter_map(|id| {
             let node = cfg.node(*id).unwrap();
-            let CfgNodeKind::Declaration = node.kind else { return None };
+            let CfgNodeKind::Declaration { .. } = node.kind else { return None };
             Some((*id, node.origin.unwrap()))
         })
         .collect();

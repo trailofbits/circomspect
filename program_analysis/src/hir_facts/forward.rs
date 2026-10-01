@@ -423,7 +423,14 @@ pub fn expression_dependencies(
         ExprKind::Call { target: CallTarget::Function(_), arguments } => {
             expression_list_dependencies(analysis, arguments, values, variables)
         }
-        ExprKind::Call { .. } | ExprKind::AnonymousComponent { .. } | ExprKind::Opaque(_) => None,
+        ExprKind::AnonymousComponent { arguments, inputs, .. } => {
+            let mut result = expression_list_dependencies(analysis, arguments, values, variables)?;
+            for input in inputs {
+                result.extend(expression_dependencies(analysis, input.value, values, variables)?);
+            }
+            Some(result)
+        }
+        ExprKind::Call { .. } | ExprKind::Opaque(_) => None,
     }
 }
 
@@ -630,6 +637,17 @@ impl Transfer<ForwardAnalysis<'_>, ForwardState, String> for CfgNode {
                     assign_value(analysis, target, *value, variables);
                 }
             }
+            CfgNodeKind::Declaration { symbol } => {
+                if analysis
+                    .hir
+                    .symbol(*symbol)
+                    .is_some_and(|declared| declared.kind == SymbolKind::Variable)
+                {
+                    variables.remove(symbol);
+                    degrees.remove(symbol);
+                    dependencies.insert(*symbol, MayAccessSet::default());
+                }
+            }
             CfgNodeKind::Update { target, operator } => {
                 if let Err(reason) = apply_update(analysis, target, *operator, variables) {
                     return TransferOutcome::Opaque { provisional: output, reason: reason.into() };
@@ -684,7 +702,6 @@ impl Transfer<ForwardAnalysis<'_>, ForwardState, String> for CfgNode {
             | CfgNodeKind::LoopHeader
             | CfgNodeKind::Branch { .. }
             | CfgNodeKind::Witness { .. }
-            | CfgNodeKind::Declaration
             | CfgNodeKind::Return(_)
             | CfgNodeKind::Assert { .. }
             | CfgNodeKind::Log => {}
