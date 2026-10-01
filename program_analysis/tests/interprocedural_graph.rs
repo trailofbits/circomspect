@@ -1,6 +1,11 @@
-use circomspect_program_analysis::interprocedural::{build_call_graph, CallOwner, CallProvenance};
+use circomspect_program_analysis::hir_cfg::build_cfg;
+use circomspect_program_analysis::hir_facts::{analyze, FieldContext};
+use circomspect_program_analysis::interprocedural::{
+    build_call_graph, CallOwner, CallProvenance, CallReachability,
+};
 use parser::hir::{lower_project, CallTarget, DefinitionRef, HirProject};
 use parser::new_frontend::{load_sources, Version, VersionPolicy};
+use program_structure::utils::constants::Curve;
 use std::fs;
 
 fn fixture(sources: &[(&str, &str)]) -> HirProject {
@@ -42,6 +47,7 @@ fn graph_finds_assignment_guard_nested_and_index_calls_without_main() {
     assert_eq!(index_calls.len(), 1);
     assert!(matches!(index_calls[0].target, CallTarget::Function(_)));
     assert_eq!(index_calls[0].provenance, CallProvenance::Unattached);
+    assert!(index_calls[0].resolved().is_some());
     assert!(hir.mains.is_empty());
 }
 
@@ -128,6 +134,7 @@ fn opaque_assignment_call_is_owned_but_provisional() {
     let calls = graph.calls_from(CallOwner::Definition(check));
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].provenance, CallProvenance::Provisional);
+    assert!(calls[0].resolved().is_some());
 }
 
 #[test]
@@ -140,4 +147,47 @@ fn deferred_guard_makes_nested_component_call_provisional() {
     let calls = graph.calls_from(CallOwner::Definition(hir.definition("Check").unwrap()));
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].provenance, CallProvenance::Provisional);
+}
+
+#[test]
+fn reachable_call_token_requires_a_checked_and_reachable_cfg_site() {
+    let hir = fixture(&[(
+        "reachability.circom",
+        "template Child(){} template Check(){if(0){component dead=Child();} \
+         component live=Child();}",
+    )]);
+    let definition = hir.definition("Check").unwrap();
+    let graph = build_call_graph(&hir).unwrap();
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let calls = graph.calls_from(CallOwner::Definition(definition));
+    assert_eq!(calls.len(), 2);
+    assert!(matches!(graph.reachable_call(calls[0].id(), &facts), CallReachability::Unreachable));
+    let CallReachability::Reachable(token) = graph.reachable_call(calls[1].id(), &facts) else {
+        panic!("live component needs a certified call token")
+    };
+    assert_eq!(token.callee(), hir.definition("Child").unwrap());
+
+    let other_graph = build_call_graph(&hir).unwrap();
+    assert!(matches!(
+        other_graph.reachable_call(calls[1].id(), &facts),
+        CallReachability::Unavailable(_)
+    ));
+}
+
+#[test]
+fn validated_main_has_a_reachable_root_token_without_a_definition_cfg() {
+    let hir = fixture(&[("main.circom", "template Check(){} component main=Check();")]);
+    let graph = build_call_graph(&hir).unwrap();
+    let site = graph.calls_from(CallOwner::Main(0))[0];
+    let CallReachability::Reachable(token) = graph.reachable_main_call(site.id(), &hir) else {
+        panic!("validated main must be an analyzable root")
+    };
+    assert_eq!(token.callee(), hir.definition("Check").unwrap());
+    let foreign = fixture(&[("foreign.circom", "template Check(){} component main=Check();")]);
+    assert!(matches!(
+        graph.reachable_main_call(site.id(), &foreign),
+        CallReachability::Unavailable(_)
+    ));
 }

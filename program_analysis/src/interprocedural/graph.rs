@@ -1,10 +1,21 @@
 use std::collections::BTreeSet;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use parser::hir::{
     AccessPath, AccessStep, AnonymousInputEffect, ArrayIndex, BlockId, CallTarget, ComponentId,
     ControlGuard, DefinitionRef, Effect, ExprId, ExprKind, HirProject, IncompleteReason, SymbolId,
 };
 use parser::new_frontend::Span;
+
+use crate::hir_facts::{AnalysisFacts, FactBlocker};
+
+static NEXT_GRAPH: AtomicU64 = AtomicU64::new(1);
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CallSiteId {
+    index: usize,
+    graph: u64,
+}
 
 /// The definition or root whose source contains a call.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -24,6 +35,7 @@ pub enum CallProvenance {
 /// A source call, including unresolved calls that cannot support a summary.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CallSite {
+    id: CallSiteId,
     pub owner: CallOwner,
     pub target: CallTarget,
     pub expression: Option<ExprId>,
@@ -32,7 +44,12 @@ pub struct CallSite {
 }
 
 impl CallSite {
-    /// Returns the checked callee ID, if resolution succeeded.
+    #[must_use]
+    pub fn id(&self) -> CallSiteId {
+        self.id
+    }
+
+    /// Returns a resolved inventory target regardless of site validation or reachability.
     #[must_use]
     pub fn resolved(&self) -> Option<DefinitionRef> {
         match self.target {
@@ -44,12 +61,64 @@ impl CallSite {
             | CallTarget::Opaque { .. } => None,
         }
     }
+
+    /// Returns a callee only for a validated effect-owned source call.
+    ///
+    /// CFG reachability must be checked separately before applying effects.
+    #[must_use]
+    pub(crate) fn validated_callee(&self) -> Option<DefinitionRef> {
+        match self.provenance {
+            CallProvenance::EffectOwned => self.resolved(),
+            CallProvenance::Provisional | CallProvenance::Unattached => None,
+        }
+    }
 }
 
 /// Deterministic call sites. An empty graph is valid for a library without `main`.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CallGraph {
+    key: u64,
     sites: Vec<CallSite>,
+}
+
+impl Default for CallGraph {
+    fn default() -> Self {
+        Self { key: NEXT_GRAPH.fetch_add(1, Ordering::Relaxed), sites: Vec::new() }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CallBlocker {
+    ForeignSite,
+    ForeignDefinition,
+    UnresolvedTarget,
+    ProvisionalSite,
+    MissingExpression,
+    LocalFacts(BTreeSet<FactBlocker>),
+}
+
+/// A validated call whose CFG evaluation is certified reachable.
+pub struct ReachableCall<'a> {
+    site: &'a CallSite,
+    callee: DefinitionRef,
+}
+
+impl ReachableCall<'_> {
+    #[must_use]
+    pub fn callee(&self) -> DefinitionRef {
+        self.callee
+    }
+
+    #[must_use]
+    pub fn site(&self) -> &CallSite {
+        self.site
+    }
+}
+
+pub enum CallReachability<'a> {
+    Reachable(ReachableCall<'a>),
+    Unreachable,
+    Unavailable(CallBlocker),
 }
 
 impl CallGraph {
@@ -61,6 +130,94 @@ impl CallGraph {
     #[must_use]
     pub fn calls_from(&self, owner: CallOwner) -> Vec<&CallSite> {
         self.sites.iter().filter(|site| site.owner == owner).collect()
+    }
+
+    #[must_use]
+    pub fn site(&self, id: CallSiteId) -> Option<&CallSite> {
+        if id.graph != self.key {
+            return None;
+        }
+        self.sites.get(id.index)
+    }
+
+    /// Bind a checked definition call to its certified CFG evaluation.
+    #[must_use]
+    pub fn reachable_call<'a>(
+        &'a self,
+        id: CallSiteId,
+        facts: &AnalysisFacts<'_>,
+    ) -> CallReachability<'a> {
+        let Some(site) = self.site(id) else {
+            return CallReachability::Unavailable(CallBlocker::ForeignSite);
+        };
+        let CallOwner::Definition(owner) = site.owner else {
+            return CallReachability::Unavailable(CallBlocker::ForeignDefinition);
+        };
+        if owner != facts.definition() {
+            return CallReachability::Unavailable(CallBlocker::ForeignDefinition);
+        }
+        let Some(callee) = site.validated_callee() else {
+            return CallReachability::Unavailable(match site.provenance {
+                CallProvenance::EffectOwned => CallBlocker::UnresolvedTarget,
+                CallProvenance::Provisional | CallProvenance::Unattached => {
+                    CallBlocker::ProvisionalSite
+                }
+            });
+        };
+        let owned = match callee {
+            DefinitionRef::Function(id) => facts.hir().function(id).is_some(),
+            DefinitionRef::Template(id) => facts.hir().template(id).is_some(),
+            DefinitionRef::Bus(id) => facts.hir().bus(id).is_some(),
+        };
+        if !owned {
+            return CallReachability::Unavailable(CallBlocker::ForeignDefinition);
+        }
+        let Some(expression) = site.expression else {
+            return CallReachability::Unavailable(CallBlocker::MissingExpression);
+        };
+        if facts.hir().expression(expression).is_none() {
+            return CallReachability::Unavailable(CallBlocker::ForeignSite);
+        }
+        let reachable = facts.reachable_expression(expression);
+        if let Some(value) = reachable.certified() {
+            if *value {
+                CallReachability::Reachable(ReachableCall { site, callee })
+            } else {
+                CallReachability::Unreachable
+            }
+        } else {
+            CallReachability::Unavailable(CallBlocker::LocalFacts(
+                reachable.unavailable().cloned().unwrap_or_default(),
+            ))
+        }
+    }
+
+    /// Bind a validated `main` target directly to the owning HIR project.
+    #[must_use]
+    pub fn reachable_main_call<'a>(
+        &'a self,
+        id: CallSiteId,
+        hir: &HirProject,
+    ) -> CallReachability<'a> {
+        let Some(site) = self.site(id) else {
+            return CallReachability::Unavailable(CallBlocker::ForeignSite);
+        };
+        let CallOwner::Main(index) = site.owner else {
+            return CallReachability::Unavailable(CallBlocker::ForeignDefinition);
+        };
+        let Some(main) = hir.mains.get(index) else {
+            return CallReachability::Unavailable(CallBlocker::ForeignDefinition);
+        };
+        if site.expression.is_some() || site.target != main.target || site.span != main.span {
+            return CallReachability::Unavailable(CallBlocker::ForeignSite);
+        }
+        let Some(DefinitionRef::Template(callee)) = site.validated_callee() else {
+            return CallReachability::Unavailable(CallBlocker::UnresolvedTarget);
+        };
+        if hir.template(callee).is_none() {
+            return CallReachability::Unavailable(CallBlocker::ForeignDefinition);
+        }
+        CallReachability::Reachable(ReachableCall { site, callee: DefinitionRef::Template(callee) })
     }
 }
 
@@ -103,7 +260,9 @@ pub fn build_call_graph(hir: &HirProject) -> Result<CallGraph, CallGraphError> {
         scanner.unattached(bus.span)?;
     }
     for (index, main) in hir.mains.iter().enumerate() {
+        let id = CallSiteId { index: graph.sites.len(), graph: graph.key };
         graph.sites.push(CallSite {
+            id,
             owner: CallOwner::Main(index),
             target: main.target.clone(),
             expression: None,
@@ -343,7 +502,9 @@ impl<'a> Scanner<'a> {
     }
 
     fn record(&mut self, target: CallTarget, expression: Option<ExprId>, span: Span) {
+        let id = CallSiteId { index: self.graph.sites.len(), graph: self.graph.key };
         self.graph.sites.push(CallSite {
+            id,
             owner: self.owner,
             target,
             expression,
