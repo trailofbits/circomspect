@@ -245,6 +245,48 @@ impl AnalysisFacts<'_> {
         self.cfg
     }
 
+    pub(crate) fn must_execute(&self, node: NodeId) -> Fact<bool> {
+        let reachable = self.reachable_node(node);
+        let Some(reachable) = reachable.certified() else {
+            return Fact::blocked(reachable.unavailable().cloned().unwrap_or_default());
+        };
+        if !reachable {
+            return Fact::known(false);
+        }
+        if let SolveResult::Incomplete { .. } = &self.forward {
+            return Fact::blocked(BTreeSet::from([FactBlocker::Budget(node)]));
+        }
+        let exit = self.reachable_node(self.cfg.exit());
+        let Some(exit_reachable) = exit.certified() else {
+            return Fact::blocked(exit.unavailable().cloned().unwrap_or_default());
+        };
+        if !exit_reachable {
+            return Fact::blocked(BTreeSet::from([FactBlocker::MissingExit]));
+        }
+        let pruned = forward_pruned_edges(self.hir, self.cfg, self.field, &self.forward);
+        let mut visited = BTreeSet::new();
+        let mut pending = vec![self.cfg.entry()];
+        while let Some(current) = pending.pop() {
+            if current == node || !visited.insert(current) {
+                continue;
+            }
+            if current == self.cfg.exit() {
+                return Fact::known(false);
+            }
+            for id in self.cfg.edges() {
+                if pruned.contains(id) {
+                    continue;
+                }
+                if let Some(edge) = self.cfg.edge(*id) {
+                    if edge.source == current {
+                        pending.push(edge.target);
+                    }
+                }
+            }
+        }
+        Fact::known(true)
+    }
+
     pub(crate) fn resolved_deferred_assignment(&self, node: NodeId) -> bool {
         self.resolved_deferred.contains(&node)
     }

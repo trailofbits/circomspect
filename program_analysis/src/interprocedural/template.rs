@@ -196,7 +196,7 @@ impl ProjectSummaries<'_> {
         Ok(WitnessSite { origin, provenance })
     }
 
-    fn with_local_template<T>(
+    pub(super) fn with_local_template<T>(
         &self,
         id: TemplateId,
         context: &CallContext,

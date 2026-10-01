@@ -118,7 +118,16 @@ impl AnalysisFacts<'_> {
             span: handle.path.span,
         };
         let requested = key_for_path(self.hir, self.field, &instance, &BTreeMap::new());
-        let actual = key_for_path(self.hir, self.field, target, &BTreeMap::new());
+        let actual_end = target
+            .steps
+            .iter()
+            .position(|step| match step {
+                AccessStep::Port { .. } => true,
+                AccessStep::Index { .. } | AccessStep::Tag { .. } => false,
+            })
+            .unwrap_or(target.steps.len());
+        let target = AccessPath { steps: target.steps[..actual_end].to_vec(), ..target.clone() };
+        let actual = key_for_path(self.hir, self.field, &target, &BTreeMap::new());
         if requested.exact_alias(&actual) {
             InstanceRelation::Exact
         } else if requested.may_alias(&actual) {
