@@ -347,6 +347,7 @@ fn abstention_keeps_an_unproved_predicate_out_of_reports() {
     ]);
     let summary_blockers =
         BTreeSet::from([SummaryBlocker::ContextBudget, SummaryBlocker::ExternalSummary]);
+    let call_context = symbolic_context.clone();
     result.add_abstention(ScopedAbstention {
         kind: RuleKind::UnconstrainedSignal,
         context: symbolic_context.clone(),
@@ -359,9 +360,20 @@ fn abstention_keeps_an_unproved_predicate_out_of_reports() {
         span,
         reason: AbstentionReason::Summary(summary_blockers.clone()),
     });
-    assert_eq!(result.abstentions().len(), 5);
+    let call_blockers = BTreeSet::from([
+        CallBlocker::UnresolvedTarget,
+        CallBlocker::LocalFacts(BTreeSet::from([FactBlocker::Budget(NodeId::new(4))])),
+    ]);
+    result.add_abstention(ScopedAbstention {
+        kind: RuleKind::UnconstrainedSignal,
+        context: call_context,
+        span,
+        reason: AbstentionReason::Call(call_blockers.clone()),
+    });
+    assert_eq!(result.abstentions().len(), 6);
     assert_eq!(result.abstentions()[3].reason, AbstentionReason::LocalFacts(local_blockers));
     assert_eq!(result.abstentions()[4].reason, AbstentionReason::Summary(summary_blockers));
+    assert_eq!(result.abstentions()[5].reason, AbstentionReason::Call(call_blockers));
     let output = source.path.with_extension("sarif.json");
     assert_eq!(
         support::render(result.findings(), &sources, MessageCategory::Info, &[], &output).unwrap(),

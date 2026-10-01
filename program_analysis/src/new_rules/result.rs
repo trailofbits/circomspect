@@ -4,7 +4,7 @@ use parser::hir::DefinitionRef;
 use parser::new_frontend::Span;
 
 use crate::hir_facts::FactBlocker;
-use crate::interprocedural::{CallContext, SummaryBlocker};
+use crate::interprocedural::{CallBlocker, CallContext, SummaryBlocker};
 
 use crate::new_rules::{Finding, RuleKind};
 
@@ -12,6 +12,7 @@ use crate::new_rules::{Finding, RuleKind};
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum AbstentionReason {
     LocalFacts(BTreeSet<FactBlocker>),
+    Call(BTreeSet<CallBlocker>),
     Summary(BTreeSet<SummaryBlocker>),
     SymbolicParameters,
     IncompleteDefinition,
