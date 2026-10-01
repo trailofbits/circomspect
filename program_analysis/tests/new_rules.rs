@@ -1,9 +1,11 @@
 mod support;
 
+use std::collections::BTreeSet;
 use std::fs;
 
 use circomspect_program_analysis::new_rules::{
-    AbstentionReason, Finding, RenderError, RuleKind, RuleResult, ScopedAbstention, SourceMap,
+    constraints, direct, numeric, uses, AbstentionReason, Finding, RenderError, RuleKind,
+    RuleResult, ScopedAbstention, SourceMap,
 };
 use parser::hir::lower_project;
 use parser::new_frontend::{load_sources, SourceId, Span, Version, VersionPolicy};
@@ -78,6 +80,22 @@ fn every_new_rule_kind_has_a_frozen_id_and_level() {
         assert_eq!(kind.code().id(), id, "{kind:?}");
         assert_eq!(kind.category(), level, "{kind:?}");
     }
+}
+
+#[test]
+fn rule_families_partition_the_planned_rules() {
+    let families = [numeric::KINDS, constraints::KINDS, uses::KINDS, direct::KINDS];
+    let mut kinds = BTreeSet::new();
+    for family in families {
+        for kind in family {
+            assert!(kinds.insert(*kind), "duplicate rule kind: {kind:?}");
+        }
+    }
+    assert_eq!(kinds.len(), 17);
+    assert!(!kinds.contains(&RuleKind::IncompleteCoverage));
+    assert!(kinds.contains(&RuleKind::UnconstrainedSignal));
+    assert!(kinds.contains(&RuleKind::UnusedVariableValue));
+    assert!(kinds.contains(&RuleKind::UnusedParameterValue));
 }
 
 #[test]
