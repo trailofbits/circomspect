@@ -673,6 +673,20 @@ fn later_mixed_component_target_invalidates_earlier_call_and_port_read() {
 }
 
 #[test]
+fn mixed_component_target_preserves_independent_deferred_variable_write() {
+    let source = concat!(
+        "template A(){} template B(){} ",
+        "template Check(n){var t=n;component c[2];c[0]=A();c[1]=B();}"
+    );
+    let result = lift(&[("mixed_deferred.circom", source)], Version::new(2, 2, 3));
+    assert!(result.diagnostics.iter().any(|item| item.code == SemanticCode::InvalidAssignment));
+    assert!(effect_for(&result, "Check").iter().any(|effect| {
+        let Effect::DeferredVariableAssignment { target, .. } = effect else { return false };
+        result.hir.symbol(target.root).is_some_and(|symbol| symbol.name == "t")
+    }));
+}
+
+#[test]
 fn component_array_keeps_one_template_with_distinct_parameters() {
     let source = concat!(
         "template Child(n){signal output out; out <== n;} ",
