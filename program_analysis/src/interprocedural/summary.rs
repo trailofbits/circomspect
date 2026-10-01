@@ -487,6 +487,11 @@ enum ReturnPathStep {
     Unreturned,
 }
 
+enum ReturnTraversal {
+    Enter(NodeId),
+    Leave(NodeId),
+}
+
 fn return_path_step(
     cfg: &DefinitionCfg,
     facts: &AnalysisFacts<'_>,
@@ -509,37 +514,50 @@ fn return_path_step(
 }
 
 fn has_unreturned_path(cfg: &DefinitionCfg, facts: &AnalysisFacts<'_>) -> bool {
-    fn visit(
-        cfg: &DefinitionCfg,
-        facts: &AnalysisFacts<'_>,
-        current: NodeId,
-        active: &mut BTreeSet<NodeId>,
-        complete: &mut BTreeSet<NodeId>,
-    ) -> bool {
-        match return_path_step(cfg, facts, current) {
-            ReturnPathStep::Continue => {}
-            ReturnPathStep::Returned => return false,
-            ReturnPathStep::Unreturned => return true,
-        }
-        if active.contains(&current) {
-            return true;
-        }
-        if complete.contains(&current) {
-            return false;
-        }
-        active.insert(current);
-        for id in cfg.edges() {
-            let Some(edge) = cfg.edge(*id) else { return true };
-            if edge.source == current && visit(cfg, facts, edge.target, active, complete) {
-                return true;
+    let mut successors: BTreeMap<NodeId, Vec<NodeId>> = BTreeMap::new();
+    for id in cfg.edges() {
+        let Some(edge) = cfg.edge(*id) else { return true };
+        successors.entry(edge.source).or_default().push(edge.target);
+    }
+    unreturned_path_from(cfg.entry(), &successors, |node| return_path_step(cfg, facts, node))
+}
+
+fn unreturned_path_from(
+    entry: NodeId,
+    successors: &BTreeMap<NodeId, Vec<NodeId>>,
+    step: impl Fn(NodeId) -> ReturnPathStep,
+) -> bool {
+    let mut stack = vec![ReturnTraversal::Enter(entry)];
+    let mut active = BTreeSet::new();
+    let mut complete = BTreeSet::new();
+    while let Some(task) = stack.pop() {
+        match task {
+            ReturnTraversal::Leave(node) => {
+                active.remove(&node);
+                complete.insert(node);
+            }
+            ReturnTraversal::Enter(node) => {
+                match step(node) {
+                    ReturnPathStep::Returned => continue,
+                    ReturnPathStep::Unreturned => return true,
+                    ReturnPathStep::Continue => {}
+                }
+                if active.contains(&node) {
+                    return true;
+                }
+                if complete.contains(&node) {
+                    continue;
+                }
+                let Some(children) = successors.get(&node) else { return true };
+                active.insert(node);
+                stack.push(ReturnTraversal::Leave(node));
+                for child in children {
+                    stack.push(ReturnTraversal::Enter(*child));
+                }
             }
         }
-        active.remove(&current);
-        complete.insert(current);
-        false
     }
-
-    visit(cfg, facts, cfg.entry(), &mut BTreeSet::new(), &mut BTreeSet::new())
+    false
 }
 
 fn solve_returns(
@@ -628,8 +646,9 @@ fn has_reachable_cycle(records: &BTreeMap<CallContext, ReturnRecord>, root: &Cal
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
 
+    use abstract_interpretation::graph::NodeId;
     use abstract_interpretation::lattice::Lattice;
     use abstract_interpretation::solver::{Transfer, TransferOutcome};
     use program_structure::utils::constants::Curve;
@@ -637,7 +656,8 @@ mod tests {
     use crate::hir_facts::{FieldContext, Range};
 
     use super::{
-        FunctionSummary, ReturnAnalysis, ReturnCoverage, ReturnEdge, ReturnNode, SummaryBlocker,
+        unreturned_path_from, FunctionSummary, ReturnAnalysis, ReturnCoverage, ReturnEdge,
+        ReturnNode, ReturnPathStep, SummaryBlocker,
     };
 
     fn output(outcome: TransferOutcome<FunctionSummary, SummaryBlocker>) -> FunctionSummary {
@@ -645,6 +665,34 @@ mod tests {
             TransferOutcome::Known(state) => state,
             TransferOutcome::Opaque { provisional, .. } => provisional,
         }
+    }
+
+    #[test]
+    fn long_return_path_and_back_edge_preserve_coverage() {
+        let length = 30_000;
+        let terminal = NodeId::new(length);
+        let mut successors = BTreeMap::new();
+        for index in 0..length {
+            successors.insert(NodeId::new(index), vec![NodeId::new(index + 1)]);
+        }
+        assert!(!unreturned_path_from(NodeId::new(0), &successors, |node| {
+            if node == terminal {
+                ReturnPathStep::Returned
+            } else {
+                ReturnPathStep::Continue
+            }
+        }));
+        assert!(unreturned_path_from(NodeId::new(0), &successors, |node| {
+            if node == terminal {
+                ReturnPathStep::Unreturned
+            } else {
+                ReturnPathStep::Continue
+            }
+        }));
+        successors.insert(terminal, vec![NodeId::new(length - 1)]);
+        assert!(unreturned_path_from(NodeId::new(0), &successors, |_| {
+            ReturnPathStep::Continue
+        }));
     }
 
     #[test]
