@@ -312,6 +312,66 @@ fn compound_assignments_cannot_borrow_plain_assignment_return_facts() {
 }
 
 #[test]
+fn indexed_reads_and_writes_need_proved_bounds_before_complete_return() {
+    let cases = [
+        ("function F(){var x[1]=[1];var t=x[1];return 7;}", false),
+        ("function F(){var x[1]=[1];x[1]=2;return 7;}", false),
+        ("function F(){var x[1]=[1];var t=x[0];return 7;}", true),
+        ("function F(){var x[1]=[1];x[0]=2;return 7;}", true),
+        ("function F(){var x[1]=[1];var i=0;var t=x[i];return 7;}", true),
+        ("function F(){var x[1]=[1];var i=1;var t=x[i];return 7;}", false),
+        ("function F(){var x[1]=[1];var t=x[-1];return 7;}", false),
+        ("function F(){var x[2]=[0,1];var t=x[x[2]];return 7;}", false),
+        ("function F(){var x[1]=[1];x[1]++;return 7;}", false),
+        ("function F(){var x[1]=[1];x[0]++;return 7;}", false),
+        ("function F(){var x[2][1]=[[1],[2]];var t=x[0][1];return 7;}", false),
+        ("function F(){var x[2][1]=[[1],[2]];var t=x[1][0];return 7;}", true),
+    ];
+    let expected = Range::Exact(FieldContext::for_curve(Curve::Bn254).canonical(7.into()));
+    for (source, complete) in cases {
+        let lifted = fixture(source);
+        assert!(lifted.diagnostics.is_empty(), "{source}: {:?}", lifted.diagnostics);
+        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else { panic!("F") };
+        let context = provider.symbolic_context_for(DefinitionRef::Function(f)).unwrap();
+        let summary = provider.function(f, &context);
+        assert_eq!(
+            summary.certified().and_then(|item| item.complete_return()),
+            if complete { Some(&expected) } else { None },
+            "{source}: {:?}",
+            summary.unavailable()
+        );
+    }
+}
+
+#[test]
+fn indexed_bounds_follow_the_bound_parameter_context() {
+    let lifted = fixture("function F(n){var x[n];x[0]=1;return 7;}");
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else { panic!("F") };
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let expected = Range::Exact(field.canonical(7.into()));
+    for (size, complete) in [(0, false), (1, true), (2, true)] {
+        let context = provider
+            .context_for(
+                DefinitionRef::Function(f),
+                vec![ArgumentValue::Scalar(field.canonical(size.into()))],
+            )
+            .unwrap();
+        let summary = provider.function(f, &context);
+        assert_eq!(
+            summary.certified().and_then(|item| item.complete_return()),
+            if complete { Some(&expected) } else { None },
+            "F({size}): {:?}",
+            summary.unavailable()
+        );
+    }
+    let symbolic = provider.symbolic_context_for(DefinitionRef::Function(f)).unwrap();
+    let summary = provider.function(f, &symbolic);
+    assert!(summary.certified().and_then(|item| item.complete_return()).is_none());
+}
+
+#[test]
 fn conditional_return_coverage_propagates_through_a_direct_call() {
     let field = FieldContext::for_curve(Curve::Bn254);
     let lifted = fixture("function G(){var t=Missing();return 7;} function F(){return G();}");

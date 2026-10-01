@@ -98,6 +98,81 @@ pub enum AccessHandleError {
 }
 
 impl AnalysisFacts<'_> {
+    /// Prove every indexed step of a source access under these bound facts.
+    pub(crate) fn checked_access_bounds(&self, path: &AccessPath) -> Result<(), AccessHandleError> {
+        let mut symbol = self.hir.symbol(path.root).ok_or(AccessHandleError::UnprovedShape)?;
+        let mut dimension = 0;
+        for step in &path.steps {
+            match step {
+                AccessStep::Index { index, .. } => {
+                    if !symbol.shape_checked || dimension >= symbol.rank {
+                        return Err(AccessHandleError::UnprovedShape);
+                    }
+                    let size = *symbol
+                        .dimensions
+                        .get(dimension)
+                        .ok_or(AccessHandleError::UnprovedShape)?;
+                    let value = self.access_index_value(index)?;
+                    self.check_index_bound(&value, size)?;
+                    dimension += 1;
+                }
+                AccessStep::Port { port, .. } => {
+                    if dimension != symbol.rank {
+                        return Err(AccessHandleError::UnprovedShape);
+                    }
+                    let port = self.hir.port(*port).ok_or(AccessHandleError::UnprovedShape)?;
+                    symbol =
+                        self.hir.symbol(port.symbol).ok_or(AccessHandleError::UnprovedShape)?;
+                    dimension = 0;
+                }
+                AccessStep::Tag { symbol: tag, .. } => {
+                    if dimension != symbol.rank {
+                        return Err(AccessHandleError::UnprovedShape);
+                    }
+                    symbol = self.hir.symbol(*tag).ok_or(AccessHandleError::UnprovedShape)?;
+                    dimension = 0;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn access_index_value(&self, index: &ArrayIndex) -> Result<BigInt, AccessHandleError> {
+        match index {
+            ArrayIndex::Constant(text) => {
+                let (digits, radix) =
+                    text.strip_prefix("0x").map_or((text.as_str(), 10), |hex| (hex, 16));
+                BigInt::parse_bytes(digits.as_bytes(), radix)
+                    .ok_or(AccessHandleError::UnprovedShape)
+            }
+            ArrayIndex::Symbolic(expression) => {
+                let range = self.range(*expression);
+                let Some(Range::Exact(value)) = range.certified() else {
+                    return Err(AccessHandleError::UnprovedShape);
+                };
+                Ok(value.as_bigint().clone())
+            }
+        }
+    }
+
+    fn check_index_bound(
+        &self,
+        value: &BigInt,
+        dimension: ExprId,
+    ) -> Result<(), AccessHandleError> {
+        let bound = self.dimension_bound(dimension)?;
+        let index = value.to_usize().ok_or(AccessHandleError::IndexOutOfBounds)?;
+        let canonical = self.field.canonical(value.clone());
+        let zero = self.field.canonical(0.into());
+        if index >= bound
+            || canonical.as_bigint() != value
+            || self.field.compare_signed(&canonical, &zero) == Ordering::Less
+        {
+            return Err(AccessHandleError::IndexOutOfBounds);
+        }
+        Ok(())
+    }
+
     pub(crate) fn handle_relation(
         &self,
         handle: &AccessHandle,
@@ -258,11 +333,7 @@ impl AnalysisFacts<'_> {
         }
         let mut steps = Vec::with_capacity(indices.len());
         for (dimension, index) in symbol.dimensions.iter().zip(indices) {
-            let bound = self.dimension_bound(*dimension)?;
-            let literal = BigInt::from(*index);
-            if *index >= bound || self.field.canonical(literal.clone()).as_bigint() != &literal {
-                return Err(AccessHandleError::IndexOutOfBounds);
-            }
+            self.check_index_bound(&BigInt::from(*index), *dimension)?;
             steps.push(AccessStep::Index {
                 index: ArrayIndex::Constant(index.to_string()),
                 span: symbol.span,

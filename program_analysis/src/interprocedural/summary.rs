@@ -348,10 +348,16 @@ impl ProjectSummaries<'_> {
             | CfgNodeKind::Instantiate { .. }
             | CfgNodeKind::Witness { .. }
             | CfgNodeKind::Constraint { .. } => true,
-            CfgNodeKind::Assignment { operator, .. } => *operator != AssignmentOperator::Assign,
-            CfgNodeKind::DeferredAssignment { operator, .. } => {
-                *operator != AssignmentOperator::Assign || !facts.resolved_deferred_assignment(id)
+            CfgNodeKind::Assignment { target, operator, .. } => {
+                *operator != AssignmentOperator::Assign
+                    || facts.checked_access_bounds(target).is_err()
             }
+            CfgNodeKind::DeferredAssignment { target, operator, .. } => {
+                *operator != AssignmentOperator::Assign
+                    || !facts.resolved_deferred_assignment(id)
+                    || facts.checked_access_bounds(target).is_err()
+            }
+            CfgNodeKind::Update { target, .. } => facts.checked_access_bounds(target).is_err(),
             CfgNodeKind::Evaluate(expression) => {
                 self.expression_may_fail(*expression, facts, field)
             }
@@ -359,7 +365,6 @@ impl ProjectSummaries<'_> {
             | CfgNodeKind::Exit
             | CfgNodeKind::LoopHeader
             | CfgNodeKind::Branch { .. }
-            | CfgNodeKind::Update { .. }
             | CfgNodeKind::Declaration { .. }
             | CfgNodeKind::Return(_)
             | CfgNodeKind::Log => false,
@@ -377,6 +382,7 @@ impl ProjectSummaries<'_> {
             ExprKind::Opaque(_) | ExprKind::AnonymousComponent { .. } => true,
             ExprKind::Call { target: CallTarget::Function(_), .. } => false,
             ExprKind::Call { .. } => true,
+            ExprKind::Access(path) => facts.checked_access_bounds(path).is_err(),
             ExprKind::Binary { operator, right, .. } => match operator {
                 BinaryOperator::Divide | BinaryOperator::IntegerDivide | BinaryOperator::Modulo => {
                     !is_proven_nonzero(facts.range(*right).certified(), field)
@@ -400,7 +406,6 @@ impl ProjectSummaries<'_> {
                 | BinaryOperator::Multiply => false,
             },
             ExprKind::Number(_)
-            | ExprKind::Access(_)
             | ExprKind::Array(_)
             | ExprKind::Tuple(_)
             | ExprKind::Unary { .. }
