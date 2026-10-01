@@ -1,40 +1,6 @@
 //! Shared expression traversal for dependency and liveness providers.
 
 use parser::hir::{AccessPath, AccessStep, ArrayIndex, ExprId, ExprKind, HirProject};
-use parser::new_frontend::{BinaryOperator, UnaryOperator};
-
-/// Visits accesses guaranteed to be evaluated by a supported scalar expression.
-pub trait VisitDefiniteAccesses {
-    fn visit_definite_accesses(&self, hir: &HirProject, visit: &mut impl FnMut(&AccessPath));
-}
-
-impl VisitDefiniteAccesses for ExprId {
-    fn visit_definite_accesses(&self, hir: &HirProject, visit: &mut impl FnMut(&AccessPath)) {
-        let Some(expression) = hir.expression(*self) else { return };
-        match &expression.kind {
-            ExprKind::Access(path) => visit(path),
-            ExprKind::Unary { operator: UnaryOperator::Negate, operand }
-            | ExprKind::Parallel(operand) => operand.visit_definite_accesses(hir, visit),
-            ExprKind::Binary {
-                operator: BinaryOperator::Add | BinaryOperator::Subtract | BinaryOperator::Multiply,
-                left,
-                right,
-            } => {
-                left.visit_definite_accesses(hir, visit);
-                right.visit_definite_accesses(hir, visit);
-            }
-            ExprKind::Ternary { condition, .. } => condition.visit_definite_accesses(hir, visit),
-            ExprKind::Number(_)
-            | ExprKind::Unary { .. }
-            | ExprKind::Binary { .. }
-            | ExprKind::Call { .. }
-            | ExprKind::AnonymousComponent { .. }
-            | ExprKind::Array(_)
-            | ExprKind::Tuple(_)
-            | ExprKind::Opaque(_) => {}
-        }
-    }
-}
 
 /// Visits every access below a HIR expression and reports whether traversal
 /// was complete. Unknown expressions cannot prove an empty dependency set.

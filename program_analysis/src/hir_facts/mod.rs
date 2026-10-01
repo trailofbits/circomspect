@@ -511,6 +511,10 @@ impl AnalysisFacts<'_> {
         let CfgNodeKind::Constraint { target, left, right } = &node.kind else { return false };
         let empty = BTreeMap::new();
         let variables = state.variables().unwrap_or(&empty);
+        let analysis = ForwardAnalysis { hir: self.hir, field: self.field };
+        if let Some(touches) = forward::proven_linear_touches(&analysis, &node.kind, variables) {
+            return touches.iter().any(|key| key.may_alias(query));
+        }
         let target_touches = target.as_ref().is_some_and(|path| {
             key_for_path(self.hir, self.field, path, variables).may_alias(query)
         });

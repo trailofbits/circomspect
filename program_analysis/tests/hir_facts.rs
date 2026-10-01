@@ -216,6 +216,22 @@ fn known_ternary_discards_dependencies_of_its_unselected_arm() {
 }
 
 #[test]
+fn algebraically_cancelled_access_has_zero_generated_constraint_incidence() {
+    for source in [
+        "template Check(){signal input x; signal output y; y<==0*x;}",
+        "template Check(){signal input x; x===x;}",
+        "template Check(){signal input x; x-x===0;}",
+    ] {
+        let (hir, definition) = fixture(source);
+        let cfg = build_cfg(&hir, definition).unwrap();
+        let field = FieldContext::for_curve(Curve::Bn254);
+        let facts = analyze(&hir, &cfg, &field, None).unwrap();
+        let x = expression_path(&hir, "x", 0);
+        assert_eq!(facts.incidence(&x).certified(), Some(&Incidence::Zero), "{source}");
+    }
+}
+
+#[test]
 fn signed_field_comparison_selects_the_negative_branch() {
     let (hir, definition) =
         fixture("template Check(){signal output y; if(-1<0){y<==1;}else{y<--1;}}");

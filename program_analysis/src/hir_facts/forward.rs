@@ -12,7 +12,6 @@ use crate::hir_cfg::{CfgEdge, CfgNode, CfgNodeKind, DefinitionCfg, EdgeKind};
 use super::access::{key_for_path, AccessKey, MayAccessSet};
 use super::domains::DegreeUpper;
 use super::field::{FieldContext, FieldValue};
-use super::walk::VisitDefiniteAccesses;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ForwardState {
@@ -238,35 +237,152 @@ fn fixed_equation(
         .or_else(|| fixed_side(analysis, right, left, variables))
 }
 
+#[derive(Default)]
+struct LinearForm {
+    coefficients: BTreeMap<AccessKey, FieldValue>,
+}
+
+impl LinearForm {
+    fn from_path(
+        analysis: &ForwardAnalysis<'_>,
+        path: &AccessPath,
+        values: &BTreeMap<SymbolId, FieldValue>,
+    ) -> Option<Self> {
+        let symbol = analysis.hir.symbol(path.terminal)?;
+        if symbol.kind != SymbolKind::Signal {
+            return None;
+        }
+        let key = key_for_path(analysis.hir, analysis.field, path, values);
+        if !key.exact_alias(&key) {
+            return None;
+        }
+        let one = analysis.field.canonical(1.into());
+        Some(Self { coefficients: BTreeMap::from([(key, one)]) })
+    }
+
+    fn scale(&mut self, field: &FieldContext, factor: &FieldValue) {
+        for coefficient in self.coefficients.values_mut() {
+            *coefficient = field.multiply(coefficient, factor);
+        }
+        self.coefficients.retain(|_, coefficient| !field.is_zero(coefficient));
+    }
+
+    fn add(&mut self, field: &FieldContext, other: Self) {
+        for (key, coefficient) in other.coefficients {
+            let value = if let Some(current) = self.coefficients.remove(&key) {
+                field.add(&current, &coefficient)
+            } else {
+                coefficient
+            };
+            if !field.is_zero(&value) {
+                self.coefficients.insert(key, value);
+            }
+        }
+    }
+}
+
+trait LinearizeAccesses {
+    fn linearize(
+        &self,
+        analysis: &ForwardAnalysis<'_>,
+        values: &BTreeMap<SymbolId, FieldValue>,
+    ) -> Option<LinearForm>;
+}
+
+impl LinearizeAccesses for ExprId {
+    fn linearize(
+        &self,
+        analysis: &ForwardAnalysis<'_>,
+        values: &BTreeMap<SymbolId, FieldValue>,
+    ) -> Option<LinearForm> {
+        if eval_expression(analysis.hir, analysis.field, *self, values).is_some() {
+            return Some(LinearForm::default());
+        }
+        let expression = analysis.hir.expression(*self)?;
+        match &expression.kind {
+            ExprKind::Access(path) => LinearForm::from_path(analysis, path, values),
+            ExprKind::Unary { operator: UnaryOperator::Negate, operand } => {
+                let mut form = operand.linearize(analysis, values)?;
+                let minus_one = analysis.field.canonical((-1).into());
+                form.scale(analysis.field, &minus_one);
+                Some(form)
+            }
+            ExprKind::Parallel(operand) => operand.linearize(analysis, values),
+            ExprKind::Binary { operator: BinaryOperator::Add, left, right } => {
+                let mut form = left.linearize(analysis, values)?;
+                form.add(analysis.field, right.linearize(analysis, values)?);
+                Some(form)
+            }
+            ExprKind::Binary { operator: BinaryOperator::Subtract, left, right } => {
+                let mut form = left.linearize(analysis, values)?;
+                let mut right = right.linearize(analysis, values)?;
+                right.scale(analysis.field, &analysis.field.canonical((-1).into()));
+                form.add(analysis.field, right);
+                Some(form)
+            }
+            ExprKind::Binary { operator: BinaryOperator::Multiply, left, right } => {
+                let (factor, operand) = if let Some(factor) =
+                    eval_expression(analysis.hir, analysis.field, *left, values)
+                {
+                    (factor, right)
+                } else {
+                    (eval_expression(analysis.hir, analysis.field, *right, values)?, left)
+                };
+                let mut form = operand.linearize(analysis, values)?;
+                form.scale(analysis.field, &factor);
+                Some(form)
+            }
+            ExprKind::Ternary { condition, yes, no } => {
+                let condition = eval_expression(analysis.hir, analysis.field, *condition, values)?;
+                let selected = if analysis.field.is_zero(&condition) { no } else { yes };
+                selected.linearize(analysis, values)
+            }
+            ExprKind::Number(_)
+            | ExprKind::Unary { .. }
+            | ExprKind::Binary { .. }
+            | ExprKind::Call { .. }
+            | ExprKind::AnonymousComponent { .. }
+            | ExprKind::Array(_)
+            | ExprKind::Tuple(_)
+            | ExprKind::Opaque(_) => None,
+        }
+    }
+}
+
+fn linear_constraint(
+    analysis: &ForwardAnalysis<'_>,
+    kind: &CfgNodeKind,
+    values: &BTreeMap<SymbolId, FieldValue>,
+) -> Option<LinearForm> {
+    let CfgNodeKind::Constraint { target, left, right } = kind else { return None };
+    let form = if let Some(path) = target {
+        LinearForm::from_path(analysis, path, values)
+    } else {
+        left.linearize(analysis, values)
+    };
+    let mut form = form?;
+    let opposite = if target.is_some() { Some(*left) } else { *right };
+    let mut opposite = opposite?.linearize(analysis, values)?;
+    opposite.scale(analysis.field, &analysis.field.canonical((-1).into()));
+    form.add(analysis.field, opposite);
+    Some(form)
+}
+
+/// Return exact nonzero linear coefficients when the full equality is supported.
+pub(super) fn proven_linear_touches(
+    analysis: &ForwardAnalysis<'_>,
+    kind: &CfgNodeKind,
+    values: &BTreeMap<SymbolId, FieldValue>,
+) -> Option<BTreeSet<AccessKey>> {
+    Some(linear_constraint(analysis, kind, values)?.coefficients.into_keys().collect())
+}
+
 fn constraint_touches(
     analysis: &ForwardAnalysis<'_>,
     kind: &CfgNodeKind,
     values: &BTreeMap<SymbolId, FieldValue>,
 ) -> BTreeSet<AccessKey> {
-    let CfgNodeKind::Constraint { target, left, right } = kind else { return BTreeSet::new() };
-    let mut touched = BTreeSet::new();
-    if let Some(path) = target {
-        let key = key_for_path(analysis.hir, analysis.field, path, values);
-        if key.exact_alias(&key) {
-            touched.insert(key);
-        }
-    }
-    for expression in [Some(*left), *right].into_iter().flatten() {
-        expression.visit_definite_accesses(analysis.hir, &mut |path| {
-            if analysis
-                .hir
-                .symbol(path.root)
-                .is_some_and(|symbol| symbol.kind == SymbolKind::Variable)
-            {
-                return;
-            }
-            let key = key_for_path(analysis.hir, analysis.field, path, values);
-            if key.exact_alias(&key) {
-                touched.insert(key);
-            }
-        });
-    }
-    touched
+    proven_linear_touches(analysis, kind, values).unwrap_or_default()
 }
 
 pub fn expression_dependencies(
@@ -1036,5 +1152,35 @@ mod tests {
                 assert_eq!(result != ForwardState::Unreachable, taken);
             }
         }
+    }
+
+    #[test]
+    fn linear_constraint_transfer_loses_must_touch_monotonically() {
+        let directory = std::env::temp_dir()
+            .join(format!("circomspect-phase4-linear-law-{}", std::process::id()));
+        fs::create_dir_all(&directory).unwrap();
+        let source = directory.join("case.circom");
+        fs::write(&source, "template T(){signal input x; var t=0; signal output y; y<==t*x;}")
+            .unwrap();
+        let loaded =
+            load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
+        let hir = lower_project(&loaded).hir;
+        let cfg = crate::hir_cfg::build_cfg(&hir, hir.definition("T").unwrap()).unwrap();
+        let field = FieldContext::for_curve(Curve::Bn254);
+        let t = hir.symbols().iter().find(|symbol| symbol.name == "t").unwrap().id;
+        let x = hir.symbols().iter().find(|symbol| symbol.name == "x").unwrap().id;
+        let key = AccessKey { root: x, instance: None, steps: Vec::new() };
+        let analysis = ForwardAnalysis { hir: &hir, field: &field };
+        let constraint = cfg
+            .nodes()
+            .iter()
+            .find_map(|id| {
+                let node = cfg.node(*id)?;
+                let CfgNodeKind::Constraint { .. } = &node.kind else { return None };
+                Some(node)
+            })
+            .unwrap();
+        let states = variable_states(t, key, &field);
+        check_transfer_order(constraint, &analysis, &states);
     }
 }
