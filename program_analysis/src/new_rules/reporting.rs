@@ -3,7 +3,8 @@ use std::collections::BTreeMap;
 use parser::new_frontend::{LoadedProject, SourceId, Span};
 use program_structure::file_definition::{FileID, FileLibrary};
 use program_structure::report::{MessageCategory, Report};
-use program_structure::report_code::ReportCode;
+
+use super::RuleKind;
 
 /// Source files and their legacy renderer IDs, created in parser source order.
 pub struct SourceMap<'a> {
@@ -58,25 +59,49 @@ impl<'a> SourceMap<'a> {
     }
 }
 
-/// A finding backed by a source location. The rule owns its evidence decision.
+/// A finding backed by a source location. Its report code and level are fixed
+/// by `RuleKind`, so callers cannot override them.
+///
+/// ```compile_fail
+/// use circomspect_program_analysis::new_rules::{Finding, RuleKind};
+/// fn alter_level(finding: &mut Finding) {
+///     finding.kind = RuleKind::BitwiseComplement;
+/// }
+/// ```
 #[derive(Clone)]
 pub struct Finding {
-    pub code: ReportCode,
-    pub category: MessageCategory,
-    pub message: String,
-    pub primary: Span,
-    pub primary_label: String,
-    pub secondary: Vec<(Span, String)>,
+    kind: RuleKind,
+    message: String,
+    primary: Span,
+    primary_label: String,
+    secondary: Vec<(Span, String)>,
 }
 
 impl Finding {
+    #[must_use]
+    pub fn at(kind: RuleKind, message: String, primary: Span, primary_label: String) -> Self {
+        Self { kind, message, primary, primary_label, secondary: Vec::new() }
+    }
+
+    #[must_use]
+    pub fn with_secondary(mut self, span: Span, label: String) -> Self {
+        self.secondary.push((span, label));
+        self
+    }
+
+    #[must_use]
+    pub const fn kind(&self) -> RuleKind {
+        self.kind
+    }
+
     /// Convert a checked source span to the existing report representation.
     pub fn to_report(&self, sources: &SourceMap) -> Result<Report, RenderError> {
         let (file, range) = sources.location(self.primary)?;
-        let mut report = match self.category {
-            MessageCategory::Error => Report::error(self.message.clone(), self.code),
-            MessageCategory::Warning => Report::warning(self.message.clone(), self.code),
-            MessageCategory::Info => Report::info(self.message.clone(), self.code),
+        let code = self.kind.code();
+        let mut report = match self.kind.category() {
+            MessageCategory::Error => Report::error(self.message.clone(), code),
+            MessageCategory::Warning => Report::warning(self.message.clone(), code),
+            MessageCategory::Info => Report::info(self.message.clone(), code),
         };
         report.add_primary(range, file, self.primary_label.clone());
         for (span, label) in &self.secondary {

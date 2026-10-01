@@ -32,14 +32,25 @@ pub fn render(
 ) -> Result<(usize, usize), RenderError> {
     let reports =
         findings.iter().map(|finding| finding.to_report(sources)).collect::<Result<Vec<_>, _>>()?;
+    Ok(render_reports(&reports, sources, minimum, allow, sarif_path))
+}
+
+/// Render parser and rule reports through both existing presentation paths.
+pub fn render_reports(
+    reports: &[Report],
+    sources: &SourceMap<'_>,
+    minimum: MessageCategory,
+    allow: &[&str],
+    sarif_path: &Path,
+) -> (usize, usize) {
     let filter = Filter {
         minimum,
         roots: sources.files().user_inputs().clone(),
         allow: allow.iter().map(|id| (*id).to_string()).collect(),
     };
     let mut terminal = StdoutWriter::new(true).add_filter(filter.clone());
-    let terminal_count = terminal.write_reports(&reports, sources.files());
+    let terminal_count = terminal.write_reports(reports, sources.files());
     let mut sarif = SarifWriter::new(sarif_path).add_filter(filter);
-    let sarif_count = sarif.write_reports(&reports, sources.files());
-    Ok((terminal_count, sarif_count))
+    let sarif_count = sarif.write_reports(reports, sources.files());
+    (terminal_count, sarif_count)
 }

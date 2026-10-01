@@ -11,7 +11,7 @@ use circomspect_program_analysis::hir_facts::FieldContext;
 use circomspect_program_analysis::interprocedural::{ArgumentValue, ProjectSummaries};
 use parser::hir::lower_project;
 use parser::new_frontend::{load_sources, SourceId, Span, Version, VersionPolicy};
-use program_structure::report::MessageCategory;
+use program_structure::report::{MessageCategory, Report};
 use program_structure::report_code::ReportCode;
 use program_structure::utils::constants::Curve;
 use serde_json::Value;
@@ -28,15 +28,8 @@ fn load_fixture(name: &str, source: &str) -> parser::new_frontend::LoadedProject
     load_sources(&[path], &[directory], VersionPolicy::new(Version::new(2, 2, 3)))
 }
 
-fn finding(code: ReportCode, category: MessageCategory, span: Span) -> Finding {
-    Finding {
-        code,
-        category,
-        message: "proved property".to_string(),
-        primary: span,
-        primary_label: "evidence".to_string(),
-        secondary: Vec::new(),
-    }
+fn finding(kind: RuleKind, span: Span) -> Finding {
+    Finding::at(kind, "proved property".to_string(), span, "evidence".to_string())
 }
 
 #[test]
@@ -164,8 +157,8 @@ fn source_map_preserves_primary_secondary_and_diagnostic_fields() {
     let primary = Span::checked(root.id, 22..30, &root.text).unwrap();
     let secondary = Span::checked(included.id, 0..8, &included.text).unwrap();
     let sources = SourceMap::from_loaded(&loaded, &[root.id]).unwrap();
-    let mut finding = finding(ReportCode::TooManyArguments, MessageCategory::Warning, primary);
-    finding.secondary.push((secondary, "related".to_string()));
+    let finding = finding(RuleKind::TooManyArguments, primary)
+        .with_secondary(secondary, "related".to_string());
     let report = finding.to_report(&sources).unwrap();
     assert_eq!(report.id(), "CS0012");
     assert_eq!(*report.category(), MessageCategory::Warning);
@@ -210,14 +203,22 @@ fn test_runner_applies_level_allow_and_root_filters_to_both_renderers() {
     let included_span = Span::checked(included.id, 0..8, &included.text).unwrap();
     let sources = SourceMap::from_loaded(&loaded, &[root.id]).unwrap();
     let findings = [
-        finding(ReportCode::TooManyArguments, MessageCategory::Warning, root_span),
-        finding(ReportCode::FieldElementArithmetic, MessageCategory::Info, root_span),
-        finding(ReportCode::UnconstrainedDivision, MessageCategory::Warning, included_span),
-        finding(ReportCode::UndefinedFunction, MessageCategory::Error, included_span),
+        finding(RuleKind::TooManyArguments, root_span),
+        finding(RuleKind::FieldArithmetic, root_span),
+        finding(RuleKind::UnconstrainedDivision, included_span),
     ];
+    let mut reports =
+        findings.iter().map(|finding| finding.to_report(&sources).unwrap()).collect::<Vec<_>>();
+    let included_file = reports[2].primary_file_ids()[0];
+    let mut error = Report::error("missing function".to_string(), ReportCode::UndefinedFunction);
+    error.add_primary(
+        included_span.start()..included_span.end(),
+        included_file,
+        "call".to_string(),
+    );
+    reports.push(error);
     let output = directory.join("result.sarif.json");
-    let count =
-        support::render(&findings, &sources, MessageCategory::Warning, &[], &output).unwrap();
+    let count = support::render_reports(&reports, &sources, MessageCategory::Warning, &[], &output);
     assert_eq!(count, (2, 2));
     let sarif: Value = serde_json::from_str(&fs::read_to_string(&output).unwrap()).unwrap();
     let results = sarif["runs"][0]["results"].as_array().unwrap();
@@ -230,7 +231,7 @@ fn test_runner_applies_level_allow_and_root_filters_to_both_renderers() {
     assert_eq!(results[1]["level"], "error");
 
     let count =
-        support::render(&findings, &sources, MessageCategory::Info, &["CS0012"], &output).unwrap();
+        support::render_reports(&reports, &sources, MessageCategory::Info, &["CS0012"], &output);
     assert_eq!(count, (2, 2));
     let sarif: Value = serde_json::from_str(&fs::read_to_string(output).unwrap()).unwrap();
     let results = sarif["runs"][0]["results"].as_array().unwrap();
@@ -257,26 +258,20 @@ fn unknown_source_and_invalid_spans_fail_before_rendering() {
     );
     let unknown = Span::checked(SourceId::new(42), 0..0, "").unwrap();
     assert_eq!(
-        finding(ReportCode::TooManyArguments, MessageCategory::Warning, unknown)
-            .to_report(&sources)
-            .err(),
+        finding(RuleKind::TooManyArguments, unknown).to_report(&sources).err(),
         Some(RenderError::UnknownSource(unknown.source()))
     );
 
     let too_long = Span::checked(source.id, 0..100, &"x".repeat(100)).unwrap();
     assert_eq!(
-        finding(ReportCode::TooManyArguments, MessageCategory::Warning, too_long)
-            .to_report(&sources)
-            .err(),
+        finding(RuleKind::TooManyArguments, too_long).to_report(&sources).err(),
         Some(RenderError::InvalidSpan(too_long))
     );
 
     let pi_start = source.text.find('π').unwrap();
     let inside_pi = Span::checked(source.id, pi_start..pi_start + 1, &"x".repeat(100)).unwrap();
     assert_eq!(
-        finding(ReportCode::TooManyArguments, MessageCategory::Warning, inside_pi)
-            .to_report(&sources)
-            .err(),
+        finding(RuleKind::TooManyArguments, inside_pi).to_report(&sources).err(),
         Some(RenderError::InvalidSpan(inside_pi))
     );
 }
