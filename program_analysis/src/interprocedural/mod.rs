@@ -17,4 +17,4 @@ pub use graph::{
 };
 pub use summary::{FunctionSummary, SummaryFact};
 pub use effects::{FunctionEffect, FunctionEffects};
-pub use template::PortSummary;
+pub use template::{PortSummary, WitnessProvenance, WitnessSite};

@@ -1,8 +1,7 @@
 use abstract_interpretation::graph::FlowGraph;
-use parser::hir::{DefinitionRef, PortId, Template, TemplateId};
-use parser::new_frontend::Span;
+use parser::hir::{DefinitionRef, Effect, PortId, Template, TemplateId};
 
-use crate::hir_cfg::{build_cfg, CfgNodeKind, DefinitionCfg};
+use crate::hir_cfg::{build_cfg, CfgNodeKind, DefinitionCfg, Origin};
 use crate::hir_facts::{
     analyze_with_scalar_parameters, AnalysisFacts, FieldContext, FieldValue, Incidence,
 };
@@ -13,15 +12,27 @@ use super::{CallContext, ProjectSummaries, SummaryBlocker, SummaryFact};
 /// Certified generated-constraint relation for one declared template port.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PortSummary {
+    context: CallContext,
     port: PortId,
+    indices: Vec<usize>,
     incidence: Incidence,
     fixed_value: Option<FieldValue>,
 }
 
 impl PortSummary {
     #[must_use]
+    pub fn context(&self) -> &CallContext {
+        &self.context
+    }
+
+    #[must_use]
     pub fn port(&self) -> PortId {
         self.port
+    }
+
+    #[must_use]
+    pub fn indices(&self) -> &[usize] {
+        &self.indices
     }
 
     #[must_use]
@@ -32,6 +43,32 @@ impl PortSummary {
     #[must_use]
     pub fn fixed_value(&self) -> Option<&FieldValue> {
         self.fixed_value.as_ref()
+    }
+}
+
+/// Whether a witness write also generated a constraint.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WitnessProvenance {
+    WitnessOnly,
+    GeneratedConstraint,
+}
+
+/// A reachable witness write with its checked HIR origin and operator semantics.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WitnessSite {
+    origin: Origin,
+    provenance: WitnessProvenance,
+}
+
+impl WitnessSite {
+    #[must_use]
+    pub fn origin(&self) -> Origin {
+        self.origin
+    }
+
+    #[must_use]
+    pub fn provenance(&self) -> WitnessProvenance {
+        self.provenance
     }
 }
 
@@ -64,7 +101,9 @@ impl ProjectSummaries<'_> {
             let incidence = facts.incidence_handle(&handle);
             let fixed = facts.constraint_fixed_handle(&handle);
             Ok(PortSummary {
+                context: context.clone(),
                 port,
+                indices: indices.to_vec(),
                 incidence: *certified(&incidence)?,
                 fixed_value: certified(&fixed)?.clone(),
             })
@@ -96,7 +135,7 @@ impl ProjectSummaries<'_> {
         id: TemplateId,
         context: &CallContext,
         port: PortId,
-    ) -> SummaryFact<Vec<Span>> {
+    ) -> SummaryFact<Vec<WitnessSite>> {
         SummaryFact::from_result(self.with_local_template(id, context, |template, cfg, facts| {
             if !template.ports.contains(&port) {
                 return Err(SummaryBlocker::ForeignDefinition);
@@ -125,13 +164,10 @@ impl ProjectSummaries<'_> {
                 }
                 match &node.kind {
                     CfgNodeKind::Witness { target, .. } if target.steps.is_empty() => {
-                        sites.push(
-                            node.origin
-                                .ok_or(SummaryBlocker::LocalAnalysis(
-                                    "missing witness origin".into(),
-                                ))?
-                                .span,
-                        );
+                        let origin = node.origin.ok_or(SummaryBlocker::LocalAnalysis(
+                            "missing witness origin".into(),
+                        ))?;
+                        sites.push(self.witness_site(origin)?);
                     }
                     CfgNodeKind::Witness { .. } => return Err(SummaryBlocker::UnsupportedContext),
                     CfgNodeKind::OpaqueAssignment { .. } | CfgNodeKind::Opaque(_) => {
@@ -142,6 +178,22 @@ impl ProjectSummaries<'_> {
             }
             Ok(sites)
         }))
+    }
+
+    fn witness_site(&self, origin: Origin) -> Result<WitnessSite, SummaryBlocker> {
+        let effect = self
+            .hir()
+            .block(origin.block)
+            .and_then(|block| block.effects.get(origin.effect_index))
+            .ok_or(SummaryBlocker::LocalAnalysis("missing witness effect".into()))?;
+        let provenance = if let Effect::WitnessAssignment { .. } = effect {
+            WitnessProvenance::WitnessOnly
+        } else if let Effect::ConstraintAssignment { .. } = effect {
+            WitnessProvenance::GeneratedConstraint
+        } else {
+            return Err(SummaryBlocker::LocalAnalysis("mismatched witness origin".into()));
+        };
+        Ok(WitnessSite { origin, provenance })
     }
 
     fn with_local_template<T>(

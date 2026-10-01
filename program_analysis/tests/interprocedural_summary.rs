@@ -1,6 +1,6 @@
 use circomspect_program_analysis::hir_facts::{FieldContext, Incidence, Range};
 use circomspect_program_analysis::interprocedural::{
-    ArgumentValue, FunctionEffect, ProjectSummaries, SummaryBlocker,
+    ArgumentValue, FunctionEffect, ProjectSummaries, SummaryBlocker, WitnessProvenance,
 };
 use parser::hir::{lower_project, DefinitionRef, Effect, ExprKind, LoweredProject};
 use parser::new_frontend::{load_sources, Version, VersionPolicy};
@@ -299,12 +299,22 @@ fn template_port_summary_keeps_witness_and_read_evidence_separate() {
         Some(1)
     );
     assert_eq!(
+        provider.template_port_witnesses(template, &context, ports[1]).certified().unwrap()[0]
+            .provenance(),
+        WitnessProvenance::WitnessOnly
+    );
+    assert_eq!(
         provider.template_port(template, &context, ports[1]).certified().unwrap().incidence(),
         Incidence::Zero
     );
     assert_eq!(
         provider.template_port_witnesses(template, &context, ports[2]).certified().map(Vec::len),
         Some(1)
+    );
+    assert_eq!(
+        provider.template_port_witnesses(template, &context, ports[2]).certified().unwrap()[0]
+            .provenance(),
+        WitnessProvenance::GeneratedConstraint
     );
     assert_eq!(
         provider.template_port(template, &context, ports[2]).certified().unwrap().incidence(),
@@ -322,4 +332,21 @@ fn opaque_witness_write_cannot_certify_an_empty_witness_summary() {
     let port = lowered.hir.template(template).unwrap().ports[0];
     let context = provider.symbolic_context_for(DefinitionRef::Template(template)).unwrap();
     assert!(provider.template_port_witnesses(template, &context, port).unavailable().is_some());
+}
+
+#[test]
+fn exact_array_port_summaries_retain_distinct_element_identity() {
+    let lowered = fixture("template T(){signal output out[2];out[0]<==1;out[1]<--2;}");
+    let provider = ProjectSummaries::build(&lowered, Curve::Bn254).unwrap();
+    let DefinitionRef::Template(template) = lowered.hir.definition("T").unwrap() else {
+        panic!("template T")
+    };
+    let port = lowered.hir.template(template).unwrap().ports[0];
+    let context = provider.symbolic_context_for(DefinitionRef::Template(template)).unwrap();
+    let first = provider.template_port_at(template, &context, port, &[0]);
+    let second = provider.template_port_at(template, &context, port, &[1]);
+    assert_eq!(first.certified().unwrap().indices(), [0]);
+    assert_eq!(second.certified().unwrap().indices(), [1]);
+    assert_eq!(first.certified().unwrap().incidence(), Incidence::Must);
+    assert_eq!(second.certified().unwrap().incidence(), Incidence::Zero);
 }
