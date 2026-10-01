@@ -11,13 +11,20 @@ use program_structure::utils::constants::Curve;
 use crate::hir_cfg::{CfgNodeKind, DefinitionCfg};
 use crate::hir_facts::{
     analyze_with_scalar_parameters, exact_compile_time, AnalysisFacts, FactBlocker, FieldContext,
-    FieldValue, Range, VisitAccesses,
+    FieldValue, Range,
 };
 
 use super::{build_call_graph, CallGraph, CallGraphError, CallOwner, CallSiteId, ReachableCall};
 
 const MAX_ARGUMENT_NODES: usize = 4096;
 const MAX_ARGUMENT_DEPTH: usize = 64;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ProvedValueShape {
+    Scalar,
+    Aggregate,
+    Unknown,
+}
 
 /// Shape of a compile-time argument before a concrete value is known.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -527,15 +534,70 @@ impl<'a> ProjectSummaries<'a> {
             else {
                 continue;
             };
-            let mut invalid = false;
-            let complete = value.visit_accesses(self.hir(), &mut |path| {
-                invalid |= aggregate.contains(&path.root) && path.steps.is_empty();
-            });
-            if complete && invalid && facts.reachable_node(*id).certified() == Some(&true) {
+            if self.proved_value_shape(*value, &aggregate, facts, 0) == ProvedValueShape::Aggregate
+                && facts.reachable_node(*id).certified() == Some(&true)
+                && facts.structurally_must_execute(*id)
+            {
                 return Some(*value);
             }
         }
         None
+    }
+
+    fn proved_value_shape(
+        &self,
+        expression: ExprId,
+        aggregate: &BTreeSet<SymbolId>,
+        facts: &AnalysisFacts<'_>,
+        depth: usize,
+    ) -> ProvedValueShape {
+        if depth >= MAX_ARGUMENT_DEPTH {
+            return ProvedValueShape::Unknown;
+        }
+        let Some(expression) = self.hir().expression(expression) else {
+            return ProvedValueShape::Unknown;
+        };
+        match &expression.kind {
+            ExprKind::Number(_) => ProvedValueShape::Scalar,
+            ExprKind::Array(_) | ExprKind::Tuple(_) => ProvedValueShape::Aggregate,
+            ExprKind::Access(path) if aggregate.contains(&path.root) && path.steps.is_empty() => {
+                ProvedValueShape::Aggregate
+            }
+            ExprKind::Ternary { condition, yes, no } => {
+                self.ternary_value_shape(*condition, *yes, *no, aggregate, facts, depth)
+            }
+            ExprKind::Parallel(inner) => {
+                self.proved_value_shape(*inner, aggregate, facts, depth + 1)
+            }
+            ExprKind::Access(_)
+            | ExprKind::Call { .. }
+            | ExprKind::AnonymousComponent { .. }
+            | ExprKind::Unary { .. }
+            | ExprKind::Binary { .. }
+            | ExprKind::Opaque(_) => ProvedValueShape::Unknown,
+        }
+    }
+
+    fn ternary_value_shape(
+        &self,
+        condition: ExprId,
+        yes: ExprId,
+        no: ExprId,
+        aggregate: &BTreeSet<SymbolId>,
+        facts: &AnalysisFacts<'_>,
+        depth: usize,
+    ) -> ProvedValueShape {
+        if let Some(Range::Exact(value)) = facts.range(condition).certified() {
+            let selected = if self.field.is_zero(value) { no } else { yes };
+            return self.proved_value_shape(selected, aggregate, facts, depth + 1);
+        }
+        let yes = self.proved_value_shape(yes, aggregate, facts, depth + 1);
+        let no = self.proved_value_shape(no, aggregate, facts, depth + 1);
+        if yes == no {
+            yes
+        } else {
+            ProvedValueShape::Unknown
+        }
     }
 
     fn canonicalize(&self, value: ArgumentValue) -> ArgumentValue {

@@ -231,6 +231,57 @@ fn scalar_main_specializes_deferred_guard_while_symbolic_library_scope_abstains(
 }
 
 #[test]
+fn aggregate_argument_in_dead_arm_or_call_argument_is_not_a_scalar_assignment_error() {
+    for source in [
+        "template T(n){var x=0?n:1;signal output y;y<==1;} component main=T([1,2]);",
+        "function First(a){return a[0];} template T(n){var x=First(n);signal output y;\
+         y<==1;} component main=T([1,2]);",
+        "template T(n){var c=n[0];var x=c?n:1;signal output y;y<==1;} \
+         component main=T([1,2]);",
+    ] {
+        let lifted = fixture(source, Version::new(2, 2, 3));
+        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let definition = lifted.hir.definition("T").unwrap();
+        let cfg = build_cfg(&lifted.hir, definition).unwrap();
+        let site = provider.graph().calls_from(CallOwner::Main(0))[0];
+        let CallReachability::Reachable(call) =
+            provider.graph().reachable_main_call(site.id(), provider.hir())
+        else {
+            panic!("main call must be reachable")
+        };
+        let evidence = provider.main_evidence(&call).unwrap();
+        let result = provider.analyze_for_evidence(&cfg, &evidence, None);
+        assert!(!matches!(result, Err(AnalyzeEvidenceError::InvalidAssignment { .. })));
+    }
+}
+
+#[test]
+fn raw_branch_bypass_abstains_even_when_concrete_guard_is_true() {
+    let lifted = fixture(
+        "template T(n){var x=1;if(1){x=n;}signal output y;y<==x;} \
+         component main=T([1,2]);",
+        Version::new(2, 2, 3),
+    );
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let definition = lifted.hir.definition("T").unwrap();
+    let parser::hir::DefinitionRef::Template(template) = definition else {
+        panic!("T must be a template")
+    };
+    let cfg = build_cfg(&lifted.hir, definition).unwrap();
+    let site = provider.graph().calls_from(CallOwner::Main(0))[0];
+    let CallReachability::Reachable(call) =
+        provider.graph().reachable_main_call(site.id(), provider.hir())
+    else {
+        panic!("main call must be reachable")
+    };
+    let evidence = provider.main_evidence(&call).unwrap();
+    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let output = lifted.hir.template(template).unwrap().ports[0];
+    let handle = facts.port_handle(output, &[]).unwrap();
+    assert!(facts.constraint_fixed_handle(&handle).unavailable().is_some());
+}
+
+#[test]
 fn hypothetical_context_does_not_create_a_reachable_scope() {
     let lifted = fixture(
         "template Child(n){} template Parent(){if(0){component dead=Child(2);}}",

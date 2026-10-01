@@ -264,6 +264,20 @@ impl AnalysisFacts<'_> {
             return Fact::blocked(BTreeSet::from([FactBlocker::MissingExit]));
         }
         let pruned = forward_pruned_edges(self.hir, self.cfg, self.field, &self.forward);
+        Fact::known(!self.path_bypasses(node, &pruned))
+    }
+
+    /// Prove a site unavoidable on raw CFG paths; specialized taken branches may abstain.
+    pub(crate) fn structurally_must_execute(&self, node: NodeId) -> bool {
+        if self.cfg.node(node).is_none()
+            || !self.can_reach_any(self.cfg.entry(), &BTreeSet::from([self.cfg.exit()]))
+        {
+            return false;
+        }
+        !self.path_bypasses(node, &BTreeSet::new())
+    }
+
+    fn path_bypasses(&self, node: NodeId, pruned: &BTreeSet<EdgeId>) -> bool {
         let mut visited = BTreeSet::new();
         let mut pending = vec![self.cfg.entry()];
         while let Some(current) = pending.pop() {
@@ -271,7 +285,7 @@ impl AnalysisFacts<'_> {
                 continue;
             }
             if current == self.cfg.exit() {
-                return Fact::known(false);
+                return true;
             }
             for id in self.cfg.edges() {
                 if pruned.contains(id) {
@@ -284,7 +298,7 @@ impl AnalysisFacts<'_> {
                 }
             }
         }
-        Fact::known(true)
+        false
     }
 
     pub(crate) fn resolved_deferred_assignment(&self, node: NodeId) -> bool {
