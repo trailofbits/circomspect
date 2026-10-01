@@ -4,10 +4,12 @@ use std::collections::BTreeSet;
 use std::fs;
 
 use circomspect_program_analysis::new_rules::{
-    constraints, direct, numeric, uses, AbstentionReason, Finding, RenderError, RuleKind,
-    RuleResult, ScopedAbstention, SourceMap,
+    constraints, direct, numeric, uses, AbstentionReason, Finding, RenderError, RuleContext,
+    RuleContextError, RuleKind, RuleResult, ScopedAbstention, SourceMap,
 };
 use circomspect_program_analysis::hir_facts::FieldContext;
+use circomspect_program_analysis::hir_cfg::build_cfg;
+use circomspect_program_analysis::hir_facts::analyze;
 use circomspect_program_analysis::interprocedural::{ArgumentValue, ProjectSummaries};
 use parser::hir::lower_project;
 use parser::new_frontend::{load_sources, SourceId, Span, Version, VersionPolicy};
@@ -30,6 +32,48 @@ fn load_fixture(name: &str, source: &str) -> parser::new_frontend::LoadedProject
 
 fn finding(kind: RuleKind, span: Span) -> Finding {
     Finding::at(kind, "proved property".to_string(), span, "evidence".to_string())
+}
+
+#[test]
+fn rule_context_requires_matching_certified_scope() {
+    let loaded = load_fixture("rule-context", "template First() {} template Second() {}\n");
+    let lowered = lower_project(&loaded);
+    let first = lowered.hir.definition("First").unwrap();
+    let second = lowered.hir.definition("Second").unwrap();
+    let cfg = build_cfg(&lowered.hir, first).unwrap();
+    let bn_field = FieldContext::for_curve(Curve::Bn254);
+    let gold_field = FieldContext::for_curve(Curve::Goldilocks);
+    let facts = analyze(&lowered.hir, &cfg, &bn_field, None).unwrap();
+    let summaries = ProjectSummaries::build(&lowered, Curve::Bn254).unwrap();
+    let first_root = summaries.symbolic_root(first).unwrap();
+    let second_root = summaries.symbolic_root(second).unwrap();
+    let context = RuleContext::new(&facts, &summaries, &first_root).unwrap();
+    assert_eq!(context.hir().identity(), lowered.hir.identity());
+    assert_eq!(context.call_context(), first_root.context());
+    assert_eq!(
+        RuleContext::new(&facts, &summaries, &second_root).err(),
+        Some(RuleContextError::WrongDefinition)
+    );
+    let gold = ProjectSummaries::build(&lowered, Curve::Goldilocks).unwrap();
+    let gold_root = gold.symbolic_root(first).unwrap();
+    assert_eq!(
+        RuleContext::new(&facts, &gold, &gold_root).err(),
+        Some(RuleContextError::WrongCurve)
+    );
+    let foreign_loaded = load_fixture("foreign-context", "template First() {}\n");
+    let foreign = lower_project(&foreign_loaded);
+    let foreign_provider = ProjectSummaries::build(&foreign, Curve::Bn254).unwrap();
+    let foreign_root =
+        foreign_provider.symbolic_root(foreign.hir.definition("First").unwrap()).unwrap();
+    assert_eq!(
+        RuleContext::new(&facts, &foreign_provider, &foreign_root).err(),
+        Some(RuleContextError::ForeignProject)
+    );
+    let gold_facts = analyze(&lowered.hir, &cfg, &gold_field, None).unwrap();
+    assert_eq!(
+        RuleContext::new(&gold_facts, &summaries, &first_root).err(),
+        Some(RuleContextError::WrongCurve)
+    );
 }
 
 #[test]

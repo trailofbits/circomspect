@@ -1,6 +1,7 @@
 //! Certified HIR rules. The legacy analysis registry remains separate until cutover.
 
 pub mod constraints;
+mod context;
 pub mod direct;
 mod kind;
 pub mod numeric;
@@ -9,5 +10,6 @@ mod result;
 pub mod uses;
 
 pub use kind::RuleKind;
+pub use context::{RuleContext, RuleContextError};
 pub use reporting::{Finding, RenderError, SourceMap};
 pub use result::{AbstentionReason, RuleResult, ScopedAbstention};
