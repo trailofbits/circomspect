@@ -8,8 +8,8 @@ mod context;
 mod component;
 
 pub use context::{
-    ArgumentShape, ArgumentValue, CallContext, ContextEvidence, ContextOrigin, ProjectSummaries,
-    SummaryBlocker,
+    AnalyzeEvidenceError, ArgumentShape, ArgumentValue, CallContext, ContextEvidence,
+    ContextOrigin, ProjectSummaries, SummaryBlocker,
 };
 
 pub use graph::{

@@ -2,7 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use abstract_interpretation::graph::FlowGraph;
 use parser::hir::{
-    DefinitionRef, ExprId, ExprKind, HirProject, LiftedProject, ProjectIdentity, SymbolId,
+    DefinitionRef, ExprId, ExprKind, HirProject, LiftedProject, ProjectIdentity, SemanticCode,
+    SemanticDiagnostic, Severity, SymbolId,
 };
 use parser::new_frontend::Version;
 use program_structure::utils::constants::Curve;
@@ -14,6 +15,9 @@ use crate::hir_facts::{
 };
 
 use super::{build_call_graph, CallGraph, CallGraphError, CallOwner, CallSiteId, ReachableCall};
+
+const MAX_ARGUMENT_NODES: usize = 4096;
+const MAX_ARGUMENT_DEPTH: usize = 64;
 
 /// Shape of a compile-time argument before a concrete value is known.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -146,6 +150,23 @@ pub enum SummaryBlocker {
     ContextBudget,
 }
 
+/// A failed context analysis, retaining a located semantic error when specialization proves one.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AnalyzeEvidenceError {
+    Blocked(SummaryBlocker),
+    InvalidAssignment { context: Box<CallContext>, diagnostic: Box<SemanticDiagnostic> },
+}
+
+impl AnalyzeEvidenceError {
+    #[must_use]
+    pub fn diagnostic(&self) -> Option<&SemanticDiagnostic> {
+        match self {
+            Self::InvalidAssignment { diagnostic, .. } => Some(diagnostic),
+            Self::Blocked(_) => None,
+        }
+    }
+}
+
 /// Owns the validated field and graph used to construct summary contexts.
 pub struct ProjectSummaries<'a> {
     lifted: &'a LiftedProject,
@@ -255,7 +276,21 @@ impl<'a> ProjectSummaries<'a> {
         &self,
         call: &ReachableCall<'_>,
         facts: &AnalysisFacts<'_>,
+        caller: &ContextEvidence,
     ) -> Result<ContextEvidence, SummaryBlocker> {
+        if self.hir().identity() != facts.hir().identity() || self.curve() != facts.curve() {
+            return Err(SummaryBlocker::ForeignCall);
+        }
+        self.check_facts_for_evidence(facts, caller)?;
+        let context = self.call_context(call, facts)?;
+        Ok(ContextEvidence { context, origin: ContextOrigin::Call(call.site().id()) })
+    }
+
+    pub(super) fn call_context(
+        &self,
+        call: &ReachableCall<'_>,
+        facts: &AnalysisFacts<'_>,
+    ) -> Result<CallContext, SummaryBlocker> {
         let site = call.site();
         if self.hir().identity() != facts.hir().identity()
             || self.curve() != facts.curve()
@@ -290,8 +325,7 @@ impl<'a> ProjectSummaries<'a> {
             _ => return Err(SummaryBlocker::UnsupportedCallForm),
         };
         let arguments = self.exact_call_arguments(arguments, facts)?;
-        let context = self.context_for(call.callee(), arguments)?;
-        Ok(ContextEvidence { context, origin: ContextOrigin::Call(site.id()) })
+        self.context_for(call.callee(), arguments)
     }
 
     /// Revalidate a scope before a rule combines it with local facts.
@@ -327,20 +361,40 @@ impl<'a> ProjectSummaries<'a> {
         cfg: &'b DefinitionCfg,
         evidence: &ContextEvidence,
         budget: Option<usize>,
-    ) -> Result<AnalysisFacts<'b>, SummaryBlocker> {
-        self.check_evidence(evidence)?;
+    ) -> Result<AnalysisFacts<'b>, AnalyzeEvidenceError> {
+        self.check_evidence(evidence).map_err(AnalyzeEvidenceError::Blocked)?;
         if cfg.definition() != evidence.context.definition {
-            return Err(SummaryBlocker::WrongContext);
+            return Err(AnalyzeEvidenceError::Blocked(SummaryBlocker::WrongContext));
         }
-        let parameters =
-            self.parameters(cfg.definition()).ok_or(SummaryBlocker::ForeignDefinition)?;
-        let seeds = evidence.context.scalar_seeds(parameters)?;
+        let parameters = self
+            .parameters(cfg.definition())
+            .ok_or(AnalyzeEvidenceError::Blocked(SummaryBlocker::ForeignDefinition))?;
+        let seeds =
+            evidence.context.scalar_seeds(parameters).map_err(AnalyzeEvidenceError::Blocked)?;
         let mut facts = analyze_with_scalar_parameters(self.hir(), cfg, &self.field, seeds, budget)
-            .map_err(|error| SummaryBlocker::LocalAnalysis(format!("{error:?}")))?;
+            .map_err(|error| {
+                AnalyzeEvidenceError::Blocked(SummaryBlocker::LocalAnalysis(format!("{error:?}")))
+            })?;
         if let Some(expression) =
             self.invalid_deferred_assignment(cfg, parameters, evidence.context(), &facts)
         {
-            return Err(SummaryBlocker::InvalidAssignment(expression));
+            let span = self
+                .hir()
+                .expression(expression)
+                .ok_or(AnalyzeEvidenceError::Blocked(SummaryBlocker::ForeignDefinition))?
+                .span;
+            let diagnostic = SemanticDiagnostic {
+                code: SemanticCode::InvalidAssignment,
+                severity: Severity::Error,
+                span,
+                message: "a scalar variable assignment received an aggregate argument".into(),
+                expected_kind: None,
+                actual_kind: None,
+            };
+            return Err(AnalyzeEvidenceError::InvalidAssignment {
+                context: Box::new(evidence.context.clone()),
+                diagnostic: Box::new(diagnostic),
+            });
         }
         facts.bind_context(evidence.context.clone());
         Ok(facts)
@@ -368,10 +422,9 @@ impl<'a> ProjectSummaries<'a> {
         arguments: &[ExprId],
     ) -> Result<Vec<ArgumentValue>, SummaryBlocker> {
         let mut values = Vec::with_capacity(arguments.len());
+        let mut remaining = MAX_ARGUMENT_NODES;
         for expression in arguments {
-            let value = exact_compile_time(self.hir(), &self.field, *expression)
-                .ok_or(SummaryBlocker::UnprovenArgument(*expression))?;
-            values.push(ArgumentValue::Scalar(value));
+            values.push(self.exact_argument(*expression, None, 0, &mut remaining)?);
         }
         Ok(values)
     }
@@ -382,19 +435,48 @@ impl<'a> ProjectSummaries<'a> {
         facts: &AnalysisFacts<'_>,
     ) -> Result<Vec<ArgumentValue>, SummaryBlocker> {
         let mut values = Vec::with_capacity(arguments.len());
+        let mut remaining = MAX_ARGUMENT_NODES;
         for expression in arguments {
-            let range = facts.range(*expression);
-            let Some(range) = range.certified() else {
-                return Err(SummaryBlocker::LocalFacts(
-                    range.unavailable().cloned().unwrap_or_default(),
-                ));
-            };
-            let Range::Exact(value) = range else {
-                return Err(SummaryBlocker::UnprovenArgument(*expression));
-            };
-            values.push(ArgumentValue::Scalar(value.clone()));
+            values.push(self.exact_argument(*expression, Some(facts), 0, &mut remaining)?);
         }
         Ok(values)
+    }
+
+    fn exact_argument(
+        &self,
+        expression: ExprId,
+        facts: Option<&AnalysisFacts<'_>>,
+        depth: usize,
+        remaining: &mut usize,
+    ) -> Result<ArgumentValue, SummaryBlocker> {
+        if depth >= MAX_ARGUMENT_DEPTH || *remaining == 0 {
+            return Err(SummaryBlocker::ContextBudget);
+        }
+        *remaining -= 1;
+        let expression_node =
+            self.hir().expression(expression).ok_or(SummaryBlocker::ForeignCall)?;
+        if let ExprKind::Array(items) = &expression_node.kind {
+            let mut values = Vec::with_capacity(items.len());
+            for item in items {
+                values.push(self.exact_argument(*item, facts, depth + 1, remaining)?);
+            }
+            return Ok(ArgumentValue::Array(values));
+        }
+        let Some(facts) = facts else {
+            let value = exact_compile_time(self.hir(), &self.field, expression)
+                .ok_or(SummaryBlocker::UnprovenArgument(expression))?;
+            return Ok(ArgumentValue::Scalar(value));
+        };
+        let range = facts.range(expression);
+        let Some(range) = range.certified() else {
+            return Err(SummaryBlocker::LocalFacts(
+                range.unavailable().cloned().unwrap_or_default(),
+            ));
+        };
+        let Range::Exact(value) = range else {
+            return Err(SummaryBlocker::UnprovenArgument(expression));
+        };
+        Ok(ArgumentValue::Scalar(value.clone()))
     }
 
     fn parameter_count(&self, definition: DefinitionRef) -> Option<usize> {
@@ -474,10 +556,9 @@ impl<'a> ProjectSummaries<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::ContextEvidence;
     use std::collections::BTreeMap;
 
-    use parser::hir::{lift_project, DefinitionRef};
+    use parser::hir::{lift_project, DefinitionRef, SemanticCode, Severity};
     use parser::new_frontend::{load_sources, Version, VersionPolicy};
     use program_structure::utils::constants::Curve;
 
@@ -544,11 +625,9 @@ mod tests {
         ));
         std::fs::create_dir_all(&directory).unwrap();
         let source = directory.join("case.circom");
-        std::fs::write(
-            &source,
-            "template T(n){var x=n;x=1;signal output y;y<==1;} component main=T(0);",
-        )
-        .unwrap();
+        let source_text =
+            "template T(n){var x=n;x=1;signal output y;y<==1;} component main=T([1,2]);";
+        std::fs::write(&source, source_text).unwrap();
         let loaded =
             load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
         let lifted = lift_project(&loaded);
@@ -560,13 +639,51 @@ mod tests {
         else {
             panic!("main call")
         };
-        let origin = provider.main_evidence(&call).unwrap().origin();
-        let context = provider.context_for(definition, vec![ArgumentValue::Array(vec![])]).unwrap();
-        let evidence = ContextEvidence { context, origin };
+        let evidence = provider.main_evidence(&call).unwrap();
+        assert_eq!(
+            evidence.context().arguments(),
+            [ArgumentValue::Array(vec![
+                ArgumentValue::Scalar(provider.field.canonical(1.into())),
+                ArgumentValue::Scalar(provider.field.canonical(2.into())),
+            ])]
+        );
         let cfg = build_cfg(provider.hir(), definition).unwrap();
-        assert!(matches!(
-            provider.analyze_for_evidence(&cfg, &evidence, None),
-            Err(SummaryBlocker::InvalidAssignment(_))
+        let error = provider.analyze_for_evidence(&cfg, &evidence, None).err().unwrap();
+        let super::AnalyzeEvidenceError::InvalidAssignment { context, diagnostic } = error else {
+            panic!("aggregate assignment must emit a located error")
+        };
+        assert_eq!(*context, *evidence.context());
+        assert_eq!(diagnostic.code, SemanticCode::InvalidAssignment);
+        assert_eq!(diagnostic.code.as_str(), "T2000");
+        assert_eq!(diagnostic.severity, Severity::Error);
+        assert_eq!(&source_text[diagnostic.span.start()..diagnostic.span.end()], "n");
+    }
+
+    #[test]
+    fn aggregate_argument_depth_budget_abstains_without_a_context() {
+        let directory = std::env::temp_dir().join(format!(
+            "circomspect-array-depth-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
         ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let source = directory.join("case.circom");
+        let nested = format!(
+            "{}1{}",
+            "[".repeat(super::MAX_ARGUMENT_DEPTH),
+            "]".repeat(super::MAX_ARGUMENT_DEPTH)
+        );
+        std::fs::write(&source, format!("template T(n){{}} component main=T({nested});")).unwrap();
+        let loaded =
+            load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
+        let lifted = lift_project(&loaded);
+        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let site = provider.graph.calls_from(CallOwner::Main(0))[0];
+        let CallReachability::Reachable(call) =
+            provider.graph.reachable_main_call(site.id(), provider.hir())
+        else {
+            panic!("main call must be reachable")
+        };
+        assert_eq!(provider.main_evidence(&call), Err(SummaryBlocker::ContextBudget));
     }
 }

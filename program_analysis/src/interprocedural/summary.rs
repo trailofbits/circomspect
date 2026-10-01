@@ -183,8 +183,8 @@ impl ProjectSummaries<'_> {
             else {
                 return Err(SummaryBlocker::UnsupportedCallForm);
             };
-            let evidence = self.call_evidence(&call, facts)?;
-            let summary = self.function_inner(callee, evidence.context(), evaluation);
+            let context = self.call_context(&call, facts)?;
+            let summary = self.function_inner(callee, &context, evaluation);
             let Some(summary) = summary.certified() else {
                 let blocker = summary.unavailable().and_then(|items| items.iter().next()).cloned();
                 return Err(blocker.unwrap_or(SummaryBlocker::ExternalSummary));
