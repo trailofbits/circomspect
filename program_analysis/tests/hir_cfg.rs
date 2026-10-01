@@ -102,6 +102,23 @@ fn foreign_definition_returns_a_typed_error() {
 }
 
 #[test]
+fn deferred_variable_write_remains_targeted_and_cannot_generate_a_constraint() {
+    let (project, definition) = fixture("function Check(n){var x=n;if(x){return 1;}return 0;}");
+    let cfg = build_cfg(&project.hir, definition).unwrap();
+    let kinds: Vec<_> = cfg.nodes().iter().map(|id| &cfg.node(*id).unwrap().kind).collect();
+    assert!(kinds.iter().any(|kind| matches!(
+        kind,
+        CfgNodeKind::OpaqueAssignment { target, .. }
+            if project.hir.symbol(target.root).unwrap().name == "x"
+    )));
+    assert!(kinds.iter().any(|kind| matches!(
+        kind,
+        CfgNodeKind::Branch { guard: ControlGuard::DeferredScalar, .. }
+    )));
+    assert!(kinds.iter().all(|kind| !matches!(kind, CfgNodeKind::Constraint { .. })));
+}
+
+#[test]
 fn declaration_dimensions_are_evaluated_before_declaration() {
     let (project, definition) = fixture("template Check(){var n=2; signal output a[n];}");
     let cfg = build_cfg(&project.hir, definition).unwrap();

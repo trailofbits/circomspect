@@ -8,12 +8,16 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::new_frontend::{
     AssignmentOperator, BinaryOperator, DiagnosticLocation, InputAssignmentOperator, PortDirection,
-    PostfixOperator, Span, SyntaxDiagnostic, UnaryOperator,
+    PostfixOperator, Span, SyntaxDiagnostic, UnaryOperator, Version,
 };
 
 pub use lower::lower_project;
 
 static NEXT_PROJECT: AtomicU64 = AtomicU64::new(1);
+
+/// Nonforgeable identity shared by all arena IDs in one lowered HIR project.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ProjectIdentity(u64);
 
 macro_rules! arena_id {
     ($name:ident) => {
@@ -47,7 +51,7 @@ pub enum DefinitionKind {
     Bus,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum DefinitionRef {
     Function(FunctionId),
     Template(TemplateId),
@@ -96,6 +100,7 @@ pub struct Symbol {
     pub bus_arguments: Vec<ExprId>,
     pub tags: Vec<SymbolId>,
     pub knownness: Knownness,
+    pub value_evidence: ValueEvidence,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -163,6 +168,22 @@ pub enum Knownness {
     ParameterDependent,
     WitnessDependent,
     Opaque,
+}
+
+/// Whether a variable's assigned value has a validated shape.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ValueEvidence {
+    Checked,
+    Deferred,
+}
+
+impl ValueEvidence {
+    fn join(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::Deferred, _) | (_, Self::Deferred) => Self::Deferred,
+            (Self::Checked, Self::Checked) => Self::Checked,
+        }
+    }
 }
 
 /// Evidence available for a control-flow condition before parameter specialization.
@@ -303,6 +324,12 @@ pub enum Effect {
     VariableAssignment {
         target: AccessPath,
         value: ExprId,
+        span: Span,
+    },
+    DeferredVariableAssignment {
+        target: AccessPath,
+        value: ExprId,
+        operator: AssignmentOperator,
         span: Span,
     },
     ComponentInstantiation {
@@ -552,6 +579,7 @@ impl From<&DiagnosticLocation> for IncompleteLocation {
 #[derive(Clone, Debug)]
 pub struct LoweredProject {
     pub hir: HirProject,
+    pub version: Version,
     pub diagnostics: Vec<SemanticDiagnostic>,
     pub syntax_diagnostics: Vec<SyntaxDiagnostic>,
     pub incomplete: Vec<IncompleteRegion>,
@@ -569,10 +597,26 @@ pub struct HirProject {
     expressions: Vec<Expr>,
     blocks: Vec<Block>,
     definitions: BTreeMap<String, Vec<DefinitionRef>>,
-    pub mains: Vec<Main>,
+    mains: Vec<Main>,
 }
 
 impl HirProject {
+    #[must_use]
+    pub fn identity(&self) -> ProjectIdentity {
+        ProjectIdentity(self.key)
+    }
+
+    /// Read-only root instances of the lowered project.
+    ///
+    /// ```compile_fail
+    /// use circomspect_parser::hir::HirProject;
+    /// fn change(hir: &mut HirProject) { hir.mains.clear(); }
+    /// ```
+    #[must_use]
+    pub fn mains(&self) -> &[Main] {
+        &self.mains
+    }
+
     fn new() -> Self {
         Self {
             key: NEXT_PROJECT.fetch_add(1, Ordering::Relaxed),
@@ -702,6 +746,7 @@ impl HirProject {
                 SymbolKind::Tag => Knownness::ParameterDependent,
                 SymbolKind::Variable | SymbolKind::Component => Knownness::Opaque,
             },
+            value_evidence: ValueEvidence::Checked,
         });
         id
     }

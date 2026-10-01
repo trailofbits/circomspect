@@ -344,6 +344,7 @@ impl Builder<'_> {
                 Ok(self.append(tails, CfgNodeKind::Declaration { symbol: *symbol }, origin))
             }
             Effect::VariableAssignment { .. }
+            | Effect::DeferredVariableAssignment { .. }
             | Effect::ComponentInstantiation { .. }
             | Effect::WitnessAssignment { .. }
             | Effect::ConstraintAssignment { .. }
@@ -422,6 +423,7 @@ impl Builder<'_> {
     ) -> Result<Tails, BuildError> {
         let (target, value) = match effect {
             Effect::VariableAssignment { target, value, .. }
+            | Effect::DeferredVariableAssignment { target, value, .. }
             | Effect::ComponentInstantiation { target, value, .. }
             | Effect::WitnessAssignment { target, value, .. }
             | Effect::ConstraintAssignment { target, value, .. }
@@ -463,6 +465,16 @@ impl Builder<'_> {
                     effect_origin,
                 ))
             }
+            Effect::DeferredVariableAssignment { operator, .. } => Ok(self.append(
+                tails,
+                CfgNodeKind::OpaqueAssignment {
+                    target: target.clone(),
+                    value,
+                    operator: *operator,
+                    reason: IncompleteReason::UnknownType,
+                },
+                origin,
+            )),
             Effect::OpaqueAssignment { operator, reason, .. } => Ok(self.append(
                 tails,
                 CfgNodeKind::OpaqueAssignment {
@@ -616,9 +628,9 @@ impl Builder<'_> {
 
     fn may_write_variable(effect: &Effect, variable: SymbolId) -> bool {
         match effect {
-            Effect::VariableAssignment { target, .. } | Effect::Update { target, .. } => {
-                target.root == variable
-            }
+            Effect::VariableAssignment { target, .. }
+            | Effect::DeferredVariableAssignment { target, .. }
+            | Effect::Update { target, .. } => target.root == variable,
             Effect::Declaration { .. }
             | Effect::WitnessAssignment { .. }
             | Effect::ConstraintAssignment { .. }
@@ -719,6 +731,7 @@ fn effect_span(effect: &Effect, block_span: Span) -> Span {
     match effect {
         Effect::Declaration { span, .. }
         | Effect::VariableAssignment { span, .. }
+        | Effect::DeferredVariableAssignment { span, .. }
         | Effect::ComponentInstantiation { span, .. }
         | Effect::WitnessAssignment { span, .. }
         | Effect::ConstraintAssignment { span, .. }

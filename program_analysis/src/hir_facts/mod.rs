@@ -161,6 +161,85 @@ fn forward_pruned_edges(
 }
 
 impl AnalysisFacts<'_> {
+    #[must_use]
+    pub fn hir(&self) -> &HirProject {
+        self.hir
+    }
+
+    #[must_use]
+    pub fn definition(&self) -> DefinitionRef {
+        self.cfg.definition
+    }
+
+    #[must_use]
+    pub fn curve(&self) -> &program_structure::utils::constants::Curve {
+        self.field.curve()
+    }
+
+    /// Whether an expression has a reachable CFG evaluation site.
+    pub fn reachable_expression(&self, expression: ExprId) -> Fact<bool> {
+        if self.hir.expression(expression).is_none() {
+            return Fact::blocked(BTreeSet::from([FactBlocker::ForeignQuery]));
+        }
+        let sites: BTreeSet<_> = self
+            .cfg
+            .nodes()
+            .iter()
+            .copied()
+            .filter(|id| {
+                matches!(
+                    self.cfg.node(*id).map(|node| &node.kind),
+                    Some(CfgNodeKind::Evaluate(value)) if *value == expression
+                )
+            })
+            .collect();
+        if sites.is_empty() {
+            return Fact::blocked(BTreeSet::from([FactBlocker::MissingExit]));
+        }
+        let blockers = self.reachability_blockers(&sites);
+        if !blockers.is_empty() {
+            return Fact::blocked(blockers);
+        }
+        let mut reachable = false;
+        for id in sites {
+            if self.site_state(id).is_some_and(|state| state.variables().is_some()) {
+                reachable = true;
+            }
+        }
+        Fact::known(reachable)
+    }
+
+    fn reachability_blockers(&self, sites: &BTreeSet<NodeId>) -> BTreeSet<FactBlocker> {
+        let mut blockers = self.deferred_control_blockers(sites);
+        let SolveResult::Incomplete { blockers: solver, .. } = &self.forward else {
+            return blockers;
+        };
+        for blocker in solver {
+            match blocker {
+                Blocker::PendingNode(node) if self.can_reach_any(*node, sites) => {
+                    blockers.insert(FactBlocker::Budget(*node));
+                }
+                Blocker::OpaqueNode { node, reason }
+                    if !sites.contains(node) && self.can_reach_any(*node, sites) =>
+                {
+                    blockers.insert(FactBlocker::OpaqueNode(*node, reason.clone()));
+                }
+                Blocker::OpaqueEdge { edge, reason }
+                    if self
+                        .cfg
+                        .edge(*edge)
+                        .is_some_and(|item| self.can_reach_any(item.target, sites)) =>
+                {
+                    blockers.insert(FactBlocker::OpaqueEdge(*edge, reason.clone()));
+                }
+                Blocker::PendingNode(_)
+                | Blocker::OpaqueNode { .. }
+                | Blocker::OpaqueEdge { .. } => {}
+            }
+        }
+        blockers
+    }
+
     /// A compile-time exact value or the full canonical field range.
     pub fn range(&self, expression: ExprId) -> Fact<FieldRange> {
         let scalar_blockers = self.scalar_blockers(expression);
@@ -371,6 +450,13 @@ impl AnalysisFacts<'_> {
                 symbol.rank > index_count || symbol.kind == parser::hir::SymbolKind::Bus
             }) {
                 blockers.insert(FactBlocker::AggregateAccess);
+            }
+            if self
+                .hir
+                .symbol(path.terminal)
+                .is_some_and(|symbol| symbol.value_evidence == parser::hir::ValueEvidence::Deferred)
+            {
+                blockers.insert(FactBlocker::DeferredShape(expression));
             }
         });
         if self.depends_on_parameter(expression, &mut BTreeSet::new()) {
@@ -950,6 +1036,7 @@ impl AnalysisFacts<'_> {
             | parser::hir::Effect::ConstraintAssignment { .. }
             | parser::hir::Effect::EqualityConstraint { .. }
             | parser::hir::Effect::VariableAssignment { .. }
+            | parser::hir::Effect::DeferredVariableAssignment { .. }
             | parser::hir::Effect::Update { .. }
             | parser::hir::Effect::If { .. }
             | parser::hir::Effect::While { .. }
