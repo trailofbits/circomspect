@@ -1,5 +1,5 @@
 use circomspect_program_analysis::hir_cfg::build_cfg;
-use circomspect_program_analysis::hir_facts::{analyze, FieldContext};
+use circomspect_program_analysis::hir_facts::{analyze, FactBlocker, FieldContext, Incidence};
 use circomspect_program_analysis::interprocedural::{
     build_call_graph, CallOwner, CallProvenance, CallReachability,
 };
@@ -210,4 +210,57 @@ fn validated_main_has_a_reachable_root_token_without_a_definition_cfg() {
         graph.reachable_main_call(site.id(), &foreign),
         CallReachability::Unavailable(_)
     ));
+}
+
+#[test]
+fn independent_sequential_component_calls_keep_both_reachable() {
+    let hir = fixture(&[(
+        "instances.circom",
+        "template Child(n){signal output out;out<==n;} \
+         template Parent(){component c[2];c[0]=Child(0);c[1]=Child(1);}",
+    )]);
+    let definition = hir.definition("Parent").unwrap();
+    let graph = build_call_graph(&hir).unwrap();
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let calls = graph.calls_from(CallOwner::Definition(definition));
+    assert_eq!(calls.len(), 2);
+    for call in calls {
+        assert!(matches!(graph.reachable_call(call.id(), &facts), CallReachability::Reachable(_)));
+    }
+}
+
+#[test]
+fn instantiation_preserves_parent_constraints_without_proving_child_outputs() {
+    for (operator, expected) in [("<==", Incidence::Must), ("<--", Incidence::Zero)] {
+        let source = format!(
+            "template Child(){{signal input in;signal output out;out<==in;}} \
+             template Parent(){{signal input x;signal output y;component c=Child(); \
+             c.in{operator}x;y<==1;}}"
+        );
+        let hir = fixture(&[("parent.circom", &source)]);
+        let definition = hir.definition("Parent").unwrap();
+        let cfg = build_cfg(&hir, definition).unwrap();
+        let field = FieldContext::for_curve(Curve::Bn254);
+        let facts = analyze(&hir, &cfg, &field, None).unwrap();
+        let DefinitionRef::Template(parent) = definition else { panic!("parent template") };
+        let input = hir.template(parent).unwrap().ports[0];
+        let output = hir.template(parent).unwrap().ports[1];
+        let x = facts.port_handle(input, &[]).unwrap();
+        let y = facts.port_handle(output, &[]).unwrap();
+        assert_eq!(facts.incidence_handle(&x).certified(), Some(&expected));
+        assert_eq!(facts.incidence_handle(&y).certified(), Some(&Incidence::Must));
+
+        let DefinitionRef::Template(child) = hir.definition("Child").unwrap() else {
+            panic!("child template")
+        };
+        let child_output = hir.template(child).unwrap().ports[1];
+        let handle =
+            facts.component_output_handle(hir.components()[0].id, &[], child_output, &[]).unwrap();
+        assert!(facts
+            .incidence_handle(&handle)
+            .unavailable()
+            .is_some_and(|blockers| blockers.contains(&FactBlocker::ExternalSummary)));
+    }
 }

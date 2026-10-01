@@ -738,12 +738,7 @@ impl Transfer<ForwardAnalysis<'_>, ForwardState, String> for CfgNode {
                     reason: format!("{reason:?}"),
                 };
             }
-            CfgNodeKind::Instantiate { .. } => {
-                return TransferOutcome::Opaque {
-                    provisional: output,
-                    reason: "external component summary".into(),
-                };
-            }
+            CfgNodeKind::Instantiate { .. } => {}
             CfgNodeKind::Entry
             | CfgNodeKind::Exit
             | CfgNodeKind::LoopHeader
