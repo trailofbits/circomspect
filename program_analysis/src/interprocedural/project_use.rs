@@ -2,19 +2,21 @@
 
 use std::collections::BTreeSet;
 
-use abstract_interpretation::graph::FlowGraph;
-use parser::hir::{AccessStep, ArrayIndex, CallTarget, DefinitionRef, ExprId, ExprKind, PortSchema};
-use parser::new_frontend::PortDirection;
+use abstract_interpretation::graph::{FlowGraph, NodeId};
+use parser::hir::{
+    AccessStep, ArrayIndex, CallTarget, ControlGuard, DefinitionRef, ExprId, ExprKind, PortSchema,
+};
+use parser::new_frontend::{AssignmentOperator, PortDirection};
 
-use crate::hir_cfg::{CfgNodeKind, Origin};
-use crate::hir_facts::{AccessHandle, AnalysisFacts};
+use crate::hir_cfg::{CfgNodeKind, DefinitionCfg, Origin};
+use crate::hir_facts::{AccessHandle, AnalysisFacts, FieldContext, Range};
 use crate::interprocedural::input_relation::ready_instance_at_use;
 
 use super::component::LocalOutputUse;
-use super::summary::certified;
+use super::summary::{certified, is_proven_nonzero};
 use super::{
-    AppliedComponentPort, CallOwner, ContextEvidence, ContextOrigin, ProjectSummaries,
-    SummaryBlocker, SummaryFact,
+    AppliedComponentPort, CallOwner, CallReachability, ContextEvidence, ContextOrigin,
+    ProjectSummaries, SummaryBlocker, SummaryFact,
 };
 
 /// Project-root observation of one exact output path.
@@ -102,6 +104,7 @@ impl ProjectSummaries<'_> {
             }
         }
         self.check_parent_components_complete(facts)?;
+        self.check_template_execution(facts.cfg(), facts)?;
         self.check_direct_siblings(facts, applied, has_inputs)?;
         if has_inputs {
             let root = applied.handle().path().root;
@@ -112,6 +115,9 @@ impl ProjectSummaries<'_> {
             ready_instance_at_use(facts, applied, child)?;
         }
         self.check_child_has_no_components(child, applied)?;
+        self.with_local_template(child, applied.callee_evidence().context(), |_, cfg, facts| {
+            self.check_template_execution(cfg, facts)
+        })?;
         let use_state = self.local_output_use_result(facts, applied)?;
         let use_state = match use_state {
             LocalOutputUse::Read(sites) => LocalOutputUse::Read(sites),
@@ -217,12 +223,17 @@ impl ProjectSummaries<'_> {
             if has_inputs {
                 return Err(SummaryBlocker::UnsupportedContext);
             }
-            self.check_no_input_sibling(*value)?;
+            self.check_no_input_sibling(facts, *value, applied.caller_evidence())?;
         }
         Ok(())
     }
 
-    fn check_no_input_sibling(&self, value: ExprId) -> Result<(), SummaryBlocker> {
+    fn check_no_input_sibling(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        value: ExprId,
+        caller: &ContextEvidence,
+    ) -> Result<(), SummaryBlocker> {
         let expression = self.hir().expression(value).ok_or(SummaryBlocker::ExternalSummary)?;
         let Some(CallTarget::Template(template)) = expression.call_target() else {
             return Err(SummaryBlocker::ExternalSummary);
@@ -242,6 +253,21 @@ impl ProjectSummaries<'_> {
             }
             return Err(SummaryBlocker::UnsupportedContext);
         }
+        let owner = CallOwner::Definition(facts.definition());
+        let site = self
+            .graph()
+            .calls_from(owner)
+            .into_iter()
+            .find(|site| site.expression == Some(value))
+            .ok_or(SummaryBlocker::ExternalSummary)?;
+        let CallReachability::Reachable(call) = self.graph().reachable_call(site.id(), facts)
+        else {
+            return Err(SummaryBlocker::ExternalSummary);
+        };
+        let evidence = self.call_evidence(&call, facts, caller)?;
+        self.with_local_template(template.id, evidence.context(), |_, cfg, facts| {
+            self.check_template_execution(cfg, facts)
+        })?;
         Ok(())
     }
 
@@ -269,6 +295,98 @@ impl ProjectSummaries<'_> {
             }
             Ok(())
         })
+    }
+
+    fn check_template_execution(
+        &self,
+        cfg: &DefinitionCfg,
+        facts: &AnalysisFacts<'_>,
+    ) -> Result<(), SummaryBlocker> {
+        let field = FieldContext::for_curve(self.curve().clone());
+        for id in cfg.nodes() {
+            let node = cfg.node(*id).ok_or(SummaryBlocker::ExternalSummary)?;
+            if !*certified(&facts.reachable_node(*id))? {
+                continue;
+            }
+            if self.template_node_may_fail(*id, &node.kind, facts, &field) {
+                return Err(SummaryBlocker::UnsupportedContext);
+            }
+        }
+        Ok(())
+    }
+
+    fn template_node_may_fail(
+        &self,
+        id: NodeId,
+        kind: &CfgNodeKind,
+        facts: &AnalysisFacts<'_>,
+        field: &FieldContext,
+    ) -> bool {
+        match kind {
+            CfgNodeKind::Assert { condition } => {
+                !is_proven_nonzero(facts.range(*condition).certified(), field)
+            }
+            CfgNodeKind::Evaluate(expression) => {
+                self.template_expression_may_fail(*expression, facts.cfg(), facts, field)
+            }
+            CfgNodeKind::Witness { target, .. }
+            | CfgNodeKind::Instantiate { target, .. }
+            | CfgNodeKind::Update { target, .. } => facts.checked_access_bounds(target).is_err(),
+            CfgNodeKind::Constraint { target, .. } => {
+                target.as_ref().is_some_and(|target| facts.checked_access_bounds(target).is_err())
+            }
+            CfgNodeKind::Assignment { target, operator, .. } => {
+                *operator != AssignmentOperator::Assign
+                    || facts.checked_access_bounds(target).is_err()
+            }
+            CfgNodeKind::DeferredAssignment { target, operator, .. } => {
+                *operator != AssignmentOperator::Assign
+                    || !facts.resolved_deferred_assignment(id)
+                    || facts.checked_access_bounds(target).is_err()
+            }
+            CfgNodeKind::Branch { condition, guard } => match guard {
+                ControlGuard::CheckedCompileTime => {
+                    let range = facts.range(*condition);
+                    let Some(Range::Exact(_)) = range.certified() else { return true };
+                    false
+                }
+                ControlGuard::DeferredScalar | ControlGuard::WitnessOnly => true,
+            },
+            CfgNodeKind::Opaque(_)
+            | CfgNodeKind::OpaqueAssignment { .. }
+            | CfgNodeKind::OpaqueEquality { .. }
+            | CfgNodeKind::LoopHeader => true,
+            CfgNodeKind::Entry
+            | CfgNodeKind::Exit
+            | CfgNodeKind::Declaration { .. }
+            | CfgNodeKind::Return(_)
+            | CfgNodeKind::Log => false,
+        }
+    }
+
+    fn template_expression_may_fail(
+        &self,
+        id: ExprId,
+        cfg: &DefinitionCfg,
+        facts: &AnalysisFacts<'_>,
+        field: &FieldContext,
+    ) -> bool {
+        let Some(expression) = self.hir().expression(id) else { return true };
+        if let ExprKind::Call { target: CallTarget::Template(_), .. } = &expression.kind {
+            return !cfg.nodes().iter().any(|node| {
+                if let Some(CfgNodeKind::Instantiate { value, .. }) =
+                    cfg.node(*node).map(|node| &node.kind)
+                {
+                    *value == id
+                } else {
+                    false
+                }
+            });
+        }
+        if let ExprKind::Call { .. } = &expression.kind {
+            return true;
+        }
+        self.expression_may_fail(id, facts, field)
     }
 
     fn child_output_use(

@@ -32,6 +32,16 @@ fn internal_use_at(
     output_indices: &[usize],
     budget: Option<usize>,
 ) -> SummaryFact<ProjectOutputUse> {
+    internal_use_at_option(source, index, output_indices, budget)
+        .unwrap_or_else(|| panic!("the selected component output must be applicable"))
+}
+
+fn internal_use_at_option(
+    source: &str,
+    index: usize,
+    output_indices: &[usize],
+    budget: Option<usize>,
+) -> Option<SummaryFact<ProjectOutputUse>> {
     let lifted = fixture(source);
     let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
@@ -78,12 +88,12 @@ fn internal_use_at(
         panic!("child must be reachable")
     };
     let applied = provider.apply_component_output(&facts, &root, &call, &handle);
-    let applied = applied.certified().unwrap_or_else(|| panic!("{:?}", applied.unavailable()));
+    let applied = applied.certified()?;
     if let Some(limit) = budget {
         let pending = provider.analyze_for_evidence(&cfg, &root, Some(limit)).unwrap();
-        provider.closed_main_component_output_use(&pending, applied)
+        Some(provider.closed_main_component_output_use(&pending, applied))
     } else {
-        provider.closed_main_component_output_use(&facts, applied)
+        Some(provider.closed_main_component_output_use(&facts, applied))
     }
 }
 
@@ -361,6 +371,86 @@ fn a_reachable_assertion_failure_blocks_project_unused() {
         "component main=Parent();"
     );
     assert!(internal_use(source, 0).certified().is_none());
+}
+
+#[test]
+fn parent_assertions_require_a_proven_true_condition() {
+    for (condition, expected) in [("0", None), ("1", Some(ProjectOutputStatus::Unused))] {
+        let source = format!(
+            "template Child(){{signal output out;out<==1;}} \
+             template Parent(){{component c=Child();assert({condition});}} \
+             component main=Parent();"
+        );
+        let result = internal_use(&source, 0);
+        assert_eq!(
+            result.certified().map(ProjectOutputUse::status),
+            expected,
+            "{:?}",
+            result.unavailable()
+        );
+    }
+}
+
+#[test]
+fn unproved_parameter_assertions_abstain_for_concrete_main_contexts() {
+    for argument in [0, 1] {
+        let source = format!(
+            "template Child(){{signal output out;out<==1;}} \
+             template Parent(n){{component c=Child();assert(n);}} \
+             component main=Parent({argument});"
+        );
+        let lifted = fixture(&source);
+        assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
+        assert!(!lifted.incomplete.is_empty());
+        let result = internal_use(&source, 0);
+        assert!(result
+            .unavailable()
+            .is_some_and(|reasons| reasons.contains(&SummaryBlocker::ExternalSummary)));
+    }
+}
+
+#[test]
+fn parent_and_child_traps_block_project_unused() {
+    for trap in ["assert(0);", "var t=1/0;", "var x[1]=[1];var t=x[1];", "var x[1]=[1];x[1]=2;"] {
+        let parent = format!(
+            "template Child(){{signal output out;out<==1;}} \
+             template Parent(){{component c=Child();{trap}}} component main=Parent();"
+        );
+        assert!(internal_use(&parent, 0).certified().is_none(), "parent trap {trap}");
+        let child = format!(
+            "template Child(){{{trap}signal output out;out<==1;}} \
+             template Parent(){{component c=Child();}} component main=Parent();"
+        );
+        assert!(internal_use(&child, 0).certified().is_none(), "child trap {trap}");
+    }
+}
+
+#[test]
+fn compound_division_cannot_support_a_project_unused_certificate() {
+    for trap in ["var x=1;x/=0;", "var x=1;x%=0;"] {
+        let source = format!(
+            "template Child(){{signal output out;out<==1;}} \
+             template Parent(){{component c=Child();{trap}}} component main=Parent();"
+        );
+        let result = internal_use_at_option(&source, 0, &[], None);
+        assert!(result.as_ref().map_or(true, |fact| fact.certified().is_none()));
+    }
+}
+
+#[test]
+fn a_failing_direct_sibling_template_blocks_project_unused() {
+    let source = concat!(
+        "template Child(){signal output out;out<==1;} ",
+        "template Sibling(){signal output out;assert(0);out<==1;} ",
+        "template Parent(){component c=Child();component d=Sibling();} ",
+        "component main=Parent();"
+    );
+    assert!(internal_use(source, 0).certified().is_none());
+    let safe = source.replace("assert(0)", "assert(1)");
+    assert_eq!(
+        internal_use(&safe, 0).certified().map(ProjectOutputUse::status),
+        Some(ProjectOutputStatus::Unused)
+    );
 }
 
 #[test]
