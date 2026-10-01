@@ -42,6 +42,12 @@ fn run_rules<'a>(
             }
         }
         for abstention in result.abstentions() {
+            if abstention.kind != kind {
+                return Err(RuleRunError::WrongAbstentionKind {
+                    expected: kind,
+                    actual: abstention.kind,
+                });
+            }
             if context.summaries().check_context(&abstention.context).is_err() {
                 return Err(RuleRunError::ForeignAbstention(kind));
             }
@@ -58,6 +64,8 @@ pub enum RuleRunError {
     DuplicateRule(RuleKind),
     #[error("rule {expected:?} emitted a finding for {actual:?}")]
     WrongKind { expected: RuleKind, actual: RuleKind },
+    #[error("rule {expected:?} abstained for {actual:?}")]
+    WrongAbstentionKind { expected: RuleKind, actual: RuleKind },
     #[error("rule {0:?} emitted a finding for another call context")]
     ForeignFinding(RuleKind),
     #[error("rule {0:?} recorded an abstention for another project")]
@@ -104,6 +112,7 @@ mod tests {
             ));
             if self.abstain {
                 result.add_abstention(ScopedAbstention {
+                    kind: self.kind,
                     context: context.call_context().clone(),
                     span,
                     reason: AbstentionReason::UnsupportedConstruct,
@@ -180,7 +189,7 @@ mod tests {
 
     #[test]
     fn registry_rejects_wrong_kind_and_duplicates() {
-        with_context(|context, _| {
+        with_context(|context, span| {
             let wrong = Emits {
                 kind: RuleKind::Complexity,
                 reported: RuleKind::TooManyArguments,
@@ -202,6 +211,22 @@ mod tests {
                 run_rules(context, [&correct as &dyn Rule, &correct]).err(),
                 Some(RuleRunError::DuplicateRule(RuleKind::Complexity))
             );
+            let wrong_abstention = Returns {
+                finding: None,
+                abstention: Some(ScopedAbstention {
+                    kind: RuleKind::TooManyArguments,
+                    context: context.call_context().clone(),
+                    span,
+                    reason: AbstentionReason::UnsupportedConstruct,
+                }),
+            };
+            assert_eq!(
+                run_rules(context, [&wrong_abstention as &dyn Rule]).err(),
+                Some(RuleRunError::WrongAbstentionKind {
+                    expected: RuleKind::Complexity,
+                    actual: RuleKind::TooManyArguments,
+                })
+            );
         });
     }
 
@@ -215,6 +240,7 @@ mod tests {
                 "evidence".to_string(),
             );
             let abstention = ScopedAbstention {
+                kind: RuleKind::Complexity,
                 context: foreign.call_context().clone(),
                 span,
                 reason: AbstentionReason::UnsupportedConstruct,

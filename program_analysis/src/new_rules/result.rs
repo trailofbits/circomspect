@@ -4,7 +4,7 @@ use parser::new_frontend::Span;
 use crate::hir_facts::FactBlocker;
 use crate::interprocedural::CallContext;
 
-use super::Finding;
+use super::{Finding, RuleKind};
 
 /// Why a rule cannot decide one source scope from certified evidence.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -19,6 +19,7 @@ pub enum AbstentionReason {
 /// An unresolved predicate at a specific source location and definition.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ScopedAbstention {
+    pub kind: RuleKind,
     pub context: CallContext,
     pub span: Span,
     pub reason: AbstentionReason,
@@ -82,8 +83,16 @@ impl RuleResult {
                 ))
         });
         self.abstentions.sort_by(|left, right| {
-            (&left.context, left.span.source(), left.span.start(), left.span.end(), &left.reason)
+            (
+                left.kind,
+                &left.context,
+                left.span.source(),
+                left.span.start(),
+                left.span.end(),
+                &left.reason,
+            )
                 .cmp(&(
+                    right.kind,
                     &right.context,
                     right.span.source(),
                     right.span.start(),

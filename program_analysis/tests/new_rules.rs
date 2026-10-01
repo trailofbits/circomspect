@@ -146,6 +146,7 @@ fn abstention_keeps_an_unproved_predicate_out_of_reports() {
     let sources = SourceMap::from_loaded(&loaded, &[source.id]).unwrap();
     let mut result = RuleResult::default();
     result.add_abstention(ScopedAbstention {
+        kind: RuleKind::UnconstrainedSignal,
         context,
         span,
         reason: AbstentionReason::SymbolicParameters,
@@ -162,11 +163,13 @@ fn abstention_keeps_an_unproved_predicate_out_of_reports() {
         .unwrap();
     assert_ne!(one, two);
     result.add_abstention(ScopedAbstention {
+        kind: RuleKind::UnconstrainedSignal,
         context: one,
         span,
         reason: AbstentionReason::SymbolicParameters,
     });
     result.add_abstention(ScopedAbstention {
+        kind: RuleKind::UnconstrainedSignal,
         context: two,
         span,
         reason: AbstentionReason::SymbolicParameters,
