@@ -5,7 +5,7 @@ use super::{
     BusId, BusTarget, CallTarget, ComponentId, ControlGuard, DefinitionKind, DefinitionRef, Effect,
     ExprId, ExprKind, HirProject, IncompleteLocation, IncompleteReason, IncompleteRegion,
     Knownness, LoweredProject, Main, PortSchema, SemanticCode, SemanticDiagnostic, Severity,
-    SymbolId, SymbolKind, Template, TemplateId, Function, FunctionId,
+    SymbolId, SymbolKind, Template, TemplateId, ValueEvidence, Function, FunctionId,
 };
 use crate::new_frontend::{
     Access, AnonymousCallExpr, AnonymousInput, AssignmentOperator, Declaration, DeclarationKind,
@@ -34,6 +34,12 @@ enum ScalarShape {
     Checked,
     Deferred,
     Invalid,
+}
+
+#[derive(Clone, Copy)]
+struct SymbolState {
+    knownness: Knownness,
+    value_evidence: ValueEvidence,
 }
 
 impl ScalarShape {

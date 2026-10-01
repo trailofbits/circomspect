@@ -97,6 +97,28 @@ fn witness_value_and_assert_do_not_prove_constraint_incidence() {
 }
 
 #[test]
+fn deferred_variable_shape_blocks_exact_range_after_scalar_overwrite() {
+    let (hir, definition) = fixture("function Check(n){var x=n;x=0;return x;}");
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let returned = cfg
+        .nodes()
+        .iter()
+        .find_map(|id| match cfg.node(*id).map(|node| &node.kind) {
+            Some(CfgNodeKind::Return(value)) => Some(*value),
+            _ => None,
+        })
+        .unwrap();
+    assert!(facts.range(returned).certified().is_none());
+    assert!(facts
+        .range(returned)
+        .unavailable()
+        .unwrap()
+        .contains(&FactBlocker::DeferredShape(returned)));
+}
+
+#[test]
 fn late_equality_revokes_zero_incidence() {
     let (hir, definition) = fixture("template Check() { signal output y; y <-- 7; y === 7; }");
     let cfg = build_cfg(&hir, definition).unwrap();

@@ -372,6 +372,13 @@ impl AnalysisFacts<'_> {
             }) {
                 blockers.insert(FactBlocker::AggregateAccess);
             }
+            if self
+                .hir
+                .symbol(path.terminal)
+                .is_some_and(|symbol| symbol.value_evidence == parser::hir::ValueEvidence::Deferred)
+            {
+                blockers.insert(FactBlocker::DeferredShape(expression));
+            }
         });
         if self.depends_on_parameter(expression, &mut BTreeSet::new()) {
             blockers.insert(FactBlocker::DeferredShape(expression));
@@ -950,6 +957,7 @@ impl AnalysisFacts<'_> {
             | parser::hir::Effect::ConstraintAssignment { .. }
             | parser::hir::Effect::EqualityConstraint { .. }
             | parser::hir::Effect::VariableAssignment { .. }
+            | parser::hir::Effect::DeferredVariableAssignment { .. }
             | parser::hir::Effect::Update { .. }
             | parser::hir::Effect::If { .. }
             | parser::hir::Effect::While { .. }

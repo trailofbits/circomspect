@@ -96,6 +96,7 @@ pub struct Symbol {
     pub bus_arguments: Vec<ExprId>,
     pub tags: Vec<SymbolId>,
     pub knownness: Knownness,
+    pub value_evidence: ValueEvidence,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -163,6 +164,22 @@ pub enum Knownness {
     ParameterDependent,
     WitnessDependent,
     Opaque,
+}
+
+/// Whether a variable's assigned value has a validated shape.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ValueEvidence {
+    Checked,
+    Deferred,
+}
+
+impl ValueEvidence {
+    fn join(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::Deferred, _) | (_, Self::Deferred) => Self::Deferred,
+            (Self::Checked, Self::Checked) => Self::Checked,
+        }
+    }
 }
 
 /// Evidence available for a control-flow condition before parameter specialization.
@@ -303,6 +320,12 @@ pub enum Effect {
     VariableAssignment {
         target: AccessPath,
         value: ExprId,
+        span: Span,
+    },
+    DeferredVariableAssignment {
+        target: AccessPath,
+        value: ExprId,
+        operator: AssignmentOperator,
         span: Span,
     },
     ComponentInstantiation {
@@ -702,6 +725,7 @@ impl HirProject {
                 SymbolKind::Tag => Knownness::ParameterDependent,
                 SymbolKind::Variable | SymbolKind::Component => Knownness::Opaque,
             },
+            value_evidence: ValueEvidence::Checked,
         });
         id
     }

@@ -588,6 +588,13 @@ impl Lowerer<'_> {
         };
         match &expression.kind {
             ExprKind::Access(path)
+                if self.hir.symbols[path.terminal.index].kind == SymbolKind::Variable
+                    && self.hir.symbols[path.terminal.index].value_evidence
+                        == ValueEvidence::Deferred =>
+            {
+                ScalarShape::Deferred
+            }
+            ExprKind::Access(path)
                 if expression.knownness == Knownness::ParameterDependent
                     && self.hir.symbols[path.terminal.index].kind == SymbolKind::Parameter =>
             {

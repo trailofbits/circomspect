@@ -1,6 +1,7 @@
 use circomspect_parser::hir::{
     lower_project, AccessStep, BusTarget, CallTarget, ControlGuard, DefinitionRef, Effect,
     ExprKind, IncompleteLocation, IncompleteReason, Knownness, PortSchema, SemanticCode, Severity,
+    ValueEvidence,
 };
 use circomspect_parser::new_frontend::{AssignmentOperator, load_sources, Version, VersionPolicy};
 use proptest::prelude::*;
@@ -1340,6 +1341,36 @@ fn unresolved_function_result_keeps_assignment_target_and_call() {
     assert_eq!(*reason, IncompleteReason::UnknownType);
     let Some(expression) = result.hir.expression(*value) else { panic!("call expression") };
     assert!(matches!(expression.kind, ExprKind::Call { .. }));
+}
+
+#[test]
+fn parameter_shaped_variable_write_keeps_deferred_guard() {
+    let source = "function F(n){var x=n;if(x){return 1;}return 0;}";
+    let result = lower(&[("deferred_var.circom", source)], Version::new(2, 2, 3));
+    let effects = effect_for_function(&result, "F");
+    let Some(Effect::DeferredVariableAssignment { target, value, .. }) =
+        effects.iter().find(|effect| matches!(effect, Effect::DeferredVariableAssignment { .. }))
+    else {
+        panic!("parameter-shaped write must remain targeted")
+    };
+    assert_eq!(result.hir.symbol(target.root).unwrap().name, "x");
+    assert!(matches!(result.hir.expression(*value).unwrap().kind, ExprKind::Access(_)));
+    assert_eq!(result.hir.symbol(target.root).unwrap().value_evidence, ValueEvidence::Deferred);
+    assert!(effects
+        .iter()
+        .any(|effect| matches!(effect, Effect::If { guard: ControlGuard::DeferredScalar, .. })));
+}
+
+#[test]
+fn later_scalar_overwrite_does_not_erase_deferred_variable_evidence() {
+    let source = "function F(n){var x=n;x=0;if(x){return 1;}return 0;}";
+    let result = lower(&[("deferred_overwrite.circom", source)], Version::new(2, 2, 3));
+    let effects = effect_for_function(&result, "F");
+    assert!(effects
+        .iter()
+        .any(|effect| matches!(effect, Effect::If { guard: ControlGuard::DeferredScalar, .. })));
+    let x = result.hir.symbols().iter().find(|symbol| symbol.name == "x").unwrap();
+    assert_eq!(x.value_evidence, ValueEvidence::Deferred);
 }
 
 #[test]
