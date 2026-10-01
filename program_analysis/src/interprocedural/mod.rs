@@ -6,6 +6,7 @@ mod effects;
 mod template;
 mod context;
 mod component;
+mod project_use;
 
 pub use context::{
     AnalyzeEvidenceError, ArgumentShape, ArgumentValue, CallContext, ContextEvidence,
@@ -20,3 +21,4 @@ pub use summary::{FunctionSummary, SummaryFact};
 pub use effects::{FunctionEffect, FunctionEffects};
 pub use template::{PortSummary, WitnessProvenance, WitnessSite};
 pub use component::{AppliedComponentPort, CallerOutputRead, ComposedConstraintFixedOutput};
+pub use project_use::{ProjectOutputStatus, ProjectOutputUse};
