@@ -4,7 +4,7 @@ use parser::new_frontend::Span;
 use crate::hir_facts::FactBlocker;
 use crate::interprocedural::CallContext;
 
-use super::{Finding, RuleKind};
+use crate::new_rules::{Finding, RuleKind};
 
 /// Why a rule cannot decide one source scope from certified evidence.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]

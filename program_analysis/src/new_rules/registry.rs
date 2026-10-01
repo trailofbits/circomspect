@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use super::{constraints, direct, numeric, uses, RuleContext, RuleKind, RuleResult};
+use crate::new_rules::{constraints, direct, numeric, uses, RuleContext, RuleKind, RuleResult};
 
 /// A rule consumes one validated definition and call scope at a time.
 pub trait Rule: Sync {
@@ -84,8 +84,10 @@ mod tests {
     use crate::hir_facts::FieldContext;
     use crate::interprocedural::{ArgumentValue, ProjectSummaries};
 
-    use super::*;
-    use crate::new_rules::{AbstentionReason, Finding, ScopedAbstention};
+    use crate::new_rules::registry::{run_rules, Rule, RuleRunError};
+    use crate::new_rules::{
+        AbstentionReason, Finding, RuleContext, RuleKind, RuleResult, ScopedAbstention,
+    };
 
     struct Emits {
         kind: RuleKind,
@@ -144,7 +146,7 @@ mod tests {
         }
     }
 
-    fn with_context(test: impl FnOnce(&RuleContext<'_, '_, '_>, Span)) {
+    fn with_context(test: impl FnOnce(&RuleContext<'_, '_, '_>, &ProjectSummaries<'_>, Span)) {
         let directory = std::env::temp_dir().join(format!(
             "circomspect-rule-registry-{}-{:?}",
             std::process::id(),
@@ -162,12 +164,12 @@ mod tests {
         let facts = summaries.analyze_for_evidence(&cfg, &evidence, None).unwrap();
         let context = RuleContext::new(&facts, &summaries, &evidence).unwrap();
         let DefinitionRef::Template(id) = definition else { panic!("template definition") };
-        test(&context, lowered.hir.template(id).unwrap().name_span);
+        test(&context, &summaries, lowered.hir.template(id).unwrap().name_span);
     }
 
     #[test]
     fn registry_sorts_findings_and_preserves_independent_local_result() {
-        with_context(|context, _| {
+        with_context(|context, _, _| {
             let later = Emits {
                 kind: RuleKind::TooManyArguments,
                 reported: RuleKind::TooManyArguments,
@@ -188,7 +190,7 @@ mod tests {
 
     #[test]
     fn registry_rejects_wrong_kind_and_duplicates() {
-        with_context(|context, span| {
+        with_context(|context, _, span| {
             let wrong = Emits {
                 kind: RuleKind::Complexity,
                 reported: RuleKind::TooManyArguments,
@@ -231,7 +233,7 @@ mod tests {
 
     #[test]
     fn registry_rejects_results_from_another_project() {
-        with_context(|foreign, span| {
+        with_context(|foreign, _, span| {
             let finding = foreign.finding(
                 RuleKind::Complexity,
                 "proved".to_string(),
@@ -244,7 +246,7 @@ mod tests {
                 span,
                 reason: AbstentionReason::UnsupportedConstruct,
             };
-            with_context(|local, _| {
+            with_context(|local, _, _| {
                 let wrong_finding = Returns { finding: Some(finding), abstention: None };
                 assert_eq!(
                     run_rules(local, [&wrong_finding as &dyn Rule]).err(),
@@ -261,19 +263,18 @@ mod tests {
 
     #[test]
     fn registry_rejects_abstention_for_hypothetical_sibling_context() {
-        with_context(|context, span| {
+        with_context(|context, summaries, span| {
             let DefinitionRef::Template(definition) = context.call_context().definition() else {
                 panic!("template definition")
             };
             let field = FieldContext::for_curve(Curve::Bn254);
-            let hypothetical = context
-                .summaries()
+            let hypothetical = summaries
                 .context_for(
                     DefinitionRef::Template(definition),
                     vec![ArgumentValue::Scalar(field.canonical(2.into()))],
                 )
                 .unwrap();
-            assert!(context.summaries().check_context(&hypothetical).is_ok());
+            assert!(summaries.check_context(&hypothetical).is_ok());
             assert_ne!(&hypothetical, context.call_context());
             let rule = Returns {
                 finding: None,

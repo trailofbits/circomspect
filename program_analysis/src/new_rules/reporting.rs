@@ -7,7 +7,7 @@ use program_structure::report::{MessageCategory, Report};
 
 use crate::interprocedural::CallContext;
 
-use super::RuleKind;
+use crate::new_rules::RuleKind;
 
 /// Source files and their legacy renderer IDs, created in parser source order.
 pub struct SourceMap<'a> {
@@ -193,14 +193,14 @@ mod tests {
     use std::fs;
 
     use parser::hir::lower_project;
-    use parser::new_frontend::{load_sources, Version, VersionPolicy};
+    use parser::new_frontend::{load_sources, LoadedProject, SourceId, Span, Version, VersionPolicy};
+    use program_structure::report::MessageCategory;
     use program_structure::utils::constants::Curve;
 
     use crate::hir_cfg::build_cfg;
     use crate::interprocedural::ProjectSummaries;
-    use crate::new_rules::RuleContext;
-
-    use super::*;
+    use crate::new_rules::reporting::{Finding, RenderError, SourceMap};
+    use crate::new_rules::{RuleContext, RuleKind};
 
     fn fixture() -> (LoadedProject, Finding) {
         let directory = std::env::temp_dir().join(format!(

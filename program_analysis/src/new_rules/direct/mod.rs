@@ -1,6 +1,6 @@
 //! Direct syntax and maintainability warning family.
 
-use super::{Rule, RuleKind};
+use crate::new_rules::{Rule, RuleKind};
 
 pub const KINDS: &[RuleKind] = &[RuleKind::Complexity, RuleKind::TooManyArguments];
 

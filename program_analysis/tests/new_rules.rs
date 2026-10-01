@@ -7,7 +7,7 @@ use circomspect_program_analysis::new_rules::{
     constraints, direct, numeric, uses, AbstentionReason, RenderError, RuleContext,
     RuleContextError, RuleKind, RuleResult, ScopedAbstention, SourceMap,
 };
-use circomspect_program_analysis::hir_facts::FieldContext;
+use circomspect_program_analysis::hir_facts::{FieldContext, Range};
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::hir_facts::analyze;
 use circomspect_program_analysis::interprocedural::{
@@ -76,8 +76,8 @@ fn rule_context_requires_matching_certified_scope() {
 fn concrete_rule_context_rejects_unbound_and_wrong_seed_facts() {
     let loaded = load_fixture(
         "rule-seed",
-        "template Child(n){} template One(){component c=Child(1);}\
-         template Two(){component c=Child(2);}\n",
+        "template Child(n){signal output y;if(n){y<==1;}else{y<==2;}} \
+         template One(){component c=Child(1);} template Two(){component c=Child(0);}\n",
     );
     let lowered = lower_project(&loaded);
     let child = lowered.hir.definition("Child").unwrap();
@@ -106,11 +106,21 @@ fn concrete_rule_context_rejects_unbound_and_wrong_seed_facts() {
         Some(RuleContextError::MismatchedFacts(SummaryBlocker::WrongContext))
     );
     let seeded = summaries.analyze_for_evidence(&child_cfg, &child_evidence[0], None).unwrap();
-    assert!(RuleContext::new(&seeded, &summaries, &child_evidence[0]).is_ok());
+    let scoped = RuleContext::new(&seeded, &summaries, &child_evidence[0]).unwrap();
+    let parser::hir::DefinitionRef::Template(child_id) = child else { panic!("template") };
+    let port = lowered.hir.template(child_id).unwrap().ports[0];
+    let summary = scoped.template_port(port, &[]).unwrap();
+    let summary = summary.certified().unwrap();
+    assert_eq!(summary.context(), child_evidence[0].context());
+    assert_eq!(summary.fixed_value(), Some(&field.canonical(1.into())));
     assert_eq!(
         RuleContext::new(&seeded, &summaries, &child_evidence[1]).err(),
         Some(RuleContextError::MismatchedFacts(SummaryBlocker::WrongContext))
     );
+    let other_facts = summaries.analyze_for_evidence(&child_cfg, &child_evidence[1], None).unwrap();
+    let other = RuleContext::new(&other_facts, &summaries, &child_evidence[1]).unwrap();
+    let other_summary = other.template_port(port, &[]).unwrap();
+    assert_eq!(other_summary.certified().unwrap().fixed_value(), Some(&field.canonical(2.into())));
     let symbolic = summaries.symbolic_root(child).unwrap();
     assert_eq!(
         RuleContext::new(&seeded, &summaries, &symbolic).err(),
@@ -118,6 +128,24 @@ fn concrete_rule_context_rejects_unbound_and_wrong_seed_facts() {
     );
     let universal = summaries.analyze_for_evidence(&child_cfg, &symbolic, None).unwrap();
     assert!(RuleContext::new(&universal, &summaries, &symbolic).is_ok());
+}
+
+#[test]
+fn function_summaries_are_bound_to_the_active_definition() {
+    let loaded = load_fixture("function-scope", "function F(){return 1;}\n");
+    let lowered = lower_project(&loaded);
+    let definition = lowered.hir.definition("F").unwrap();
+    let summaries = ProjectSummaries::build(&lowered, Curve::Bn254).unwrap();
+    let evidence = summaries.symbolic_root(definition).unwrap();
+    let cfg = build_cfg(&lowered.hir, definition).unwrap();
+    let facts = summaries.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let context = RuleContext::new(&facts, &summaries, &evidence).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    assert_eq!(
+        context.function_summary().unwrap().certified().unwrap().returns(),
+        &Range::Exact(field.canonical(1.into()))
+    );
+    assert!(context.function_effects().unwrap().certified().is_some());
 }
 
 #[test]

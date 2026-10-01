@@ -1,6 +1,6 @@
 //! Dependency, side-effect, and output-use warning family.
 
-use super::{Rule, RuleKind};
+use crate::new_rules::{Rule, RuleKind};
 
 pub const KINDS: &[RuleKind] = &[
     RuleKind::UnusedVariableValue,
