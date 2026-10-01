@@ -1,15 +1,16 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use abstract_interpretation::graph::FlowGraph;
 use parser::hir::{
     DefinitionRef, ExprId, ExprKind, HirProject, LoweredProject, ProjectIdentity, SymbolId,
 };
 use parser::new_frontend::Version;
 use program_structure::utils::constants::Curve;
 
-use crate::hir_cfg::DefinitionCfg;
+use crate::hir_cfg::{CfgNodeKind, DefinitionCfg};
 use crate::hir_facts::{
     analyze_with_scalar_parameters, exact_compile_time, AnalysisFacts, FactBlocker, FieldContext,
-    FieldValue, Range,
+    FieldValue, Range, VisitAccesses,
 };
 
 use super::{build_call_graph, CallGraph, CallGraphError, CallOwner, CallSiteId, ReachableCall};
@@ -86,9 +87,7 @@ impl CallContext {
                     values.insert(*symbol, value.clone());
                 }
                 ArgumentValue::Symbolic(_) => {}
-                ArgumentValue::Array(_) | ArgumentValue::Bus(_) => {
-                    return Err(SummaryBlocker::UnsupportedContext);
-                }
+                ArgumentValue::Array(_) | ArgumentValue::Bus(_) => {}
             }
         }
         Ok(values)
@@ -133,6 +132,7 @@ pub enum SummaryBlocker {
     UnsupportedCallForm,
     LocalFacts(BTreeSet<FactBlocker>),
     UnsupportedContext,
+    InvalidAssignment(ExprId),
     ExternalSummary,
     MissingReturn,
     LocalAnalysis(String),
@@ -408,6 +408,41 @@ impl<'a> ProjectSummaries<'a> {
             }
             DefinitionRef::Bus(id) => self.hir().bus(id).map(|item| item.parameters.as_slice()),
         }
+    }
+
+    pub(crate) fn invalid_deferred_assignment(
+        &self,
+        cfg: &DefinitionCfg,
+        parameters: &[SymbolId],
+        context: &CallContext,
+        facts: &AnalysisFacts<'_>,
+    ) -> Option<ExprId> {
+        let aggregate: BTreeSet<_> = parameters
+            .iter()
+            .zip(context.arguments())
+            .filter_map(|(symbol, argument)| match argument {
+                ArgumentValue::Array(_) | ArgumentValue::Bus(_) => Some(*symbol),
+                ArgumentValue::Scalar(_) | ArgumentValue::Symbolic(_) => None,
+            })
+            .collect();
+        if aggregate.is_empty() {
+            return None;
+        }
+        for id in cfg.nodes() {
+            let Some(CfgNodeKind::DeferredAssignment { value, .. }) =
+                cfg.node(*id).map(|node| &node.kind)
+            else {
+                continue;
+            };
+            let mut invalid = false;
+            let complete = value.visit_accesses(self.hir(), &mut |path| {
+                invalid |= aggregate.contains(&path.root) && path.steps.is_empty();
+            });
+            if complete && invalid && facts.reachable_node(*id).certified() == Some(&true) {
+                return Some(*value);
+            }
+        }
+        None
     }
 
     fn canonicalize(&self, value: ArgumentValue) -> ArgumentValue {

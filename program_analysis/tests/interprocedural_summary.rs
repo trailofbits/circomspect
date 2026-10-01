@@ -20,6 +20,20 @@ fn fixture(source: &str) -> LoweredProject {
     lower_project(&loaded)
 }
 
+fn included_fixture(library: &str, root: &str) -> LoweredProject {
+    let directory = std::env::temp_dir().join(format!(
+        "circomspect-phase5-include-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    fs::create_dir_all(&directory).unwrap();
+    fs::write(directory.join("lib.circom"), library).unwrap();
+    let path = directory.join("root.circom");
+    fs::write(&path, root).unwrap();
+    let loaded = load_sources(&[path], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
+    lower_project(&loaded)
+}
+
 #[test]
 fn concrete_scalar_function_summary_specializes_return_and_branch() {
     let lowered = fixture("function F(n){if(n){return n+2;}return 2;}");
@@ -57,6 +71,94 @@ fn concrete_scalar_function_summary_specializes_return_and_branch() {
         )
         .unavailable()
         .is_some());
+}
+
+#[test]
+fn deferred_variable_guard_specializes_for_scalar_but_not_symbolic_argument() {
+    let lowered = fixture("function F(n){var x=n;if(x){return 1;}return 2;}");
+    let provider = ProjectSummaries::build(&lowered, Curve::Bn254).unwrap();
+    let DefinitionRef::Function(function) = lowered.hir.definition("F").unwrap() else {
+        panic!("function F")
+    };
+    let field = FieldContext::for_curve(Curve::Bn254);
+    for (argument, expected) in [(0, 2), (1, 1)] {
+        let context = provider
+            .context_for(
+                DefinitionRef::Function(function),
+                vec![ArgumentValue::Scalar(field.canonical(argument.into()))],
+            )
+            .unwrap();
+        assert_eq!(
+            provider.function(function, &context).certified().map(|fact| fact.returns()),
+            Some(&Range::Exact(field.canonical(expected.into())))
+        );
+    }
+    let symbolic = provider.symbolic_context_for(DefinitionRef::Function(function)).unwrap();
+    assert!(provider.function(function, &symbolic).unavailable().is_some());
+    let array = provider
+        .context_for(
+            DefinitionRef::Function(function),
+            vec![ArgumentValue::Array(vec![ArgumentValue::Scalar(field.canonical(1.into()))])],
+        )
+        .unwrap();
+    assert!(provider
+        .function(function, &array)
+        .unavailable()
+        .unwrap()
+        .iter()
+        .any(|blocker| matches!(blocker, SummaryBlocker::InvalidAssignment(_))));
+}
+
+#[test]
+fn deferred_assignment_is_checked_even_when_later_overwritten() {
+    let lowered = fixture("function F(n){var x=n;x=1;return x;}");
+    let provider = ProjectSummaries::build(&lowered, Curve::Bn254).unwrap();
+    let DefinitionRef::Function(function) = lowered.hir.definition("F").unwrap() else {
+        panic!("function F")
+    };
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let array = provider
+        .context_for(
+            DefinitionRef::Function(function),
+            vec![ArgumentValue::Array(vec![ArgumentValue::Scalar(field.canonical(0.into()))])],
+        )
+        .unwrap();
+    assert!(provider
+        .function(function, &array)
+        .unavailable()
+        .unwrap()
+        .iter()
+        .any(|blocker| matches!(blocker, SummaryBlocker::InvalidAssignment(_))));
+    let scalar = provider
+        .context_for(
+            DefinitionRef::Function(function),
+            vec![ArgumentValue::Scalar(field.canonical(0.into()))],
+        )
+        .unwrap();
+    assert_eq!(
+        provider.function(function, &scalar).certified().unwrap().returns(),
+        &Range::Exact(field.canonical(1.into()))
+    );
+}
+
+#[test]
+fn unused_array_argument_does_not_block_a_constant_return() {
+    let lowered = fixture("function F(n){return 7;}");
+    let provider = ProjectSummaries::build(&lowered, Curve::Bn254).unwrap();
+    let DefinitionRef::Function(function) = lowered.hir.definition("F").unwrap() else {
+        panic!("function F")
+    };
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let context = provider
+        .context_for(
+            DefinitionRef::Function(function),
+            vec![ArgumentValue::Array(vec![ArgumentValue::Scalar(field.canonical(1.into()))])],
+        )
+        .unwrap();
+    assert_eq!(
+        provider.function(function, &context).certified().unwrap().returns(),
+        &Range::Exact(field.canonical(7.into()))
+    );
 }
 
 #[test]
@@ -134,6 +236,29 @@ fn direct_resolved_function_call_agrees_with_inlined_return() {
     assert_eq!(
         summary.certified().unwrap().input_dependencies(),
         &std::collections::BTreeSet::from([0])
+    );
+}
+
+#[test]
+fn included_function_summary_composes_across_source_files() {
+    let lowered = included_fixture(
+        "function Id(a){return a;}",
+        "include \"lib.circom\"; function Outer(n){return Id(n);}",
+    );
+    let provider = ProjectSummaries::build(&lowered, Curve::Bn254).unwrap();
+    let DefinitionRef::Function(outer) = lowered.hir.definition("Outer").unwrap() else {
+        panic!("Outer")
+    };
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let context = provider
+        .context_for(
+            DefinitionRef::Function(outer),
+            vec![ArgumentValue::Scalar(field.canonical(9.into()))],
+        )
+        .unwrap();
+    assert_eq!(
+        provider.function(outer, &context).certified().unwrap().returns(),
+        &Range::Exact(field.canonical(9.into()))
     );
 }
 
@@ -282,6 +407,31 @@ fn template_port_summary_specializes_constraint_provenance() {
     );
     assert!(provider.template_port(template, &symbolic, port).unavailable().is_some());
     assert!(lowered.hir.mains().is_empty());
+}
+
+#[test]
+fn deferred_variable_guard_specializes_template_constraint_incidence() {
+    let lowered = fixture("template T(n){var x=n;signal output y;if(x){y<==1;}else{y<--1;}}");
+    let provider = ProjectSummaries::build(&lowered, Curve::Bn254).unwrap();
+    let DefinitionRef::Template(template) = lowered.hir.definition("T").unwrap() else {
+        panic!("template T")
+    };
+    let port = lowered.hir.template(template).unwrap().ports[0];
+    let field = FieldContext::for_curve(Curve::Bn254);
+    for (argument, incidence) in [(0, Incidence::Zero), (1, Incidence::Must)] {
+        let context = provider
+            .context_for(
+                DefinitionRef::Template(template),
+                vec![ArgumentValue::Scalar(field.canonical(argument.into()))],
+            )
+            .unwrap();
+        assert_eq!(
+            provider.template_port(template, &context, port).certified().unwrap().incidence(),
+            incidence
+        );
+    }
+    let symbolic = provider.symbolic_context_for(DefinitionRef::Template(template)).unwrap();
+    assert!(provider.template_port(template, &symbolic, port).unavailable().is_some());
 }
 
 #[test]

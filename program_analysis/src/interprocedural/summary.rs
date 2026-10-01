@@ -152,6 +152,11 @@ impl ProjectSummaries<'_> {
         let field = FieldContext::for_curve(self.curve().clone());
         let facts = analyze_with_scalar_parameters(self.hir(), &cfg, &field, parameters, None)
             .map_err(|error| SummaryBlocker::LocalAnalysis(format!("{error:?}")))?;
+        if let Some(expression) =
+            self.invalid_deferred_assignment(&cfg, &function.parameters, context, &facts)
+        {
+            return Err(SummaryBlocker::InvalidAssignment(expression));
+        }
         work(function, &cfg, &facts)
     }
 

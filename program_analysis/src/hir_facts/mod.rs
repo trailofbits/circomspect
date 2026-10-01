@@ -27,7 +27,7 @@ use abstract_interpretation::lattice::Lattice;
 use domains::{DegreeUpper, FieldRange};
 use forward::{ForwardAnalysis, ForwardState};
 use liveness::{LiveState, LivenessAnalysis};
-use walk::VisitAccesses;
+pub(crate) use walk::VisitAccesses;
 
 pub use access::{AccessKey, AccessKeyStep, IndexKey};
 pub use domains::{DegreeUpper as Degree, FieldRange as Range};
@@ -124,6 +124,7 @@ pub struct AnalysisFacts<'a> {
     forward: ForwardResult,
     backward: BackwardResult,
     specialized_parameters: BTreeSet<SymbolId>,
+    resolved_deferred: BTreeSet<NodeId>,
     context_binding: Option<CallContext>,
 }
 
@@ -171,9 +172,11 @@ fn analyze_seeded<'a>(
         budget,
     )
     .map_err(AnalysisError::InvalidGraph)?;
+    let resolved_deferred = resolved_deferred_nodes(hir, cfg, field, &forward);
     let pruned_edges = forward_pruned_edges(hir, cfg, field, &forward);
-    let liveness =
-        LivenessAnalysis::new(hir, field, cfg.definition()).with_pruned_edges(pruned_edges);
+    let liveness = LivenessAnalysis::new(hir, field, cfg.definition())
+        .with_pruned_edges(pruned_edges)
+        .with_resolved_deferred(resolved_deferred.clone());
     let backward =
         solve::<_, _, Backward>(cfg, &liveness, budget).map_err(AnalysisError::InvalidGraph)?;
     Ok(AnalysisFacts {
@@ -183,8 +186,37 @@ fn analyze_seeded<'a>(
         forward,
         backward,
         specialized_parameters,
+        resolved_deferred,
         context_binding: None,
     })
+}
+
+fn resolved_deferred_nodes(
+    hir: &HirProject,
+    cfg: &DefinitionCfg,
+    field: &FieldContext,
+    result: &ForwardResult,
+) -> BTreeSet<NodeId> {
+    let SolveResult::Complete(facts) = result else { return BTreeSet::new() };
+    let mut resolved = BTreeSet::new();
+    for id in cfg.nodes() {
+        let Some(CfgNodeKind::DeferredAssignment { target, value }) =
+            cfg.node(*id).map(|node| &node.kind)
+        else {
+            continue;
+        };
+        let Some(variables) =
+            facts.get(id).and_then(|item| item.input.as_ref()).and_then(ForwardState::variables)
+        else {
+            continue;
+        };
+        if target.steps.is_empty()
+            && forward::eval_expression(hir, field, *value, variables).is_some()
+        {
+            resolved.insert(*id);
+        }
+    }
+    resolved
 }
 
 fn forward_pruned_edges(
@@ -208,6 +240,10 @@ fn forward_pruned_edges(
 }
 
 impl AnalysisFacts<'_> {
+    pub(crate) fn resolved_deferred_assignment(&self, node: NodeId) -> bool {
+        self.resolved_deferred.contains(&node)
+    }
+
     pub(crate) fn bind_context(&mut self, context: CallContext) {
         self.context_binding = Some(context);
     }
@@ -472,8 +508,10 @@ impl AnalysisFacts<'_> {
             return;
         }
         for id in self.cfg.nodes() {
-            let Some(CfgNodeKind::Assignment { target, value }) =
-                self.cfg.node(*id).map(|node| &node.kind)
+            let Some(
+                CfgNodeKind::Assignment { target, value }
+                | CfgNodeKind::DeferredAssignment { target, value },
+            ) = self.cfg.node(*id).map(|node| &node.kind)
             else {
                 continue;
             };
@@ -517,11 +555,10 @@ impl AnalysisFacts<'_> {
             }) {
                 blockers.insert(FactBlocker::AggregateAccess);
             }
-            if self
-                .hir
-                .symbol(path.terminal)
-                .is_some_and(|symbol| symbol.value_evidence == parser::hir::ValueEvidence::Deferred)
-            {
+            if self.hir.symbol(path.terminal).is_some_and(|symbol| {
+                symbol.value_evidence == parser::hir::ValueEvidence::Deferred
+                    && !self.deferred_symbol_resolved(symbol.id)
+            }) {
                 blockers.insert(FactBlocker::DeferredShape(expression));
             }
         });
@@ -529,6 +566,28 @@ impl AnalysisFacts<'_> {
             blockers.insert(FactBlocker::DeferredShape(expression));
         }
         blockers
+    }
+
+    fn deferred_symbol_resolved(&self, symbol: SymbolId) -> bool {
+        let SolveResult::Complete(_) = &self.forward else { return false };
+        let mut found = false;
+        for id in self.cfg.nodes() {
+            let Some(CfgNodeKind::DeferredAssignment { target, .. }) =
+                self.cfg.node(*id).map(|node| &node.kind)
+            else {
+                continue;
+            };
+            if target.root != symbol {
+                continue;
+            }
+            found = true;
+            if self.site_state(*id).is_some_and(|state| state.variables().is_some())
+                && !self.resolved_deferred.contains(id)
+            {
+                return false;
+            }
+        }
+        found
     }
 
     fn depends_on_parameter(
@@ -560,8 +619,10 @@ impl AnalysisFacts<'_> {
                 continue;
             }
             for id in self.cfg.nodes() {
-                let Some(CfgNodeKind::Assignment { target, value }) =
-                    self.cfg.node(*id).map(|node| &node.kind)
+                let Some(
+                    CfgNodeKind::Assignment { target, value }
+                    | CfgNodeKind::DeferredAssignment { target, value },
+                ) = self.cfg.node(*id).map(|node| &node.kind)
                 else {
                     continue;
                 };
@@ -1035,6 +1096,7 @@ impl AnalysisFacts<'_> {
             | CfgNodeKind::OpaqueAssignment { .. }
             | CfgNodeKind::OpaqueEquality { .. }
             | CfgNodeKind::Instantiate { .. } => true,
+            CfgNodeKind::DeferredAssignment { .. } => !self.resolved_deferred.contains(&id),
             CfgNodeKind::Evaluate(expr) => {
                 self.hir.expression(*expr).map_or(true, |item| match &item.kind {
                     ExprKind::Opaque(_) | ExprKind::AnonymousComponent { .. } => true,
@@ -1067,7 +1129,8 @@ impl AnalysisFacts<'_> {
     fn is_function_call_effect(&self, node: NodeId) -> bool {
         let Some(node) = self.cfg.node(node) else { return false };
         match &node.kind {
-            CfgNodeKind::OpaqueAssignment { value, .. } => self.is_function_call(*value),
+            CfgNodeKind::OpaqueAssignment { value, .. }
+            | CfgNodeKind::DeferredAssignment { value, .. } => self.is_function_call(*value),
             CfgNodeKind::OpaqueEquality { left, right, .. } => {
                 self.is_function_call(*left) || self.is_function_call(*right)
             }
@@ -1156,7 +1219,9 @@ impl AnalysisFacts<'_> {
                 return self.anonymous_constraint_input_relevant(*id, path);
             }
         }
-        if let CfgNodeKind::OpaqueAssignment { target, value, .. } = &node.kind {
+        if let CfgNodeKind::OpaqueAssignment { target, value, .. }
+        | CfgNodeKind::DeferredAssignment { target, value } = &node.kind
+        {
             let query = key_for_path(self.hir, self.field, path, &BTreeMap::new());
             let mut relevant = false;
             target.visit_accesses(self.hir, &mut |used| {
