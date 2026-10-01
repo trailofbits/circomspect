@@ -111,6 +111,13 @@ fn concrete_rule_context_rejects_unbound_and_wrong_seed_facts() {
         RuleContext::new(&seeded, &summaries, &child_evidence[1]).err(),
         Some(RuleContextError::MismatchedFacts(SummaryBlocker::WrongContext))
     );
+    let symbolic = summaries.symbolic_root(child).unwrap();
+    assert_eq!(
+        RuleContext::new(&seeded, &summaries, &symbolic).err(),
+        Some(RuleContextError::MismatchedFacts(SummaryBlocker::WrongContext))
+    );
+    let universal = summaries.analyze_for_evidence(&child_cfg, &symbolic, None).unwrap();
+    assert!(RuleContext::new(&universal, &summaries, &symbolic).is_ok());
 }
 
 #[test]
