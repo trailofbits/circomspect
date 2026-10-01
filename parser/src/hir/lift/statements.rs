@@ -68,6 +68,7 @@ impl Lifter<'_> {
                             }
                         }
                         Effect::VariableAssignment { target, value, .. }
+                        | Effect::DeferredVariableAssignment { target, value, .. }
                         | Effect::WitnessAssignment { target, value, .. }
                         | Effect::ConstraintAssignment { target, value, .. }
                         | Effect::OpaqueAssignment { target, value, .. } => {
@@ -132,6 +133,20 @@ impl Lifter<'_> {
     ) -> Option<Effect> {
         let reason = IncompleteReason::InvalidAssignment;
         match effect {
+            Effect::DeferredVariableAssignment { target, value, operator, span } => {
+                if !Self::path_depends_on_invalid(target, symbols, expressions)
+                    && !expressions.contains(value)
+                {
+                    return None;
+                }
+                Some(Effect::OpaqueAssignment {
+                    target: target.clone(),
+                    value: *value,
+                    operator: *operator,
+                    reason,
+                    span: *span,
+                })
+            }
             Effect::VariableAssignment { target, value, span }
             | Effect::ComponentInstantiation { target, value, span }
             | Effect::WitnessAssignment { target, value, span }
@@ -148,6 +163,7 @@ impl Lifter<'_> {
                         AssignmentOperator::Assign
                     }
                     Effect::Declaration { .. }
+                    | Effect::DeferredVariableAssignment { .. }
                     | Effect::OpaqueAssignment { .. }
                     | Effect::EqualityConstraint { .. }
                     | Effect::OpaqueEquality { .. }
