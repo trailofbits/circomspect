@@ -12,7 +12,7 @@ use circomspect_program_analysis::hir_facts::{FactBlocker, FieldContext, Range};
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::hir_facts::analyze;
 use circomspect_program_analysis::interprocedural::{
-    ArgumentValue, CallOwner, CallReachability, ProjectSummaries, SummaryBlocker,
+    ArgumentValue, CallBlocker, CallOwner, CallReachability, ProjectSummaries, SummaryBlocker,
 };
 use parser::hir::lift_project;
 use parser::new_frontend::{load_sources, SourceId, Span, Version, VersionPolicy};
@@ -147,6 +147,93 @@ fn function_summaries_are_bound_to_the_active_definition() {
         &Range::Exact(field.canonical(1.into()))
     );
     assert!(context.function_effects().unwrap().certified().is_some());
+}
+
+#[test]
+fn applied_component_port_uses_active_reachability_and_exact_instance() {
+    let loaded = load_fixture(
+        "component-scope",
+        concat!(
+            "template Child(n){signal output out;if(n){out<==1;}else{out<==0;}} ",
+            "template Parent(){component c[2];c[0]=Child(0);c[1]=Child(1);} ",
+            "template Other(){component c=Child(2);}"
+        ),
+    );
+    let lifted = lift_project(&loaded);
+    let parent = lifted.hir.definition("Parent").unwrap();
+    let other = lifted.hir.definition("Other").unwrap();
+    let parser::hir::DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap()
+    else {
+        panic!("Child is a template")
+    };
+    let output = lifted.hir.template(child).unwrap().ports[0];
+    let parent_component = lifted
+        .hir
+        .components()
+        .iter()
+        .find(|component| lifted.hir.symbol(component.symbol).unwrap().name == "c")
+        .unwrap()
+        .id;
+    let summaries = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let evidence = summaries.symbolic_root(parent).unwrap();
+    let cfg = build_cfg(&lifted.hir, parent).unwrap();
+    let facts = summaries.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let context = RuleContext::new(&facts, &summaries, &evidence).unwrap();
+    let sites = context.call_sites();
+    assert_eq!(sites.len(), 2);
+    assert!(sites.iter().all(|site| site.owner == CallOwner::Definition(parent)));
+    let handles = [0, 1].map(|index| {
+        context.facts().component_output_handle(parent_component, &[index], output, &[]).unwrap()
+    });
+    let field = FieldContext::for_curve(Curve::Bn254);
+    for (index, expected) in [(0, 0), (1, 1)] {
+        let applied = context.applied_component_port(sites[index].id(), &handles[index]).unwrap();
+        let applied = applied.unwrap();
+        let applied = applied.certified().unwrap_or_else(|| panic!("{:?}", applied.unavailable()));
+        assert_eq!(applied.caller_evidence().context(), context.call_context());
+        assert_eq!(applied.port_summary().fixed_value(), Some(&field.canonical(expected.into())));
+    }
+    let mismatched = context.applied_component_port(sites[0].id(), &handles[1]).unwrap().unwrap();
+    assert!(mismatched.unavailable().unwrap().contains(&SummaryBlocker::WrongInstance));
+    let foreign = summaries.graph().calls_from(CallOwner::Definition(other))[0].id();
+    assert_eq!(
+        context.applied_component_port(foreign, &handles[0]).err(),
+        Some(CallBlocker::ForeignDefinition)
+    );
+}
+
+#[test]
+fn unreachable_component_call_has_no_applied_port_fact() {
+    let loaded = load_fixture(
+        "unreachable-component",
+        concat!(
+            "template Child(){signal output out;out<==1;} ",
+            "template Parent(){component c;if(0){c=Child();}}"
+        ),
+    );
+    let lifted = lift_project(&loaded);
+    let parent = lifted.hir.definition("Parent").unwrap();
+    let parser::hir::DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap()
+    else {
+        panic!("Child is a template")
+    };
+    let summaries = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let evidence = summaries.symbolic_root(parent).unwrap();
+    let cfg = build_cfg(&lifted.hir, parent).unwrap();
+    let facts = summaries.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let context = RuleContext::new(&facts, &summaries, &evidence).unwrap();
+    let sites = context.call_sites();
+    assert_eq!(sites.len(), 1);
+    let handle = context
+        .facts()
+        .component_output_handle(
+            lifted.hir.components()[0].id,
+            &[],
+            lifted.hir.template(child).unwrap().ports[0],
+            &[],
+        )
+        .unwrap();
+    assert!(context.applied_component_port(sites[0].id(), &handle).unwrap().is_none());
 }
 
 #[test]

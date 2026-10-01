@@ -1,9 +1,10 @@
 use parser::hir::{DefinitionRef, HirProject, PortId};
 use parser::new_frontend::Span;
 
-use crate::hir_facts::AnalysisFacts;
+use crate::hir_facts::{AccessHandle, AnalysisFacts};
 use crate::interprocedural::{
-    CallContext, ContextEvidence, FunctionEffects, FunctionSummary, PortSummary, ProjectSummaries,
+    AppliedComponentPort, CallBlocker, CallContext, CallOwner, CallReachability, CallSite,
+    CallSiteId, ContextEvidence, FunctionEffects, FunctionSummary, PortSummary, ProjectSummaries,
     SummaryBlocker, SummaryFact, WitnessSite,
 };
 
@@ -78,6 +79,32 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
     #[must_use]
     pub fn origin(&self) -> crate::interprocedural::ContextOrigin {
         self.evidence.origin()
+    }
+
+    /// List call sites owned by the active definition, including unresolved sites.
+    #[must_use]
+    pub fn call_sites(&self) -> Vec<&CallSite> {
+        self.summaries.graph().calls_from(CallOwner::Definition(self.call_context().definition()))
+    }
+
+    /// Bind a child-local output summary to one may-reachable exact component instance.
+    ///
+    /// This does not certify caller-side constraint relations, witness readiness, or output use.
+    pub fn applied_component_port(
+        &self,
+        site: CallSiteId,
+        handle: &AccessHandle,
+    ) -> Result<Option<SummaryFact<AppliedComponentPort>>, CallBlocker> {
+        match self.summaries.graph().reachable_call(site, self.facts) {
+            CallReachability::Reachable(call) => Ok(Some(self.summaries.apply_component_output(
+                self.facts,
+                self.evidence,
+                &call,
+                handle,
+            ))),
+            CallReachability::Unreachable => Ok(None),
+            CallReachability::Unavailable(blocker) => Err(blocker),
+        }
     }
 
     /// Return a summary only for the active function specialization.
