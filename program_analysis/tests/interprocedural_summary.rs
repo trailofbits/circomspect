@@ -208,6 +208,87 @@ fn a_constant_value_after_an_opaque_call_is_conditional() {
 }
 
 #[test]
+fn a_failing_assertion_cannot_certify_a_later_return() {
+    let lifted = fixture("function F(){assert(0);return 7;}");
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else { panic!("F") };
+    let context = provider.symbolic_context_for(DefinitionRef::Function(f)).unwrap();
+    let summary = provider.function(f, &context);
+    assert!(summary.certified().and_then(|value| value.complete_return()).is_none());
+}
+
+#[test]
+fn assertion_coverage_uses_the_bound_context_and_reachable_branch() {
+    let lifted = fixture(
+        "function F(n){if(n){assert(n);}return 7;} \
+         function G(n){if(n){assert(0);}return 7;}",
+    );
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else { panic!("F") };
+    let DefinitionRef::Function(g) = lifted.hir.definition("G").unwrap() else { panic!("G") };
+    let field = FieldContext::for_curve(Curve::Bn254);
+    for (function, value, complete) in [(f, 0, true), (f, 1, false), (g, 0, true), (g, 1, false)] {
+        let context = provider
+            .context_for(
+                DefinitionRef::Function(function),
+                vec![ArgumentValue::Scalar(field.canonical(value.into()))],
+            )
+            .unwrap();
+        let summary = provider.function(function, &context);
+        assert_eq!(
+            summary.certified().and_then(|item| item.complete_return()).is_some(),
+            complete,
+            "{function:?}({value}): {:?}",
+            summary.unavailable()
+        );
+    }
+    let symbolic = provider.symbolic_context_for(DefinitionRef::Function(f)).unwrap();
+    assert!(provider
+        .function(f, &symbolic)
+        .certified()
+        .and_then(|item| item.complete_return())
+        .is_none());
+}
+
+#[test]
+fn checked_true_assertion_retains_complete_return_evidence() {
+    let lifted = fixture("function F(){assert(1);return 7;}");
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else { panic!("F") };
+    let context = provider.symbolic_context_for(DefinitionRef::Function(f)).unwrap();
+    let summary = provider.function(f, &context);
+    let expected = Range::Exact(FieldContext::for_curve(Curve::Bn254).canonical(7.into()));
+    assert_eq!(summary.certified().and_then(|item| item.complete_return()), Some(&expected));
+}
+
+#[test]
+fn opaque_assertion_effect_cannot_certify_a_later_return() {
+    let lifted = fixture("function F(){assert([1,2]);return 7;}");
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else { panic!("F") };
+    let context = provider.symbolic_context_for(DefinitionRef::Function(f)).unwrap();
+    let summary = provider.function(f, &context);
+    assert!(summary.certified().and_then(|item| item.complete_return()).is_none());
+}
+
+#[test]
+fn division_by_zero_before_return_does_not_certify_completion() {
+    for (denominator, complete) in [(0, false), (1, true)] {
+        let lifted = fixture(&format!("function F(){{var x=1/{denominator};return 7;}}"));
+        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else { panic!("F") };
+        let context = provider.symbolic_context_for(DefinitionRef::Function(f)).unwrap();
+        let summary = provider.function(f, &context);
+        assert_eq!(
+            summary.certified().and_then(|item| item.complete_return()).is_some(),
+            complete,
+            "denominator {denominator}: {:?}",
+            summary.unavailable()
+        );
+    }
+}
+
+#[test]
 fn conditional_return_coverage_propagates_through_a_direct_call() {
     let field = FieldContext::for_curve(Curve::Bn254);
     let lifted = fixture("function G(){var t=Missing();return 7;} function F(){return G();}");

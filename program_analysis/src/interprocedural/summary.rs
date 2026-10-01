@@ -6,7 +6,8 @@ use abstract_interpretation::lattice::Lattice;
 use abstract_interpretation::solver::{
     solve, Blocker, DataflowAnalysis, Forward, SolveResult, Transfer, TransferOutcome,
 };
-use parser::hir::{DefinitionRef, ExprId, ExprKind, Function, FunctionId};
+use parser::hir::{CallTarget, DefinitionRef, ExprId, ExprKind, Function, FunctionId};
+use parser::new_frontend::BinaryOperator;
 
 use crate::hir_cfg::{build_cfg, CfgNodeKind, DefinitionCfg};
 use crate::hir_facts::{
@@ -291,7 +292,7 @@ impl ProjectSummaries<'_> {
         self.with_local_function(id, context, |function, cfg, facts| {
             let calls = self.reachable_function_calls(id, function, facts)?;
             let (mut local, return_calls) = self.local_returns(function, cfg, facts, &calls)?;
-            if self.has_opaque_call(id, facts) || has_unreturned_path(cfg, facts) {
+            if self.may_fail_before_return(id, cfg, facts) || has_unreturned_path(cfg, facts) {
                 local.coverage = ReturnCoverage::Conditional;
             }
             let control_callees = calls.values().map(|call| call.callee.clone()).collect();
@@ -299,7 +300,12 @@ impl ProjectSummaries<'_> {
         })
     }
 
-    fn has_opaque_call(&self, id: FunctionId, facts: &AnalysisFacts<'_>) -> bool {
+    fn may_fail_before_return(
+        &self,
+        id: FunctionId,
+        cfg: &DefinitionCfg,
+        facts: &AnalysisFacts<'_>,
+    ) -> bool {
         let owner = CallOwner::Definition(DefinitionRef::Function(id));
         for site in self.graph().calls_from(owner) {
             if let Some(DefinitionRef::Function(_)) = site.resolved() {
@@ -310,7 +316,95 @@ impl ProjectSummaries<'_> {
                 return true;
             }
         }
+        let field = FieldContext::for_curve(self.curve().clone());
+        for id in cfg.nodes() {
+            let Some(node) = cfg.node(*id) else { return true };
+            match facts.reachable_node(*id).certified() {
+                Some(false) => continue,
+                None => return true,
+                Some(true) => {}
+            }
+            if self.node_may_fail(*id, &node.kind, facts, &field) {
+                return true;
+            }
+        }
         false
+    }
+
+    fn node_may_fail(
+        &self,
+        id: NodeId,
+        kind: &CfgNodeKind,
+        facts: &AnalysisFacts<'_>,
+        field: &FieldContext,
+    ) -> bool {
+        match kind {
+            CfgNodeKind::Assert { condition } => {
+                !is_proven_nonzero(facts.range(*condition).certified(), field)
+            }
+            CfgNodeKind::Opaque(_)
+            | CfgNodeKind::OpaqueAssignment { .. }
+            | CfgNodeKind::OpaqueEquality { .. }
+            | CfgNodeKind::Instantiate { .. }
+            | CfgNodeKind::Witness { .. }
+            | CfgNodeKind::Constraint { .. } => true,
+            CfgNodeKind::DeferredAssignment { .. } => !facts.resolved_deferred_assignment(id),
+            CfgNodeKind::Evaluate(expression) => {
+                self.expression_may_fail(*expression, facts, field)
+            }
+            CfgNodeKind::Entry
+            | CfgNodeKind::Exit
+            | CfgNodeKind::LoopHeader
+            | CfgNodeKind::Branch { .. }
+            | CfgNodeKind::Assignment { .. }
+            | CfgNodeKind::Update { .. }
+            | CfgNodeKind::Declaration { .. }
+            | CfgNodeKind::Return(_)
+            | CfgNodeKind::Log => false,
+        }
+    }
+
+    fn expression_may_fail(
+        &self,
+        id: ExprId,
+        facts: &AnalysisFacts<'_>,
+        field: &FieldContext,
+    ) -> bool {
+        let Some(expression) = self.hir().expression(id) else { return true };
+        match &expression.kind {
+            ExprKind::Opaque(_) | ExprKind::AnonymousComponent { .. } => true,
+            ExprKind::Call { target: CallTarget::Function(_), .. } => false,
+            ExprKind::Call { .. } => true,
+            ExprKind::Binary { operator, right, .. } => match operator {
+                BinaryOperator::Divide | BinaryOperator::IntegerDivide | BinaryOperator::Modulo => {
+                    !is_proven_nonzero(facts.range(*right).certified(), field)
+                }
+                BinaryOperator::Power | BinaryOperator::ShiftLeft | BinaryOperator::ShiftRight => {
+                    true
+                }
+                BinaryOperator::BooleanOr
+                | BinaryOperator::BooleanAnd
+                | BinaryOperator::Equal
+                | BinaryOperator::NotEqual
+                | BinaryOperator::Less
+                | BinaryOperator::Greater
+                | BinaryOperator::LessEqual
+                | BinaryOperator::GreaterEqual
+                | BinaryOperator::BitOr
+                | BinaryOperator::BitXor
+                | BinaryOperator::BitAnd
+                | BinaryOperator::Add
+                | BinaryOperator::Subtract
+                | BinaryOperator::Multiply => false,
+            },
+            ExprKind::Number(_)
+            | ExprKind::Access(_)
+            | ExprKind::Array(_)
+            | ExprKind::Tuple(_)
+            | ExprKind::Unary { .. }
+            | ExprKind::Ternary { .. }
+            | ExprKind::Parallel(_) => false,
+        }
     }
 
     fn closed_constant_return(&self, cfg: &DefinitionCfg) -> Option<FunctionSummary> {
@@ -478,6 +572,13 @@ impl ProjectSummaries<'_> {
             return Err(SummaryBlocker::MissingReturn);
         }
         Ok((local, return_calls))
+    }
+}
+
+fn is_proven_nonzero(value: Option<&Range>, field: &FieldContext) -> bool {
+    match value {
+        Some(Range::Exact(value)) => !field.is_zero(value),
+        Some(Range::Canonical | Range::Unreachable) | None => false,
     }
 }
 
