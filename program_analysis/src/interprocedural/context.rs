@@ -100,7 +100,7 @@ impl ContextEvidence {
 }
 
 /// Why a context cannot be used as certified summary evidence.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum SummaryBlocker {
     ForeignDefinition,
     ForeignCall,
@@ -109,6 +109,10 @@ pub enum SummaryBlocker {
     UnprovenArgument(ExprId),
     UnsupportedCallForm,
     LocalFacts(BTreeSet<FactBlocker>),
+    UnsupportedContext,
+    ExternalSummary,
+    MissingReturn,
+    LocalAnalysis(String),
 }
 
 /// Owns the validated field and graph used to construct summary contexts.
