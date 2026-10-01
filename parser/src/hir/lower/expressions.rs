@@ -550,6 +550,9 @@ impl Lowerer<'_> {
         expected_rank: usize,
         value: ExprId,
     ) -> ShapeCheck {
+        if self.deferred_value_shape(value) {
+            return ShapeCheck::Unknown;
+        }
         let actual_type = self.expression_type(value);
         let actual_rank = self.expression_rank(value);
         if expected_type == ValueType::Unknown || actual_type == ValueType::Unknown {
@@ -571,6 +574,41 @@ impl Lowerer<'_> {
             return ShapeCheck::Invalid(SemanticCode::WrongAssignmentRank);
         }
         ShapeCheck::Valid
+    }
+
+    fn deferred_value_shape(&self, id: ExprId) -> bool {
+        let Some(expression) = self.hir.expression(id) else { return false };
+        match &expression.kind {
+            ExprKind::Number(_) | ExprKind::Opaque(_) => false,
+            ExprKind::Access(path) => {
+                let symbol = &self.hir.symbols[path.terminal.index];
+                symbol.value_evidence == ValueEvidence::Deferred
+                    || symbol.kind == SymbolKind::Parameter
+                    || Self::symbolic_indices(path).any(|index| self.deferred_value_shape(index))
+            }
+            ExprKind::Call { target: CallTarget::Function(_), .. } => true,
+            ExprKind::Call { arguments, .. } => {
+                arguments.iter().any(|id| self.deferred_value_shape(*id))
+            }
+            ExprKind::AnonymousComponent { arguments, inputs, .. } => {
+                arguments.iter().any(|id| self.deferred_value_shape(*id))
+                    || inputs.iter().any(|input| self.deferred_value_shape(input.value))
+            }
+            ExprKind::Array(values) | ExprKind::Tuple(values) => {
+                values.iter().any(|id| self.deferred_value_shape(*id))
+            }
+            ExprKind::Unary { operand, .. } | ExprKind::Parallel(operand) => {
+                self.deferred_value_shape(*operand)
+            }
+            ExprKind::Binary { left, right, .. } => {
+                self.deferred_value_shape(*left) || self.deferred_value_shape(*right)
+            }
+            ExprKind::Ternary { condition, yes, no } => {
+                self.deferred_value_shape(*condition)
+                    || self.deferred_value_shape(*yes)
+                    || self.deferred_value_shape(*no)
+            }
+        }
     }
 
     pub(super) fn scalar_arithmetic_operand(&self, id: ExprId) -> bool {

@@ -1374,6 +1374,31 @@ fn later_scalar_overwrite_does_not_erase_deferred_variable_evidence() {
 }
 
 #[test]
+fn deferred_shape_propagates_through_copy_arithmetic_and_select() {
+    for assigned in ["x", "x+1", "1 ? x : 2"] {
+        let source =
+            format!("function F(n){{var x=n;var y={assigned};if(y){{return 1;}}return 0;}}");
+        let result = lower(&[("deferred_transitive.circom", &source)], Version::new(2, 2, 3));
+        let effects = effect_for_function(&result, "F");
+        assert!(
+            effects.iter().any(|effect| matches!(
+                effect,
+                Effect::DeferredVariableAssignment { target, .. }
+                    if result.hir.symbol(target.root).unwrap().name == "y"
+            )),
+            "{assigned}"
+        );
+        assert!(
+            effects.iter().any(|effect| matches!(
+                effect,
+                Effect::If { guard: ControlGuard::DeferredScalar, .. }
+            )),
+            "{assigned}"
+        );
+    }
+}
+
+#[test]
 fn unresolved_function_equality_keeps_both_checked_operands() {
     let source = "function F(a){return a;} template T(){signal input x;F(x)===1;}";
     let result = lower(&[("opaque_equality.circom", source)], Version::new(2, 2, 3));
