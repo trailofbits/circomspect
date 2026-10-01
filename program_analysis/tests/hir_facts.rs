@@ -4,15 +4,15 @@ use circomspect_program_analysis::hir_facts::{
     analyze, AnalysisError, FactBlocker, FieldContext, Incidence, Range,
 };
 use parser::hir::{
-    lower_project, AccessPath, AccessStep, ArrayIndex, ControlGuard, DefinitionRef, Effect,
-    ExprKind, HirProject, LoweredProject, SemanticCode,
+    lift_project, AccessPath, AccessStep, ArrayIndex, ControlGuard, DefinitionRef, Effect,
+    ExprKind, HirProject, LiftedProject, SemanticCode,
 };
 use parser::new_frontend::{load_sources, Version, VersionPolicy};
 use std::collections::BTreeSet;
 use std::fs;
 use program_structure::utils::constants::Curve;
 
-fn lower_fixture(source: &str) -> LoweredProject {
+fn lift_fixture(source: &str) -> LiftedProject {
     let directory = std::env::temp_dir().join(format!(
         "circomspect-phase4-facts-{}-{:?}",
         std::process::id(),
@@ -22,15 +22,15 @@ fn lower_fixture(source: &str) -> LoweredProject {
     let path = directory.join("case.circom");
     fs::write(&path, source).unwrap();
     let loaded = load_sources(&[path], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
-    lower_project(&loaded)
+    lift_project(&loaded)
 }
 
 fn fixture(source: &str) -> (HirProject, DefinitionRef) {
-    let lowered = lower_fixture(source);
-    assert!(lowered.syntax_diagnostics.is_empty(), "{:?}", lowered.syntax_diagnostics);
-    assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
-    let definition = lowered.hir.definition("Check").unwrap();
-    (lowered.hir, definition)
+    let lifted = lift_fixture(source);
+    assert!(lifted.syntax_diagnostics.is_empty(), "{:?}", lifted.syntax_diagnostics);
+    assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
+    let definition = lifted.hir.definition("Check").unwrap();
+    (lifted.hir, definition)
 }
 
 fn assigned_path(hir: &HirProject, definition: DefinitionRef, name: &str) -> AccessPath {
@@ -353,11 +353,10 @@ fn no_argument_function_call_does_not_touch_an_unrelated_signal() {
 
 #[test]
 fn missing_call_inside_constraint_cannot_certify_zero_for_known_operand() {
-    let lowered =
-        lower_fixture("template Check(){signal input x;signal output y;y<==x+Missing();}");
-    assert_eq!(lowered.diagnostics.len(), 1);
-    assert_eq!(lowered.diagnostics[0].code, SemanticCode::MissingCall);
-    let hir = lowered.hir;
+    let lifted = lift_fixture("template Check(){signal input x;signal output y;y<==x+Missing();}");
+    assert_eq!(lifted.diagnostics.len(), 1);
+    assert_eq!(lifted.diagnostics[0].code, SemanticCode::MissingCall);
+    let hir = lifted.hir;
     let definition = hir.definition("Check").unwrap();
     let cfg = build_cfg(&hir, definition).unwrap();
     let field = FieldContext::for_curve(Curve::Bn254);
@@ -920,8 +919,8 @@ fn query_paths_from_other_definitions_or_projects_are_unavailable() {
     )
     .unwrap();
     let loaded = load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
-    let first = lower_project(&loaded).hir;
-    let second = lower_project(&loaded).hir;
+    let first = lift_project(&loaded).hir;
+    let second = lift_project(&loaded).hir;
     let cfg = build_cfg(&first, first.definition("T").unwrap()).unwrap();
     let field = FieldContext::for_curve(Curve::Bn254);
     let facts = analyze(&first, &cfg, &field, None).unwrap();
@@ -964,7 +963,7 @@ fn foreign_symbolic_index_cannot_be_grafted_onto_a_local_root() {
     )
     .unwrap();
     let loaded = load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
-    let hir = lower_project(&loaded).hir;
+    let hir = lift_project(&loaded).hir;
     let cfg = build_cfg(&hir, hir.definition("T").unwrap()).unwrap();
     let field = FieldContext::for_curve(Curve::Bn254);
     let facts = analyze(&hir, &cfg, &field, None).unwrap();
@@ -985,9 +984,9 @@ fn known_false_branch_does_not_block_independent_constraint_fact() {
     let source = directory.join("case.circom");
     fs::write(&source, "template Check(){signal output y; if(0){y<==Missing();} y<==1;}").unwrap();
     let loaded = load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
-    let lowered = lower_project(&loaded);
-    assert!(lowered.syntax_diagnostics.is_empty());
-    let hir = lowered.hir;
+    let lifted = lift_project(&loaded);
+    assert!(lifted.syntax_diagnostics.is_empty());
+    let hir = lifted.hir;
     let definition = hir.definition("Check").unwrap();
     let cfg = build_cfg(&hir, definition).unwrap();
     assert!(cfg.nodes().iter().filter_map(|id| cfg.node(*id)).any(|node| {

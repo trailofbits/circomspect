@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use abstract_interpretation::graph::FlowGraph;
 use parser::hir::{
-    DefinitionRef, ExprId, ExprKind, HirProject, LoweredProject, ProjectIdentity, SymbolId,
+    DefinitionRef, ExprId, ExprKind, HirProject, LiftedProject, ProjectIdentity, SymbolId,
 };
 use parser::new_frontend::Version;
 use program_structure::utils::constants::Curve;
@@ -142,21 +142,21 @@ pub enum SummaryBlocker {
 
 /// Owns the validated field and graph used to construct summary contexts.
 pub struct ProjectSummaries<'a> {
-    lowered: &'a LoweredProject,
+    lifted: &'a LiftedProject,
     field: FieldContext,
     graph: CallGraph,
 }
 
 impl<'a> ProjectSummaries<'a> {
-    /// Build a provider for one selected compiler curve and the lowered language version.
-    pub fn build(lowered: &'a LoweredProject, curve: Curve) -> Result<Self, CallGraphError> {
-        let graph = build_call_graph(&lowered.hir)?;
-        Ok(Self { lowered, field: FieldContext::for_curve(curve), graph })
+    /// Build a provider for one selected compiler curve and the lifted language version.
+    pub fn build(lifted: &'a LiftedProject, curve: Curve) -> Result<Self, CallGraphError> {
+        let graph = build_call_graph(&lifted.hir)?;
+        Ok(Self { lifted, field: FieldContext::for_curve(curve), graph })
     }
 
     #[must_use]
     pub fn hir(&self) -> &HirProject {
-        &self.lowered.hir
+        &self.lifted.hir
     }
 
     #[must_use]
@@ -181,10 +181,10 @@ impl<'a> ProjectSummaries<'a> {
         }
         let arguments = arguments.into_iter().map(|value| self.canonicalize(value)).collect();
         Ok(CallContext {
-            project: self.lowered.hir.identity(),
+            project: self.lifted.hir.identity(),
             definition,
             curve: self.field.curve().into(),
-            version: self.lowered.version,
+            version: self.lifted.version,
             arguments,
         })
     }
@@ -199,9 +199,9 @@ impl<'a> ProjectSummaries<'a> {
     }
 
     pub fn check_context(&self, context: &CallContext) -> Result<(), SummaryBlocker> {
-        if context.project != self.lowered.hir.identity()
+        if context.project != self.lifted.hir.identity()
             || context.curve != self.field.curve().into()
-            || context.version != self.lowered.version
+            || context.version != self.lifted.version
         {
             return Err(SummaryBlocker::WrongContext);
         }
@@ -465,7 +465,7 @@ impl<'a> ProjectSummaries<'a> {
 mod tests {
     use std::collections::BTreeMap;
 
-    use parser::hir::{lower_project, DefinitionRef};
+    use parser::hir::{lift_project, DefinitionRef};
     use parser::new_frontend::{load_sources, Version, VersionPolicy};
     use program_structure::utils::constants::Curve;
 
@@ -488,9 +488,9 @@ mod tests {
             .unwrap();
         let loaded =
             load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
-        let lowered = lower_project(&loaded);
-        let provider = ProjectSummaries::build(&lowered, Curve::Bn254).unwrap();
-        let DefinitionRef::Template(template) = lowered.hir.definition("T").unwrap() else {
+        let lifted = lift_project(&loaded);
+        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let DefinitionRef::Template(template) = lifted.hir.definition("T").unwrap() else {
             panic!("template T")
         };
         let site = provider.graph.calls_from(CallOwner::Main(0))[0];

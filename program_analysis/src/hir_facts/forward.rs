@@ -848,7 +848,7 @@ mod tests {
     use super::*;
     use abstract_interpretation::graph::FlowGraph;
     use abstract_interpretation::solver::{solve, Forward, SolveResult};
-    use parser::hir::lower_project;
+    use parser::hir::lift_project;
     use parser::new_frontend::{load_sources, Version, VersionPolicy};
     use program_structure::utils::constants::Curve;
     use std::fs;
@@ -867,7 +867,7 @@ mod tests {
         .unwrap();
         let loaded =
             load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
-        let hir = lower_project(&loaded).hir;
+        let hir = lift_project(&loaded).hir;
         let definition = hir.definition("Check").unwrap();
         let cfg = crate::hir_cfg::build_cfg(&hir, definition).unwrap();
         let field = FieldContext::for_curve(Curve::Bn254);
@@ -899,7 +899,7 @@ mod tests {
         fs::write(&source, "function F(n){var x=n;return x;}").unwrap();
         let loaded =
             load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
-        let hir = lower_project(&loaded).hir;
+        let hir = lift_project(&loaded).hir;
         let definition = hir.definition("F").unwrap();
         let cfg = crate::hir_cfg::build_cfg(&hir, definition).unwrap();
         let node = cfg
@@ -949,7 +949,7 @@ mod tests {
             .unwrap();
             let loaded =
                 load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
-            let hir = lower_project(&loaded).hir;
+            let hir = lift_project(&loaded).hir;
             let definition = hir.definition("Check").unwrap();
             let cfg = crate::hir_cfg::build_cfg(&hir, definition).unwrap();
             let field = FieldContext::for_curve(Curve::Bn254);
@@ -990,7 +990,7 @@ mod tests {
         fs::write(&source, "template T(){signal input x; x===1;}").unwrap();
         let loaded =
             load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
-        let hir = lower_project(&loaded).hir;
+        let hir = lift_project(&loaded).hir;
         let root = hir.symbols().iter().find(|symbol| symbol.name == "x").unwrap().id;
         let key = AccessKey { root, instance: None, steps: Vec::new() };
         let field = FieldContext::for_curve(Curve::Bn254);
@@ -1121,7 +1121,7 @@ mod tests {
         .unwrap();
         let loaded =
             load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
-        let hir = lower_project(&loaded).hir;
+        let hir = lift_project(&loaded).hir;
         let cfg = crate::hir_cfg::build_cfg(&hir, hir.definition("T").unwrap()).unwrap();
         let field = FieldContext::for_curve(Curve::Bn254);
         let i = hir.symbols().iter().find(|symbol| symbol.name == "i").unwrap().id;
@@ -1172,7 +1172,7 @@ mod tests {
         .unwrap();
         let loaded =
             load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
-        let hir = lower_project(&loaded).hir;
+        let hir = lift_project(&loaded).hir;
         let cfg = crate::hir_cfg::build_cfg(&hir, hir.definition("T").unwrap()).unwrap();
         let field = FieldContext::for_curve(Curve::Bn254);
         let x = hir.symbols().iter().find(|symbol| symbol.name == "x").unwrap().id;
@@ -1273,7 +1273,7 @@ mod tests {
         .unwrap();
         let loaded =
             load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
-        let hir = lower_project(&loaded).hir;
+        let hir = lift_project(&loaded).hir;
         let cfg = crate::hir_cfg::build_cfg(&hir, hir.definition("T").unwrap()).unwrap();
         let field = FieldContext::for_curve(Curve::Bn254);
         let t = hir.symbols().iter().find(|symbol| symbol.name == "t").unwrap().id;
@@ -1298,7 +1298,7 @@ mod tests {
         fs::write(&source, "function T(){var t=0;if(t){return 1;}else{return 2;}}").unwrap();
         let loaded =
             load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
-        let hir = lower_project(&loaded).hir;
+        let hir = lift_project(&loaded).hir;
         let cfg = crate::hir_cfg::build_cfg(&hir, hir.definition("T").unwrap()).unwrap();
         let field = FieldContext::for_curve(Curve::Bn254);
         let t = hir.symbols().iter().find(|symbol| symbol.name == "t").unwrap().id;
@@ -1337,7 +1337,7 @@ mod tests {
             .unwrap();
         let loaded =
             load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
-        let hir = lower_project(&loaded).hir;
+        let hir = lift_project(&loaded).hir;
         let cfg = crate::hir_cfg::build_cfg(&hir, hir.definition("T").unwrap()).unwrap();
         let field = FieldContext::for_curve(Curve::Bn254);
         let t = hir.symbols().iter().find(|symbol| symbol.name == "t").unwrap().id;

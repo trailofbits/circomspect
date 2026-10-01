@@ -4,7 +4,7 @@ use super::{
     AccessPath, AccessStep, AnonymousInputEffect, AnonymousInputTarget, ArrayIndex, BlockId, Bus,
     BusId, BusTarget, CallTarget, ComponentId, ControlGuard, DefinitionKind, DefinitionRef, Effect,
     ExprId, ExprKind, HirProject, IncompleteLocation, IncompleteReason, IncompleteRegion,
-    Knownness, LoweredProject, Main, PortSchema, SemanticCode, SemanticDiagnostic, Severity,
+    Knownness, LiftedProject, Main, PortSchema, SemanticCode, SemanticDiagnostic, Severity,
     SymbolId, SymbolKind, Template, TemplateId, ValueEvidence, Function, FunctionId,
 };
 use crate::new_frontend::{
@@ -90,7 +90,7 @@ struct AccessState {
     steps: Vec<AccessStep>,
 }
 
-struct Lowerer<'a> {
+struct Lifter<'a> {
     source: &'a LoadedProject,
     hir: HirProject,
     diagnostics: Vec<SemanticDiagnostic>,
@@ -108,7 +108,7 @@ mod index;
 mod statements;
 mod expressions;
 
-impl Lowerer<'_> {
+impl Lifter<'_> {
     fn diagnostic(&mut self, code: SemanticCode, severity: Severity, span: Span, message: String) {
         self.diagnostics.push(SemanticDiagnostic {
             code,
@@ -202,10 +202,10 @@ impl Lowerer<'_> {
     }
 }
 
-/// Lowers all available definitions after indexing names across every loaded source file.
+/// Lifts all available definitions after indexing names across every loaded source file.
 #[must_use]
-pub fn lower_project(source: &LoadedProject) -> LoweredProject {
-    let mut lowerer = Lowerer {
+pub fn lift_project(source: &LoadedProject) -> LiftedProject {
+    let mut lifter = Lifter {
         source,
         hir: HirProject::new(),
         diagnostics: Vec::new(),
@@ -218,17 +218,17 @@ pub fn lower_project(source: &LoadedProject) -> LoweredProject {
         scopes: Scopes::default(),
         current_definition: None,
     };
-    lowerer.index_definitions();
-    lowerer.index_parameters();
-    lowerer.index_ports();
-    lowerer.lower_definitions();
-    lowerer.lower_mains();
-    lowerer.resolve_pending_features();
-    lowerer.collect_syntax_incomplete();
-    lowerer.diagnostics.sort_by_key(|diagnostic| {
+    lifter.index_definitions();
+    lifter.index_parameters();
+    lifter.index_ports();
+    lifter.lift_definitions();
+    lifter.lift_mains();
+    lifter.resolve_pending_features();
+    lifter.collect_syntax_incomplete();
+    lifter.diagnostics.sort_by_key(|diagnostic| {
         (diagnostic.span.source().index(), diagnostic.span.start(), diagnostic.span.end())
     });
-    lowerer.incomplete.sort_by(|left, right| match (&left.location, &right.location) {
+    lifter.incomplete.sort_by(|left, right| match (&left.location, &right.location) {
         (IncompleteLocation::Source(left), IncompleteLocation::Source(right)) => (
             left.source().index(),
             left.start(),
@@ -239,11 +239,11 @@ pub fn lower_project(source: &LoadedProject) -> LoweredProject {
         (IncompleteLocation::Path(_), IncompleteLocation::Source(_)) => std::cmp::Ordering::Greater,
         (IncompleteLocation::Path(left), IncompleteLocation::Path(right)) => left.cmp(right),
     });
-    LoweredProject {
-        hir: lowerer.hir,
+    LiftedProject {
+        hir: lifter.hir,
         version: source.policy.supported,
-        diagnostics: lowerer.diagnostics,
+        diagnostics: lifter.diagnostics,
         syntax_diagnostics: source.diagnostics.clone(),
-        incomplete: lowerer.incomplete,
+        incomplete: lifter.incomplete,
     }
 }

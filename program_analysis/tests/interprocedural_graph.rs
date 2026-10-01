@@ -3,7 +3,7 @@ use circomspect_program_analysis::hir_facts::{analyze, FieldContext};
 use circomspect_program_analysis::interprocedural::{
     build_call_graph, CallOwner, CallProvenance, CallReachability,
 };
-use parser::hir::{lower_project, CallTarget, DefinitionRef, HirProject};
+use parser::hir::{lift_project, CallTarget, DefinitionRef, HirProject};
 use parser::new_frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
 use std::fs;
@@ -22,9 +22,9 @@ fn fixture(sources: &[(&str, &str)]) -> HirProject {
         roots.push(path);
     }
     let loaded = load_sources(&roots, &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
-    let lowered = lower_project(&loaded);
-    assert!(lowered.syntax_diagnostics.is_empty(), "{:?}", lowered.syntax_diagnostics);
-    lowered.hir
+    let lifted = lift_project(&loaded);
+    assert!(lifted.syntax_diagnostics.is_empty(), "{:?}", lifted.syntax_diagnostics);
+    lifted.hir
 }
 
 #[test]
