@@ -860,7 +860,7 @@ mod tests {
             panic!("complete local solver")
         };
         let x = hir.symbols().iter().find(|symbol| symbol.name == "x").unwrap().id;
-        states.get(&cfg.exit)?.output.as_ref()?.variables()?.get(&x).cloned()
+        states.get(&cfg.exit())?.output.as_ref()?.variables()?.get(&x).cloned()
     }
 
     #[test]
@@ -904,7 +904,7 @@ mod tests {
                 })
                 .unwrap();
             let key = super::super::access::key_for_path(&hir, &field, path, &BTreeMap::new());
-            let state = states.get(&cfg.exit)?.output.as_ref()?;
+            let state = states.get(&cfg.exit())?.output.as_ref()?;
             let values: BTreeSet<_> = state
                 .fixed_equations()?
                 .iter()

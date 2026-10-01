@@ -155,7 +155,7 @@ fn analyze_seeded<'a>(
     budget: Option<usize>,
 ) -> Result<AnalysisFacts<'a>, AnalysisError> {
     const DEFAULT_UPDATE_BUDGET: usize = 100_000;
-    let owned = match cfg.definition {
+    let owned = match cfg.definition() {
         DefinitionRef::Function(id) => hir.function(id).is_some(),
         DefinitionRef::Template(id) => hir.template(id).is_some(),
         DefinitionRef::Bus(id) => hir.bus(id).is_some(),
@@ -173,7 +173,7 @@ fn analyze_seeded<'a>(
     .map_err(AnalysisError::InvalidGraph)?;
     let pruned_edges = forward_pruned_edges(hir, cfg, field, &forward);
     let liveness =
-        LivenessAnalysis::new(hir, field, cfg.definition).with_pruned_edges(pruned_edges);
+        LivenessAnalysis::new(hir, field, cfg.definition()).with_pruned_edges(pruned_edges);
     let backward =
         solve::<_, _, Backward>(cfg, &liveness, budget).map_err(AnalysisError::InvalidGraph)?;
     Ok(AnalysisFacts {
@@ -234,7 +234,7 @@ impl AnalysisFacts<'_> {
 
     #[must_use]
     pub fn definition(&self) -> DefinitionRef {
-        self.cfg.definition
+        self.cfg.definition()
     }
 
     #[must_use]
@@ -593,7 +593,7 @@ impl AnalysisFacts<'_> {
     /// Whether a schema-backed port is read in this definition's reachable body.
     /// Interprocedural component effects remain unavailable until summarized.
     pub fn read_handle(&self, handle: &AccessHandle) -> Fact<bool> {
-        if handle.definition != self.cfg.definition {
+        if handle.definition != self.cfg.definition() {
             return Fact::blocked(BTreeSet::from([FactBlocker::ForeignDefinition]));
         }
         if handle.curve != *self.field.curve() {
@@ -663,7 +663,7 @@ impl AnalysisFacts<'_> {
 
     /// Constraint incidence for a schema-backed port without a source occurrence.
     pub fn incidence_handle(&self, handle: &AccessHandle) -> Fact<Incidence> {
-        if handle.definition != self.cfg.definition {
+        if handle.definition != self.cfg.definition() {
             return Fact::blocked(BTreeSet::from([FactBlocker::ForeignDefinition]));
         }
         if handle.curve != *self.field.curve() {
@@ -706,7 +706,7 @@ impl AnalysisFacts<'_> {
 
     /// Fixed value for a schema-backed port without a source occurrence.
     pub fn constraint_fixed_handle(&self, handle: &AccessHandle) -> Fact<Option<FieldValue>> {
-        if handle.definition != self.cfg.definition {
+        if handle.definition != self.cfg.definition() {
             return Fact::blocked(BTreeSet::from([FactBlocker::ForeignDefinition]));
         }
         if handle.curve != *self.field.curve() {
@@ -743,9 +743,9 @@ impl AnalysisFacts<'_> {
 
     fn exit_state(&self) -> Option<&ForwardState> {
         let facts = match &self.forward {
-            SolveResult::Complete(facts) => facts.get(&self.cfg.exit),
+            SolveResult::Complete(facts) => facts.get(&self.cfg.exit()),
             SolveResult::Incomplete { provisional_facts, .. } => {
-                provisional_facts.get(&self.cfg.exit)
+                provisional_facts.get(&self.cfg.exit())
             }
         }?;
         facts.output.as_ref()
@@ -815,7 +815,7 @@ impl AnalysisFacts<'_> {
         }
         let query = key_for_path(self.hir, self.field, path, &BTreeMap::new());
         let potential_sites = self.potential_sites(&query);
-        let queried_exit = BTreeSet::from([self.cfg.exit]);
+        let queried_exit = BTreeSet::from([self.cfg.exit()]);
         blockers.extend(self.deferred_control_blockers(&potential_sites));
         if self.hir.components().iter().any(|item| item.symbol == path.root) {
             blockers.insert(FactBlocker::ExternalSummary);
@@ -1014,7 +1014,7 @@ impl AnalysisFacts<'_> {
             if node == excluded || !visited.insert(node) {
                 continue;
             }
-            if node == self.cfg.exit {
+            if node == self.cfg.exit() {
                 return true;
             }
             for edge in self.cfg.edges() {
