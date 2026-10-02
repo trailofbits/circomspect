@@ -8,8 +8,10 @@ use crate::interprocedural::{ContextEvidence, ProjectSummaries, SummaryBlocker};
 impl ProjectSummaries<'_> {
     /// Reject a bound definition scope with invalid source or a known failure path.
     ///
-    /// Passing this check does not prove successful completion. Rules must still
-    /// certify their own reachability and dependency predicates.
+    /// Unknown-type regions may remain. Passing this check does not prove
+    /// successful completion; rules must certify their own value, reachability,
+    /// and dependency predicates. Complete-scope consumers additionally call
+    /// `validated_definition`.
     ///
     /// # Errors
     /// Returns the source, provenance, or execution blocker for this scope.
@@ -19,7 +21,10 @@ impl ProjectSummaries<'_> {
         evidence: &ContextEvidence,
     ) -> Result<(), SummaryBlocker> {
         self.check_facts_for_evidence(facts, evidence)?;
-        self.validated_definition(facts)?;
+        self.validated_header(facts.definition())?;
+        if self.definition_has_hard_source_issue(facts.definition())? {
+            return Err(SummaryBlocker::IncompleteDefinition);
+        }
         match facts.definition() {
             DefinitionRef::Function(_) => {}
             DefinitionRef::Template(id) => {
