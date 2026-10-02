@@ -111,13 +111,12 @@ impl ProjectSummaries<'_> {
             field: self.field_context(),
         };
         for id in facts.cfg().nodes() {
+            let Some(node) = facts.cfg().node(*id) else { continue };
+            let Some(failure) = validator.node_failure(&node.kind) else { continue };
             if facts.required_evaluation(*id).certified() != Some(&true) {
                 continue;
             }
-            let Some(node) = facts.cfg().node(*id) else { continue };
-            if let Some(failure) = validator.node_failure(&node.kind) {
-                return Some(failure);
-            }
+            return Some(failure);
         }
         None
     }
