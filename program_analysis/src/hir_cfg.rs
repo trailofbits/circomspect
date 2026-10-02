@@ -3,6 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use abstract_interpretation::graph::{EdgeId, EdgeRef, FlowGraph, GraphError, IndexedGraph, NodeId};
+use num_traits::ToPrimitive;
 use parser::hir::{
     AccessPath, AccessStep, BlockId, ControlGuard, DefinitionRef, Effect, ExprId, ExprKind,
     HirProject, IncompleteReason, SymbolId, SymbolKind,
@@ -10,6 +11,7 @@ use parser::hir::{
 use parser::new_frontend::{AssignmentOperator, BinaryOperator, PostfixOperator, Span};
 
 use crate::scalar_evidence::ScalarExpressionEvidence;
+use crate::hir_facts::FieldValue;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Origin {
@@ -128,6 +130,7 @@ pub struct DefinitionCfg {
     graph: IndexedGraph<CfgNode, CfgEdge>,
     local_symbols: BTreeSet<SymbolId>,
     checked_paths: Vec<AccessPath>,
+    scalar_seeds: Option<BTreeMap<SymbolId, FieldValue>>,
     definition: DefinitionRef,
     entry: NodeId,
     exit: NodeId,
@@ -151,6 +154,10 @@ impl DefinitionCfg {
 
     pub(crate) fn owns_symbol(&self, symbol: SymbolId) -> bool {
         self.local_symbols.contains(&symbol)
+    }
+
+    pub(crate) fn scalar_seeds(&self) -> Option<&BTreeMap<SymbolId, FieldValue>> {
+        self.scalar_seeds.as_ref()
     }
 
     pub(crate) fn owns_path(&self, path: &AccessPath) -> bool {
@@ -212,6 +219,7 @@ impl FlowGraph for DefinitionCfg {
 pub enum BuildError {
     ForeignDefinition,
     ForeignCallResults,
+    ForeignScalarSeeds,
     MissingBlock(BlockId),
     MissingExpression(ExprId),
     MissingSymbol(SymbolId),
@@ -265,6 +273,7 @@ fn push_expressions(
 struct Builder<'a> {
     hir: &'a HirProject,
     calls: Option<&'a ScalarExpressionEvidence>,
+    scalar_seeds: Option<&'a BTreeMap<SymbolId, FieldValue>>,
     nodes: Vec<CfgNode>,
     edges: Vec<(NodeId, NodeId, CfgEdge)>,
     conditions: BTreeMap<NodeId, (ExprId, ControlGuard)>,
@@ -788,15 +797,19 @@ impl Builder<'_> {
         let Effect::For { initializer, condition, step, body, guard, .. } = effect else {
             return Err(BuildError::UnexpectedEffect);
         };
-        let iterations = if *guard == ControlGuard::CheckedCompileTime {
-            self.static_for_iterations(*initializer, *condition, *step, *body)
-        } else {
-            None
+        let iterations = match guard {
+            ControlGuard::CheckedCompileTime => {
+                self.static_for_iterations(*initializer, *condition, *step, *body)
+            }
+            ControlGuard::DeferredScalar if self.scalar_seeds.is_some() => {
+                self.static_for_iterations(*initializer, *condition, *step, *body)
+            }
+            ControlGuard::DeferredScalar | ControlGuard::WitnessOnly => None,
         };
         let tails = self.block(tails, *initializer)?;
         let plan = LoopPlan {
             condition: *condition,
-            guard: *guard,
+            guard: if iterations.is_some() { ControlGuard::CheckedCompileTime } else { *guard },
             body: *body,
             step: Some(*step),
             origin,
@@ -837,6 +850,22 @@ impl Builder<'_> {
         step: BlockId,
         body: BlockId,
     ) -> Option<usize> {
+        let (variable, initial) = self.static_loop_initializer(initializer)?;
+        let bound = self.static_loop_bound(condition, variable)?;
+        if !self.static_loop_step(step, variable) {
+            return None;
+        }
+        let body = self.hir.block(body)?;
+        if body.effects.iter().any(|effect| Self::may_write_variable(effect, variable)) {
+            return None;
+        }
+        let iterations = bound.saturating_sub(initial);
+        let condition_span = self.hir.expression(condition)?.span;
+        self.within_unroll_budget(iterations, body.effects.len(), body.span, condition_span)
+            .then_some(iterations)
+    }
+
+    fn static_loop_initializer(&self, initializer: BlockId) -> Option<(SymbolId, usize)> {
         let initializer = self.hir.block(initializer)?;
         let mut initial = None;
         for effect in &initializer.effects {
@@ -851,12 +880,33 @@ impl Builder<'_> {
                     if initial.is_some() {
                         return None;
                     }
-                    initial = Some((target.root, self.small_literal(*value)?));
+                    initial = Some((target.root, self.small_static_value(*value)?));
                 }
-                _ => return None,
+                Effect::VariableAssignment { .. }
+                | Effect::DeferredVariableAssignment { .. }
+                | Effect::ComponentInstantiation { .. }
+                | Effect::WitnessAssignment { .. }
+                | Effect::ConstraintAssignment { .. }
+                | Effect::OpaqueAssignment { .. }
+                | Effect::EqualityConstraint { .. }
+                | Effect::OpaqueEquality { .. }
+                | Effect::Update { .. }
+                | Effect::If { .. }
+                | Effect::While { .. }
+                | Effect::For { .. }
+                | Effect::Return { .. }
+                | Effect::Assert { .. }
+                | Effect::DeferredAssert { .. }
+                | Effect::Log { .. }
+                | Effect::AnonymousComponent { .. }
+                | Effect::Opaque { .. }
+                | Effect::Block(_) => return None,
             }
         }
-        let (variable, initial) = initial?;
+        initial
+    }
+
+    fn static_loop_bound(&self, condition: ExprId, variable: SymbolId) -> Option<usize> {
         let expression = self.hir.expression(condition)?;
         let ExprKind::Binary { operator: BinaryOperator::Less, left, right } = &expression.kind
         else {
@@ -866,28 +916,117 @@ impl Builder<'_> {
         if path.root != variable || !path.steps.is_empty() {
             return None;
         }
-        let bound = self.small_literal(*right)?;
-        let step = self.hir.block(step)?;
+        self.small_static_value(*right)
+    }
+
+    fn static_loop_step(&self, step: BlockId, variable: SymbolId) -> bool {
+        let Some(step) = self.hir.block(step) else { return false };
         let [Effect::Update { target, operator: PostfixOperator::Increment, .. }] =
             step.effects.as_slice()
         else {
-            return None;
+            return false;
         };
-        if target.root != variable || !target.steps.is_empty() {
-            return None;
-        }
-        let body = self.hir.block(body)?;
-        if body.effects.iter().any(|effect| Self::may_write_variable(effect, variable)) {
-            return None;
-        }
-        let iterations = bound.saturating_sub(initial);
-        (iterations <= 16).then_some(iterations)
+        target.root == variable && target.steps.is_empty()
     }
 
-    fn small_literal(&self, expression: ExprId) -> Option<usize> {
-        let ExprKind::Number(text) = &self.hir.expression(expression)?.kind else { return None };
-        let value = text.parse::<usize>().ok()?;
-        (value <= 16).then_some(value)
+    fn small_static_value(&self, expression: ExprId) -> Option<usize> {
+        let maximum = if self.scalar_seeds.is_some() { 512 } else { 16 };
+        let value = match &self.hir.expression(expression)?.kind {
+            ExprKind::Number(text) => text.parse::<usize>().ok()?,
+            ExprKind::Access(path) => self.seeded_parameter_value(path)?,
+            ExprKind::Binary { .. }
+            | ExprKind::Unary { .. }
+            | ExprKind::Ternary { .. }
+            | ExprKind::Call { .. }
+            | ExprKind::Array { .. }
+            | ExprKind::Tuple { .. }
+            | ExprKind::AnonymousComponent { .. }
+            | ExprKind::Parallel(_)
+            | ExprKind::Opaque(_) => return None,
+        };
+        (value <= maximum).then_some(value)
+    }
+
+    fn seeded_parameter_value(&self, path: &AccessPath) -> Option<usize> {
+        if path.root != path.terminal || !path.steps.is_empty() {
+            return None;
+        }
+        let symbol = self.hir.symbol(path.root)?;
+        if symbol.kind != SymbolKind::Parameter || symbol.rank != 0 {
+            return None;
+        }
+        if !self.parameter_is_stable(path.root) {
+            return None;
+        }
+        self.scalar_seeds?.get(&path.root)?.as_bigint().to_usize()
+    }
+
+    fn parameter_is_stable(&self, parameter: SymbolId) -> bool {
+        for block in self.hir.blocks() {
+            for effect in &block.effects {
+                let target = match effect {
+                    Effect::VariableAssignment { target, .. }
+                    | Effect::DeferredVariableAssignment { target, .. }
+                    | Effect::OpaqueAssignment { target, .. }
+                    | Effect::Update { target, .. } => Some(target),
+                    Effect::Declaration { .. }
+                    | Effect::ComponentInstantiation { .. }
+                    | Effect::WitnessAssignment { .. }
+                    | Effect::ConstraintAssignment { .. }
+                    | Effect::EqualityConstraint { .. }
+                    | Effect::OpaqueEquality { .. }
+                    | Effect::If { .. }
+                    | Effect::While { .. }
+                    | Effect::For { .. }
+                    | Effect::Return { .. }
+                    | Effect::Assert { .. }
+                    | Effect::DeferredAssert { .. }
+                    | Effect::Log { .. }
+                    | Effect::AnonymousComponent { .. }
+                    | Effect::Opaque { .. }
+                    | Effect::Block(_) => None,
+                };
+                if target.is_some_and(|path| path.root == parameter) {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    fn within_unroll_budget(
+        &self,
+        iterations: usize,
+        body_effects: usize,
+        body_span: Span,
+        condition_span: Span,
+    ) -> bool {
+        let expression_count = self
+            .hir
+            .expressions()
+            .iter()
+            .filter(|expression| {
+                span_contains(body_span, expression.span)
+                    || span_contains(condition_span, expression.span)
+            })
+            .count();
+        let Some(per_effect) =
+            expression_count.checked_add(1).and_then(|count| count.checked_mul(3))
+        else {
+            return false;
+        };
+        let Some(per_iteration) =
+            body_effects.checked_add(4).and_then(|count| count.checked_mul(per_effect))
+        else {
+            return false;
+        };
+        let Some(nodes) = iterations
+            .checked_mul(per_iteration)
+            .and_then(|count| count.checked_add(self.nodes.len()))
+        else {
+            return false;
+        };
+        nodes <= 1_000_000
     }
 
     fn may_write_variable(effect: &Effect, variable: SymbolId) -> bool {
@@ -966,10 +1105,14 @@ impl Builder<'_> {
     }
 }
 
+fn span_contains(outer: Span, inner: Span) -> bool {
+    outer.source() == inner.source() && outer.start() <= inner.start() && inner.end() <= outer.end()
+}
+
 fn definition_symbols(
     hir: &HirProject,
     definition: DefinitionRef,
-) -> Result<(BlockId, BTreeSet<SymbolId>), BuildError> {
+) -> Result<(BlockId, BTreeSet<SymbolId>, &[SymbolId]), BuildError> {
     let (body, parameters, ports) = match definition {
         DefinitionRef::Function(id) => {
             let item = hir.function(id).ok_or(BuildError::ForeignDefinition)?;
@@ -989,7 +1132,7 @@ fn definition_symbols(
         let port = hir.port(*port).ok_or(BuildError::MissingPort(*port))?;
         symbols.insert(port.symbol);
     }
-    Ok((body, symbols))
+    Ok((body, symbols, parameters))
 }
 
 fn effect_span(effect: &Effect, block_span: Span) -> Span {
@@ -1019,29 +1162,37 @@ fn effect_span(effect: &Effect, block_span: Span) -> Span {
 
 /// Build a CFG from a checked HIR definition without changing the legacy analysis path.
 pub fn build_cfg(hir: &HirProject, definition: DefinitionRef) -> Result<DefinitionCfg, BuildError> {
-    build_cfg_inner(hir, definition, None)
+    build_cfg_inner(hir, definition, None, None)
 }
 
 pub(crate) fn build_cfg_with_exact_calls(
     hir: &HirProject,
     definition: DefinitionRef,
     calls: &ScalarExpressionEvidence,
+    scalar_seeds: &BTreeMap<SymbolId, FieldValue>,
 ) -> Result<DefinitionCfg, BuildError> {
     if !calls.belongs_to_definition(hir, definition) {
         return Err(BuildError::ForeignCallResults);
     }
-    build_cfg_inner(hir, definition, Some(calls))
+    build_cfg_inner(hir, definition, Some(calls), Some(scalar_seeds))
 }
 
 fn build_cfg_inner<'a>(
     hir: &'a HirProject,
     definition: DefinitionRef,
     calls: Option<&'a ScalarExpressionEvidence>,
+    scalar_seeds: Option<&'a BTreeMap<SymbolId, FieldValue>>,
 ) -> Result<DefinitionCfg, BuildError> {
-    let (body, local_symbols) = definition_symbols(hir, definition)?;
+    let (body, local_symbols, parameters) = definition_symbols(hir, definition)?;
+    if let Some(values) = scalar_seeds {
+        if values.keys().any(|symbol| !parameters.contains(symbol)) {
+            return Err(BuildError::ForeignScalarSeeds);
+        }
+    }
     let mut builder = Builder {
         hir,
         calls,
+        scalar_seeds,
         nodes: Vec::new(),
         edges: Vec::new(),
         conditions: BTreeMap::new(),
@@ -1058,5 +1209,13 @@ fn build_cfg_inner<'a>(
     let checked_paths = builder.checked_paths;
     let graph = IndexedGraph::new(builder.nodes, builder.edges, vec![entry], vec![exit])
         .map_err(BuildError::InvalidGraph)?;
-    Ok(DefinitionCfg { graph, local_symbols, checked_paths, definition, entry, exit })
+    Ok(DefinitionCfg {
+        graph,
+        local_symbols,
+        checked_paths,
+        scalar_seeds: scalar_seeds.cloned(),
+        definition,
+        entry,
+        exit,
+    })
 }

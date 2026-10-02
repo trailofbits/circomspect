@@ -159,6 +159,7 @@ type DemandResult = SolveResult<NodeId, EdgeId, DemandState, String>;
 pub enum AnalysisError {
     ForeignProject,
     ForeignCallResults,
+    WrongScalarSeeds,
     InvalidGraph(GraphError<NodeId, EdgeId>),
 }
 
@@ -271,6 +272,9 @@ fn analyze_seeded<'a>(
     }
     if options.calls.is_some_and(|calls| !calls.belongs_to(hir, cfg.definition(), field.curve())) {
         return Err(AnalysisError::ForeignCallResults);
+    }
+    if cfg.scalar_seeds().is_some_and(|seeds| seeds != &options.values) {
+        return Err(AnalysisError::WrongScalarSeeds);
     }
     let budget = Some(options.budget.unwrap_or(DEFAULT_UPDATE_BUDGET));
     let specialized_parameters = options.values.keys().copied().collect();

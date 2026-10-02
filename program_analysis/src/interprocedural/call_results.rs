@@ -41,7 +41,7 @@ impl ProjectSummaries<'_> {
         let definition = context.definition();
         let mut calls = ScalarExpressionEvidence::empty(self.hir(), context, self.curve().clone());
         for _ in 0..MAX_REFINEMENTS {
-            let cfg = build_cfg_with_exact_calls(self.hir(), definition, &calls)
+            let cfg = build_cfg_with_exact_calls(self.hir(), definition, &calls, &parameters)
                 .map_err(|error| SummaryBlocker::LocalAnalysis(format!("{error:?}")))?;
             let facts = analyze_owned_with_scalar_calls(
                 self.hir(),
