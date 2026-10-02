@@ -1,8 +1,10 @@
 use abstract_interpretation::graph::NodeId;
-use parser::hir::{DefinitionRef, HirProject, PortId};
+use parser::hir::{AccessPath, DefinitionRef, HirProject, PortId};
 use parser::new_frontend::Span;
 
-use crate::hir_facts::{AccessHandle, AnalysisFacts, AssignmentDemand, Fact, GeneratedEquation};
+use crate::hir_facts::{
+    AccessHandle, AnalysisFacts, AssignmentDemand, BitDecomposition, Fact, GeneratedEquation,
+};
 use crate::interprocedural::{
     AppliedComponentPort, CallBlocker, CallContext, CallOwner, CallReachability, CallSite,
     CallPathSite, CallSiteId, CallerOutputRead, ComposedConstraintFixedOutput, ContextEvidence,
@@ -214,6 +216,16 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
         witness: NodeId,
     ) -> SummaryFact<Option<GeneratedEquation>> {
         self.summaries.template_generated_equation(self.facts, self.evidence, witness)
+    }
+
+    /// Request a source-valid bit relation in this validated root template scope.
+    #[must_use]
+    pub fn template_bit_decomposition(
+        &self,
+        input: &AccessPath,
+        bits: &[AccessPath],
+    ) -> SummaryFact<Option<BitDecomposition>> {
+        self.summaries.template_bit_decomposition(self.facts, self.evidence, input, bits)
     }
 
     /// Enumerate every checked direct-child output in this exact source scope.

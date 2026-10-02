@@ -16,6 +16,7 @@ mod execution_scope;
 mod shape_validity;
 mod internal_signal;
 mod constraint_relation;
+mod bit_decomposition;
 mod constructor_readiness;
 
 pub(crate) use crate::interprocedural::constructor_readiness::ValidatedConstructorReads;
