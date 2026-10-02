@@ -719,9 +719,41 @@ impl<'a> ProjectSummaries<'a> {
         }
         self.check_facts_for_evidence(facts, caller)?;
         let context = self.call_context(call, facts)?;
+        self.extend_call_evidence(call.site(), context, caller)
+    }
+
+    /// Bind a source-matched provisional function call after exact return refinement.
+    ///
+    /// The raw graph remains provisional. This certificate additionally requires a
+    /// provider-owned exact call result, certified reachability, exact arguments,
+    /// and local facts bound to the supplied caller ancestry.
+    ///
+    /// # Errors
+    /// Returns a typed blocker when any required scope, call, or value proof is absent.
+    pub fn refined_function_call_evidence(
+        &self,
+        site: CallSiteId,
+        facts: &AnalysisFacts<'_>,
+        caller: &ContextEvidence,
+    ) -> Result<ContextEvidence, SummaryBlocker> {
+        self.check_facts_for_evidence(facts, caller)?;
+        let site = self.graph.site(site).ok_or(SummaryBlocker::ForeignCall)?;
+        let context = self.exact_site_context(site, facts)?;
+        self.extend_call_evidence(site, context, caller)
+    }
+
+    fn extend_call_evidence(
+        &self,
+        site: &CallSite,
+        context: CallContext,
+        caller: &ContextEvidence,
+    ) -> Result<ContextEvidence, SummaryBlocker> {
         let mut call_path = caller.call_path.clone();
-        call_path.push(CallPathSite::from_site(call.site())?);
-        Ok(ContextEvidence { context, origin: ContextOrigin::Call(call.site().id()), call_path })
+        call_path.push(CallPathSite::from_site(site)?);
+        let evidence =
+            ContextEvidence { context, origin: ContextOrigin::Call(site.id()), call_path };
+        self.check_evidence(&evidence)?;
+        Ok(evidence)
     }
 
     pub(super) fn call_context(
