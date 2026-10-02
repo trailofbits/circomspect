@@ -134,7 +134,10 @@ impl ProjectSummaries<'_> {
             if failure == Ok(true) {
                 return Ok(true);
             }
-            if let Err(SummaryBlocker::InvalidAssignment(_)) = failure {
+            if let Err(
+                SummaryBlocker::InvalidAssignment(_) | SummaryBlocker::InvalidParameterUse(_),
+            ) = failure
+            {
                 return Ok(true);
             }
         }

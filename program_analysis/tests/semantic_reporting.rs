@@ -248,3 +248,50 @@ fn semantic_converter_rejects_unknown_and_invalid_source_spans() {
         assert_eq!(sources.semantic_report(&invalid).err(), Some(expected));
     }
 }
+
+#[test]
+fn concrete_parameter_index_error_uses_terminal_and_sarif_source_ranges() {
+    let source = "template T(n){n[1]=1;} component main=T([2]);";
+    let loaded = fixture(source);
+    let lifted = lift_project(&loaded);
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let site = provider.graph().calls_from(CallOwner::Main(0))[0];
+    let CallReachability::Reachable(call) =
+        provider.graph().reachable_main_call(site.id(), provider.hir())
+    else {
+        panic!("main must be reachable")
+    };
+    let evidence = provider.main_evidence(&call).unwrap();
+    let cfg = build_cfg(provider.hir(), evidence.context().definition()).unwrap();
+    let error = provider.analyze_for_evidence(&cfg, &evidence, None).err().unwrap();
+    let diagnostic = error.diagnostic().unwrap();
+    assert_eq!(diagnostic.code, SemanticCode::InvalidArrayAccess);
+    assert_eq!(&source[diagnostic.span.start()..diagnostic.span.end()], "n[1]");
+    let sources = SourceMap::from_loaded(&loaded, &[loaded.files[0].id]).unwrap();
+    let report = sources.semantic_report(diagnostic).unwrap();
+    let terminal = report.to_diagnostic(true);
+    assert_eq!(terminal.code.as_deref(), Some("T2032"));
+    assert_eq!(terminal.labels[0].range, diagnostic.span.start()..diagnostic.span.end());
+    let output = loaded.files[0].path.with_extension("parameter.sarif.json");
+    assert_eq!(
+        support::render_reports(
+            std::slice::from_ref(&report),
+            &sources,
+            MessageCategory::Error,
+            &[],
+            &output,
+        ),
+        (1, 1)
+    );
+    let sarif: Value = serde_json::from_str(&fs::read_to_string(&output).unwrap()).unwrap();
+    let result = &sarif["runs"][0]["results"][0];
+    assert_eq!(result["ruleId"], "T2032");
+    assert_eq!(result["level"], "error");
+    let region = &result["locations"][0]["physicalLocation"]["region"];
+    assert_eq!(region["startColumn"], diagnostic.span.start() + 1);
+    assert_eq!(region["endColumn"], diagnostic.span.end() + 1);
+    assert_eq!(
+        support::render_reports(&[report], &sources, MessageCategory::Error, &["T2032"], &output),
+        (0, 0)
+    );
+}

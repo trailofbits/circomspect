@@ -247,6 +247,10 @@ impl ProjectSummaries<'_> {
         }
         let parameters = context.scalar_seeds(&template.parameters)?;
         self.with_refined_facts(DefinitionRef::Template(id), parameters, |cfg, facts| {
+            if let Some(failure) = self.invalid_parameter_use(&template.parameters, context, facts)
+            {
+                return Err(SummaryBlocker::InvalidParameterUse(failure.parameter));
+            }
             if let Some(expression) =
                 self.invalid_deferred_assignment(cfg, &template.parameters, context, facts)
             {

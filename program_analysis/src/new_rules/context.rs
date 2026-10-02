@@ -85,7 +85,7 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
 
     /// Validate source recovery across this active definition's body and header.
     pub fn validated_definition(&self) -> Result<ValidatedDefinition, SummaryBlocker> {
-        self.summaries.validated_definition(self.call_context().definition())
+        self.summaries.validated_definition(self.facts)
     }
 
     #[must_use]

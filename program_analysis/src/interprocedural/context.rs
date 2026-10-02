@@ -3,16 +3,16 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use abstract_interpretation::graph::FlowGraph;
 use parser::hir::{
-    BlockId, DefinitionRef, ExprId, ExprKind, HirProject, LiftedProject, ProjectIdentity,
-    SemanticCode, SemanticDiagnostic, Severity, SymbolId, SymbolKind,
+    BlockId, DefinitionRef, Effect, ExprId, ExprKind, HirProject, IncompleteReason,
+    IncompleteRegion, LiftedProject, ProjectIdentity, SemanticCode, SemanticDiagnostic, Severity,
+    SymbolId, SymbolKind,
 };
-use parser::new_frontend::{SourceId, Span, Version};
+use parser::new_frontend::{AssignmentOperator, SourceId, Span, Version};
 use program_structure::utils::constants::Curve;
 
 use crate::hir_cfg::{CfgNodeKind, DefinitionCfg};
 use crate::hir_facts::{
-    analyze_with_scalar_parameters, exact_compile_time, AnalysisFacts, FactBlocker, FieldContext,
-    FieldValue, Range,
+    exact_compile_time, AnalysisFacts, FactBlocker, FieldContext, FieldValue, Range,
 };
 
 use super::{
@@ -21,7 +21,7 @@ use super::{
 use crate::interprocedural::cache::SummaryCaches;
 
 const MAX_ARGUMENT_NODES: usize = 4096;
-const MAX_ARGUMENT_DEPTH: usize = 64;
+pub(super) const MAX_ARGUMENT_DEPTH: usize = 64;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ProvedValueShape {
@@ -205,6 +205,7 @@ pub enum SummaryBlocker {
     LocalFacts(BTreeSet<FactBlocker>),
     UnsupportedContext,
     InvalidAssignment(ExprId),
+    InvalidParameterUse(SymbolId),
     WrongInstance,
     DuplicateInstance,
     SymbolicInstance,
@@ -315,13 +316,15 @@ impl SourceScope {
 pub enum AnalyzeEvidenceError {
     Blocked(SummaryBlocker),
     InvalidAssignment { context: Box<CallContext>, diagnostic: Box<SemanticDiagnostic> },
+    InvalidParameterUse { context: Box<CallContext>, diagnostic: Box<SemanticDiagnostic> },
 }
 
 impl AnalyzeEvidenceError {
     #[must_use]
     pub fn diagnostic(&self) -> Option<&SemanticDiagnostic> {
         match self {
-            Self::InvalidAssignment { diagnostic, .. } => Some(diagnostic),
+            Self::InvalidAssignment { diagnostic, .. }
+            | Self::InvalidParameterUse { diagnostic, .. } => Some(diagnostic),
             Self::Blocked(_) => None,
         }
     }
@@ -389,11 +392,15 @@ impl<'a> ProjectSummaries<'a> {
 
     pub(crate) fn validated_definition(
         &self,
-        definition: DefinitionRef,
+        facts: &AnalysisFacts<'_>,
     ) -> Result<ValidatedDefinition, SummaryBlocker> {
+        let definition = facts.definition();
+        if facts.hir().identity() != self.hir().identity() || facts.curve() != self.curve() {
+            return Err(SummaryBlocker::WrongContext);
+        }
         let header = self.validated_header(definition)?;
         let parts = self.definition_parts(definition)?;
-        if self.scope_has_issue(SourceScope::from_span(parts.span)) {
+        if self.scope_has_issue_with_facts(SourceScope::from_span(parts.span), facts) {
             return Err(SummaryBlocker::IncompleteDefinition);
         }
         Ok(ValidatedDefinition { header })
@@ -444,19 +451,173 @@ impl<'a> ProjectSummaries<'a> {
     }
 
     fn scope_has_issue(&self, scope: SourceScope) -> bool {
+        self.scope_has_diagnostic(scope)
+            || self
+                .lifted
+                .incomplete
+                .iter()
+                .any(|region| region.span().is_some_and(|span| scope.overlaps(span)))
+    }
+
+    fn scope_has_issue_with_facts(&self, scope: SourceScope, facts: &AnalysisFacts<'_>) -> bool {
+        self.scope_has_diagnostic(scope)
+            || self.lifted.incomplete.iter().any(|region| {
+                region.span().is_some_and(|span| scope.overlaps(span))
+                    && !self.resolved_unknown_region(region, facts)
+            })
+    }
+
+    fn scope_has_diagnostic(&self, scope: SourceScope) -> bool {
         for diagnostic in &self.lifted.syntax_diagnostics {
             if diagnostic.span().is_some_and(|span| scope.overlaps(span)) {
-                return true;
-            }
-        }
-        for region in &self.lifted.incomplete {
-            if region.span().is_some_and(|span| scope.overlaps(span)) {
                 return true;
             }
         }
         self.lifted.diagnostics.iter().any(|diagnostic| {
             diagnostic.severity == Severity::Error && scope.overlaps(diagnostic.span)
         })
+    }
+
+    fn resolved_unknown_region(
+        &self,
+        region: &IncompleteRegion,
+        facts: &AnalysisFacts<'_>,
+    ) -> bool {
+        let IncompleteReason::UnknownType = region.reason else { return false };
+        let Some(span) = region.span() else { return false };
+        if self.resolved_access_region(span, facts) {
+            return true;
+        }
+        for id in facts.cfg().nodes() {
+            if self.resolved_assignment_region(*id, span, facts) {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn resolved_access_region(&self, span: Span, facts: &AnalysisFacts<'_>) -> bool {
+        for expression in self.hir().expressions() {
+            if expression.span != span {
+                continue;
+            }
+            let ExprKind::Access(path) = &expression.kind else { continue };
+            if !path.steps.is_empty() {
+                continue;
+            }
+            if facts.reachable_expression(expression.id).certified() != Some(&true) {
+                continue;
+            }
+            if let Some(Range::Exact(_)) = facts.range(expression.id).certified() {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn resolved_assignment_region(
+        &self,
+        id: abstract_interpretation::graph::NodeId,
+        span: Span,
+        facts: &AnalysisFacts<'_>,
+    ) -> bool {
+        let Some(node) = facts.cfg().node(id) else { return false };
+        let Some(origin) = node.origin else { return false };
+        if origin.span != span || facts.reachable_node(id).certified() != Some(&true) {
+            return false;
+        }
+        let Some(effect) =
+            self.hir().block(origin.block).and_then(|block| block.effects.get(origin.effect_index))
+        else {
+            return false;
+        };
+        match effect {
+            Effect::DeferredVariableAssignment { target, value, operator, .. } => {
+                let CfgNodeKind::DeferredAssignment {
+                    target: checked,
+                    value: checked_value,
+                    operator: checked_operator,
+                } = &node.kind
+                else {
+                    return false;
+                };
+                target == checked
+                    && value == checked_value
+                    && operator == checked_operator
+                    && facts.resolved_deferred_assignment(id)
+            }
+            Effect::OpaqueAssignment { target, value, operator, reason, .. }
+                if *reason == IncompleteReason::UnknownType =>
+            {
+                self.matches_checked_assignment(&node.kind, target, *value, *operator)
+            }
+            Effect::OpaqueAssignment { .. }
+            | Effect::Declaration { .. }
+            | Effect::VariableAssignment { .. }
+            | Effect::ComponentInstantiation { .. }
+            | Effect::WitnessAssignment { .. }
+            | Effect::ConstraintAssignment { .. }
+            | Effect::EqualityConstraint { .. }
+            | Effect::OpaqueEquality { .. }
+            | Effect::Update { .. }
+            | Effect::If { .. }
+            | Effect::While { .. }
+            | Effect::For { .. }
+            | Effect::Return { .. }
+            | Effect::Assert { .. }
+            | Effect::DeferredAssert { .. }
+            | Effect::Log { .. }
+            | Effect::AnonymousComponent { .. }
+            | Effect::Block(_)
+            | Effect::Opaque { .. } => false,
+        }
+    }
+
+    fn matches_checked_assignment(
+        &self,
+        kind: &CfgNodeKind,
+        target: &parser::hir::AccessPath,
+        value: ExprId,
+        operator: AssignmentOperator,
+    ) -> bool {
+        match operator {
+            AssignmentOperator::Assign => {
+                let CfgNodeKind::Assignment {
+                    target: checked,
+                    value: checked_value,
+                    operator: checked_operator,
+                } = kind
+                else {
+                    return false;
+                };
+                checked == target && *checked_value == value && *checked_operator == operator
+            }
+            AssignmentOperator::Witness | AssignmentOperator::ReverseWitness => {
+                let CfgNodeKind::Witness { target: checked, value: checked_value } = kind else {
+                    return false;
+                };
+                checked == target && *checked_value == value
+            }
+            AssignmentOperator::Constraint | AssignmentOperator::ReverseConstraint => {
+                let CfgNodeKind::Constraint { target: Some(checked), left, right: None } = kind
+                else {
+                    return false;
+                };
+                checked == target && *left == value
+            }
+            AssignmentOperator::Add
+            | AssignmentOperator::Subtract
+            | AssignmentOperator::Multiply
+            | AssignmentOperator::Divide
+            | AssignmentOperator::IntegerDivide
+            | AssignmentOperator::Modulo
+            | AssignmentOperator::Power
+            | AssignmentOperator::ShiftLeft
+            | AssignmentOperator::ShiftRight
+            | AssignmentOperator::BitAnd
+            | AssignmentOperator::BitOr
+            | AssignmentOperator::BitXor => false,
+        }
     }
 
     #[must_use]
@@ -467,6 +628,10 @@ impl<'a> ProjectSummaries<'a> {
     #[must_use]
     pub fn curve(&self) -> &Curve {
         self.field.curve()
+    }
+
+    pub(crate) fn field_context(&self) -> &FieldContext {
+        &self.field
     }
 
     /// Construct a key only when the definition and parameter count belong to this HIR.
@@ -704,12 +869,11 @@ impl<'a> ProjectSummaries<'a> {
             .ok_or(AnalyzeEvidenceError::Blocked(SummaryBlocker::ForeignDefinition))?;
         let seeds =
             evidence.context.scalar_seeds(parameters).map_err(AnalyzeEvidenceError::Blocked)?;
-        let mut facts = analyze_with_scalar_parameters(self.hir(), cfg, &self.field, seeds, budget)
-            .map_err(|error| {
-                AnalyzeEvidenceError::Blocked(SummaryBlocker::LocalAnalysis(format!("{error:?}")))
-            })?;
+        let mut facts = self
+            .refined_facts(cfg.definition(), seeds, budget)
+            .map_err(AnalyzeEvidenceError::Blocked)?;
         if let Some(expression) =
-            self.invalid_deferred_assignment(cfg, parameters, evidence.context(), &facts)
+            self.invalid_deferred_assignment(facts.cfg(), parameters, evidence.context(), &facts)
         {
             let span = self
                 .hir()
@@ -727,6 +891,12 @@ impl<'a> ProjectSummaries<'a> {
             return Err(AnalyzeEvidenceError::InvalidAssignment {
                 context: Box::new(evidence.context.clone()),
                 diagnostic: Box::new(diagnostic),
+            });
+        }
+        if let Some(failure) = self.invalid_parameter_use(parameters, evidence.context(), &facts) {
+            return Err(AnalyzeEvidenceError::InvalidParameterUse {
+                context: Box::new(evidence.context.clone()),
+                diagnostic: Box::new(failure.diagnostic()),
             });
         }
         facts.bind_evidence(evidence.clone());
@@ -855,11 +1025,14 @@ impl<'a> ProjectSummaries<'a> {
             return None;
         }
         for id in cfg.nodes() {
-            let Some(CfgNodeKind::DeferredAssignment { value, .. }) =
+            let Some(CfgNodeKind::DeferredAssignment { target, value, .. }) =
                 cfg.node(*id).map(|node| &node.kind)
             else {
                 continue;
             };
+            if !crate::hir_facts::deferred_scalar_target(self.hir(), target) {
+                continue;
+            }
             if self.proved_value_shape(*value, &aggregate, facts, 0) == ProvedValueShape::Aggregate
                 && facts.reachable_node(*id).certified() == Some(&true)
                 && facts.structurally_must_execute(*id)

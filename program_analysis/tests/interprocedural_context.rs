@@ -1,3 +1,4 @@
+use abstract_interpretation::graph::FlowGraph;
 use circomspect_program_analysis::hir_facts::{FieldContext, Range};
 use circomspect_program_analysis::interprocedural::{
     AnalyzeEvidenceError, ArgumentShape, ArgumentValue, CallOwner, CallReachability, ContextOrigin,
@@ -431,4 +432,90 @@ fn local_facts_must_match_the_exact_evidence_scope() {
         Err(SummaryBlocker::WrongContext)
     );
     assert!(provider.check_facts_for_evidence(&symbolic, &root).is_ok());
+}
+
+fn parameter_operation_error(source: &str) -> Option<AnalyzeEvidenceError> {
+    let lifted = fixture(source, Version::new(2, 2, 3));
+    assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let site = provider.graph().calls_from(CallOwner::Main(0))[0];
+    let CallReachability::Reachable(call) =
+        provider.graph().reachable_main_call(site.id(), provider.hir())
+    else {
+        panic!("main must be reachable")
+    };
+    let evidence = provider.main_evidence(&call).unwrap();
+    let cfg = build_cfg(provider.hir(), evidence.context().definition()).unwrap();
+    provider.analyze_for_evidence(&cfg, &evidence, None).err()
+}
+
+#[test]
+fn parameter_shape_errors_are_located_in_the_reachable_main_context() {
+    for (statement, argument, code, location) in [
+        ("var x=n[0];", "1", SemanticCode::InvalidArrayAccess, "n[0]"),
+        ("n[1]=1;", "[2]", SemanticCode::InvalidArrayAccess, "n[1]"),
+        ("n[0][1]=1;", "[[2]]", SemanticCode::InvalidArrayAccess, "n[0][1]"),
+        ("n=1;", "[2]", SemanticCode::InvalidAssignment, "n"),
+        ("n=[1];", "2", SemanticCode::InvalidAssignment, "n"),
+        ("n+=1;", "[2]", SemanticCode::InvalidAssignment, "n"),
+        ("n++;", "[2]", SemanticCode::InvalidAssignment, "n"),
+    ] {
+        let source = format!("template T(n){{{statement}}} component main=T({argument});");
+        let error = parameter_operation_error(&source).expect("invalid concrete parameter use");
+        let diagnostic = error.diagnostic().expect("a located semantic diagnostic");
+        assert_eq!(diagnostic.code, code, "{source}");
+        assert_eq!(&source[diagnostic.span.start()..diagnostic.span.end()], location);
+    }
+}
+
+#[test]
+fn parameter_shape_validation_preserves_valid_and_unexecuted_operations() {
+    for (statement, argument) in [
+        ("n=1;", "2"),
+        ("n=[1];", "[2]"),
+        ("n=[1,2];", "[2]"),
+        ("var x[1];x=n;", "[2]"),
+        ("var x[1][1];x[0]=n;", "[2]"),
+        ("n[0]=1;", "[2]"),
+        ("n[0][0]=1;", "[[2]]"),
+        ("if(0){n[1]=1;}", "[2]"),
+        ("if(1){n[0]=1;}else{n[1]=1;}", "[2]"),
+    ] {
+        let source = format!("template T(n){{{statement}}} component main=T({argument});");
+        assert!(parameter_operation_error(&source).is_none(), "{source}");
+    }
+}
+
+#[test]
+fn public_cfg_queries_follow_the_specialized_control_flow() {
+    let source = concat!(
+        "function F(){return 7;} ",
+        "template T(){signal output out;out<==F();var x;",
+        "if(0){x=1;}else{x=2;}} component main=T();"
+    );
+    let lifted = fixture(source, Version::new(2, 2, 3));
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let site = provider.graph().calls_from(CallOwner::Main(0))[0];
+    let CallReachability::Reachable(call) =
+        provider.graph().reachable_main_call(site.id(), provider.hir())
+    else {
+        panic!("main must be reachable")
+    };
+    let evidence = provider.main_evidence(&call).unwrap();
+    let cfg = build_cfg(provider.hir(), evidence.context().definition()).unwrap();
+    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let mut branches = 0;
+    for id in facts.cfg().edges() {
+        let edge = facts.cfg().edge(*id).unwrap();
+        let expected = match edge.payload.kind {
+            circomspect_program_analysis::hir_cfg::EdgeKind::True => false,
+            circomspect_program_analysis::hir_cfg::EdgeKind::False => true,
+            circomspect_program_analysis::hir_cfg::EdgeKind::Normal
+            | circomspect_program_analysis::hir_cfg::EdgeKind::Loop
+            | circomspect_program_analysis::hir_cfg::EdgeKind::Return => continue,
+        };
+        branches += 1;
+        assert_eq!(facts.reachable_edge(*id).certified(), Some(&expected));
+    }
+    assert_eq!(branches, 2);
 }

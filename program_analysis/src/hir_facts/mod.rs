@@ -10,6 +10,7 @@ mod liveness;
 mod use_queries;
 mod walk;
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
 use abstract_interpretation::graph::{EdgeId, FlowGraph, GraphError, NodeId};
@@ -22,7 +23,7 @@ use parser::hir::{
 };
 use parser::new_frontend::{AssignmentOperator, InputAssignmentOperator};
 
-use crate::call_evidence::ExactCallResults;
+use crate::scalar_evidence::ScalarExpressionEvidence;
 use crate::hir_cfg::{CfgNodeKind, DefinitionCfg};
 use crate::interprocedural::ContextEvidence;
 use access::key_for_path;
@@ -123,17 +124,23 @@ pub enum AnalysisError {
 
 struct AnalysisOptions<'a> {
     values: BTreeMap<SymbolId, FieldValue>,
-    calls: Option<&'a ExactCallResults>,
+    calls: Option<&'a ScalarExpressionEvidence>,
     budget: Option<usize>,
+}
+
+pub(crate) struct OwnedAnalysisOptions {
+    pub(crate) values: BTreeMap<SymbolId, FieldValue>,
+    pub(crate) calls: ScalarExpressionEvidence,
+    pub(crate) budget: Option<usize>,
 }
 
 /// Local facts retain the solver result privately so reporting queries cannot
 /// accidentally consume provisional states without a closure check.
 pub struct AnalysisFacts<'a> {
     hir: &'a HirProject,
-    cfg: &'a DefinitionCfg,
+    cfg: Cow<'a, DefinitionCfg>,
     field: &'a FieldContext,
-    calls: Option<&'a ExactCallResults>,
+    calls: Option<Cow<'a, ScalarExpressionEvidence>>,
     forward: ForwardResult,
     backward: BackwardResult,
     specialized_parameters: BTreeSet<SymbolId>,
@@ -156,6 +163,7 @@ pub fn analyze<'a>(
     )
 }
 
+#[cfg(test)]
 pub(crate) fn analyze_with_scalar_parameters<'a>(
     hir: &'a HirProject,
     cfg: &'a DefinitionCfg,
@@ -166,14 +174,41 @@ pub(crate) fn analyze_with_scalar_parameters<'a>(
     analyze_seeded(hir, cfg, field, AnalysisOptions { values, calls: None, budget })
 }
 
-pub(crate) fn analyze_with_scalar_calls<'a>(
+pub(crate) fn analyze_owned_with_scalar_calls<'a>(
     hir: &'a HirProject,
-    cfg: &'a DefinitionCfg,
+    cfg: DefinitionCfg,
     field: &'a FieldContext,
-    values: BTreeMap<SymbolId, FieldValue>,
-    calls: &'a ExactCallResults,
+    options: OwnedAnalysisOptions,
 ) -> Result<AnalysisFacts<'a>, AnalysisError> {
-    analyze_seeded(hir, cfg, field, AnalysisOptions { values, calls: Some(calls), budget: None })
+    let borrowed = analyze_seeded(
+        hir,
+        &cfg,
+        field,
+        AnalysisOptions {
+            values: options.values,
+            calls: Some(&options.calls),
+            budget: options.budget,
+        },
+    )?;
+    let AnalysisFacts {
+        forward,
+        backward,
+        specialized_parameters,
+        resolved_deferred,
+        evidence_binding,
+        ..
+    } = borrowed;
+    Ok(AnalysisFacts {
+        hir,
+        cfg: Cow::Owned(cfg),
+        field,
+        calls: Some(Cow::Owned(options.calls)),
+        forward,
+        backward,
+        specialized_parameters,
+        resolved_deferred,
+        evidence_binding,
+    })
 }
 
 fn analyze_seeded<'a>(
@@ -216,9 +251,9 @@ fn analyze_seeded<'a>(
         solve::<_, _, Backward>(cfg, &liveness, budget).map_err(AnalysisError::InvalidGraph)?;
     Ok(AnalysisFacts {
         hir,
-        cfg,
+        cfg: Cow::Borrowed(cfg),
         field,
-        calls: options.calls,
+        calls: options.calls.map(Cow::Borrowed),
         forward,
         backward,
         specialized_parameters,
@@ -232,7 +267,7 @@ fn resolved_deferred_nodes(
     cfg: &DefinitionCfg,
     field: &FieldContext,
     result: &ForwardResult,
-    calls: Option<&ExactCallResults>,
+    calls: Option<&ScalarExpressionEvidence>,
 ) -> BTreeSet<NodeId> {
     let SolveResult::Complete(facts) = result else { return BTreeSet::new() };
     let mut resolved = BTreeSet::new();
@@ -260,7 +295,7 @@ fn resolved_deferred_nodes(
     resolved
 }
 
-fn deferred_scalar_target(hir: &HirProject, target: &AccessPath) -> bool {
+pub(crate) fn deferred_scalar_target(hir: &HirProject, target: &AccessPath) -> bool {
     if !target.steps.is_empty() {
         return false;
     }
@@ -274,7 +309,7 @@ fn forward_pruned_edges(
     cfg: &DefinitionCfg,
     field: &FieldContext,
     result: &ForwardResult,
-    calls: Option<&ExactCallResults>,
+    calls: Option<&ScalarExpressionEvidence>,
 ) -> BTreeSet<EdgeId> {
     let SolveResult::Complete(facts) = result else { return BTreeSet::new() };
     let analysis = ForwardAnalysis::with_call_values(hir, field, calls);
@@ -292,11 +327,11 @@ fn forward_pruned_edges(
 
 impl AnalysisFacts<'_> {
     pub(crate) fn exact_call_value(&self, expression: ExprId) -> Option<&FieldValue> {
-        self.calls.and_then(|calls| calls.value(expression))
+        self.calls.as_deref().and_then(|calls| calls.call_value(expression))
     }
 
     fn forward_analysis(&self) -> ForwardAnalysis<'_> {
-        ForwardAnalysis::with_call_values(self.hir, self.field, self.calls)
+        ForwardAnalysis::with_call_values(self.hir, self.field, self.calls.as_deref())
     }
 
     fn evaluate(
@@ -307,8 +342,13 @@ impl AnalysisFacts<'_> {
         self.forward_analysis().evaluate(expression, variables)
     }
 
-    pub(crate) fn cfg(&self) -> &DefinitionCfg {
-        self.cfg
+    /// The exact control-flow graph solved by this analysis.
+    ///
+    /// Specialization can change graph topology. Node and edge queries must use
+    /// IDs from this graph, rather than a CFG supplied before specialization.
+    #[must_use]
+    pub fn cfg(&self) -> &DefinitionCfg {
+        self.cfg.as_ref()
     }
 
     /// Prove whether one CFG edge is reachable in this bound analysis context.
@@ -382,8 +422,13 @@ impl AnalysisFacts<'_> {
         if !exit_reachable {
             return Fact::blocked(BTreeSet::from([FactBlocker::MissingExit]));
         }
-        let pruned =
-            forward_pruned_edges(self.hir, self.cfg, self.field, &self.forward, self.calls);
+        let pruned = forward_pruned_edges(
+            self.hir,
+            self.cfg.as_ref(),
+            self.field,
+            &self.forward,
+            self.calls.as_deref(),
+        );
         Fact::known(!self.path_bypasses(node, &pruned))
     }
 

@@ -1,4 +1,4 @@
-//! Exact call values bound to one HIR definition and selected field.
+//! Certified scalar expressions bound to one HIR definition and selected field.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -8,20 +8,26 @@ use program_structure::utils::constants::Curve;
 use crate::hir_facts::FieldValue;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct ExactCallResults {
+pub(crate) struct ScalarExpressionEvidence {
     project: ProjectIdentity,
     definition: DefinitionRef,
     curve: Curve,
-    values: BTreeMap<ExprId, ExactCallResult>,
+    values: BTreeMap<ExprId, ExactScalarResult>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct ExactCallResult {
+struct ExactScalarResult {
     value: FieldValue,
-    input_dependencies: BTreeSet<usize>,
+    origin: ScalarOrigin,
 }
 
-impl ExactCallResults {
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum ScalarOrigin {
+    FunctionReturn { input_dependencies: BTreeSet<usize> },
+    FlowAccess,
+}
+
+impl ScalarExpressionEvidence {
     pub(crate) fn empty(hir: &HirProject, definition: DefinitionRef, curve: Curve) -> Self {
         Self { project: hir.identity(), definition, curve, values: BTreeMap::new() }
     }
@@ -47,17 +53,38 @@ impl ExactCallResults {
         self.values.get(&expression).map(|result| &result.value)
     }
 
-    pub(crate) fn input_dependencies(&self, expression: ExprId) -> Option<&BTreeSet<usize>> {
-        self.values.get(&expression).map(|result| &result.input_dependencies)
+    pub(crate) fn call_value(&self, expression: ExprId) -> Option<&FieldValue> {
+        let result = self.values.get(&expression)?;
+        let ScalarOrigin::FunctionReturn { .. } = &result.origin else { return None };
+        Some(&result.value)
     }
 
-    pub(crate) fn insert(
+    pub(crate) fn call_input_dependencies(&self, expression: ExprId) -> Option<&BTreeSet<usize>> {
+        let result = self.values.get(&expression)?;
+        let ScalarOrigin::FunctionReturn { input_dependencies } = &result.origin else {
+            return None;
+        };
+        Some(input_dependencies)
+    }
+
+    pub(crate) fn insert_call(
         &mut self,
         expression: ExprId,
         value: FieldValue,
         input_dependencies: BTreeSet<usize>,
     ) {
-        self.values.insert(expression, ExactCallResult { value, input_dependencies });
+        self.values.insert(
+            expression,
+            ExactScalarResult {
+                value,
+                origin: ScalarOrigin::FunctionReturn { input_dependencies },
+            },
+        );
+    }
+
+    pub(crate) fn insert_access(&mut self, expression: ExprId, value: FieldValue) {
+        self.values
+            .insert(expression, ExactScalarResult { value, origin: ScalarOrigin::FlowAccess });
     }
 
     pub(crate) fn merge(&mut self, other: &Self) -> Result<bool, ()> {

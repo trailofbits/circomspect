@@ -27,7 +27,7 @@ impl Lifter<'_> {
         let mut state = AccessState {
             ty: self.symbol_type(root),
             terminal: root,
-            remaining_dimensions: self.hir.symbols[root.index].rank,
+            remaining_dimensions: self.symbol_rank(root),
             component_input: false,
             component_output: false,
             indexed_current: false,
@@ -60,7 +60,7 @@ impl Lifter<'_> {
         expression: &Expression,
         span: Span,
     ) -> bool {
-        if state.remaining_dimensions == 0 {
+        if state.remaining_dimensions == Some(0) {
             self.diagnostic(
                 SemanticCode::InvalidArrayAccess,
                 Severity::Error,
@@ -79,7 +79,8 @@ impl Lifter<'_> {
             _ => ArrayIndex::Symbolic(id),
         };
         state.steps.push(AccessStep::Index { index, span });
-        state.remaining_dimensions -= 1;
+        state.remaining_dimensions =
+            state.remaining_dimensions.and_then(|rank| rank.checked_sub(1));
         state.indexed_current = true;
         true
     }
@@ -151,7 +152,7 @@ impl Lifter<'_> {
             self.incomplete(span, IncompleteReason::InvalidAssignment);
             return false;
         }
-        if state.remaining_dimensions != 0 && !is_tag {
+        if state.remaining_dimensions.is_some_and(|rank| rank != 0) && !is_tag {
             self.diagnostic(
                 SemanticCode::InvalidArrayAccess,
                 Severity::Error,
@@ -182,7 +183,7 @@ impl Lifter<'_> {
         });
         state.terminal = symbol;
         state.ty = next;
-        state.remaining_dimensions = self.hir.symbols[symbol.index].rank;
+        state.remaining_dimensions = self.symbol_rank(symbol);
         state.indexed_current = false;
         true
     }
@@ -505,10 +506,7 @@ impl Lifter<'_> {
     }
 
     pub(super) fn access_rank(&self, path: &AccessPath) -> Option<usize> {
-        let symbol = &self.hir.symbols[path.terminal.index];
-        if !symbol.shape_checked {
-            return None;
-        }
+        let rank = self.symbol_rank(path.terminal)?;
         let mut indices = 0;
         for step in path.steps.iter().rev() {
             match step {
@@ -517,7 +515,15 @@ impl Lifter<'_> {
                 AccessStep::Tag { .. } => return Some(0),
             }
         }
-        symbol.rank.checked_sub(indices)
+        rank.checked_sub(indices)
+    }
+
+    fn symbol_rank(&self, id: SymbolId) -> Option<usize> {
+        let symbol = &self.hir.symbols[id.index];
+        if !symbol.shape_checked || symbol.kind == SymbolKind::Parameter {
+            return None;
+        }
+        Some(symbol.rank)
     }
 
     pub(super) fn expression_rank(&self, id: ExprId) -> Option<usize> {
