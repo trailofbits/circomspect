@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use abstract_interpretation::lattice::Lattice;
 use parser::hir::{AccessPath, ExprId, ExprKind, HirProject, SymbolId, SymbolKind};
 use parser::new_frontend::{BinaryOperator, UnaryOperator};
 use program_structure::utils::constants::Curve;
@@ -10,6 +11,7 @@ use crate::hir_cfg::CfgNodeKind;
 use crate::hir_facts::access::{key_for_path, AccessKey};
 use crate::hir_facts::field::{FieldContext, FieldValue};
 use crate::hir_facts::forward::eval_expression_with_calls;
+use crate::hir_facts::VisitAccesses;
 use crate::scalar_evidence::ScalarExpressionEvidence;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -167,7 +169,8 @@ impl SourceForm {
     }
 }
 
-struct ExpressionPolynomial {
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExpressionPolynomial {
     polynomial: QuadraticPolynomial,
     form: SourceForm,
 }
@@ -175,6 +178,77 @@ struct ExpressionPolynomial {
 impl ExpressionPolynomial {
     fn new(polynomial: QuadraticPolynomial, form: SourceForm) -> Self {
         Self { polynomial, form }
+    }
+
+    pub(crate) fn constant(field: &FieldContext, value: FieldValue) -> Self {
+        Self::new(QuadraticPolynomial::constant(field, value), SourceForm::Constant)
+    }
+
+    pub(crate) fn add(&mut self, field: &FieldContext, other: Self) {
+        self.polynomial.add(field, other.polynomial);
+        self.form = self.form.add(other.form);
+    }
+
+    fn certifies_exact_scalar(&self, field: &FieldContext, value: &FieldValue) -> bool {
+        self.form == SourceForm::Constant
+            && self.polynomial == QuadraticPolynomial::constant(field, value.clone())
+    }
+}
+
+/// Must-defined scalar variables with both canonical value and source shape.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MustSymbolicVariables {
+    Unreachable,
+    Reached(BTreeMap<SymbolId, ExpressionPolynomial>),
+}
+
+impl MustSymbolicVariables {
+    pub(crate) fn reachable_empty() -> Self {
+        Self::Reached(BTreeMap::new())
+    }
+
+    pub(crate) fn get(&self, symbol: SymbolId) -> Option<&ExpressionPolynomial> {
+        let Self::Reached(values) = self else { return None };
+        values.get(&symbol)
+    }
+
+    pub(crate) fn insert(&mut self, symbol: SymbolId, value: ExpressionPolynomial) {
+        if let Self::Reached(values) = self {
+            values.insert(symbol, value);
+        }
+    }
+
+    pub(crate) fn remove(&mut self, symbol: SymbolId) {
+        if let Self::Reached(values) = self {
+            values.remove(&symbol);
+        }
+    }
+}
+
+impl Lattice for MustSymbolicVariables {
+    fn bottom() -> Self {
+        Self::Unreachable
+    }
+
+    fn leq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Unreachable, _) => true,
+            (Self::Reached(_), Self::Unreachable) => false,
+            (Self::Reached(left), Self::Reached(right)) => {
+                right.iter().all(|(symbol, value)| left.get(symbol) == Some(value))
+            }
+        }
+    }
+
+    fn join_assign(&mut self, other: &Self) -> bool {
+        let Self::Reached(right) = other else { return false };
+        let Self::Reached(left) = self else {
+            *self = other.clone();
+            return true;
+        };
+        let old = left.clone();
+        left.retain(|symbol, value| right.get(symbol) == Some(value));
+        *left != old
     }
 }
 
@@ -215,6 +289,7 @@ pub(crate) struct NormalizationInputs<'a> {
     field: &'a FieldContext,
     values: &'a BTreeMap<SymbolId, FieldValue>,
     calls: Option<&'a ScalarExpressionEvidence>,
+    symbolic: &'a MustSymbolicVariables,
 }
 
 impl<'a> NormalizationInputs<'a> {
@@ -223,8 +298,9 @@ impl<'a> NormalizationInputs<'a> {
         field: &'a FieldContext,
         values: &'a BTreeMap<SymbolId, FieldValue>,
         calls: Option<&'a ScalarExpressionEvidence>,
+        symbolic: &'a MustSymbolicVariables,
     ) -> Self {
-        Self { hir, field, values, calls }
+        Self { hir, field, values, calls, symbolic }
     }
 }
 
@@ -287,6 +363,110 @@ fn evaluate_expression_frame(
     frames: &mut Vec<ExpressionFrame>,
     values: &mut Vec<ExpressionPolynomial>,
 ) -> Result<(), RelationBlocker> {
+    let expr =
+        inputs.hir.expression(expression).ok_or(RelationBlocker::MissingExpression(expression))?;
+    match &expr.kind {
+        ExprKind::Access(path) => values.push(polynomial_for_access(inputs, path, expression)?),
+        ExprKind::Parallel(inner) => frames.push(ExpressionFrame::Evaluate(*inner)),
+        ExprKind::Unary { operator: UnaryOperator::Negate, operand } => {
+            frames.push(ExpressionFrame::Negate(expression));
+            frames.push(ExpressionFrame::Evaluate(*operand));
+        }
+        ExprKind::Binary { operator, left, right }
+            if [BinaryOperator::Add, BinaryOperator::Subtract, BinaryOperator::Multiply]
+                .contains(operator) =>
+        {
+            frames.push(ExpressionFrame::Binary { expression, operator: *operator });
+            frames.push(ExpressionFrame::Evaluate(*right));
+            frames.push(ExpressionFrame::Evaluate(*left));
+        }
+        ExprKind::Number(_)
+        | ExprKind::Binary { .. }
+        | ExprKind::Unary { .. }
+        | ExprKind::Ternary { .. }
+        | ExprKind::Call { .. }
+        | ExprKind::AnonymousComponent { .. }
+        | ExprKind::Array(_)
+        | ExprKind::Tuple(_)
+        | ExprKind::Opaque(_) => {
+            let Some(checked_values) = checked_fallback_values(inputs, expression) else {
+                return Err(RelationBlocker::UnsupportedExpression(expression));
+            };
+            let Some(value) = eval_expression_with_calls(
+                inputs.hir,
+                inputs.field,
+                expression,
+                &checked_values,
+                inputs.calls,
+            ) else {
+                return Err(RelationBlocker::UnsupportedExpression(expression));
+            };
+            values.push(ExpressionPolynomial::constant(inputs.field, value));
+        }
+    }
+    Ok(())
+}
+
+fn checked_fallback_values(
+    inputs: &NormalizationInputs<'_>,
+    expression: ExprId,
+) -> Option<BTreeMap<SymbolId, FieldValue>> {
+    let mut values = BTreeMap::new();
+    let mut allowed = true;
+    let complete = expression.visit_accesses_with(
+        inputs.hir,
+        &|call| inputs.calls.and_then(|calls| calls.call_value(call)).is_some(),
+        &mut |path| {
+            if let Some((symbol, value)) = foldable_access(inputs, path) {
+                values.insert(symbol, value);
+            } else {
+                allowed = false;
+            }
+        },
+    );
+    (complete && allowed).then_some(values)
+}
+
+fn foldable_access(
+    inputs: &NormalizationInputs<'_>,
+    path: &AccessPath,
+) -> Option<(SymbolId, FieldValue)> {
+    if path.root != path.terminal || !path.steps.is_empty() {
+        return None;
+    }
+    let symbol = inputs.hir.symbol(path.root)?;
+    let value = inputs.values.get(&path.root)?;
+    match symbol.kind {
+        SymbolKind::Parameter => Some((path.root, value.clone())),
+        SymbolKind::Variable
+            if inputs
+                .symbolic
+                .get(path.root)
+                .is_some_and(|symbolic| symbolic.certifies_exact_scalar(inputs.field, value)) =>
+        {
+            Some((path.root, value.clone()))
+        }
+        SymbolKind::Variable
+        | SymbolKind::Signal
+        | SymbolKind::Component
+        | SymbolKind::Bus
+        | SymbolKind::Tag => None,
+    }
+}
+
+fn polynomial_for_access(
+    inputs: &NormalizationInputs<'_>,
+    path: &AccessPath,
+    expression: ExprId,
+) -> Result<ExpressionPolynomial, RelationBlocker> {
+    let symbol = inputs.hir.symbol(path.root).ok_or(RelationBlocker::UnsupportedPath)?;
+    if symbol.kind == SymbolKind::Variable && path.root == path.terminal && path.steps.is_empty() {
+        return inputs
+            .symbolic
+            .get(path.root)
+            .cloned()
+            .ok_or(RelationBlocker::UnsupportedExpression(expression));
+    }
     if let Some(value) = eval_expression_with_calls(
         inputs.hir,
         inputs.field,
@@ -294,41 +474,16 @@ fn evaluate_expression_frame(
         inputs.values,
         inputs.calls,
     ) {
-        values.push(ExpressionPolynomial::new(
-            QuadraticPolynomial::constant(inputs.field, value),
-            SourceForm::Constant,
-        ));
-        return Ok(());
+        return Ok(ExpressionPolynomial::constant(inputs.field, value));
     }
-    let expr =
-        inputs.hir.expression(expression).ok_or(RelationBlocker::MissingExpression(expression))?;
-    match &expr.kind {
-        ExprKind::Access(path) => {
-            values.push(ExpressionPolynomial::new(
-                polynomial_for_path(inputs, path)?,
-                SourceForm::Linear,
-            ));
-        }
-        ExprKind::Parallel(inner) => frames.push(ExpressionFrame::Evaluate(*inner)),
-        ExprKind::Unary { operator: UnaryOperator::Negate, operand } => {
-            frames.push(ExpressionFrame::Negate(expression));
-            frames.push(ExpressionFrame::Evaluate(*operand));
-        }
-        ExprKind::Binary { operator, left, right } => {
-            frames.push(ExpressionFrame::Binary { expression, operator: *operator });
-            frames.push(ExpressionFrame::Evaluate(*right));
-            frames.push(ExpressionFrame::Evaluate(*left));
-        }
-        ExprKind::Number(_)
-        | ExprKind::Unary { .. }
-        | ExprKind::Ternary { .. }
-        | ExprKind::Call { .. }
-        | ExprKind::AnonymousComponent { .. }
-        | ExprKind::Array(_)
-        | ExprKind::Tuple(_)
-        | ExprKind::Opaque(_) => return Err(RelationBlocker::UnsupportedExpression(expression)),
-    }
-    Ok(())
+    Ok(ExpressionPolynomial::new(polynomial_for_path(inputs, path)?, SourceForm::Linear))
+}
+
+pub(crate) fn variable_polynomial(
+    inputs: &NormalizationInputs<'_>,
+    expression: ExprId,
+) -> Result<ExpressionPolynomial, RelationBlocker> {
+    polynomial_for_expression(inputs, expression)
 }
 
 fn combine_binary(
@@ -352,8 +507,7 @@ fn combine_binary(
     if operator == BinaryOperator::Subtract {
         right.polynomial.scale(inputs.field, &inputs.field.canonical((-1).into()));
     }
-    left.polynomial.add(inputs.field, right.polynomial);
-    left.form = left.form.add(right.form);
+    left.add(inputs.field, right);
     Ok(left)
 }
 
@@ -421,19 +575,22 @@ pub(super) fn reconstruction_equation(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::fs;
 
     use abstract_interpretation::graph::FlowGraph;
-    use parser::hir::lift_project;
-    use parser::new_frontend::{load_sources, Version, VersionPolicy};
+    use parser::hir::{lift_project, ExprId, ExprKind, HirProject, SymbolId};
+    use parser::new_frontend::{load_sources, BinaryOperator, Version, VersionPolicy};
     use program_structure::utils::constants::Curve;
 
     use crate::hir_cfg::{build_cfg, CfgNodeKind};
     use crate::hir_facts::field::FieldContext;
     use crate::hir_facts::relations::polynomial::{
-        constraint_equation, witness_equation, NormalizationInputs,
+        constraint_equation, variable_polynomial, witness_equation, ExpressionPolynomial,
+        MustSymbolicVariables, NormalizationInputs, QuadraticPolynomial, SourceForm,
     };
+    use crate::scalar_evidence::ScalarExpressionEvidence;
+    use abstract_interpretation::lattice::Lattice;
 
     #[test]
     fn generated_assignment_polynomials_can_match_without_an_execution_certificate() {
@@ -454,7 +611,8 @@ mod tests {
         let cfg = build_cfg(&lifted.hir, lifted.hir.definition("T").unwrap()).unwrap();
         let field = FieldContext::for_curve(Curve::Bn254);
         let values = BTreeMap::new();
-        let inputs = NormalizationInputs::new(&lifted.hir, &field, &values, None);
+        let symbolic = MustSymbolicVariables::reachable_empty();
+        let inputs = NormalizationInputs::new(&lifted.hir, &field, &values, None, &symbolic);
         let mut witness = None;
         let mut generated = None;
         for site in cfg.nodes() {
@@ -469,5 +627,213 @@ mod tests {
             }
         }
         assert_eq!(witness.unwrap(), generated.unwrap());
+    }
+
+    #[test]
+    fn symbolic_variable_join_preserves_source_shape_and_lattice_laws() {
+        let directory = std::env::temp_dir().join(format!(
+            "circomspect-symbolic-lattice-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("case.circom");
+        fs::write(&path, "function F(){var x=0;var y=0;}").unwrap();
+        let loaded = load_sources(&[path], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
+        let hir = lift_project(&loaded).hir;
+        let x = hir.symbols().iter().find(|symbol| symbol.name == "x").unwrap().id;
+        let y = hir.symbols().iter().find(|symbol| symbol.name == "y").unwrap().id;
+        let field = FieldContext::for_curve(Curve::Bn254);
+        let constant = ExpressionPolynomial::constant(&field, field.canonical(1.into()));
+        let linear = ExpressionPolynomial::new(
+            QuadraticPolynomial::constant(&field, field.canonical(1.into())),
+            SourceForm::Linear,
+        );
+        assert_ne!(constant, linear);
+        let states = [
+            MustSymbolicVariables::Unreachable,
+            MustSymbolicVariables::reachable_empty(),
+            MustSymbolicVariables::Reached(BTreeMap::from([(x, constant.clone())])),
+            MustSymbolicVariables::Reached(BTreeMap::from([(x, linear.clone())])),
+            MustSymbolicVariables::Reached(BTreeMap::from([(y, constant.clone())])),
+            MustSymbolicVariables::Reached(BTreeMap::from([(x, constant), (y, linear)])),
+        ];
+        for left in &states {
+            let mut idempotent = left.clone();
+            assert!(!idempotent.join_assign(left));
+            for right in &states {
+                let mut joined = left.clone();
+                joined.join_assign(right);
+                assert!(left.leq(&joined));
+                assert!(right.leq(&joined));
+                let mut reverse = right.clone();
+                reverse.join_assign(left);
+                assert_eq!(joined, reverse);
+                for last in &states {
+                    let mut first = joined.clone();
+                    first.join_assign(last);
+                    let mut second = right.clone();
+                    second.join_assign(last);
+                    let mut reassociated = left.clone();
+                    reassociated.join_assign(&second);
+                    assert_eq!(first, reassociated);
+                }
+            }
+        }
+    }
+
+    fn assigned_expression(hir: &HirProject, name: &str) -> ExprId {
+        let cfg = build_cfg(hir, hir.definition("T").unwrap()).unwrap();
+        for site in cfg.nodes() {
+            let Some(node) = cfg.node(*site) else { panic!("CFG site must exist") };
+            let CfgNodeKind::Assignment { target, value, .. } = &node.kind else { continue };
+            let Some(symbol) = hir.symbol(target.root) else { panic!("target must exist") };
+            if symbol.name == name {
+                return *value;
+            }
+        }
+        panic!("assignment {name} must exist")
+    }
+
+    fn access_expression(hir: &HirProject, symbol: SymbolId) -> ExprId {
+        for expression in hir.expressions() {
+            let ExprKind::Access(path) = &expression.kind else { continue };
+            if path.root == symbol {
+                return expression.id;
+            }
+        }
+        panic!("symbol access must exist")
+    }
+
+    fn parameter_comparison(hir: &HirProject, parameter: SymbolId) -> ExprId {
+        for expression in hir.expressions() {
+            let ExprKind::Binary { operator: BinaryOperator::Equal, left, .. } = &expression.kind
+            else {
+                continue;
+            };
+            let Some(left) = hir.expression(*left) else { continue };
+            let ExprKind::Access(path) = &left.kind else { continue };
+            if path.root == parameter {
+                return expression.id;
+            }
+        }
+        panic!("parameter comparison must exist")
+    }
+
+    #[test]
+    fn lost_variable_shape_cannot_borrow_an_exact_parameter_value() {
+        let directory = std::env::temp_dir().join(format!(
+            "circomspect-symbolic-parameter-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("case.circom");
+        fs::write(
+            &path,
+            "template T(n){signal input a;var x=a-a+1;var y=x+n;\
+             var wrapped=x==1;var negated=!x;var parameter=n==2;}",
+        )
+        .unwrap();
+        let loaded = load_sources(&[path], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
+        let hir = lift_project(&loaded).hir;
+        let x = hir.symbols().iter().find(|symbol| symbol.name == "x").unwrap().id;
+        let n = hir.symbols().iter().find(|symbol| symbol.name == "n").unwrap().id;
+        let x_access = access_expression(&hir, x);
+        let n_access = access_expression(&hir, n);
+        let wrapped = assigned_expression(&hir, "wrapped");
+        let negated = assigned_expression(&hir, "negated");
+        let wrapped_parameter = parameter_comparison(&hir, n);
+        let field = FieldContext::for_curve(Curve::Bn254);
+        let one = field.canonical(1.into());
+        let two = field.canonical(2.into());
+        let values = BTreeMap::from([(x, one.clone()), (n, two.clone())]);
+        let empty = MustSymbolicVariables::reachable_empty();
+        let inputs = NormalizationInputs::new(&hir, &field, &values, None, &empty);
+        assert!(variable_polynomial(&inputs, x_access).is_err());
+        assert!(variable_polynomial(&inputs, wrapped).is_err());
+        assert!(variable_polynomial(&inputs, negated).is_err());
+        assert_eq!(
+            variable_polynomial(&inputs, wrapped_parameter).unwrap(),
+            ExpressionPolynomial::constant(&field, field.canonical(1.into()))
+        );
+        assert_eq!(
+            variable_polynomial(&inputs, n_access).unwrap(),
+            ExpressionPolynomial::constant(&field, two)
+        );
+        let unknown = BTreeMap::from([(x, one.clone())]);
+        let inputs = NormalizationInputs::new(&hir, &field, &unknown, None, &empty);
+        assert!(variable_polynomial(&inputs, n_access).is_err());
+        let mut symbolic = empty;
+        symbolic.insert(x, ExpressionPolynomial::constant(&field, one.clone()));
+        let inputs = NormalizationInputs::new(&hir, &field, &values, None, &symbolic);
+        assert_eq!(
+            variable_polynomial(&inputs, wrapped).unwrap(),
+            ExpressionPolynomial::constant(&field, field.canonical(1.into()))
+        );
+        let linear = ExpressionPolynomial::new(
+            QuadraticPolynomial::constant(&field, one),
+            SourceForm::Linear,
+        );
+        symbolic.insert(x, linear.clone());
+        let inputs = NormalizationInputs::new(&hir, &field, &values, None, &symbolic);
+        assert_eq!(variable_polynomial(&inputs, x_access).unwrap(), linear);
+        assert!(variable_polynomial(&inputs, wrapped).is_err());
+    }
+
+    #[test]
+    fn exact_call_result_cannot_hide_signal_derived_argument_shape() {
+        let directory = std::env::temp_dir().join(format!(
+            "circomspect-symbolic-call-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("case.circom");
+        fs::write(
+            &path,
+            "function F(v){return 1;}template T(){signal input a;var x=a-a+1;var y=F(x);}",
+        )
+        .unwrap();
+        let loaded = load_sources(&[path], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
+        let lifted = lift_project(&loaded);
+        let provider =
+            crate::interprocedural::ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let hir = &lifted.hir;
+        let definition = hir.definition("T").unwrap();
+        let x = hir.symbols().iter().find(|symbol| symbol.name == "x").unwrap().id;
+        let call = hir
+            .expressions()
+            .iter()
+            .find_map(|expression| {
+                let ExprKind::Call { .. } = &expression.kind else { return None };
+                Some(expression.id)
+            })
+            .unwrap();
+        let field = FieldContext::for_curve(Curve::Bn254);
+        let one = field.canonical(1.into());
+        let values = BTreeMap::from([(x, one.clone())]);
+        let context = provider.symbolic_context_for(definition).unwrap();
+        let mut calls = ScalarExpressionEvidence::empty(hir, &context, Curve::Bn254);
+        calls.insert_call(call, one.clone(), BTreeSet::new());
+        let empty = MustSymbolicVariables::reachable_empty();
+        let inputs = NormalizationInputs::new(hir, &field, &values, Some(&calls), &empty);
+        assert!(variable_polynomial(&inputs, call).is_err());
+        let mut symbolic = empty;
+        symbolic.insert(
+            x,
+            ExpressionPolynomial::new(
+                QuadraticPolynomial::constant(&field, one.clone()),
+                SourceForm::Linear,
+            ),
+        );
+        let inputs = NormalizationInputs::new(hir, &field, &values, Some(&calls), &symbolic);
+        assert!(variable_polynomial(&inputs, call).is_err());
+        symbolic.insert(x, ExpressionPolynomial::constant(&field, one.clone()));
+        let inputs = NormalizationInputs::new(hir, &field, &values, Some(&calls), &symbolic);
+        assert_eq!(
+            variable_polynomial(&inputs, call).unwrap(),
+            ExpressionPolynomial::constant(&field, one)
+        );
     }
 }

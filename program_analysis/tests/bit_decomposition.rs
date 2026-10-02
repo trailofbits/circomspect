@@ -40,6 +40,49 @@ fn unrolled_source(count: usize) -> String {
     source
 }
 
+fn accumulated_source(extra: &str) -> String {
+    let mut source = source(&[true; 3], 4, true);
+    source = source.replace(
+        "in===bits[0]+2*bits[1]+4*bits[2];",
+        &format!("var sum=0;sum+=bits[0];sum+=2*bits[1];sum+=4*bits[2];{extra}sum===in;"),
+    );
+    source
+}
+
+#[test]
+fn exact_accumulated_variable_can_prove_reconstruction() {
+    let fact = inspect(&accumulated_source(""), Curve::Bn254);
+    let certificate = fact.certified().unwrap().as_ref().unwrap();
+    assert_eq!(certificate.bits().len(), 3);
+}
+
+#[test]
+fn overwritten_accumulator_cannot_keep_the_old_reconstruction() {
+    let fact = inspect(&accumulated_source("sum=0;"), Curve::Bn254);
+    assert!(fact.certified().and_then(Option::as_ref).is_none(), "{fact:?}");
+}
+
+#[test]
+fn unsupported_compound_and_branch_joins_cannot_keep_symbolic_reconstruction() {
+    let compound = inspect(&accumulated_source("sum*=1;"), Curve::Bn254);
+    assert!(compound.unavailable().is_some(), "{compound:?}");
+
+    let branch = accumulated_source("")
+        .replace("template Bits()", "template Bits(n)")
+        .replace("sum+=4*bits[2];", "if(n){sum+=4*bits[2];}");
+    let fact = inspect(&branch, Curve::Bn254);
+    assert!(fact.certified().and_then(Option::as_ref).is_none(), "{fact:?}");
+}
+
+#[test]
+fn witness_value_from_accumulator_is_not_generated_reconstruction() {
+    let source = accumulated_source("")
+        .replace("signal input in;", "signal output in;")
+        .replace("sum===in;", "in<--sum;");
+    let fact = inspect(&source, Curve::Bn254);
+    assert!(fact.certified().and_then(Option::as_ref).is_none(), "{fact:?}");
+}
+
 fn signal_path(hir: &HirProject, name: &str, index: Option<usize>) -> AccessPath {
     let symbol = hir
         .symbols()

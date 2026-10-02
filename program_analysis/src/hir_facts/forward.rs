@@ -13,13 +13,17 @@ use crate::scalar_evidence::ScalarExpressionEvidence;
 use crate::hir_facts::access::{key_for_path, AccessKey, MayAccessSet};
 use crate::hir_facts::domains::DegreeUpper;
 use crate::hir_facts::field::{FieldContext, FieldValue};
-use crate::hir_facts::relations::{constraint_equation, MustEquations, NormalizationInputs};
+use crate::hir_facts::relations::{
+    constraint_equation, variable_polynomial, ExpressionPolynomial, MustEquations,
+    MustSymbolicVariables, NormalizationInputs,
+};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ForwardState {
     Unreachable,
     Reached {
         variables: BTreeMap<SymbolId, FieldValue>,
+        symbolic: Box<MustSymbolicVariables>,
         dependencies: BTreeMap<SymbolId, MayAccessSet>,
         degrees: BTreeMap<SymbolId, DegreeUpper>,
         may_constraints: BTreeSet<NodeId>,
@@ -39,6 +43,7 @@ impl ForwardState {
     pub fn boundary() -> Self {
         Self::Reached {
             variables: BTreeMap::new(),
+            symbolic: Box::new(MustSymbolicVariables::reachable_empty()),
             dependencies: BTreeMap::new(),
             degrees: BTreeMap::new(),
             may_constraints: BTreeSet::new(),
@@ -60,6 +65,11 @@ impl ForwardState {
     pub fn variables(&self) -> Option<&BTreeMap<SymbolId, FieldValue>> {
         let Self::Reached { variables, .. } = self else { return None };
         Some(variables)
+    }
+
+    pub(crate) fn symbolic(&self) -> Option<&MustSymbolicVariables> {
+        let Self::Reached { symbolic, .. } = self else { return None };
+        Some(symbolic)
     }
 
     pub fn dependencies(&self) -> Option<&BTreeMap<SymbolId, MayAccessSet>> {
@@ -107,6 +117,7 @@ impl Lattice for ForwardState {
             (
                 Self::Reached {
                     variables: left,
+                    symbolic: left_symbolic,
                     dependencies: left_dependencies,
                     degrees: left_degrees,
                     may_constraints: left_may,
@@ -117,6 +128,7 @@ impl Lattice for ForwardState {
                 },
                 Self::Reached {
                     variables: right,
+                    symbolic: right_symbolic,
                     dependencies: right_dependencies,
                     degrees: right_degrees,
                     may_constraints: right_may,
@@ -127,6 +139,7 @@ impl Lattice for ForwardState {
                 },
             ) => {
                 right.iter().all(|(key, value)| left.get(key) == Some(value))
+                    && left_symbolic.leq(right_symbolic)
                     && right_dependencies.iter().all(|(key, right)| {
                         left_dependencies.get(key).is_some_and(|left| left.leq(right))
                     })
@@ -154,6 +167,7 @@ impl Lattice for ForwardState {
         let (
             Self::Reached {
                 variables: left,
+                symbolic: left_symbolic,
                 dependencies: left_dependencies,
                 degrees: left_degrees,
                 may_constraints: left_may,
@@ -164,6 +178,7 @@ impl Lattice for ForwardState {
             },
             Self::Reached {
                 variables: right,
+                symbolic: right_symbolic,
                 dependencies: right_dependencies,
                 degrees: right_degrees,
                 may_constraints: right_may,
@@ -177,6 +192,7 @@ impl Lattice for ForwardState {
             return false;
         };
         left.retain(|key, value| right.get(key) == Some(value));
+        left_symbolic.join_assign(right_symbolic);
         left_dependencies.retain(|key, left| {
             let Some(right) = right_dependencies.get(key) else { return false };
             left.join_assign(right);
@@ -650,6 +666,344 @@ fn assign_value(
     }
 }
 
+fn replace_symbolic(
+    analysis: &ForwardAnalysis<'_>,
+    target: &AccessPath,
+    value: ExprId,
+    variables: &BTreeMap<SymbolId, FieldValue>,
+    symbolic: &mut MustSymbolicVariables,
+) {
+    let scalar = target.steps.is_empty()
+        && analysis.hir.symbol(target.root).is_some_and(|symbol| {
+            symbol.kind == SymbolKind::Variable && symbol.rank == 0 && symbol.shape_checked
+        });
+    let value = if scalar {
+        let inputs = NormalizationInputs::new(
+            analysis.hir,
+            analysis.field,
+            variables,
+            analysis.calls,
+            symbolic,
+        );
+        variable_polynomial(&inputs, value).ok()
+    } else {
+        None
+    };
+    if let Some(value) = value {
+        symbolic.insert(target.root, value);
+    } else {
+        symbolic.remove(target.root);
+    }
+}
+
+fn accumulate_symbolic(
+    analysis: &ForwardAnalysis<'_>,
+    target: &AccessPath,
+    value: ExprId,
+    variables: &BTreeMap<SymbolId, FieldValue>,
+    symbolic: &mut MustSymbolicVariables,
+) {
+    let previous = symbolic.get(target.root).cloned();
+    let inputs =
+        NormalizationInputs::new(analysis.hir, analysis.field, variables, analysis.calls, symbolic);
+    let value = variable_polynomial(&inputs, value).ok();
+    if let (Some(mut previous), Some(value)) = (previous, value) {
+        previous.add(analysis.field, value);
+        symbolic.insert(target.root, previous);
+    } else {
+        symbolic.remove(target.root);
+    }
+}
+
+fn accumulate_value(
+    analysis: &ForwardAnalysis<'_>,
+    target: &AccessPath,
+    value: ExprId,
+    variables: &mut BTreeMap<SymbolId, FieldValue>,
+) {
+    let value = variables
+        .get(&target.root)
+        .zip(analysis.evaluate(value, variables))
+        .map(|(previous, value)| analysis.field.add(previous, &value));
+    if let Some(value) = value {
+        variables.insert(target.root, value);
+    } else {
+        variables.remove(&target.root);
+    }
+}
+
+fn accumulate_dependencies(
+    analysis: &ForwardAnalysis<'_>,
+    target: &AccessPath,
+    value: ExprId,
+    variables: &BTreeMap<SymbolId, FieldValue>,
+    dependencies: &mut BTreeMap<SymbolId, MayAccessSet>,
+) {
+    let value = expression_dependencies(analysis, value, variables, dependencies);
+    let previous = dependencies.get(&target.root).cloned();
+    if let (Some(mut previous), Some(value)) = (previous, value) {
+        previous.join_assign(&MayAccessSet::from_keys(value));
+        dependencies.insert(target.root, previous);
+    } else {
+        dependencies.remove(&target.root);
+    }
+}
+
+fn accumulate_degree(
+    analysis: &ForwardAnalysis<'_>,
+    target: &AccessPath,
+    value: ExprId,
+    variables: &BTreeMap<SymbolId, FieldValue>,
+    degrees: &mut BTreeMap<SymbolId, DegreeUpper>,
+) {
+    let previous = degrees.get(&target.root).copied();
+    let degree = expression_degree(analysis, value, variables, degrees);
+    if let Some(previous) = previous {
+        let degree = previous.max(degree);
+        if degree != DegreeUpper::Unbounded {
+            degrees.insert(target.root, degree);
+            return;
+        }
+    }
+    degrees.remove(&target.root);
+}
+
+impl ForwardState {
+    fn apply_assignment(
+        &mut self,
+        analysis: &ForwardAnalysis<'_>,
+        target: &AccessPath,
+        value: ExprId,
+        operator: AssignmentOperator,
+    ) -> Result<(), String> {
+        let Self::Reached { variables, symbolic, dependencies, degrees, .. } = self else {
+            return Ok(());
+        };
+        let scalar_variable = target.steps.is_empty()
+            && analysis.hir.symbol(target.root).is_some_and(|symbol| {
+                symbol.kind == SymbolKind::Variable && symbol.rank == 0 && symbol.shape_checked
+            });
+        if operator != AssignmentOperator::Assign
+            && (operator != AssignmentOperator::Add || !scalar_variable)
+        {
+            variables.remove(&target.root);
+            symbolic.remove(target.root);
+            dependencies.remove(&target.root);
+            degrees.remove(&target.root);
+            return Err(format!("unsupported compound assignment {operator:?}"));
+        }
+        if scalar_variable && operator == AssignmentOperator::Add {
+            accumulate_symbolic(analysis, target, value, variables, symbolic);
+            accumulate_degree(analysis, target, value, variables, degrees);
+            accumulate_dependencies(analysis, target, value, variables, dependencies);
+            accumulate_value(analysis, target, value, variables);
+        } else if analysis
+            .hir
+            .symbol(target.root)
+            .is_some_and(|symbol| symbol.kind == SymbolKind::Variable)
+        {
+            replace_symbolic(analysis, target, value, variables, symbolic);
+            assign_degree(analysis, target, value, variables, degrees);
+            assign_dependencies(analysis, target, value, variables, dependencies);
+            assign_value(analysis, target, value, variables);
+        }
+        Ok(())
+    }
+
+    fn apply_deferred_assignment(
+        &mut self,
+        analysis: &ForwardAnalysis<'_>,
+        target: &AccessPath,
+        value: ExprId,
+        operator: AssignmentOperator,
+    ) -> Result<(), String> {
+        let Self::Reached { variables, symbolic, dependencies, degrees, .. } = self else {
+            return Ok(());
+        };
+        symbolic.remove(target.root);
+        if operator != AssignmentOperator::Assign {
+            variables.remove(&target.root);
+            dependencies.remove(&target.root);
+            degrees.remove(&target.root);
+            return Err(format!("unsupported compound assignment {operator:?}"));
+        }
+        let scalar = target.steps.is_empty()
+            && analysis
+                .hir
+                .symbol(target.root)
+                .is_some_and(|symbol| symbol.kind == SymbolKind::Variable)
+            && analysis.evaluate(value, variables).is_some();
+        if !scalar {
+            return Err("deferred assignment shape".into());
+        }
+        assign_degree(analysis, target, value, variables, degrees);
+        assign_dependencies(analysis, target, value, variables, dependencies);
+        assign_value(analysis, target, value, variables);
+        Ok(())
+    }
+
+    fn apply_declaration(
+        &mut self,
+        analysis: &ForwardAnalysis<'_>,
+        symbol: SymbolId,
+    ) -> Result<(), String> {
+        let Self::Reached { variables, symbolic, dependencies, degrees, .. } = self else {
+            return Ok(());
+        };
+        let Some(declared) = analysis.hir.symbol(symbol) else {
+            return Err("missing declaration symbol".into());
+        };
+        if declared.kind == SymbolKind::Variable {
+            dependencies.insert(symbol, MayAccessSet::default());
+            if declared.rank == 0 && declared.shape_checked {
+                let zero = analysis.field.canonical(0.into());
+                symbolic
+                    .insert(symbol, ExpressionPolynomial::constant(analysis.field, zero.clone()));
+                variables.insert(symbol, zero);
+                degrees.insert(symbol, DegreeUpper::Constant);
+            } else {
+                symbolic.remove(symbol);
+                variables.remove(&symbol);
+                degrees.remove(&symbol);
+            }
+        }
+        Ok(())
+    }
+
+    fn apply_update(
+        &mut self,
+        analysis: &ForwardAnalysis<'_>,
+        target: &AccessPath,
+        operator: PostfixOperator,
+    ) -> Result<(), String> {
+        let Self::Reached { variables, symbolic, degrees, .. } = self else { return Ok(()) };
+        symbolic.remove(target.root);
+        apply_update(analysis, target, operator, variables).map_err(str::to_owned)?;
+        degrees.insert(target.root, DegreeUpper::Constant);
+        Ok(())
+    }
+
+    fn apply_constraint(
+        &mut self,
+        analysis: &ForwardAnalysis<'_>,
+        node: &CfgNode,
+    ) -> Result<(), String> {
+        let Self::Reached {
+            variables,
+            symbolic,
+            may_constraints,
+            must_constraints,
+            must_touches,
+            must_fixed,
+            must_equations,
+            ..
+        } = self
+        else {
+            return Ok(());
+        };
+        let CfgNodeKind::Constraint { target, left, right } = &node.kind else {
+            return Err("expected constraint node".into());
+        };
+        may_constraints.insert(node.id);
+        must_constraints.insert(node.id);
+        must_touches.extend(constraint_touches(analysis, &node.kind, variables));
+        if let Some((key, value)) =
+            fixed_equation(analysis, target.as_ref(), *left, *right, variables)
+        {
+            must_fixed.insert((key, value));
+        }
+        let inputs = NormalizationInputs::new(
+            analysis.hir,
+            analysis.field,
+            variables,
+            analysis.calls,
+            symbolic,
+        );
+        match constraint_equation(&inputs, &node.kind) {
+            Ok(equation) => must_equations.insert(equation, node.id),
+            Err(_) => must_equations.block(node.id),
+        }
+        Ok(())
+    }
+
+    fn apply_opaque_assignment(
+        &mut self,
+        analysis: &ForwardAnalysis<'_>,
+        target: &AccessPath,
+        value: ExprId,
+    ) {
+        let Self::Reached { variables, symbolic, dependencies, degrees, .. } = self else {
+            return;
+        };
+        symbolic.remove(target.root);
+        if analysis
+            .hir
+            .symbol(target.root)
+            .is_some_and(|symbol| symbol.kind == SymbolKind::Variable)
+        {
+            assign_degree(analysis, target, value, variables, degrees);
+            assign_dependencies(analysis, target, value, variables, dependencies);
+            assign_value(analysis, target, value, variables);
+        }
+    }
+
+    fn check_evaluate(analysis: &ForwardAnalysis<'_>, expression: ExprId) -> Result<(), String> {
+        let Some(expression) = analysis.hir.expression(expression) else {
+            return Err("missing expression".into());
+        };
+        if let ExprKind::Opaque(reason) = &expression.kind {
+            return Err(format!("{reason:?}"));
+        }
+        if let ExprKind::AnonymousComponent { .. } = &expression.kind {
+            return Err("external component summary".into());
+        }
+        Ok(())
+    }
+
+    fn apply_node(&mut self, analysis: &ForwardAnalysis<'_>, node: &CfgNode) -> Result<(), String> {
+        if let Self::Unreachable = self {
+            return Ok(());
+        }
+        match &node.kind {
+            CfgNodeKind::Evaluate(id) => Self::check_evaluate(analysis, *id),
+            CfgNodeKind::Assignment { target, value, operator } => {
+                self.apply_assignment(analysis, target, *value, *operator)
+            }
+            CfgNodeKind::DeferredAssignment { target, value, operator } => {
+                self.apply_deferred_assignment(analysis, target, *value, *operator)
+            }
+            CfgNodeKind::Declaration { symbol } => self.apply_declaration(analysis, *symbol),
+            CfgNodeKind::Update { target, operator } => {
+                self.apply_update(analysis, target, *operator)
+            }
+            CfgNodeKind::Constraint { .. } => self.apply_constraint(analysis, node),
+            CfgNodeKind::Opaque(reason) | CfgNodeKind::OpaqueEquality { reason, .. } => {
+                Err(format!("{reason:?}"))
+            }
+            CfgNodeKind::OpaqueAssignment { target, value, reason, .. } => {
+                self.apply_opaque_assignment(analysis, target, *value);
+                Err(format!("{reason:?}"))
+            }
+            CfgNodeKind::DeferredAssert { condition } => {
+                let Some(variables) = self.variables() else { return Ok(()) };
+                if analysis.evaluate(*condition, variables).is_none() {
+                    return Err("deferred assertion shape".into());
+                }
+                Ok(())
+            }
+            CfgNodeKind::Entry
+            | CfgNodeKind::Exit
+            | CfgNodeKind::LoopHeader
+            | CfgNodeKind::Branch { .. }
+            | CfgNodeKind::Witness { .. }
+            | CfgNodeKind::Return(_)
+            | CfgNodeKind::Assert { .. }
+            | CfgNodeKind::Log
+            | CfgNodeKind::Instantiate { .. } => Ok(()),
+        }
+    }
+}
+
 impl DataflowAnalysis<DefinitionCfg> for ForwardAnalysis<'_> {
     type State = ForwardState;
     type Reason = String;
@@ -666,176 +1020,10 @@ impl Transfer<ForwardAnalysis<'_>, ForwardState, String> for CfgNode {
         input: &ForwardState,
     ) -> TransferOutcome<ForwardState, String> {
         let mut output = input.clone();
-        let ForwardState::Reached {
-            variables,
-            dependencies,
-            degrees,
-            may_constraints,
-            must_constraints,
-            must_touches,
-            must_fixed,
-            must_equations,
-        } = &mut output
-        else {
-            return TransferOutcome::Known(output);
-        };
-        match &self.kind {
-            CfgNodeKind::Evaluate(id) => {
-                let Some(expression) = analysis.hir.expression(*id) else {
-                    return TransferOutcome::Opaque {
-                        provisional: output,
-                        reason: "missing expression".into(),
-                    };
-                };
-                if let ExprKind::Opaque(reason) = &expression.kind {
-                    return TransferOutcome::Opaque {
-                        provisional: output,
-                        reason: format!("{reason:?}"),
-                    };
-                }
-                if let ExprKind::AnonymousComponent { .. } = &expression.kind {
-                    return TransferOutcome::Opaque {
-                        provisional: output,
-                        reason: "external component summary".into(),
-                    };
-                }
-            }
-            CfgNodeKind::Assignment { target, value, operator } => {
-                if *operator != AssignmentOperator::Assign {
-                    variables.remove(&target.root);
-                    dependencies.remove(&target.root);
-                    degrees.remove(&target.root);
-                    return TransferOutcome::Opaque {
-                        provisional: output,
-                        reason: format!("unsupported compound assignment {operator:?}"),
-                    };
-                }
-                if analysis
-                    .hir
-                    .symbol(target.root)
-                    .is_some_and(|symbol| symbol.kind == SymbolKind::Variable)
-                {
-                    assign_degree(analysis, target, *value, variables, degrees);
-                    assign_dependencies(analysis, target, *value, variables, dependencies);
-                    assign_value(analysis, target, *value, variables);
-                }
-            }
-            CfgNodeKind::DeferredAssignment { target, value, operator } => {
-                if *operator != AssignmentOperator::Assign {
-                    variables.remove(&target.root);
-                    dependencies.remove(&target.root);
-                    degrees.remove(&target.root);
-                    return TransferOutcome::Opaque {
-                        provisional: output,
-                        reason: format!("unsupported compound assignment {operator:?}"),
-                    };
-                }
-                let scalar = target.steps.is_empty()
-                    && analysis
-                        .hir
-                        .symbol(target.root)
-                        .is_some_and(|symbol| symbol.kind == SymbolKind::Variable)
-                    && analysis.evaluate(*value, variables).is_some();
-                if !scalar {
-                    return TransferOutcome::Opaque {
-                        provisional: output,
-                        reason: "deferred assignment shape".into(),
-                    };
-                }
-                assign_degree(analysis, target, *value, variables, degrees);
-                assign_dependencies(analysis, target, *value, variables, dependencies);
-                assign_value(analysis, target, *value, variables);
-            }
-            CfgNodeKind::Declaration { symbol } => {
-                let Some(declared) = analysis.hir.symbol(*symbol) else {
-                    return TransferOutcome::Opaque {
-                        provisional: output,
-                        reason: "missing declaration symbol".into(),
-                    };
-                };
-                if declared.kind == SymbolKind::Variable {
-                    dependencies.insert(*symbol, MayAccessSet::default());
-                    if declared.rank == 0 && declared.shape_checked {
-                        variables.insert(*symbol, analysis.field.canonical(0.into()));
-                        degrees.insert(*symbol, DegreeUpper::Constant);
-                    } else {
-                        variables.remove(symbol);
-                        degrees.remove(symbol);
-                    }
-                }
-            }
-            CfgNodeKind::Update { target, operator } => {
-                if let Err(reason) = apply_update(analysis, target, *operator, variables) {
-                    return TransferOutcome::Opaque { provisional: output, reason: reason.into() };
-                }
-                degrees.insert(target.root, DegreeUpper::Constant);
-            }
-            CfgNodeKind::Constraint { target, left, right } => {
-                may_constraints.insert(self.id);
-                must_constraints.insert(self.id);
-                must_touches.extend(constraint_touches(analysis, &self.kind, variables));
-                if let Some((key, value)) =
-                    fixed_equation(analysis, target.as_ref(), *left, *right, variables)
-                {
-                    must_fixed.insert((key, value));
-                }
-                let inputs = NormalizationInputs::new(
-                    analysis.hir,
-                    analysis.field,
-                    variables,
-                    analysis.calls,
-                );
-                match constraint_equation(&inputs, &self.kind) {
-                    Ok(equation) => must_equations.insert(equation, self.id),
-                    Err(_) => must_equations.block(self.id),
-                }
-            }
-            CfgNodeKind::Opaque(reason) => {
-                return TransferOutcome::Opaque {
-                    provisional: output,
-                    reason: format!("{reason:?}"),
-                };
-            }
-            CfgNodeKind::OpaqueAssignment { target, value, reason, .. } => {
-                if analysis
-                    .hir
-                    .symbol(target.root)
-                    .is_some_and(|symbol| symbol.kind == SymbolKind::Variable)
-                {
-                    assign_degree(analysis, target, *value, variables, degrees);
-                    assign_dependencies(analysis, target, *value, variables, dependencies);
-                    assign_value(analysis, target, *value, variables);
-                }
-                return TransferOutcome::Opaque {
-                    provisional: output,
-                    reason: format!("{reason:?}"),
-                };
-            }
-            CfgNodeKind::OpaqueEquality { reason, .. } => {
-                return TransferOutcome::Opaque {
-                    provisional: output,
-                    reason: format!("{reason:?}"),
-                };
-            }
-            CfgNodeKind::Instantiate { .. } => {}
-            CfgNodeKind::DeferredAssert { condition } => {
-                if analysis.evaluate(*condition, variables).is_none() {
-                    return TransferOutcome::Opaque {
-                        provisional: output,
-                        reason: "deferred assertion shape".to_owned(),
-                    };
-                }
-            }
-            CfgNodeKind::Entry
-            | CfgNodeKind::Exit
-            | CfgNodeKind::LoopHeader
-            | CfgNodeKind::Branch { .. }
-            | CfgNodeKind::Witness { .. }
-            | CfgNodeKind::Return(_)
-            | CfgNodeKind::Assert { .. }
-            | CfgNodeKind::Log => {}
+        match output.apply_node(analysis, self) {
+            Ok(()) => TransferOutcome::Known(output),
+            Err(reason) => TransferOutcome::Opaque { provisional: output, reason },
         }
-        TransferOutcome::Known(output)
     }
 }
 
@@ -1075,7 +1263,7 @@ mod tests {
             .join(format!("circomspect-phase5-compound-transfer-{}", std::process::id()));
         fs::create_dir_all(&directory).unwrap();
         let source = directory.join("case.circom");
-        fs::write(&source, "function F(){var x=1;x+=1;return x;}").unwrap();
+        fs::write(&source, "function F(){var x=1;x*=1;return x;}").unwrap();
         let loaded =
             load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
         let hir = lift_project(&loaded).hir;
@@ -1086,7 +1274,7 @@ mod tests {
             .filter_map(|id| cfg.node(*id))
             .find(|node| {
                 let CfgNodeKind::Assignment { operator, .. } = node.kind else { return false };
-                operator == AssignmentOperator::Add
+                operator == AssignmentOperator::Multiply
             })
             .unwrap();
         let field = FieldContext::for_curve(Curve::Bn254);
@@ -1108,6 +1296,64 @@ mod tests {
         assert!(!left.variables().unwrap().contains_key(&x));
         assert!(!left.dependencies().unwrap().contains_key(&x));
         assert!(!left.degrees().unwrap().contains_key(&x));
+    }
+
+    #[test]
+    fn symbolic_shape_and_exact_scalar_fallback_transfer_monotonically() {
+        let directory = std::env::temp_dir()
+            .join(format!("circomspect-symbolic-transfer-{}", std::process::id()));
+        fs::create_dir_all(&directory).unwrap();
+        let source = directory.join("case.circom");
+        fs::write(&source, "template T(){signal input a;var x=a-a+1;var y=x+1;x+=1;}").unwrap();
+        let loaded =
+            load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
+        let hir = lift_project(&loaded).hir;
+        let cfg = crate::hir_cfg::build_cfg(&hir, hir.definition("T").unwrap()).unwrap();
+        let field = FieldContext::for_curve(Curve::Bn254);
+        let x = hir.symbols().iter().find(|symbol| symbol.name == "x").unwrap().id;
+        let y = hir.symbols().iter().find(|symbol| symbol.name == "y").unwrap().id;
+        let mut x_value = None;
+        let mut transfers = Vec::new();
+        for site in cfg.nodes() {
+            let Some(node) = cfg.node(*site) else { panic!("CFG site must exist") };
+            if let CfgNodeKind::Assignment { target, value, .. } = &node.kind {
+                if target.root == x && x_value.is_none() {
+                    x_value = Some(*value);
+                }
+                if target.root == x || target.root == y {
+                    transfers.push(node);
+                }
+            }
+        }
+        let values = BTreeMap::new();
+        let symbolic = MustSymbolicVariables::reachable_empty();
+        let inputs = NormalizationInputs::new(&hir, &field, &values, None, &symbolic);
+        let x_polynomial = variable_polynomial(&inputs, x_value.unwrap()).unwrap();
+        let mut precise = ForwardState::boundary();
+        let ForwardState::Reached { variables, symbolic, .. } = &mut precise else {
+            panic!("reached boundary")
+        };
+        variables.insert(x, field.canonical(1.into()));
+        symbolic.insert(x, x_polynomial);
+        let mut broad = ForwardState::boundary();
+        let ForwardState::Reached { variables, .. } = &mut broad else {
+            panic!("reached boundary")
+        };
+        variables.insert(x, field.canonical(1.into()));
+        assert!(precise.leq(&broad));
+        let analysis = ForwardAnalysis::new(&hir, &field);
+        for transfer in transfers {
+            let precise_after = transfer_state(transfer.apply(&analysis, &precise));
+            let broad_after = transfer_state(transfer.apply(&analysis, &broad));
+            assert!(precise_after.leq(&broad_after), "{precise_after:?} <= {broad_after:?}");
+            assert_eq!(precise_after.variables(), broad_after.variables());
+            if let CfgNodeKind::Assignment { target, .. } = &transfer.kind {
+                if target.root == y {
+                    assert!(precise_after.symbolic().unwrap().get(y).is_some());
+                    assert!(broad_after.symbolic().unwrap().get(y).is_none());
+                }
+            }
+        }
     }
 
     #[test]
@@ -1246,6 +1492,7 @@ mod tests {
                     (0..2).filter(|bit| must_bits & (1 << bit) != 0).map(NodeId::new).collect();
                 values.push(ForwardState::Reached {
                     variables: BTreeMap::new(),
+                    symbolic: Box::new(MustSymbolicVariables::reachable_empty()),
                     dependencies: BTreeMap::new(),
                     degrees: BTreeMap::new(),
                     may_constraints,

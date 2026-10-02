@@ -62,6 +62,28 @@ fn quadratic_equations_combine_terms_and_order_factors() {
 }
 
 #[test]
+fn variable_mediated_generated_shape_survives_cancellation_and_exact_values() {
+    for value in ["a*b+b*c", "(a*b-a*b)*c", "(a-a)*b*c"] {
+        let source = format!(
+            "template T(){{signal input a;signal input b;signal input c;signal output x;\
+             var t={value};x<--t;x===t;}}"
+        );
+        let fact = inspect(&source, Curve::Bn254);
+        assert!(fact.unavailable().is_some(), "{value}: {fact:?}");
+    }
+
+    let factor = "template T(){signal input a;signal input b;signal input c;\
+                  signal output x;var t=(a+b)*(c+1);x<--t;x===t;}";
+    let fact = inspect(factor, Curve::Bn254);
+    assert!(fact.certified().is_some_and(Option::is_some), "{fact:?}");
+
+    let witness_only = "template T(){signal input a;signal input b;signal input c;\
+                        signal output x;var t=a*b+b*c;x<--t;x===1;}";
+    let fact = inspect(witness_only, Curve::Bn254);
+    assert!(fact.certified().is_some_and(Option::is_none), "{fact:?}");
+}
+
+#[test]
 fn nonzero_field_scaling_preserves_the_same_equation() {
     let source = "template T(){signal input a;signal output x;x<--a;x*2===a*2;}";
     let fact = inspect(source, Curve::Bn254);

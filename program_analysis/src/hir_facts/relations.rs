@@ -18,7 +18,10 @@ use crate::interprocedural::ContextEvidence;
 
 pub use crate::hir_facts::relations::decomposition::BitDecomposition;
 pub use crate::hir_facts::relations::polynomial::{NormalizedEquation, QuadraticPolynomial};
-pub(crate) use crate::hir_facts::relations::polynomial::{constraint_equation, NormalizationInputs};
+pub(crate) use crate::hir_facts::relations::polynomial::{
+    constraint_equation, variable_polynomial, ExpressionPolynomial, MustSymbolicVariables,
+    NormalizationInputs,
+};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum MustEquations {
@@ -183,7 +186,9 @@ impl AnalysisFacts<'_> {
             }
         }
         let Some(values) = state.variables() else { return Fact::known(None) };
-        let inputs = NormalizationInputs::new(self.hir, self.field, values, self.calls.as_deref());
+        let Some(symbolic) = state.symbolic() else { return Fact::known(None) };
+        let inputs =
+            NormalizationInputs::new(self.hir, self.field, values, self.calls.as_deref(), symbolic);
         let equation = match witness_equation(&inputs, target, *value) {
             Ok(equation) => equation,
             Err(_) => {
