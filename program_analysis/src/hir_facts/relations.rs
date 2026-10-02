@@ -16,7 +16,7 @@ use crate::hir_facts::{
 use crate::interprocedural::ContextEvidence;
 
 pub use crate::hir_facts::relations::polynomial::{NormalizedEquation, QuadraticPolynomial};
-pub(crate) use crate::hir_facts::relations::polynomial::constraint_equation;
+pub(crate) use crate::hir_facts::relations::polynomial::{constraint_equation, NormalizationInputs};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum MustEquations {
@@ -158,6 +158,10 @@ impl AnalysisFacts<'_> {
             Some(false) => return Fact::known(None),
             None => return Fact::blocked(must_execute.unavailable().cloned().unwrap_or_default()),
         }
+        let readiness = self.body_relation_reads_ready();
+        if let Some(blockers) = readiness.unavailable() {
+            return Fact::blocked(blockers.clone());
+        }
         let mut blockers = self.relation_access_blockers(target, witness);
         blockers.extend(self.relation_access_blockers(value, witness));
         if !blockers.is_empty() {
@@ -177,7 +181,8 @@ impl AnalysisFacts<'_> {
             }
         }
         let Some(values) = state.variables() else { return Fact::known(None) };
-        let equation = match witness_equation(self.hir, self.field, target, *value, values) {
+        let inputs = NormalizationInputs::new(self.hir, self.field, values, self.calls.as_deref());
+        let equation = match witness_equation(&inputs, target, *value) {
             Ok(equation) => equation,
             Err(_) => {
                 return Fact::blocked(BTreeSet::from([FactBlocker::OpaqueExpression(*value)]))
@@ -190,9 +195,12 @@ impl AnalysisFacts<'_> {
         if !blockers.is_empty() {
             return Fact::blocked(blockers);
         }
+        let blockers = exit.must_equations().blockers();
+        if !blockers.is_empty() {
+            return Fact::blocked(blockers);
+        }
         let Some(origins) = exit.must_equations().origins(&equation) else {
-            let blockers = exit.must_equations().blockers();
-            return if blockers.is_empty() { Fact::known(None) } else { Fact::blocked(blockers) };
+            return Fact::known(None);
         };
         self.equation_certificate(evidence, node.origin, equation, origins)
     }
@@ -274,12 +282,16 @@ impl AnalysisFacts<'_> {
         site: NodeId,
     ) -> BTreeSet<FactBlocker> {
         let mut blockers = BTreeSet::new();
-        let complete = source.visit_accesses(self.hir, &mut |path| {
-            let fact = self.exact_access_key(path);
-            if let Some(unavailable) = fact.unavailable() {
-                blockers.extend(unavailable.iter().cloned());
-            }
-        });
+        let complete = source.visit_accesses_with(
+            self.hir,
+            &|expression| self.exact_call_value(expression).is_some(),
+            &mut |path| {
+                let fact = self.exact_access_key(path);
+                if let Some(unavailable) = fact.unavailable() {
+                    blockers.extend(unavailable.iter().cloned());
+                }
+            },
+        );
         if !complete {
             blockers.insert(FactBlocker::UnsupportedRelation(site));
         }

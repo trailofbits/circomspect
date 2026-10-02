@@ -110,6 +110,7 @@ pub enum FactBlocker {
     OpaqueExpression(ExprId),
     UnsupportedRelation(NodeId),
     WitnessWrite(NodeId, WitnessWriteIssue),
+    SignalRead(NodeId, SignalReadIssue),
     MissingExit,
     ForeignQuery,
     ForeignDefinition,
@@ -130,6 +131,15 @@ pub enum WitnessWriteIssue {
     PossibleRepeat,
     UnresolvedTarget,
     DefiniteRepeat,
+    InputReassignment,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum SignalReadIssue {
+    NoPriorWrite,
+    BranchOnlyWrite,
+    UnresolvedPriorWrite,
+    UnresolvedAccess,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

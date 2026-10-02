@@ -9,7 +9,8 @@ use program_structure::utils::constants::Curve;
 use crate::hir_cfg::CfgNodeKind;
 use crate::hir_facts::access::{key_for_path, AccessKey};
 use crate::hir_facts::field::{FieldContext, FieldValue};
-use crate::hir_facts::forward::eval_expression;
+use crate::hir_facts::forward::eval_expression_with_calls;
+use crate::scalar_evidence::ScalarExpressionEvidence;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum CurveTag {
@@ -118,6 +119,65 @@ impl QuadraticPolynomial {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SourceForm {
+    Constant,
+    Linear,
+    Quadratic,
+    Unsupported,
+}
+
+impl SourceForm {
+    fn add(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::Constant, Self::Constant) => Self::Constant,
+            (Self::Constant, Self::Linear)
+            | (Self::Linear, Self::Constant)
+            | (Self::Linear, Self::Linear) => Self::Linear,
+            (Self::Constant | Self::Linear, Self::Quadratic)
+            | (Self::Quadratic, Self::Constant | Self::Linear) => Self::Quadratic,
+            (Self::Quadratic, Self::Quadratic)
+            | (
+                Self::Unsupported,
+                Self::Constant | Self::Linear | Self::Quadratic | Self::Unsupported,
+            )
+            | (Self::Constant | Self::Linear | Self::Quadratic, Self::Unsupported) => {
+                Self::Unsupported
+            }
+        }
+    }
+
+    fn multiply(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::Constant, Self::Constant) => Self::Constant,
+            (Self::Constant, Self::Linear) | (Self::Linear, Self::Constant) => Self::Linear,
+            (Self::Constant, Self::Quadratic)
+            | (Self::Quadratic, Self::Constant)
+            | (Self::Linear, Self::Linear) => Self::Quadratic,
+            (Self::Linear | Self::Quadratic, Self::Quadratic)
+            | (Self::Quadratic, Self::Linear)
+            | (
+                Self::Unsupported,
+                Self::Constant | Self::Linear | Self::Quadratic | Self::Unsupported,
+            )
+            | (Self::Constant | Self::Linear | Self::Quadratic, Self::Unsupported) => {
+                Self::Unsupported
+            }
+        }
+    }
+}
+
+struct ExpressionPolynomial {
+    polynomial: QuadraticPolynomial,
+    form: SourceForm,
+}
+
+impl ExpressionPolynomial {
+    fn new(polynomial: QuadraticPolynomial, form: SourceForm) -> Self {
+        Self { polynomial, form }
+    }
+}
+
 /// An equation with all terms moved to zero and the first nonzero coefficient set to one.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct NormalizedEquation(QuadraticPolynomial);
@@ -148,12 +208,25 @@ pub(crate) enum RelationBlocker {
     MissingRight,
     DegreeExceeded(ExprId),
     DepthExceeded(ExprId),
+    GeneratedShape(ExprId),
 }
 
-struct NormalizationInputs<'a> {
+pub(crate) struct NormalizationInputs<'a> {
     hir: &'a HirProject,
     field: &'a FieldContext,
     values: &'a BTreeMap<SymbolId, FieldValue>,
+    calls: Option<&'a ScalarExpressionEvidence>,
+}
+
+impl<'a> NormalizationInputs<'a> {
+    pub(crate) fn new(
+        hir: &'a HirProject,
+        field: &'a FieldContext,
+        values: &'a BTreeMap<SymbolId, FieldValue>,
+        calls: Option<&'a ScalarExpressionEvidence>,
+    ) -> Self {
+        Self { hir, field, values, calls }
+    }
 }
 
 fn polynomial_for_path(
@@ -175,21 +248,31 @@ fn polynomial_for_expression(
     inputs: &NormalizationInputs<'_>,
     expression: ExprId,
     depth: usize,
-) -> Result<QuadraticPolynomial, RelationBlocker> {
+) -> Result<ExpressionPolynomial, RelationBlocker> {
     if depth > 128 {
         return Err(RelationBlocker::DepthExceeded(expression));
     }
-    if let Some(value) = eval_expression(inputs.hir, inputs.field, expression, inputs.values) {
-        return Ok(QuadraticPolynomial::constant(inputs.field, value));
+    if let Some(value) = eval_expression_with_calls(
+        inputs.hir,
+        inputs.field,
+        expression,
+        inputs.values,
+        inputs.calls,
+    ) {
+        return Ok(ExpressionPolynomial::new(
+            QuadraticPolynomial::constant(inputs.field, value),
+            SourceForm::Constant,
+        ));
     }
     let expr =
         inputs.hir.expression(expression).ok_or(RelationBlocker::MissingExpression(expression))?;
     match &expr.kind {
-        ExprKind::Access(path) => polynomial_for_path(inputs, path),
+        ExprKind::Access(path) => polynomial_for_path(inputs, path)
+            .map(|polynomial| ExpressionPolynomial::new(polynomial, SourceForm::Linear)),
         ExprKind::Parallel(inner) => polynomial_for_expression(inputs, *inner, depth + 1),
         ExprKind::Unary { operator: UnaryOperator::Negate, operand } => {
             let mut polynomial = polynomial_for_expression(inputs, *operand, depth + 1)?;
-            polynomial.scale(inputs.field, &inputs.field.canonical((-1).into()));
+            polynomial.polynomial.scale(inputs.field, &inputs.field.canonical((-1).into()));
             Ok(polynomial)
         }
         ExprKind::Binary { operator, left, right } => {
@@ -212,7 +295,7 @@ fn polynomial_for_binary(
     operator: BinaryOperator,
     operands: (ExprId, ExprId),
     depth: usize,
-) -> Result<QuadraticPolynomial, RelationBlocker> {
+) -> Result<ExpressionPolynomial, RelationBlocker> {
     if operator != BinaryOperator::Add
         && operator != BinaryOperator::Subtract
         && operator != BinaryOperator::Multiply
@@ -222,50 +305,50 @@ fn polynomial_for_binary(
     let mut left = polynomial_for_expression(inputs, operands.0, depth + 1)?;
     let mut right = polynomial_for_expression(inputs, operands.1, depth + 1)?;
     if operator == BinaryOperator::Multiply {
-        return left.multiply(inputs.field, &right, expression);
+        let form = left.form.multiply(right.form);
+        let polynomial = left.polynomial.multiply(inputs.field, &right.polynomial, expression)?;
+        return Ok(ExpressionPolynomial { polynomial, form });
     }
     if operator == BinaryOperator::Subtract {
-        right.scale(inputs.field, &inputs.field.canonical((-1).into()));
+        right.polynomial.scale(inputs.field, &inputs.field.canonical((-1).into()));
     }
-    left.add(inputs.field, right);
+    left.polynomial.add(inputs.field, right.polynomial);
+    left.form = left.form.add(right.form);
     Ok(left)
 }
 
 pub(crate) fn constraint_equation(
-    hir: &HirProject,
-    field: &FieldContext,
+    inputs: &NormalizationInputs<'_>,
     kind: &CfgNodeKind,
-    values: &BTreeMap<SymbolId, FieldValue>,
 ) -> Result<NormalizedEquation, RelationBlocker> {
     let CfgNodeKind::Constraint { target, left, right } = kind else {
         return Err(RelationBlocker::UnsupportedPath);
     };
-    let inputs = NormalizationInputs { hir, field, values };
     let left_side = if let Some(target) = target {
-        polynomial_for_path(&inputs, target)?
+        ExpressionPolynomial::new(polynomial_for_path(inputs, target)?, SourceForm::Linear)
     } else {
-        polynomial_for_expression(&inputs, *left, 0)?
+        polynomial_for_expression(inputs, *left, 0)?
     };
     let right_side = if target.is_some() {
-        polynomial_for_expression(&inputs, *left, 0)?
+        polynomial_for_expression(inputs, *left, 0)?
     } else {
         let right = right.ok_or(RelationBlocker::MissingRight)?;
-        polynomial_for_expression(&inputs, right, 0)?
+        polynomial_for_expression(inputs, right, 0)?
     };
-    Ok(NormalizedEquation::between(left_side, right_side, field))
+    if left_side.form.add(right_side.form) == SourceForm::Unsupported {
+        return Err(RelationBlocker::GeneratedShape(*left));
+    }
+    Ok(NormalizedEquation::between(left_side.polynomial, right_side.polynomial, inputs.field))
 }
 
 pub(super) fn witness_equation(
-    hir: &HirProject,
-    field: &FieldContext,
+    inputs: &NormalizationInputs<'_>,
     target: &AccessPath,
     value: ExprId,
-    variables: &BTreeMap<SymbolId, FieldValue>,
 ) -> Result<NormalizedEquation, RelationBlocker> {
-    let inputs = NormalizationInputs { hir, field, values: variables };
-    let target = polynomial_for_path(&inputs, target)?;
-    let value = polynomial_for_expression(&inputs, value, 0)?;
-    Ok(NormalizedEquation::between(target, value, field))
+    let target = polynomial_for_path(inputs, target)?;
+    let value = polynomial_for_expression(inputs, value, 0)?;
+    Ok(NormalizedEquation::between(target, value.polynomial, inputs.field))
 }
 
 #[cfg(test)]
@@ -280,7 +363,9 @@ mod tests {
 
     use crate::hir_cfg::{build_cfg, CfgNodeKind};
     use crate::hir_facts::field::FieldContext;
-    use crate::hir_facts::relations::polynomial::{constraint_equation, witness_equation};
+    use crate::hir_facts::relations::polynomial::{
+        constraint_equation, witness_equation, NormalizationInputs,
+    };
 
     #[test]
     fn generated_assignment_polynomials_can_match_without_an_execution_certificate() {
@@ -300,24 +385,19 @@ mod tests {
         assert!(lifted.diagnostics.is_empty());
         let cfg = build_cfg(&lifted.hir, lifted.hir.definition("T").unwrap()).unwrap();
         let field = FieldContext::for_curve(Curve::Bn254);
+        let values = BTreeMap::new();
+        let inputs = NormalizationInputs::new(&lifted.hir, &field, &values, None);
         let mut witness = None;
         let mut generated = None;
         for site in cfg.nodes() {
             let node = cfg.node(*site).unwrap();
-            match &node.kind {
-                CfgNodeKind::Witness { target, value } if witness.is_none() => {
-                    witness = Some(
-                        witness_equation(&lifted.hir, &field, target, *value, &BTreeMap::new())
-                            .unwrap(),
-                    );
+            if let CfgNodeKind::Witness { target, value } = &node.kind {
+                if witness.is_none() {
+                    witness = Some(witness_equation(&inputs, target, *value).unwrap());
                 }
-                CfgNodeKind::Constraint { target: Some(_), .. } => {
-                    generated = Some(
-                        constraint_equation(&lifted.hir, &field, &node.kind, &BTreeMap::new())
-                            .unwrap(),
-                    );
-                }
-                _ => {}
+            }
+            if let CfgNodeKind::Constraint { target: Some(_), .. } = &node.kind {
+                generated = Some(constraint_equation(&inputs, &node.kind).unwrap());
             }
         }
         assert_eq!(witness.unwrap(), generated.unwrap());

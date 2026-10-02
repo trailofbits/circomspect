@@ -138,6 +138,7 @@ fn incomplete_solver_cannot_release_a_provisional_equation() {
         | FactBlocker::OpaqueExpression(_)
         | FactBlocker::UnsupportedRelation(_)
         | FactBlocker::WitnessWrite(_, _)
+        | FactBlocker::SignalRead(_, _)
         | FactBlocker::MissingExit
         | FactBlocker::ForeignQuery
         | FactBlocker::ForeignDefinition => false,
@@ -171,6 +172,7 @@ fn unsupported_constraint_blocks_a_negative_equation_claim() {
         | FactBlocker::DeferredControl(_)
         | FactBlocker::OpaqueExpression(_)
         | FactBlocker::WitnessWrite(_, _)
+        | FactBlocker::SignalRead(_, _)
         | FactBlocker::MissingExit
         | FactBlocker::ForeignQuery
         | FactBlocker::ForeignDefinition => false,

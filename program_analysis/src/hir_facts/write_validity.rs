@@ -7,14 +7,14 @@ use abstract_interpretation::lattice::Lattice;
 use abstract_interpretation::solver::{
     solve, CertifiedFacts, DataflowAnalysis, Forward, SolveResult, Transfer, TransferOutcome,
 };
-use parser::hir::{AccessPath, ProjectIdentity};
-use parser::new_frontend::AssignmentOperator;
+use parser::hir::{AccessPath, AccessStep, ArrayIndex, ExprId, ProjectIdentity, SymbolKind};
+use parser::new_frontend::{AssignmentOperator, PortDirection};
 
 use crate::hir_cfg::{CfgEdge, CfgNode, CfgNodeKind, DefinitionCfg, Origin};
 use crate::hir_facts::access::key_for_path;
 use crate::hir_facts::{
     forward_pruned_edges, AccessHandle, AccessKey, AnalysisFacts, Fact, FactBlocker,
-    WitnessWriteIssue,
+    SignalReadIssue, VisitAccesses, WitnessWriteIssue,
 };
 use crate::interprocedural::ContextEvidence;
 
@@ -221,7 +221,143 @@ impl UncertainWrite {
 
 type WriteFacts = CertifiedFacts<NodeId, WriteState>;
 
+struct ReadCheck<'a> {
+    site: NodeId,
+    may: &'a BTreeSet<AccessKey>,
+    must: &'a BTreeSet<AccessKey>,
+    uncertain: &'a [UncertainWrite],
+    blockers: &'a mut BTreeSet<FactBlocker>,
+}
+
 impl AnalysisFacts<'_> {
+    /// Require every reachable signal read to have a prior exact body write
+    /// or an input-port initialization; input-port writes are invalid.
+    pub(crate) fn body_relation_reads_ready(&self) -> Fact<()> {
+        let (facts, uncertain) = match self.solve_body_writes() {
+            Ok(result) => result,
+            Err(blockers) => return Fact::blocked(blockers),
+        };
+        let mut blockers = BTreeSet::new();
+        for site in self.cfg.nodes() {
+            let Some(WriteState::Reached { may_written, must_written, .. }) =
+                facts.get(site).and_then(|item| item.input.as_ref())
+            else {
+                continue;
+            };
+            let Some(node) = self.cfg.node(*site) else { continue };
+            let mut check = ReadCheck {
+                site: *site,
+                may: may_written,
+                must: must_written,
+                uncertain: &uncertain,
+                blockers: &mut blockers,
+            };
+            self.node_read_blockers(&node.kind, &mut check);
+        }
+        if blockers.is_empty() {
+            Fact::known(())
+        } else {
+            Fact::blocked(blockers)
+        }
+    }
+
+    fn node_read_blockers(&self, kind: &CfgNodeKind, check: &mut ReadCheck<'_>) {
+        if let CfgNodeKind::Evaluate(expression) = kind {
+            self.expression_read_blockers(*expression, check);
+        }
+        if let CfgNodeKind::Witness { target, value } = kind {
+            if self.is_input_port(target) {
+                check.blockers.insert(FactBlocker::WitnessWrite(
+                    check.site,
+                    WitnessWriteIssue::InputReassignment,
+                ));
+            }
+            self.target_index_read_blockers(target, check);
+            self.expression_read_blockers(*value, check);
+        }
+        if let CfgNodeKind::Constraint { target, left, right } = kind {
+            if let Some(target) = target {
+                self.target_index_read_blockers(target, check);
+            }
+            self.expression_read_blockers(*left, check);
+            if let Some(right) = right {
+                self.expression_read_blockers(*right, check);
+            }
+        }
+    }
+
+    fn target_index_read_blockers(&self, target: &AccessPath, check: &mut ReadCheck<'_>) {
+        for step in &target.steps {
+            if let AccessStep::Index { index: ArrayIndex::Symbolic(expression), .. } = step {
+                self.expression_read_blockers(*expression, check);
+            }
+        }
+    }
+
+    fn expression_read_blockers(&self, expression: ExprId, check: &mut ReadCheck<'_>) {
+        let complete = expression.visit_accesses_with(
+            self.hir,
+            &|call| self.exact_call_value(call).is_some(),
+            &mut |path| self.path_read_blockers(path, check),
+        );
+        if !complete {
+            check.blockers.insert(FactBlocker::OpaqueExpression(expression));
+        }
+    }
+
+    fn path_read_blockers(&self, path: &AccessPath, check: &mut ReadCheck<'_>) {
+        let Some(symbol) = self.hir.symbol(path.terminal) else {
+            check
+                .blockers
+                .insert(FactBlocker::SignalRead(check.site, SignalReadIssue::UnresolvedAccess));
+            return;
+        };
+        match symbol.kind {
+            SymbolKind::Signal => self.signal_read_blockers(path, check),
+            SymbolKind::Parameter | SymbolKind::Variable => {}
+            SymbolKind::Component | SymbolKind::Bus | SymbolKind::Tag => {
+                check
+                    .blockers
+                    .insert(FactBlocker::SignalRead(check.site, SignalReadIssue::UnresolvedAccess));
+            }
+        }
+    }
+
+    fn signal_read_blockers(&self, path: &AccessPath, check: &mut ReadCheck<'_>) {
+        if path.root != path.terminal {
+            check
+                .blockers
+                .insert(FactBlocker::SignalRead(check.site, SignalReadIssue::UnresolvedAccess));
+            return;
+        }
+        let key = self.exact_access_key(path);
+        let Some(key) = key.certified() else {
+            check.blockers.extend(key.unavailable().cloned().unwrap_or_default());
+            return;
+        };
+        if self.is_input_port(path) {
+            return;
+        }
+        if check.must.contains(key) {
+            return;
+        }
+        let issue = if check.uncertain.iter().any(|write| write.may_alias(key)) {
+            SignalReadIssue::UnresolvedPriorWrite
+        } else if check.may.contains(key) {
+            SignalReadIssue::BranchOnlyWrite
+        } else {
+            SignalReadIssue::NoPriorWrite
+        };
+        check.blockers.insert(FactBlocker::SignalRead(check.site, issue));
+    }
+
+    fn is_input_port(&self, path: &AccessPath) -> bool {
+        self.hir
+            .ports()
+            .iter()
+            .any(|port| port.symbol == path.root && port.direction == Some(PortDirection::Input))
+    }
+
     /// Classify repeated body witness writes to one exact checked source target.
     pub fn body_write_status(&self, path: &AccessPath) -> Fact<BodyWriteStatus> {
         let key = self.exact_access_key(path);
@@ -250,27 +386,49 @@ impl AnalysisFacts<'_> {
             return Fact::blocked(BTreeSet::from([FactBlocker::MissingExit]));
         };
         if must_repeat.contains(key) {
-            let sites = self.repeat_sites(&facts, key);
-            if sites.is_empty() {
-                return Fact::blocked(BTreeSet::from([FactBlocker::WitnessWrite(
-                    self.cfg.exit(),
-                    WitnessWriteIssue::DefiniteRepeat,
-                )]));
-            }
-            let sites = sites
-                .into_iter()
-                .filter_map(|site| self.cfg.node(site).and_then(|node| node.origin))
-                .collect();
-            return Fact::known(BodyWriteStatus::DefinitelyRepeated(RepeatedBodyWrite {
-                project: self.hir.identity(),
-                evidence: self.evidence_binding.clone(),
-                target: key.clone(),
-                sites,
-            }));
+            return self.repeated_write_status(key, &facts);
         }
+        let blockers = self.possible_write_blockers(key, &facts, may_repeat, &uncertain);
+        if !blockers.is_empty() {
+            return Fact::blocked(blockers);
+        }
+        Fact::known(BodyWriteStatus::NoRepeat(NoRepeatedBodyWrite {
+            project: self.hir.identity(),
+            evidence: self.evidence_binding.clone(),
+            target: key.clone(),
+        }))
+    }
+
+    fn repeated_write_status(&self, key: &AccessKey, facts: &WriteFacts) -> Fact<BodyWriteStatus> {
+        let sites = self.repeat_sites(facts, key);
+        if sites.is_empty() {
+            return Fact::blocked(BTreeSet::from([FactBlocker::WitnessWrite(
+                self.cfg.exit(),
+                WitnessWriteIssue::DefiniteRepeat,
+            )]));
+        }
+        let sites = sites
+            .into_iter()
+            .filter_map(|site| self.cfg.node(site).and_then(|node| node.origin))
+            .collect();
+        Fact::known(BodyWriteStatus::DefinitelyRepeated(RepeatedBodyWrite {
+            project: self.hir.identity(),
+            evidence: self.evidence_binding.clone(),
+            target: key.clone(),
+            sites,
+        }))
+    }
+
+    fn possible_write_blockers(
+        &self,
+        key: &AccessKey,
+        facts: &WriteFacts,
+        may_repeat: &BTreeSet<AccessKey>,
+        uncertain: &[UncertainWrite],
+    ) -> BTreeSet<FactBlocker> {
         let mut blockers = BTreeSet::new();
         if may_repeat.contains(key) {
-            let sites = self.repeat_sites(&facts, key);
+            let sites = self.repeat_sites(facts, key);
             if sites.is_empty() {
                 blockers.insert(FactBlocker::WitnessWrite(
                     self.cfg.exit(),
@@ -283,21 +441,14 @@ impl AnalysisFacts<'_> {
         }
         for write in uncertain {
             if write.may_alias(key) {
-                blockers.extend(write.blockers);
+                blockers.extend(write.blockers.iter().cloned());
                 blockers.insert(FactBlocker::WitnessWrite(
                     write.site,
                     WitnessWriteIssue::UnresolvedTarget,
                 ));
             }
         }
-        if !blockers.is_empty() {
-            return Fact::blocked(blockers);
-        }
-        Fact::known(BodyWriteStatus::NoRepeat(NoRepeatedBodyWrite {
-            project: self.hir.identity(),
-            evidence: self.evidence_binding.clone(),
-            target: key.clone(),
-        }))
+        blockers
     }
 
     fn repeat_sites(&self, facts: &WriteFacts, key: &AccessKey) -> BTreeSet<NodeId> {

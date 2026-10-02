@@ -15,6 +15,7 @@ mod validity;
 mod execution_scope;
 mod shape_validity;
 mod internal_signal;
+mod constraint_relation;
 
 pub use context::{
     AnalyzeEvidenceError, ArgumentShape, ArgumentValue, CallContext, CallPathSite, ContextEvidence,

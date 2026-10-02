@@ -128,6 +128,7 @@ impl AnalysisFacts<'_> {
                 | FactBlocker::OpaqueExpression(_)
                 | FactBlocker::UnsupportedRelation(_)
                 | FactBlocker::WitnessWrite(_, _)
+                | FactBlocker::SignalRead(_, _)
                 | FactBlocker::MissingExit
                 | FactBlocker::ForeignQuery
                 | FactBlocker::ForeignDefinition => true,

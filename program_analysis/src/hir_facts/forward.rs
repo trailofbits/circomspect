@@ -13,7 +13,7 @@ use crate::scalar_evidence::ScalarExpressionEvidence;
 use crate::hir_facts::access::{key_for_path, AccessKey, MayAccessSet};
 use crate::hir_facts::domains::DegreeUpper;
 use crate::hir_facts::field::{FieldContext, FieldValue};
-use crate::hir_facts::relations::{constraint_equation, MustEquations};
+use crate::hir_facts::relations::{constraint_equation, MustEquations, NormalizationInputs};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ForwardState {
@@ -779,7 +779,13 @@ impl Transfer<ForwardAnalysis<'_>, ForwardState, String> for CfgNode {
                 {
                     must_fixed.insert((key, value));
                 }
-                match constraint_equation(analysis.hir, analysis.field, &self.kind, variables) {
+                let inputs = NormalizationInputs::new(
+                    analysis.hir,
+                    analysis.field,
+                    variables,
+                    analysis.calls,
+                );
+                match constraint_equation(&inputs, &self.kind) {
                     Ok(equation) => must_equations.insert(equation, self.id),
                     Err(_) => must_equations.block(self.id),
                 }

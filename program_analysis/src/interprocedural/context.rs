@@ -498,7 +498,9 @@ impl<'a> ProjectSummaries<'a> {
             return true;
         }
         for id in facts.cfg().nodes() {
-            if self.resolved_assignment_region(*id, span, facts) {
+            if self.resolved_assignment_region(*id, span, facts)
+                || self.resolved_equality_region(*id, span, facts)
+            {
                 return true;
             }
         }
@@ -556,6 +558,35 @@ impl<'a> ProjectSummaries<'a> {
             }
         }
         true
+    }
+
+    fn resolved_equality_region(
+        &self,
+        id: abstract_interpretation::graph::NodeId,
+        span: Span,
+        facts: &AnalysisFacts<'_>,
+    ) -> bool {
+        let Some(node) = facts.cfg().node(id) else { return false };
+        let Some(origin) = node.origin else { return false };
+        if origin.span != span || facts.reachable_node(id).certified() != Some(&true) {
+            return false;
+        }
+        let Some(Effect::OpaqueEquality {
+            left, right, reason: IncompleteReason::UnknownType, ..
+        }) =
+            self.hir().block(origin.block).and_then(|block| block.effects.get(origin.effect_index))
+        else {
+            return false;
+        };
+        let CfgNodeKind::Constraint {
+            target: None,
+            left: checked_left,
+            right: Some(checked_right),
+        } = &node.kind
+        else {
+            return false;
+        };
+        left == checked_left && right == checked_right
     }
 
     fn resolved_access_region(&self, span: Span, facts: &AnalysisFacts<'_>) -> bool {

@@ -413,6 +413,13 @@ impl Builder<'_> {
             Effect::OpaqueEquality { left, right, reason, .. } => {
                 let tails = self.evaluate(tails, *left, origin)?;
                 let tails = self.evaluate(tails, *right, origin)?;
+                if self.specialized_equality(*left, *right, reason) {
+                    return Ok(self.append(
+                        tails,
+                        CfgNodeKind::Constraint { target: None, left: *left, right: Some(*right) },
+                        Origin { expression: Some(*left), ..origin },
+                    ));
+                }
                 Ok(self.append(
                     tails,
                     CfgNodeKind::OpaqueEquality {
@@ -588,6 +595,33 @@ impl Builder<'_> {
             return None;
         }
         Self::specialized_kind(symbol.kind, *operator)
+    }
+
+    fn specialized_equality(&self, left: ExprId, right: ExprId, reason: &IncompleteReason) -> bool {
+        if *reason != IncompleteReason::UnknownType
+            || self.calls.and_then(|calls| calls.call_value(right)).is_none()
+        {
+            return false;
+        }
+        let Some(ExprKind::Access(path)) = self.hir.expression(left).map(|item| &item.kind) else {
+            return false;
+        };
+        let Some(symbol) = self.hir.symbol(path.terminal) else { return false };
+        if path.root != path.terminal
+            || symbol.kind != SymbolKind::Signal
+            || !symbol.shape_checked
+            || symbol.bus_type.is_some()
+            || path.steps.len() != symbol.rank
+        {
+            return false;
+        }
+        for step in &path.steps {
+            if let AccessStep::Index { .. } = step {
+                continue;
+            }
+            return false;
+        }
+        true
     }
 
     fn specialized_kind(
