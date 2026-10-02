@@ -241,8 +241,13 @@ impl ProjectSummaries<'_> {
         arguments: &[ExprId],
         facts: &AnalysisFacts<'_>,
     ) -> Option<(FieldValue, BTreeSet<usize>, CallContext)> {
+        let definition = DefinitionRef::Function(callee);
+        self.validated_header(definition).ok()?;
+        if self.definition_has_hard_source_issue(definition).ok()? {
+            return None;
+        }
         let arguments = self.exact_call_arguments(arguments, facts).ok()?;
-        let context = self.context_for(DefinitionRef::Function(callee), arguments).ok()?;
+        let context = self.context_for(definition, arguments).ok()?;
         let summary = self.function(callee, &context);
         let item = summary.certified()?;
         let Range::Exact(value) = item.complete_return()? else { return None };
@@ -361,6 +366,7 @@ mod tests {
     use crate::interprocedural::{
         ArgumentValue, CallOwner, CallReachability, ProjectSummaries, SummaryBlocker,
     };
+    use crate::new_rules::{run_registered, RuleContext, RuleKind};
 
     fn fixture(source: &str, name: &str) -> parser::hir::LiftedProject {
         let directory = std::env::temp_dir().join(format!(
@@ -462,5 +468,57 @@ mod tests {
         assert!(!foreign
             .certified_scalar_evidence(&foreign_context, &facts)
             .removable_call(expression));
+    }
+
+    #[test]
+    fn invalid_callee_source_cannot_supply_exact_value_to_numeric_rule() {
+        for (source, name) in [
+            (
+                "function Bad(n,n){return 0-1;}template Check(){var y=Bad(1,2)<0;}",
+                "duplicate-parameter",
+            ),
+            (
+                "function Bad(){return 0-1;var x=Missing();}\
+                 template Check(){var y=Bad()<0;}",
+                "missing-in-dead-callee",
+            ),
+        ] {
+            let lifted = fixture(source, name);
+            let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+            let definition = lifted.hir.definition("Check").unwrap();
+            let evidence = provider.symbolic_root(definition).unwrap();
+            let cfg = build_cfg(&lifted.hir, definition).unwrap();
+            let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+            let site = provider.graph().calls_from(CallOwner::Definition(definition))[0];
+            let expression = site.expression.unwrap();
+            let context = RuleContext::new(&facts, &provider, &evidence).unwrap();
+            let result = run_registered(&context).unwrap();
+            assert!(
+                !result
+                    .findings()
+                    .iter()
+                    .any(|finding| finding.kind() == RuleKind::FieldComparison),
+                "{name}"
+            );
+            assert!(facts.exact_call_value(expression).is_none(), "{name}");
+        }
+    }
+
+    #[test]
+    fn unrelated_invalid_definition_does_not_hide_a_valid_exact_call() {
+        let lifted = fixture(
+            "function Broken(n,n){return 7;}function Good(){return 7;}\
+             template Check(){var y=Good();}",
+            "unrelated-invalid-definition",
+        );
+        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let definition = lifted.hir.definition("Check").unwrap();
+        let evidence = provider.symbolic_root(definition).unwrap();
+        let cfg = build_cfg(&lifted.hir, definition).unwrap();
+        let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+        let site = provider.graph().calls_from(CallOwner::Definition(definition))[0];
+        let expression = site.expression.unwrap();
+        let expected = FieldContext::for_curve(Curve::Bn254).canonical(7.into());
+        assert_eq!(facts.exact_call_value(expression), Some(&expected));
     }
 }
