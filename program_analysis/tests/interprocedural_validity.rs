@@ -53,15 +53,30 @@ fn definitely_invalid_templates_cannot_certify_ports_reads_or_witnesses() {
 #[test]
 fn invalid_bus_field_dimensions_block_unrelated_port_certificates() {
     for bus in ["bus B(){signal x[-1];}", "bus Inner(){signal x[-1];} bus B(){Inner() inner;}"] {
-        let lifted = fixture(&format!("{bus} template T(){{B() b;signal output y;y<==1;}}"));
-        assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
-        let definition = lifted.hir.definition("T").unwrap();
-        let DefinitionRef::Template(template) = definition else { panic!("template T") };
-        let context = provider.symbolic_context_for(definition).unwrap();
-        let output = lifted.hir.template(template).unwrap().ports[0];
-        assert!(provider.template_port(template, &context, output).certified().is_none());
+        for declaration in ["B() b;", "B() b[0];", "B() b[1];"] {
+            let lifted =
+                fixture(&format!("{bus} template T(){{{declaration}signal output y;y<==1;}}"));
+            assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
+            let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+            let definition = lifted.hir.definition("T").unwrap();
+            let DefinitionRef::Template(template) = definition else { panic!("template T") };
+            let context = provider.symbolic_context_for(definition).unwrap();
+            let output = lifted.hir.template(template).unwrap().ports[0];
+            assert!(provider.template_port(template, &context, output).certified().is_none());
+        }
     }
+}
+
+#[test]
+fn an_unused_invalid_bus_definition_preserves_independent_template_facts() {
+    let lifted = fixture("bus B(){signal x[-1];} template T(){signal output y;y<==1;}");
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let definition = lifted.hir.definition("T").unwrap();
+    let DefinitionRef::Template(template) = definition else { panic!("template T") };
+    let context = provider.symbolic_context_for(definition).unwrap();
+    let output = lifted.hir.template(template).unwrap().ports[0];
+    let facts = provider.template_port(template, &context, output);
+    assert_eq!(facts.certified().unwrap().incidence(), Incidence::Must);
 }
 
 #[test]
