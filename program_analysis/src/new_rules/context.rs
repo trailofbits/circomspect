@@ -88,6 +88,13 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
         self.summaries.validated_definition(self.facts)
     }
 
+    /// Refuse claims in an active scope with a known execution failure path.
+    ///
+    /// Passing this check does not prove that the definition completes.
+    pub fn check_warning_execution_scope(&self) -> Result<(), SummaryBlocker> {
+        self.summaries.check_warning_execution_scope(self.facts, self.evidence)
+    }
+
     #[must_use]
     pub fn origin(&self) -> crate::interprocedural::ContextOrigin {
         self.evidence.origin()

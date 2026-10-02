@@ -57,20 +57,14 @@ impl ProjectSummaries<'_> {
         evidence: &ContextEvidence,
     ) -> Result<(), SummaryBlocker> {
         self.check_facts_for_evidence(facts, evidence)?;
-        self.validated_definition(facts)?;
-        let DefinitionRef::Template(id) = facts.definition() else {
+        let DefinitionRef::Template(_) = facts.definition() else {
             return Err(SummaryBlocker::WrongContext);
         };
-        let template = self.hir().template(id).ok_or(SummaryBlocker::ForeignDefinition)?;
-        if template.custom || template.external {
-            return Err(SummaryBlocker::ExternalSummary);
-        }
+        self.check_warning_execution_scope(facts, evidence)?;
+        self.validated_definition(facts)?;
         match evidence.origin() {
             ContextOrigin::SymbolicRoot | ContextOrigin::Main(_) => {}
             ContextOrigin::Call(_) => return Err(SummaryBlocker::ExternalSummary),
-        }
-        if self.template_definitely_fails(facts)? {
-            return Err(SummaryBlocker::UnsupportedContext);
         }
         if certified(&facts.reachable_node(facts.cfg().exit()))? != &true {
             return Err(SummaryBlocker::UnsupportedContext);

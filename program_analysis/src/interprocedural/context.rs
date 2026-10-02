@@ -460,6 +460,21 @@ impl<'a> ProjectSummaries<'a> {
             })
     }
 
+    pub(super) fn definition_has_hard_source_issue(
+        &self,
+        definition: DefinitionRef,
+    ) -> Result<bool, SummaryBlocker> {
+        let parts = self.definition_parts(definition)?;
+        let scope = SourceScope::from_span(parts.span);
+        if self.scope_has_diagnostic(scope) {
+            return Ok(true);
+        }
+        Ok(self.lifted.incomplete.iter().any(|region| {
+            region.reason != IncompleteReason::UnknownType
+                && region.span().is_some_and(|span| scope.overlaps(span))
+        }))
+    }
+
     fn scope_has_diagnostic(&self, scope: SourceScope) -> bool {
         for diagnostic in &self.lifted.syntax_diagnostics {
             if diagnostic.span().is_some_and(|span| scope.overlaps(span)) {
@@ -719,9 +734,43 @@ impl<'a> ProjectSummaries<'a> {
         }
         self.check_facts_for_evidence(facts, caller)?;
         let context = self.call_context(call, facts)?;
+        self.check_warning_execution_scope(facts, caller)?;
+        self.extend_call_evidence(call.site(), context, caller)
+    }
+
+    /// Bind a source-matched provisional function call after exact return refinement.
+    ///
+    /// The raw graph remains provisional. This certificate additionally requires a
+    /// provider-owned exact call result, certified reachability, exact arguments,
+    /// and local facts bound to the supplied caller ancestry.
+    ///
+    /// # Errors
+    /// Returns a typed blocker when any required scope, call, or value proof is absent.
+    pub fn refined_function_call_evidence(
+        &self,
+        site: CallSiteId,
+        facts: &AnalysisFacts<'_>,
+        caller: &ContextEvidence,
+    ) -> Result<ContextEvidence, SummaryBlocker> {
+        self.check_facts_for_evidence(facts, caller)?;
+        let site = self.graph.site(site).ok_or(SummaryBlocker::ForeignCall)?;
+        let context = self.exact_site_context(site, facts)?;
+        self.check_warning_execution_scope(facts, caller)?;
+        self.extend_call_evidence(site, context, caller)
+    }
+
+    fn extend_call_evidence(
+        &self,
+        site: &CallSite,
+        context: CallContext,
+        caller: &ContextEvidence,
+    ) -> Result<ContextEvidence, SummaryBlocker> {
         let mut call_path = caller.call_path.clone();
-        call_path.push(CallPathSite::from_site(call.site())?);
-        Ok(ContextEvidence { context, origin: ContextOrigin::Call(call.site().id()), call_path })
+        call_path.push(CallPathSite::from_site(site)?);
+        let evidence =
+            ContextEvidence { context, origin: ContextOrigin::Call(site.id()), call_path };
+        self.check_evidence(&evidence)?;
+        Ok(evidence)
     }
 
     pub(super) fn call_context(
