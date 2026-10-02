@@ -340,7 +340,12 @@ impl AnalysisFacts<'_> {
         self.forward_analysis().evaluate(expression, variables)
     }
 
-    pub(crate) fn cfg(&self) -> &DefinitionCfg {
+    /// The exact control-flow graph solved by this analysis.
+    ///
+    /// Specialization can change graph topology. Node and edge queries must use
+    /// IDs from this graph, rather than a CFG supplied before specialization.
+    #[must_use]
+    pub fn cfg(&self) -> &DefinitionCfg {
         self.cfg.as_ref()
     }
 
