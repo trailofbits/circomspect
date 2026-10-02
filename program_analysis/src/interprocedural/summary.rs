@@ -366,11 +366,11 @@ impl ProjectSummaries<'_> {
             CfgNodeKind::Evaluate(expression) => {
                 self.expression_may_fail(*expression, facts, field)
             }
+            CfgNodeKind::Declaration { symbol } => self.declaration_may_fail(*symbol, facts),
             CfgNodeKind::Entry
             | CfgNodeKind::Exit
             | CfgNodeKind::LoopHeader
             | CfgNodeKind::Branch { .. }
-            | CfgNodeKind::Declaration { .. }
             | CfgNodeKind::Return(_)
             | CfgNodeKind::Log => false,
         }

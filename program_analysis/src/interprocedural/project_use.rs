@@ -364,7 +364,7 @@ impl ProjectSummaries<'_> {
         }
     }
 
-    fn declaration_may_fail(&self, id: SymbolId, facts: &AnalysisFacts<'_>) -> bool {
+    pub(super) fn declaration_may_fail(&self, id: SymbolId, facts: &AnalysisFacts<'_>) -> bool {
         let Some(symbol) = self.hir().symbol(id) else { return true };
         if facts.checked_symbol_dimensions(id).is_err() {
             return true;
