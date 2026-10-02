@@ -75,6 +75,15 @@ impl FieldContext {
         self.canonical(&left.0 * &right.0)
     }
 
+    /// Invert a nonzero canonical value in the selected prime field.
+    pub(crate) fn inverse(&self, value: &FieldValue) -> Option<FieldValue> {
+        if self.is_zero(value) {
+            return None;
+        }
+        let exponent = &self.modulus - BigInt::from(2);
+        Some(FieldValue(value.0.modpow(&exponent, &self.modulus)))
+    }
+
     #[must_use]
     pub fn negate(&self, value: &FieldValue) -> FieldValue {
         self.canonical(-&value.0)
@@ -97,5 +106,27 @@ impl FieldContext {
             }
         };
         signed(left).cmp(&signed(right))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use program_structure::utils::constants::Curve;
+
+    use crate::hir_facts::field::FieldContext;
+
+    #[test]
+    fn nonzero_values_have_multiplicative_inverses_on_each_curve() {
+        for curve in [Curve::Bn254, Curve::Bls12_381, Curve::Goldilocks] {
+            let field = FieldContext::for_curve(curve);
+            let one = field.canonical(1.into());
+            let two = field.canonical(2.into());
+            let minus_one = field.canonical((-1).into());
+            assert!(field.inverse(&field.canonical(0.into())).is_none());
+            for value in [&one, &two, &minus_one] {
+                let product = field.inverse(value).map(|inverse| field.multiply(value, &inverse));
+                assert_eq!(product, Some(one.clone()));
+            }
+        }
     }
 }

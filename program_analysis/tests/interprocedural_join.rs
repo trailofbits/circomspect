@@ -1,10 +1,10 @@
+use std::collections::BTreeSet;
 use std::fs;
 
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::hir_facts::FieldContext;
 use circomspect_program_analysis::interprocedural::{
     CallOwner, CallReachability, ComposedConstraintFixedOutput, ProjectSummaries, SummaryBlocker,
-    SummaryFact,
 };
 use parser::hir::{lift_project, DefinitionRef, LiftedProject};
 use parser::new_frontend::{load_sources, PortDirection, Version, VersionPolicy};
@@ -23,7 +23,10 @@ fn fixture(source: &str) -> LiftedProject {
     lift_project(&loaded)
 }
 
-fn composed(source: &str, budget: Option<usize>) -> SummaryFact<ComposedConstraintFixedOutput> {
+fn composed(
+    source: &str,
+    budget: Option<usize>,
+) -> Result<ComposedConstraintFixedOutput, BTreeSet<SummaryBlocker>> {
     let lifted = fixture(source);
     let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
@@ -52,11 +55,12 @@ fn composed(source: &str, budget: Option<usize>) -> SummaryFact<ComposedConstrai
         panic!("Child must be reachable")
     };
     let applied = provider.apply_component_output(&full, &caller, &call, &handle);
-    let applied = applied.certified().unwrap_or_else(|| panic!("{:?}", applied.unavailable()));
+    let applied = applied.certified().ok_or_else(|| applied.unavailable().unwrap().clone())?;
     let pending = budget.map(|limit| provider.analyze_for_evidence(&cfg, &caller, Some(limit)));
     let pending = pending.map(Result::unwrap);
     let facts = pending.as_ref().unwrap_or(&full);
-    provider.composed_constraint_fixed_output(facts, applied)
+    let result = provider.composed_constraint_fixed_output(facts, applied);
+    result.certified().cloned().ok_or_else(|| result.unavailable().unwrap().clone())
 }
 
 #[test]
@@ -71,7 +75,7 @@ fn agreeing_branch_bindings_certify_one_output_value_with_both_origins() {
         None,
     );
     let field = FieldContext::for_curve(Curve::Bn254);
-    let proof = result.certified().unwrap_or_else(|| panic!("{:?}", result.unavailable()));
+    let proof = result.unwrap();
     assert_eq!(proof.value(), &field.canonical(7.into()));
     assert_eq!(proof.caller_inputs().len(), 2);
     assert_ne!(proof.caller_inputs()[0], proof.caller_inputs()[1]);
@@ -84,7 +88,7 @@ fn differing_or_one_sided_branch_bindings_cannot_fix_output() {
             "template Child(){{signal input in;signal output out;out<==in;}} \
              template Parent(){{component c=Child();{branch}signal output y;y<==c.out;}}"
         );
-        assert!(composed(&source, None).certified().is_none());
+        assert!(composed(&source, None).is_err());
     }
 }
 
@@ -99,7 +103,7 @@ fn an_unproved_parameter_guard_cannot_certify_even_agreeing_bindings() {
         ),
         None,
     );
-    assert!(result.certified().is_none());
+    assert!(result.is_err());
 }
 
 #[test]
@@ -112,7 +116,7 @@ fn read_before_all_inputs_and_duplicate_writes_remain_unavailable() {
         ),
         None,
     );
-    assert!(early.certified().is_none());
+    assert!(early.is_err());
     let duplicate = composed(
         concat!(
             "template Child(){signal input in;signal output out;out<==in;} ",
@@ -120,7 +124,7 @@ fn read_before_all_inputs_and_duplicate_writes_remain_unavailable() {
         ),
         None,
     );
-    assert!(duplicate.certified().is_none());
+    assert!(duplicate.unwrap_err().contains(&SummaryBlocker::UnsupportedContext));
     let conflicting_equality = composed(
         concat!(
             "template Child(){signal input in;signal output out;out<==in;} ",
@@ -128,7 +132,7 @@ fn read_before_all_inputs_and_duplicate_writes_remain_unavailable() {
         ),
         None,
     );
-    assert!(conflicting_equality.certified().is_none());
+    assert!(conflicting_equality.is_err());
 }
 
 #[test]
@@ -141,12 +145,12 @@ fn caller_loop_and_exhausted_budget_cannot_promote_binding() {
         ),
         None,
     );
-    assert!(looped.certified().is_none());
+    assert!(looped.unwrap_err().contains(&SummaryBlocker::UnsupportedContext));
     let straight = concat!(
         "template Child(){signal input in;signal output out;out<==in;} ",
         "template Parent(){component c=Child();c.in<==7;}"
     );
-    assert!(composed(straight, Some(0)).certified().is_none());
+    assert!(composed(straight, Some(0)).is_err());
 }
 
 #[test]
@@ -160,6 +164,6 @@ fn an_unproved_array_index_cannot_fix_a_child_input() {
         None,
     );
     assert!(result
-        .unavailable()
+        .err()
         .is_some_and(|reasons| reasons.contains(&SummaryBlocker::UnsupportedContext)));
 }

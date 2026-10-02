@@ -435,3 +435,38 @@ fn every_use_rule_keeps_its_id_severity_span_and_allow_filter() {
         });
     }
 }
+
+#[test]
+fn independent_signal_reads_are_never_classified_as_pure_dead_copies() {
+    for source in [
+        "template Check(){signal output s;var x=s;s<==1;}",
+        "template Check(){signal output s;s<==1;var x=s;}",
+        "template Check(){signal input s;var x=s;}",
+        "template Child(){signal output s;s<==1;}template Check(){component c=Child();var x=c.s;}",
+    ] {
+        run_case(source, "Check", |results, _| {
+            assert_eq!(count(results, RuleKind::SideEffectFreeAssignment), 0, "{source}");
+        });
+    }
+    run_case("function Check(){var a=1;var x=a;return a;}", "Check", |results, _| {
+        assert_eq!(count(results, RuleKind::SideEffectFreeAssignment), 1);
+    });
+}
+
+#[test]
+fn independent_internal_signal_guards_cover_external_bodies_and_bounds() {
+    for source in [
+        "pragma custom_templates;template custom Check(){signal s;s<--1;}",
+        "template extern_c Check(){signal s;s<--1;}",
+        "template Check(){signal s[0];s[0]<--1;}",
+        "template Check(){signal s[1];s[1]<--1;}",
+        "template Check(){assert(0);signal s;s<--1;}",
+    ] {
+        run_case(source, "Check", |results, _| {
+            assert_eq!(count(results, RuleKind::UnusedVariableValue), 0, "{source}");
+        });
+    }
+    run_case("template Check(){signal s[1];s[0]<--1;}", "Check", |results, _| {
+        assert_eq!(count(results, RuleKind::UnusedVariableValue), 1);
+    });
+}

@@ -137,3 +137,48 @@ fn main_and_called_contexts_keep_their_own_scope() {
     let result = provider.template_internal_signal_incidence(&facts, &child, &path);
     assert!(result.certified().is_none(), "{result:?}");
 }
+
+#[test]
+fn internal_arrays_keep_element_context_and_failure_scope() {
+    use abstract_interpretation::graph::FlowGraph;
+    use circomspect_program_analysis::hir_cfg::CfgNodeKind;
+    for (body, expected) in [
+        ("signal s[2];s[0]<--1;s[1]<==1;", Some(Incidence::Zero)),
+        ("signal s[2];s[0]<--1;s[0]===1;", Some(Incidence::Must)),
+        ("signal s[2];var i=0;s[i]<--1;", Some(Incidence::Zero)),
+        ("signal s[2];s[2]<--1;", None),
+        ("signal s[0];s[0]<--1;", None),
+        ("signal input c;signal s[2];var i=0;if(c){i=1;}s[i]<--1;", None),
+        ("signal s[2];s[0]<--1;var x=Missing();", None),
+    ] {
+        let lifted = fixture(&format!("template T(){{{body}}}"));
+        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let definition = lifted.hir.definition("T").unwrap();
+        let evidence = provider.symbolic_root(definition).unwrap();
+        let cfg = build_cfg(&lifted.hir, definition).unwrap();
+        let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+        let path = facts
+            .cfg()
+            .nodes()
+            .iter()
+            .find_map(|id| {
+                let CfgNodeKind::Witness { target, .. } = &facts.cfg().node(*id)?.kind else {
+                    return None;
+                };
+                Some(target)
+            })
+            .unwrap();
+        let fact = provider.template_internal_signal_incidence(&facts, &evidence, path);
+        assert_eq!(fact.certified().copied(), expected, "{body}: {fact:?}");
+    }
+}
+
+#[test]
+fn nested_required_failure_blocks_internal_certificates() {
+    let source = concat!(
+        "function F(n){n=[1,2];var x=n[1];return 7;}",
+        "function G(){return F([2]);}",
+        "template T(){var x=G();signal s;s<--1;}"
+    );
+    assert_eq!(internal_incidence(source, None), None);
+}

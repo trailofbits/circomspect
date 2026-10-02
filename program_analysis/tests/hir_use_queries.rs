@@ -178,6 +178,8 @@ fn incomplete_backward_solver_never_certifies_no_read() {
         | FactBlocker::AggregateConstraint(_)
         | FactBlocker::DeferredControl(_)
         | FactBlocker::OpaqueExpression(_)
+        | FactBlocker::UnsupportedRelation(_)
+        | FactBlocker::WitnessWrite(_, _)
         | FactBlocker::MissingExit
         | FactBlocker::ForeignQuery
         | FactBlocker::ForeignDefinition => false,

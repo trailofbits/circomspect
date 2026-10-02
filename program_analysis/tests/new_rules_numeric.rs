@@ -8,7 +8,7 @@ use circomspect_program_analysis::interprocedural::{
     CallOwner, CallReachability, ProjectSummaries, SummaryBlocker,
 };
 use circomspect_program_analysis::new_rules::{
-    run_registered, AbstentionReason, RuleContext, RuleKind, RuleResult, SourceMap,
+    run_registered, AbstentionReason, Finding, RuleContext, RuleKind, RuleResult, SourceMap,
 };
 use parser::hir::lift_project;
 use parser::new_frontend::{load_sources, LoadedProject, Version, VersionPolicy};
@@ -109,13 +109,23 @@ fn inspect_main(source: &str, curve: Curve) -> RuleResult {
     run_registered(&context).unwrap()
 }
 
+fn numeric_findings(result: &RuleResult) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    for finding in result.findings() {
+        if circomspect_program_analysis::new_rules::numeric::KINDS.contains(&finding.kind()) {
+            findings.push(finding.clone());
+        }
+    }
+    findings
+}
+
 fn kinds(result: &RuleResult) -> Vec<RuleKind> {
-    result.findings().iter().map(|finding| finding.kind()).collect()
+    numeric_findings(result).iter().map(Finding::kind).collect()
 }
 
 fn first_message(loaded: &LoadedProject, result: &RuleResult) -> String {
     let sources = SourceMap::from_loaded(loaded, &[loaded.files[0].id]).unwrap();
-    result.findings()[0].to_report(&sources).unwrap().message().clone()
+    numeric_findings(result)[0].to_report(&sources).unwrap().message().clone()
 }
 
 fn assert_rendered(loaded: &LoadedProject, result: &RuleResult, kind: RuleKind) {
@@ -153,7 +163,8 @@ fn complement_reports_only_reachable_resolved_expression_with_selected_curve() {
     let sources = SourceMap::from_loaded(&loaded, &[source.id]).unwrap();
     let output = source.path.with_extension("sarif.json");
     assert_eq!(
-        support::render(result.findings(), &sources, MessageCategory::Info, &[], &output).unwrap(),
+        support::render(&numeric_findings(&result), &sources, MessageCategory::Info, &[], &output)
+            .unwrap(),
         (1, 1)
     );
     let sarif: Value = serde_json::from_str(&fs::read_to_string(output).unwrap()).unwrap();
@@ -168,7 +179,11 @@ fn complement_reports_only_reachable_resolved_expression_with_selected_curve() {
     assert!(!kinds(&symbolic).contains(&RuleKind::BitwiseComplement));
     assert!(symbolic.abstentions().iter().any(|a| a.kind == RuleKind::BitwiseComplement));
     let (_, variable) = inspect("template T(n){var x=~n;}", Curve::Goldilocks, "T");
-    assert!(kinds(&variable).contains(&RuleKind::BitwiseComplement));
+    assert!(
+        kinds(&variable).contains(&RuleKind::BitwiseComplement),
+        "{:?}",
+        variable.abstentions()
+    );
 }
 
 #[test]
@@ -253,7 +268,7 @@ fn bn254_literal_only_warns_on_incompatible_selected_curve() {
     let (loaded, called) = inspect_call(&source, Curve::Bls12_381, "Parent", "Child");
     assert_eq!(kinds(&called), [RuleKind::Bn254SpecificCircuit]);
     let sources = SourceMap::from_loaded(&loaded, &[loaded.files[0].id]).unwrap();
-    let report = called.findings()[0].to_report(&sources).unwrap();
+    let report = numeric_findings(&called)[0].to_report(&sources).unwrap();
     assert_eq!(report.secondary().len(), 1);
     let call_start = source.rfind("Child()").unwrap();
     assert_eq!(report.secondary()[0].range, call_start..call_start + "Child()".len());
@@ -342,6 +357,35 @@ fn main_division_retains_local_zero_incidence_rule() {
 }
 
 #[test]
+fn unresolved_conversion_analysis_records_a_scoped_abstention() {
+    let (_, no_main) = inspect("template T(n){signal input x;}", Curve::Bn254, "T");
+    assert!(no_main.abstentions().iter().any(|item| {
+        item.kind == RuleKind::NonstrictBinaryConversion
+            && item.reason == AbstentionReason::UnsupportedConstruct
+    }));
+
+    let source = "template T(n){signal input x;} component main=T(1);";
+    let (_, library) = inspect(source, Curve::Bn254, "T");
+    let library_abstention = library
+        .abstentions()
+        .iter()
+        .find(|item| item.kind == RuleKind::NonstrictBinaryConversion)
+        .expect("conversion analysis must disclose incomplete coverage");
+    assert_eq!(library_abstention.reason, AbstentionReason::UnsupportedConstruct);
+    assert_eq!(library_abstention.span.start(), 0);
+    assert!(!kinds(&library).contains(&RuleKind::NonstrictBinaryConversion));
+
+    let main = inspect_main(source, Curve::Bn254);
+    let main_abstention = main
+        .abstentions()
+        .iter()
+        .find(|item| item.kind == RuleKind::NonstrictBinaryConversion)
+        .expect("reachable main also needs scoped incomplete coverage");
+    assert_eq!(main_abstention.reason, AbstentionReason::UnsupportedConstruct);
+    assert_ne!(library_abstention.context, main_abstention.context);
+}
+
+#[test]
 fn certified_call_specialization_changes_numeric_decisions() {
     let source = "template Child(n){if(n){var x=1;}}\
                   template Parent(){component c=Child(1);}";
@@ -364,13 +408,25 @@ fn numeric_findings_obey_level_allow_and_root_filters() {
     let sources = SourceMap::from_loaded(&loaded, &[loaded.files[0].id]).unwrap();
     let output = loaded.files[0].path.with_extension("sarif.json");
     assert_eq!(
-        support::render(result.findings(), &sources, MessageCategory::Warning, &[], &output)
-            .unwrap(),
+        support::render(
+            &numeric_findings(&result),
+            &sources,
+            MessageCategory::Warning,
+            &[],
+            &output
+        )
+        .unwrap(),
         (0, 0)
     );
     assert_eq!(
-        support::render(result.findings(), &sources, MessageCategory::Info, &["CS0004"], &output)
-            .unwrap(),
+        support::render(
+            &numeric_findings(&result),
+            &sources,
+            MessageCategory::Info,
+            &["CS0004"],
+            &output
+        )
+        .unwrap(),
         (0, 0)
     );
 
@@ -397,7 +453,53 @@ fn numeric_findings_obey_level_allow_and_root_filters() {
     assert!(kinds(&result).contains(&RuleKind::BitwiseComplement));
     let sources = SourceMap::from_loaded(&loaded, &[loaded.files[0].id]).unwrap();
     assert_eq!(
-        support::render(result.findings(), &sources, MessageCategory::Info, &[], &output).unwrap(),
+        support::render(&numeric_findings(&result), &sources, MessageCategory::Info, &[], &output)
+            .unwrap(),
         (0, 0)
     );
+}
+
+#[test]
+fn independent_numeric_events_after_known_failure_do_not_warn() {
+    for (declaration, end) in [("template T()", ""), ("function T()", "return 7;")] {
+        for (prefix, should_emit) in [
+            ("assert(0);", false),
+            ("var z=1/0;", false),
+            ("assert(1);", true),
+            ("var z=1/1;", true),
+            ("if(0){assert(0);}", true),
+        ] {
+            let source = format!("{declaration}{{{prefix}var x=~1;var y=0-1;{end}}}");
+            let (_, result) = inspect(&source, Curve::Bn254, "T");
+            for kind in [RuleKind::BitwiseComplement, RuleKind::FieldArithmetic] {
+                assert_eq!(kinds(&result).contains(&kind), should_emit, "{source}: {kind:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn independent_numeric_scope_guard_retains_typed_abstentions_and_unknown_controls() {
+    for prefix in ["assert(0);", "var z=1/0;"] {
+        let source = format!("template T(){{{prefix}var x=~1;var y=0-1;}}");
+        let (_, result) = inspect(&source, Curve::Bn254, "T");
+        for kind in [RuleKind::BitwiseComplement, RuleKind::FieldArithmetic] {
+            assert!(result.abstentions().iter().any(|item| {
+                let AbstentionReason::Summary(reasons) = &item.reason else { return false };
+                item.kind == kind && !reasons.is_empty()
+            }));
+        }
+    }
+    let source = "template T(){signal input p;assert(p);var x=~1;var y=0-1;}";
+    let (_, result) = inspect(source, Curve::Bn254, "T");
+    assert!(kinds(&result).contains(&RuleKind::BitwiseComplement), "{source}");
+    assert!(kinds(&result).contains(&RuleKind::FieldArithmetic), "{source}");
+    for source in [
+        "pragma custom_templates;template custom T(){var x=~1;var y=0-1;}",
+        "template extern_c T(){var x=~1;var y=0-1;}",
+    ] {
+        let (_, result) = inspect(source, Curve::Bn254, "T");
+        assert!(!kinds(&result).contains(&RuleKind::BitwiseComplement), "{source}");
+        assert!(!kinds(&result).contains(&RuleKind::FieldArithmetic), "{source}");
+    }
 }

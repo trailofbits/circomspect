@@ -339,3 +339,277 @@ fn unresolved_function_name_cannot_be_authorized_by_a_provisional_site() {
         Err(SummaryBlocker::ExternalSummary)
     );
 }
+
+#[test]
+fn independent_argument_kinds_and_nested_calls_keep_exact_ancestry() {
+    for source in [
+        "function F(n){return n+1;}template T(){var x=F(2);}",
+        "function F(n){return 7;}template T(){var x=F([1,2]);}",
+        "function G(){return 2;}function F(n){return n+1;}template T(){var x=F(G());}",
+    ] {
+        let lifted = fixture(source);
+        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let parent = lifted.hir.definition("T").unwrap();
+        let caller = provider.symbolic_root(parent).unwrap();
+        let cfg = build_cfg(&lifted.hir, parent).unwrap();
+        let facts = provider.analyze_for_evidence(&cfg, &caller, None).unwrap();
+        let mut accepted = 0;
+        for site in provider.graph().calls_from(CallOwner::Definition(parent)) {
+            if site.provenance == CallProvenance::Provisional {
+                let evidence = provider
+                    .refined_function_call_evidence(site.id(), &facts, &caller)
+                    .unwrap_or_else(|error| panic!("{source}: {error:?}"));
+                assert_eq!(evidence.context().definition(), site.resolved().unwrap());
+                provider.check_evidence(&evidence).unwrap();
+                accepted += 1;
+            }
+        }
+        assert!(accepted > 0, "{source}");
+    }
+}
+
+#[test]
+fn independent_budget_matrix_never_certifies_multivalued_or_unknown_arguments() {
+    for source in [
+        "function F(n){return n;}template T(){var n=0;while(n<2){var x=F(n);n++;}}",
+        "function F(n){return 7;}template T(){signal input n;var x=F(n);}",
+        "function F(n){return 7;}template T(p){var x=F([1,p]);}",
+    ] {
+        let lifted = fixture(source);
+        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let parent = lifted.hir.definition("T").unwrap();
+        let caller = provider.symbolic_root(parent).unwrap();
+        let cfg = build_cfg(&lifted.hir, parent).unwrap();
+        for budget in (0..64).map(Some).chain([None]) {
+            let facts = provider.analyze_for_evidence(&cfg, &caller, budget).unwrap();
+            for site in provider.graph().calls_from(CallOwner::Definition(parent)) {
+                assert!(
+                    provider.refined_function_call_evidence(site.id(), &facts, &caller).is_err(),
+                    "{source}, budget {budget:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn independent_same_definition_different_scope_and_project_are_rejected() {
+    let source = "function F(){return 7;}template T(){var x=F();}component main=T();";
+    let lifted = fixture(source);
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let parent = lifted.hir.definition("T").unwrap();
+    let root = provider.symbolic_root(parent).unwrap();
+    let main_site = provider.graph().calls_from(CallOwner::Main(0))[0];
+    let CallReachability::Reachable(main) =
+        provider.graph().reachable_main_call(main_site.id(), &lifted.hir)
+    else {
+        panic!("main")
+    };
+    let main = provider.main_evidence(&main).unwrap();
+    let cfg = build_cfg(&lifted.hir, parent).unwrap();
+    let facts = provider.analyze_for_evidence(&cfg, &main, None).unwrap();
+    let site = provider.graph().calls_from(CallOwner::Definition(parent))[0];
+    assert_eq!(
+        provider.refined_function_call_evidence(site.id(), &facts, &root),
+        Err(SummaryBlocker::WrongContext)
+    );
+    let foreign_lifted = fixture(source);
+    let foreign = ProjectSummaries::build(&foreign_lifted, Curve::Bn254).unwrap();
+    assert!(foreign.refined_function_call_evidence(site.id(), &facts, &main).is_err());
+}
+
+#[test]
+fn independent_required_failure_before_call_cannot_certify_reachable_child() {
+    for prefix in ["assert(0);", "var z=1/0;"] {
+        let source = format!("function F(){{return 7;}}template T(){{{prefix}var x=F();}}");
+        let lifted = fixture(&source);
+        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let parent = lifted.hir.definition("T").unwrap();
+        let caller = provider.symbolic_root(parent).unwrap();
+        let cfg = build_cfg(&lifted.hir, parent).unwrap();
+        let facts = provider.analyze_for_evidence(&cfg, &caller, None).unwrap();
+        let site = provider.graph().calls_from(CallOwner::Definition(parent))[0];
+        assert!(
+            provider.refined_function_call_evidence(site.id(), &facts, &caller).is_err(),
+            "must not certify a call after {prefix}"
+        );
+    }
+}
+
+#[test]
+fn independent_impossible_child_calls_do_not_emit_numeric_warnings() {
+    let mut observed = Vec::new();
+    for prefix in ["assert(0);", "var z=1/0;"] {
+        let source = format!(
+            concat!(
+                "function F(){{return ",
+                "21888242871839275222246405745257275088548364400416034343698204186575808495617;}}",
+                "template T(){{{prefix}var x=F();}}"
+            ),
+            prefix = prefix
+        );
+        let lifted = fixture(&source);
+        let provider = ProjectSummaries::build(&lifted, Curve::Bls12_381).unwrap();
+        let parent = lifted.hir.definition("T").unwrap();
+        let caller = provider.symbolic_root(parent).unwrap();
+        let cfg = build_cfg(&lifted.hir, parent).unwrap();
+        let facts = provider.analyze_for_evidence(&cfg, &caller, None).unwrap();
+        let site = provider.graph().calls_from(CallOwner::Definition(parent))[0];
+        let count = match provider.refined_function_call_evidence(site.id(), &facts, &caller) {
+            Err(_) => 0,
+            Ok(child) => {
+                let cfg = build_cfg(&lifted.hir, child.context().definition()).unwrap();
+                let facts = provider.analyze_for_evidence(&cfg, &child, None).unwrap();
+                let context = RuleContext::new(&facts, &provider, &child).unwrap();
+                run_registered(&context)
+                    .unwrap()
+                    .findings()
+                    .iter()
+                    .filter(|finding| finding.kind() == RuleKind::Bn254SpecificCircuit)
+                    .count()
+            }
+        };
+        observed.push((prefix, count));
+    }
+    assert_eq!(observed, vec![("assert(0);", 0), ("var z=1/0;", 0)]);
+}
+
+#[test]
+fn independent_function_caller_required_failure_cannot_certify_a_child() {
+    let mut accepted = Vec::new();
+    for prefix in ["assert(0);", "var z=1/0;"] {
+        let source =
+            format!("function F(){{return 7;}}function T(){{{prefix}var x=F();return x;}}");
+        let lifted = fixture(&source);
+        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let parent = lifted.hir.definition("T").unwrap();
+        let caller = provider.symbolic_root(parent).unwrap();
+        let cfg = build_cfg(&lifted.hir, parent).unwrap();
+        let facts = provider.analyze_for_evidence(&cfg, &caller, None).unwrap();
+        let site = provider.graph().calls_from(CallOwner::Definition(parent))[0];
+        accepted.push(provider.refined_function_call_evidence(site.id(), &facts, &caller).is_ok());
+    }
+    assert_eq!(accepted, vec![false, false]);
+}
+
+#[test]
+fn independent_ordinary_calls_cannot_authorize_warnings_after_known_failure() {
+    let mut emitted = Vec::new();
+    for prefix in ["assert(0);", "var z=1/0;"] {
+        let source = format!(
+            concat!(
+                "template Child(){{var x=",
+                "21888242871839275222246405745257275088548364400416034343698204186575808495617;}}",
+                "template T(){{{prefix}component c=Child();}}"
+            ),
+            prefix = prefix
+        );
+        let lifted = fixture(&source);
+        let provider = ProjectSummaries::build(&lifted, Curve::Bls12_381).unwrap();
+        let parent = lifted.hir.definition("T").unwrap();
+        let caller = provider.symbolic_root(parent).unwrap();
+        let cfg = build_cfg(&lifted.hir, parent).unwrap();
+        let facts = provider.analyze_for_evidence(&cfg, &caller, None).unwrap();
+        let site = provider.graph().calls_from(CallOwner::Definition(parent))[0];
+        let CallReachability::Reachable(call) = provider.graph().reachable_call(site.id(), &facts)
+        else {
+            panic!("raw graph call is reachable before refusal");
+        };
+        let count = match provider.call_evidence(&call, &facts, &caller) {
+            Err(_) => 0,
+            Ok(child) => {
+                let cfg = build_cfg(&lifted.hir, child.context().definition()).unwrap();
+                let facts = provider.analyze_for_evidence(&cfg, &child, None).unwrap();
+                let context = RuleContext::new(&facts, &provider, &child).unwrap();
+                run_registered(&context)
+                    .unwrap()
+                    .findings()
+                    .iter()
+                    .filter(|finding| finding.kind() == RuleKind::Bn254SpecificCircuit)
+                    .count()
+            }
+        };
+        emitted.push(count);
+    }
+    assert_eq!(emitted, vec![0, 0]);
+}
+
+#[test]
+fn independent_scope_refusal_keeps_dead_and_unknown_failures_distinct() {
+    for (source, accepted) in [
+        ("template T(){assert(1);var x=1;}", true),
+        ("template T(){if(0){assert(0);}var x=1;}", true),
+        ("template T(){signal input p;assert(p);var x=1;}", true),
+        ("function Broken(){var x=Missing();return 7;}template T(){var x=1;}", true),
+        ("function T(){if(0){assert(0);}return 7;}", true),
+        ("template T(){signal input p;if(p){assert(0);}var x=1;}", false),
+        ("template T(){var x=1;assert(0);}", false),
+        ("pragma custom_templates;template custom T(){var x=1;}", false),
+        ("template extern_c T(){var x=1;}", false),
+        ("template T(){var x=Missing();}", false),
+    ] {
+        let lifted = fixture(source);
+        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let parent = lifted.hir.definition("T").unwrap();
+        let caller = provider.symbolic_root(parent).unwrap();
+        let cfg = build_cfg(&lifted.hir, parent).unwrap();
+        let facts = provider.analyze_for_evidence(&cfg, &caller, None).unwrap();
+        assert_eq!(
+            provider.check_warning_execution_scope(&facts, &caller).is_ok(),
+            accepted,
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn independent_partial_callers_keep_exact_calls_but_block_scope_warnings() {
+    for source in [
+        "function F(){return 7;}template T(){var x=F();var z=Missing();}",
+        "template F(){signal output x;x<==7;}template T(){component c=F();var z=Missing();}",
+    ] {
+        let lifted = fixture(source);
+        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let definition = lifted.hir.definition("T").unwrap();
+        let caller = provider.symbolic_root(definition).unwrap();
+        let cfg = build_cfg(&lifted.hir, definition).unwrap();
+        let facts = provider.analyze_for_evidence(&cfg, &caller, None).unwrap();
+        let site = provider.graph().calls_from(CallOwner::Definition(definition))[0];
+        let child = match provider.graph().reachable_call(site.id(), &facts) {
+            CallReachability::Reachable(call) => provider.call_evidence(&call, &facts, &caller),
+            CallReachability::Unavailable(CallBlocker::ProvisionalSite) => {
+                provider.refined_function_call_evidence(site.id(), &facts, &caller)
+            }
+            CallReachability::Unreachable => panic!("unexpected dead call: {source}"),
+            CallReachability::Unavailable(blocker) => panic!("{source}: {blocker:?}"),
+        };
+        assert!(child.is_ok(), "{source}: {child:?}");
+        assert_eq!(
+            provider.check_warning_execution_scope(&facts, &caller),
+            Err(SummaryBlocker::IncompleteDefinition)
+        );
+    }
+}
+
+#[test]
+fn independent_warning_refusal_prioritizes_binding_then_failure_over_partial_source() {
+    let source =
+        "function F(){return 7;}template T(){assert(0);var x=F();var z=Missing();}template U(){}";
+    let lifted = fixture(source);
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let definition = lifted.hir.definition("T").unwrap();
+    let caller = provider.symbolic_root(definition).unwrap();
+    let other = provider.symbolic_root(lifted.hir.definition("U").unwrap()).unwrap();
+    let cfg = build_cfg(&lifted.hir, definition).unwrap();
+    let facts = provider.analyze_for_evidence(&cfg, &caller, None).unwrap();
+    assert_eq!(
+        provider.check_warning_execution_scope(&facts, &other),
+        Err(SummaryBlocker::WrongContext)
+    );
+    assert_eq!(
+        provider.check_warning_execution_scope(&facts, &caller),
+        Err(SummaryBlocker::UnsupportedContext)
+    );
+    let site = provider.graph().calls_from(CallOwner::Definition(definition))[0];
+    assert!(provider.refined_function_call_evidence(site.id(), &facts, &caller).is_err());
+}

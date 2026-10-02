@@ -4,6 +4,8 @@ mod control;
 mod division;
 mod expression;
 
+use std::collections::BTreeSet;
+
 use parser::hir::{DefinitionRef, Expr, ExprId};
 use parser::new_frontend::Span;
 
@@ -29,6 +31,19 @@ impl Rule for NumericRule {
     }
 
     fn run(&self, context: &RuleContext<'_, '_, '_>) -> RuleResult {
+        if let Err(blocker) = context.check_warning_execution_scope() {
+            let mut result = RuleResult::default();
+            if let Some(span) = definition_span(context) {
+                abstain(
+                    context,
+                    &mut result,
+                    self.0,
+                    span,
+                    AbstentionReason::Summary(BTreeSet::from([blocker])),
+                );
+            }
+            return result;
+        }
         match self.0 {
             RuleKind::BitwiseComplement => expression::complement(context),
             RuleKind::Bn254SpecificCircuit => expression::bn254_constant(context),
@@ -36,8 +51,20 @@ impl Rule for NumericRule {
             RuleKind::FieldArithmetic => expression::field_arithmetic(context),
             RuleKind::FieldComparison => expression::field_comparison(context),
             RuleKind::UnconstrainedDivision => division::unconstrained_division(context),
-            RuleKind::NonstrictBinaryConversion
-            | RuleKind::SignalAssignment
+            RuleKind::NonstrictBinaryConversion => {
+                let mut result = RuleResult::default();
+                if let Some(span) = definition_span(context) {
+                    abstain(
+                        context,
+                        &mut result,
+                        RuleKind::NonstrictBinaryConversion,
+                        span,
+                        AbstentionReason::UnsupportedConstruct,
+                    );
+                }
+                result
+            }
+            RuleKind::SignalAssignment
             | RuleKind::RedundantWitnessAssignment
             | RuleKind::UnconstrainedSignal
             | RuleKind::UnconstrainedLessThan

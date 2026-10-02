@@ -10,9 +10,10 @@ use parser::new_frontend::{AssignmentOperator, BinaryOperator, PostfixOperator, 
 use crate::hir_cfg::{CfgEdge, CfgNode, CfgNodeKind, DefinitionCfg, EdgeKind};
 use crate::scalar_evidence::ScalarExpressionEvidence;
 
-use super::access::{key_for_path, AccessKey, MayAccessSet};
-use super::domains::DegreeUpper;
-use super::field::{FieldContext, FieldValue};
+use crate::hir_facts::access::{key_for_path, AccessKey, MayAccessSet};
+use crate::hir_facts::domains::DegreeUpper;
+use crate::hir_facts::field::{FieldContext, FieldValue};
+use crate::hir_facts::relations::{constraint_equation, MustEquations};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ForwardState {
@@ -25,6 +26,7 @@ pub enum ForwardState {
         must_constraints: BTreeSet<NodeId>,
         must_touches: BTreeSet<AccessKey>,
         must_fixed: BTreeSet<(AccessKey, FieldValue)>,
+        must_equations: Box<MustEquations>,
     },
 }
 
@@ -43,6 +45,7 @@ impl ForwardState {
             must_constraints: BTreeSet::new(),
             must_touches: BTreeSet::new(),
             must_fixed: BTreeSet::new(),
+            must_equations: Box::new(MustEquations::reachable_empty()),
         }
     }
 
@@ -83,6 +86,13 @@ impl ForwardState {
         let Self::Reached { must_touches, .. } = self else { return None };
         Some(must_touches)
     }
+
+    pub(crate) fn must_equations(&self) -> &MustEquations {
+        match self {
+            Self::Unreachable => &MustEquations::Unreachable,
+            Self::Reached { must_equations, .. } => must_equations,
+        }
+    }
 }
 
 impl Lattice for ForwardState {
@@ -103,6 +113,7 @@ impl Lattice for ForwardState {
                     must_constraints: left_must,
                     must_touches: left_touches,
                     must_fixed: left_fixed,
+                    must_equations: left_equations,
                 },
                 Self::Reached {
                     variables: right,
@@ -112,6 +123,7 @@ impl Lattice for ForwardState {
                     must_constraints: right_must,
                     must_touches: right_touches,
                     must_fixed: right_fixed,
+                    must_equations: right_equations,
                 },
             ) => {
                 right.iter().all(|(key, value)| left.get(key) == Some(value))
@@ -125,6 +137,7 @@ impl Lattice for ForwardState {
                     && left_must.is_superset(right_must)
                     && left_touches.is_superset(right_touches)
                     && left_fixed.is_superset(right_fixed)
+                    && left_equations.leq(right_equations)
             }
         }
     }
@@ -147,6 +160,7 @@ impl Lattice for ForwardState {
                 must_constraints: left_must,
                 must_touches: left_touches,
                 must_fixed: left_fixed,
+                must_equations: left_equations,
             },
             Self::Reached {
                 variables: right,
@@ -156,6 +170,7 @@ impl Lattice for ForwardState {
                 must_constraints: right_must,
                 must_touches: right_touches,
                 must_fixed: right_fixed,
+                must_equations: right_equations,
             },
         ) = (&mut *self, other)
         else {
@@ -176,6 +191,7 @@ impl Lattice for ForwardState {
         left_must.retain(|site| right_must.contains(site));
         left_touches.retain(|key| right_touches.contains(key));
         left_fixed.retain(|equation| right_fixed.contains(equation));
+        left_equations.join_assign(right_equations);
         *self != old
     }
 }
@@ -658,6 +674,7 @@ impl Transfer<ForwardAnalysis<'_>, ForwardState, String> for CfgNode {
             must_constraints,
             must_touches,
             must_fixed,
+            must_equations,
         } = &mut output
         else {
             return TransferOutcome::Known(output);
@@ -761,6 +778,10 @@ impl Transfer<ForwardAnalysis<'_>, ForwardState, String> for CfgNode {
                     fixed_equation(analysis, target.as_ref(), *left, *right, variables)
                 {
                     must_fixed.insert((key, value));
+                }
+                match constraint_equation(analysis.hir, analysis.field, &self.kind, variables) {
+                    Ok(equation) => must_equations.insert(equation, self.id),
+                    Err(_) => must_equations.block(self.id),
                 }
             }
             CfgNodeKind::Opaque(reason) => {
@@ -1001,6 +1022,48 @@ mod tests {
     }
 
     #[test]
+    fn relation_blockers_do_not_break_constraint_transfer_monotonicity() {
+        let directory = std::env::temp_dir()
+            .join(format!("circomspect-relation-monotone-{}", std::process::id()));
+        fs::create_dir_all(&directory).unwrap();
+        let source = directory.join("case.circom");
+        fs::write(&source, "template T(){var v=1;signal input a;signal output x;x===v+a*a*a;}")
+            .unwrap();
+        let loaded =
+            load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
+        let hir = lift_project(&loaded).hir;
+        let cfg = crate::hir_cfg::build_cfg(&hir, hir.definition("T").unwrap()).unwrap();
+        let constraint = cfg
+            .nodes()
+            .iter()
+            .find_map(|id| {
+                let node = cfg.node(*id)?;
+                if let CfgNodeKind::Constraint { .. } = node.kind {
+                    Some(node)
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        let field = FieldContext::for_curve(Curve::Bn254);
+        let variable = hir.symbols().iter().find(|item| item.name == "v").unwrap().id;
+        let precise = ForwardState::with_scalar_parameters(&BTreeMap::from([(
+            variable,
+            field.canonical(1.into()),
+        )]));
+        let broad = ForwardState::boundary();
+        assert!(precise.leq(&broad));
+        let analysis = ForwardAnalysis::new(&hir, &field);
+        let TransferOutcome::Known(left) = constraint.apply(&analysis, &precise) else {
+            panic!("constraint transfer")
+        };
+        let TransferOutcome::Known(right) = constraint.apply(&analysis, &broad) else {
+            panic!("constraint transfer")
+        };
+        assert!(left.leq(&right));
+    }
+
+    #[test]
     fn unsupported_compound_write_drops_old_scalar_facts_monotonically() {
         let directory = std::env::temp_dir()
             .join(format!("circomspect-phase5-compound-transfer-{}", std::process::id()));
@@ -1183,6 +1246,7 @@ mod tests {
                     must_constraints,
                     must_touches: BTreeSet::new(),
                     must_fixed: BTreeSet::new(),
+                    must_equations: Box::new(MustEquations::reachable_empty()),
                 });
             }
         }
