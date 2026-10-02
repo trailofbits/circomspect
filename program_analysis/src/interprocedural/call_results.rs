@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 
 use abstract_interpretation::graph::FlowGraph;
-use parser::hir::{CallTarget, DefinitionRef, ExprKind, FunctionId};
+use parser::hir::{CallTarget, DefinitionRef, ExprId, ExprKind, FunctionId};
 
 use crate::call_evidence::ExactCallResults;
 use crate::hir_cfg::{build_cfg_with_exact_calls, CfgNodeKind, DefinitionCfg};
@@ -119,66 +119,96 @@ impl ProjectSummaries<'_> {
         }
         let owner = CallOwner::Definition(definition);
         for site in self.graph().calls_from(owner) {
-            if site.provenance == CallProvenance::Unattached {
+            let Some((expression, callee, arguments)) = self.checked_call_site(site, facts) else {
                 continue;
-            }
-            let Some(DefinitionRef::Function(callee)) = site.resolved() else { continue };
-            if !self.acyclic_function_calls(callee) {
-                continue;
-            }
-            let Some(expression) = site.expression else { continue };
-            if facts.reachable_expression(expression).certified() != Some(&true) {
-                continue;
-            }
-            let Some(ExprKind::Call { target: CallTarget::Function(id), arguments }) =
-                self.hir().expression(expression).map(|expr| &expr.kind)
+            };
+            let Some((value, dependencies)) = self.complete_exact_value(callee, arguments, facts)
             else {
                 continue;
             };
-            if *id != callee {
-                continue;
-            }
-            let Ok(arguments) = self.exact_call_arguments(arguments, facts) else { continue };
-            let Ok(context) = self.context_for(DefinitionRef::Function(callee), arguments) else {
-                continue;
-            };
-            let summary = self.function(callee, &context);
-            let Some(item) = summary.certified() else { continue };
-            let Some(Range::Exact(value)) = item.complete_return() else {
-                continue;
-            };
-            results.insert(expression, value.clone(), item.input_dependencies().clone());
+            results.insert(expression, value, dependencies);
         }
         results
     }
 
+    fn checked_call_site<'a>(
+        &'a self,
+        site: &CallSite,
+        facts: &AnalysisFacts<'_>,
+    ) -> Option<(ExprId, FunctionId, &'a [ExprId])> {
+        if site.provenance == CallProvenance::Unattached {
+            return None;
+        }
+        let DefinitionRef::Function(callee) = site.resolved()? else { return None };
+        if !self.acyclic_function_calls(callee) {
+            return None;
+        }
+        let expression = site.expression?;
+        if facts.reachable_expression(expression).certified() != Some(&true) {
+            return None;
+        }
+        let ExprKind::Call { target: CallTarget::Function(id), arguments } =
+            &self.hir().expression(expression)?.kind
+        else {
+            return None;
+        };
+        (*id == callee).then_some((expression, callee, arguments.as_slice()))
+    }
+
+    fn complete_exact_value(
+        &self,
+        callee: FunctionId,
+        arguments: &[ExprId],
+        facts: &AnalysisFacts<'_>,
+    ) -> Option<(FieldValue, BTreeSet<usize>)> {
+        let arguments = self.exact_call_arguments(arguments, facts).ok()?;
+        let context = self.context_for(DefinitionRef::Function(callee), arguments).ok()?;
+        let summary = self.function(callee, &context);
+        let item = summary.certified()?;
+        let Range::Exact(value) = item.complete_return()? else { return None };
+        Some((value.clone(), item.input_dependencies().clone()))
+    }
+
     fn acyclic_function_calls(&self, start: FunctionId) -> bool {
-        const MAX_FUNCTIONS: usize = 64;
         let mut stack = vec![Visit::Enter(start)];
         let mut active = BTreeSet::new();
         let mut done = BTreeSet::new();
         while let Some(visit) = stack.pop() {
             match visit {
                 Visit::Enter(id) => {
-                    if done.contains(&id) {
-                        continue;
-                    }
-                    if active.contains(&id) || active.len() + done.len() >= MAX_FUNCTIONS {
+                    if !self.enter_function(id, &mut active, &done, &mut stack) {
                         return false;
-                    }
-                    active.insert(id);
-                    stack.push(Visit::Leave(id));
-                    let owner = CallOwner::Definition(DefinitionRef::Function(id));
-                    for site in self.graph().calls_from(owner) {
-                        if let Some(DefinitionRef::Function(callee)) = site.resolved() {
-                            stack.push(Visit::Enter(callee));
-                        }
                     }
                 }
                 Visit::Leave(id) => {
                     active.remove(&id);
                     done.insert(id);
                 }
+            }
+        }
+        true
+    }
+
+    fn enter_function(
+        &self,
+        id: FunctionId,
+        active: &mut BTreeSet<FunctionId>,
+        done: &BTreeSet<FunctionId>,
+        stack: &mut Vec<Visit>,
+    ) -> bool {
+        const MAX_FUNCTIONS: usize = 64;
+        if done.contains(&id) {
+            return true;
+        }
+        if active.contains(&id) || active.len() + done.len() >= MAX_FUNCTIONS {
+            return false;
+        }
+        active.insert(id);
+        stack.push(Visit::Leave(id));
+        let owner = CallOwner::Definition(DefinitionRef::Function(id));
+        for site in self.graph().calls_from(owner) {
+            if let Some(DefinitionRef::Function(callee)) = site.resolved() {
+                stack.push(Visit::Enter(callee));
             }
         }
         true

@@ -231,6 +231,7 @@ fn resolved_deferred_nodes(
     result: &ForwardResult,
     calls: Option<&ExactCallResults>,
 ) -> BTreeSet<NodeId> {
+    let SolveResult::Complete(facts) = result else { return BTreeSet::new() };
     let mut resolved = BTreeSet::new();
     for id in cfg.nodes() {
         let Some(CfgNodeKind::DeferredAssignment { target, value, operator }) =
@@ -241,12 +242,8 @@ fn resolved_deferred_nodes(
         if *operator != AssignmentOperator::Assign {
             continue;
         }
-        let site = match result {
-            SolveResult::Complete(facts) => facts.get(id),
-            SolveResult::Incomplete { provisional_facts, .. } => provisional_facts.get(id),
-        };
         let Some(variables) =
-            site.and_then(|item| item.input.as_ref()).and_then(ForwardState::variables)
+            facts.get(id).and_then(|item| item.input.as_ref()).and_then(ForwardState::variables)
         else {
             continue;
         };
@@ -704,9 +701,11 @@ impl AnalysisFacts<'_> {
                 continue;
             }
             match &node.kind {
-                CfgNodeKind::DeferredAssignment { .. } => {
+                CfgNodeKind::DeferredAssignment { value, .. } => {
                     found = true;
-                    if !self.resolved_deferred.contains(id) {
+                    if !self.resolved_deferred.contains(id)
+                        && !self.certified_deferred_scalar_site(*id, *value)
+                    {
                         return false;
                     }
                 }
@@ -728,6 +727,15 @@ impl AnalysisFacts<'_> {
             }
         }
         found
+    }
+
+    fn certified_deferred_scalar_site(&self, node: NodeId, value: ExprId) -> bool {
+        let Some(variables) = self.site_state(node).and_then(ForwardState::variables) else {
+            return false;
+        };
+        self.reachable_node(node).certified() == Some(&true)
+            && self.evaluate(value, variables).is_some()
+            && self.expression_blockers(value).is_empty()
     }
 
     fn depends_on_parameter(
@@ -1447,5 +1455,78 @@ impl AnalysisFacts<'_> {
             }
         }
         false
+    }
+}
+
+#[cfg(test)]
+mod call_shape_tests {
+    use std::collections::BTreeMap;
+    use std::fs;
+
+    use abstract_interpretation::graph::FlowGraph;
+    use parser::hir::{lift_project, DefinitionRef, Effect, ExprKind, HirProject};
+    use parser::new_frontend::{load_sources, Version, VersionPolicy};
+    use program_structure::utils::constants::Curve;
+
+    use crate::hir_cfg::build_cfg;
+    use crate::hir_facts::{analyze_with_scalar_parameters, FieldContext, Range};
+
+    fn fixture(source: &str) -> HirProject {
+        let directory = std::env::temp_dir().join(format!(
+            "circomspect-deferred-prefix-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("case.circom");
+        fs::write(&path, source).unwrap();
+        let loaded = load_sources(&[path], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
+        lift_project(&loaded).hir
+    }
+
+    #[test]
+    fn pending_alternative_or_backedge_cannot_certify_a_provisional_deferred_value() {
+        for source in [
+            "function F(n){var x=n;if(1<<1){x=2;}else{x=3;}return x;}",
+            "function F(n){var x=n;for(var i=0;i<17;i++){x=2;}return x;}",
+        ] {
+            let hir = fixture(source);
+            let DefinitionRef::Function(id) = hir.definition("F").unwrap() else { panic!("F") };
+            let function = hir.function(id).unwrap();
+            let block = hir.block(function.body).unwrap();
+            let Some(Effect::Return { value, .. }) = block.effects.last() else { panic!("return") };
+            let cfg = build_cfg(&hir, DefinitionRef::Function(id)).unwrap();
+            let field = FieldContext::for_curve(Curve::Bn254);
+            let seven = field.canonical(7.into());
+            let seeds = BTreeMap::from([(function.parameters[0], seven.clone())]);
+            for budget in 0..cfg.nodes().len() * 5 {
+                let facts =
+                    analyze_with_scalar_parameters(&hir, &cfg, &field, seeds.clone(), Some(budget))
+                        .unwrap();
+                assert_ne!(facts.range(*value).certified(), Some(&Range::Exact(seven.clone())));
+            }
+        }
+    }
+
+    #[test]
+    fn a_proved_scalar_prefix_survives_an_unrelated_later_opaque_call() {
+        let hir = fixture("function F(n){var x=n;var y=x;var z=Missing();return y;}");
+        let DefinitionRef::Function(id) = hir.definition("F").unwrap() else { panic!("F") };
+        let function = hir.function(id).unwrap();
+        let access = hir
+            .expressions()
+            .iter()
+            .find(|expr| {
+                matches!(&expr.kind, ExprKind::Access(path) if hir.symbol(path.root)
+                    .is_some_and(|symbol| symbol.name == "x"))
+            })
+            .unwrap()
+            .id;
+        let cfg = build_cfg(&hir, DefinitionRef::Function(id)).unwrap();
+        let field = FieldContext::for_curve(Curve::Bn254);
+        let seven = field.canonical(7.into());
+        let seeds = BTreeMap::from([(function.parameters[0], seven.clone())]);
+        let facts = analyze_with_scalar_parameters(&hir, &cfg, &field, seeds, None).unwrap();
+        assert_eq!(facts.range(access).certified(), Some(&Range::Exact(seven)));
     }
 }

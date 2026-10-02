@@ -509,42 +509,42 @@ impl Builder<'_> {
                 },
                 origin,
             )),
-            Effect::OpaqueAssignment { operator, reason, .. } => {
-                if let Some(kind) = self.specialized_assignment(effect) {
-                    let tails = match kind {
-                        SpecializedAssignment::Variable => self.append(
-                            tails,
-                            CfgNodeKind::Assignment {
-                                target: target.clone(),
-                                value,
-                                operator: *operator,
-                            },
-                            effect_origin,
-                        ),
-                        SpecializedAssignment::Witness => self.append(
-                            tails,
-                            CfgNodeKind::Witness { target: target.clone(), value },
-                            effect_origin,
-                        ),
-                        SpecializedAssignment::Constraint => {
-                            self.append_constraint_assignment(tails, target, value, effect_origin)
-                        }
-                    };
-                    return Ok(tails);
-                }
-                Ok(self.append(
-                    tails,
-                    CfgNodeKind::OpaqueAssignment {
-                        target: target.clone(),
-                        value,
-                        operator: *operator,
-                        reason: reason.clone(),
-                    },
-                    effect_origin,
-                ))
+            Effect::OpaqueAssignment { .. } => {
+                self.opaque_assignment_effect(tails, effect, effect_origin)
             }
             _ => Err(BuildError::UnexpectedEffect),
         }
+    }
+
+    fn opaque_assignment_effect(
+        &mut self,
+        tails: Tails,
+        effect: &Effect,
+        origin: Origin,
+    ) -> Result<Tails, BuildError> {
+        let Effect::OpaqueAssignment { target, value, operator, reason, .. } = effect else {
+            return Err(BuildError::UnexpectedEffect);
+        };
+        let kind = match self.specialized_assignment(effect) {
+            Some(SpecializedAssignment::Variable) => CfgNodeKind::Assignment {
+                target: target.clone(),
+                value: *value,
+                operator: *operator,
+            },
+            Some(SpecializedAssignment::Witness) => {
+                CfgNodeKind::Witness { target: target.clone(), value: *value }
+            }
+            Some(SpecializedAssignment::Constraint) => {
+                return Ok(self.append_constraint_assignment(tails, target, *value, origin));
+            }
+            None => CfgNodeKind::OpaqueAssignment {
+                target: target.clone(),
+                value: *value,
+                operator: *operator,
+                reason: reason.clone(),
+            },
+        };
+        Ok(self.append(tails, kind, origin))
     }
 
     fn append_constraint_assignment(
