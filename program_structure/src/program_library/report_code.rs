@@ -7,6 +7,7 @@ pub enum ReportCode {
     CompilerVersionError,
     WrongTypesInAssignOperation,
     WrongNumberOfArguments(usize, usize),
+    WrongArityUnspecified,
     UndefinedFunction,
     UndefinedTemplate,
     UninitializedSymbolInExpression,
@@ -45,7 +46,11 @@ pub enum ReportCode {
     InconsistentStaticInformation,
     InvalidArrayAccess,
     InvalidSignalAccess,
+    InvalidTag,
+    InputTagAccess,
+    InvalidTagAfterArray,
     InvalidArraySize,
+    InvalidArrayIndexBus,
     InvalidArrayType,
     ForStatementIllConstructed,
     BadArrayAccess,
@@ -62,6 +67,9 @@ pub enum ReportCode {
     NonQuadratic,
     NonConstantArrayLength,
     NonComputableExpression,
+    WrongBusAssignment,
+    WrongAssignmentExpression,
+    WrongAssignmentRank,
     AnonymousComponentError,
     TupleError,
     // Constraint analysis codes
@@ -91,6 +99,7 @@ pub enum ReportCode {
     UnresolvedCall,
     IncompleteCoverage,
     RedundantWitnessAssignment,
+    MissingBusType,
 }
 
 impl ReportCode {
@@ -103,6 +112,7 @@ impl ReportCode {
             CompilerVersionError => "P1003",
             NoCompilerVersionWarning => "P1004",
             WrongTypesInAssignOperation => "T2000",
+            WrongArityUnspecified => "T20465",
             UndefinedFunction => "T2001",
             UndefinedTemplate => "T2002",
             UninitializedSymbolInExpression => "T2003",
@@ -136,7 +146,11 @@ impl ReportCode {
             InconsistentStaticInformation => "T2031",
             InvalidArrayAccess => "T2032",
             InvalidSignalAccess => "T2046",
+            InvalidTag => "T2048",
+            InputTagAccess => "T2048-C",
+            InvalidTagAfterArray => "T2049",
             InvalidArraySize => "T2033",
+            InvalidArrayIndexBus => "T2053",
             InvalidArrayType => "T2034",
             ForStatementIllConstructed => "T2035",
             BadArrayAccess => "T2035",
@@ -156,6 +170,9 @@ impl ReportCode {
             NonQuadratic => "T20462",
             NonConstantArrayLength => "T20463",
             NonComputableExpression => "T20464",
+            WrongBusAssignment => "T2059",
+            WrongAssignmentExpression => "T2060",
+            WrongAssignmentRank => "T2061",
             WrongNumberOfArguments(..) => "T20465",
             AnonymousComponentError => "TAC01",
             TupleError => "TAC02",
@@ -186,6 +203,7 @@ impl ReportCode {
             UnresolvedCall => "CS0019",
             IncompleteCoverage => "CS0020",
             RedundantWitnessAssignment => "CS0021",
+            MissingBusType => "CS0022",
         }
         .to_string()
     }
@@ -197,6 +215,7 @@ impl ReportCode {
             ParseFail => "parse-fail",
             CompilerVersionError => "compiler-version-error",
             WrongTypesInAssignOperation => "wrong-types-in-assign-operation",
+            WrongArityUnspecified => "wrong-number-of-arguments",
             WrongNumberOfArguments(..) => "wrong-number-of-arguments",
             AnonymousComponentError => "anonymous-component-error",
             TupleError => "tuple-error",
@@ -238,7 +257,11 @@ impl ReportCode {
             InconsistentStaticInformation => "inconsistent-static-information",
             InvalidArrayAccess => "invalid-array-access",
             InvalidSignalAccess => "invalid-signal-access",
+            InvalidTag => "invalid-tag",
+            InputTagAccess => "input-tag-access",
+            InvalidTagAfterArray => "invalid-tag-after-array",
             InvalidArraySize => "invalid-array-size",
+            InvalidArrayIndexBus => "invalid-array-index-bus",
             InvalidArrayType => "invalid-array-type",
             ForStatementIllConstructed => "for-statement-ill-constructed",
             BadArrayAccess => "bad-array-access",
@@ -255,6 +278,9 @@ impl ReportCode {
             NonQuadratic => "non-quadratic",
             NonConstantArrayLength => "non-constant-array-length",
             NonComputableExpression => "non-computable-expression",
+            WrongBusAssignment => "wrong-bus-assignment",
+            WrongAssignmentExpression => "wrong-assignment-expression",
+            WrongAssignmentRank => "wrong-assignment-rank",
             UnconstrainedSignal => "unconstrained-signal",
             OneConstraintIntermediate => "one-constraint-intermediate",
             NoOutputInInstance => "no-output-in-instance",
@@ -280,6 +306,7 @@ impl ReportCode {
             UnresolvedCall => "unresolved-call",
             IncompleteCoverage => "incomplete-analysis",
             RedundantWitnessAssignment => "redundant-witness-assignment",
+            MissingBusType => "missing-bus-type",
         }
         .to_string()
     }
