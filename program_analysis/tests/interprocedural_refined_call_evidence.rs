@@ -7,7 +7,7 @@ use circomspect_program_analysis::interprocedural::{
     ProjectSummaries, SummaryBlocker,
 };
 use circomspect_program_analysis::new_rules::{run_registered, RuleContext, RuleKind};
-use parser::hir::{lift_project, LiftedProject, SemanticCode};
+use parser::hir::{lift_project, IncompleteReason, LiftedProject, SemanticCode};
 use parser::new_frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
 
@@ -131,6 +131,47 @@ fn warning_scope_rejects_custom_templates_before_rules_run() {
     let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let context = RuleContext::new(&facts, &provider, &evidence).unwrap();
     assert_eq!(context.check_warning_execution_scope(), Err(SummaryBlocker::ExternalSummary));
+}
+
+#[test]
+fn symbolic_scalar_parameter_does_not_fail_warning_scope_validation() {
+    let lifted = fixture("template T(n){var x=~n;}");
+    assert!(lifted.syntax_diagnostics.is_empty(), "{:?}", lifted.syntax_diagnostics);
+    assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
+    assert!(
+        lifted.incomplete.iter().all(|region| region.reason == IncompleteReason::UnknownType),
+        "{:?}",
+        lifted.incomplete
+    );
+    let provider = ProjectSummaries::build(&lifted, Curve::Goldilocks).unwrap();
+    let definition = lifted.hir.definition("T").unwrap();
+    let evidence = provider.symbolic_root(definition).unwrap();
+    let cfg = build_cfg(&lifted.hir, definition).unwrap();
+    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let context = RuleContext::new(&facts, &provider, &evidence).unwrap();
+    assert_eq!(context.check_warning_execution_scope(), Ok(()));
+}
+
+fn warning_scope_result(source: &str) -> Result<(), SummaryBlocker> {
+    let lifted = fixture(source);
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let definition = lifted.hir.definition("T").unwrap();
+    let evidence = provider.symbolic_root(definition).unwrap();
+    let cfg = build_cfg(&lifted.hir, definition).unwrap();
+    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let context = RuleContext::new(&facts, &provider, &evidence).unwrap();
+    context.check_warning_execution_scope()
+}
+
+#[test]
+fn warning_scope_keeps_missing_callee_and_source_errors_blocked() {
+    for source in [
+        "template T(){var x=Missing();}",
+        "template T(){var x=;var y=1;}",
+        "template T(){var x=1;var x=2;}",
+    ] {
+        assert_eq!(warning_scope_result(source), Err(SummaryBlocker::IncompleteDefinition));
+    }
 }
 
 fn ordinary_call_after(source: &str) -> Result<(), SummaryBlocker> {

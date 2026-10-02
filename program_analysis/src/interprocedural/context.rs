@@ -460,6 +460,21 @@ impl<'a> ProjectSummaries<'a> {
             })
     }
 
+    pub(super) fn definition_has_hard_source_issue(
+        &self,
+        definition: DefinitionRef,
+    ) -> Result<bool, SummaryBlocker> {
+        let parts = self.definition_parts(definition)?;
+        let scope = SourceScope::from_span(parts.span);
+        if self.scope_has_diagnostic(scope) {
+            return Ok(true);
+        }
+        Ok(self.lifted.incomplete.iter().any(|region| {
+            region.reason != IncompleteReason::UnknownType
+                && region.span().is_some_and(|span| scope.overlaps(span))
+        }))
+    }
+
     fn scope_has_diagnostic(&self, scope: SourceScope) -> bool {
         for diagnostic in &self.lifted.syntax_diagnostics {
             if diagnostic.span().is_some_and(|span| scope.overlaps(span)) {

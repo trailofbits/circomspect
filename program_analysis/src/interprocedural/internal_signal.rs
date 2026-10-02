@@ -61,6 +61,7 @@ impl ProjectSummaries<'_> {
             return Err(SummaryBlocker::WrongContext);
         };
         self.check_warning_execution_scope(facts, evidence)?;
+        self.validated_definition(facts)?;
         match evidence.origin() {
             ContextOrigin::SymbolicRoot | ContextOrigin::Main(_) => {}
             ContextOrigin::Call(_) => return Err(SummaryBlocker::ExternalSummary),
