@@ -94,19 +94,8 @@ impl ProjectSummaries<'_> {
         site: &CallSite,
         facts: &AnalysisFacts<'_>,
     ) -> Result<CallContext, SummaryBlocker> {
-        if site.provenance != CallProvenance::Provisional
-            || site.owner != CallOwner::Definition(facts.definition())
-            || self.hir().identity() != facts.hir().identity()
-            || self.curve() != facts.curve()
-        {
-            return Err(SummaryBlocker::ForeignCall);
-        }
-        let expression = site.expression.ok_or(SummaryBlocker::UnsupportedCallForm)?;
-        if facts.exact_call_value(expression).is_none()
-            || facts.reachable_expression(expression).certified() != Some(&true)
-        {
-            return Err(SummaryBlocker::ExternalSummary);
-        }
+        let expression = self.checked_provisional_site(site, facts)?;
+        Self::certified_refined_result(expression, facts)?;
         let Some(ExprKind::Call { target: CallTarget::Function(id), arguments }) =
             self.hir().expression(expression).map(|expr| &expr.kind)
         else {
@@ -117,6 +106,42 @@ impl ProjectSummaries<'_> {
         }
         let arguments = self.exact_call_arguments(arguments, facts)?;
         self.context_for(DefinitionRef::Function(*id), arguments)
+    }
+
+    fn checked_provisional_site(
+        &self,
+        site: &CallSite,
+        facts: &AnalysisFacts<'_>,
+    ) -> Result<ExprId, SummaryBlocker> {
+        if site.provenance != CallProvenance::Provisional
+            || self.graph().site(site.id()) != Some(site)
+            || site.owner != CallOwner::Definition(facts.definition())
+            || self.hir().identity() != facts.hir().identity()
+            || self.curve() != facts.curve()
+        {
+            return Err(SummaryBlocker::ForeignCall);
+        }
+        site.expression.ok_or(SummaryBlocker::UnsupportedCallForm)
+    }
+
+    fn certified_refined_result(
+        expression: ExprId,
+        facts: &AnalysisFacts<'_>,
+    ) -> Result<(), SummaryBlocker> {
+        let reachable = facts.reachable_expression(expression);
+        match reachable.certified() {
+            Some(true) => {}
+            Some(false) => return Err(SummaryBlocker::ExternalSummary),
+            None => {
+                return Err(SummaryBlocker::LocalFacts(
+                    reachable.unavailable().cloned().unwrap_or_default(),
+                ));
+            }
+        }
+        if facts.exact_call_value(expression).is_none() {
+            return Err(SummaryBlocker::ExternalSummary);
+        }
+        Ok(())
     }
 
     fn certified_scalar_evidence(
@@ -236,5 +261,45 @@ impl ProjectSummaries<'_> {
             }
         }
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use parser::hir::{lift_project, DefinitionRef};
+    use parser::new_frontend::{load_sources, Version, VersionPolicy};
+    use program_structure::utils::constants::Curve;
+
+    use crate::hir_cfg::build_cfg;
+    use crate::interprocedural::{CallOwner, ProjectSummaries, SummaryBlocker};
+
+    #[test]
+    fn cloned_site_with_mutated_source_span_cannot_authorize_exact_context() {
+        let source = "function F(){return 7;} template T(){var x=F();}";
+        let directory = std::env::temp_dir().join(format!(
+            "circomspect-refined-site-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("case.circom");
+        fs::write(&path, source).unwrap();
+        let loaded = load_sources(&[path], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
+        let lifted = lift_project(&loaded);
+        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let parent = lifted.hir.definition("T").unwrap();
+        let caller = provider.symbolic_root(parent).unwrap();
+        let cfg = build_cfg(&lifted.hir, parent).unwrap();
+        let facts = provider.analyze_for_evidence(&cfg, &caller, None).unwrap();
+        let site = provider.graph().calls_from(CallOwner::Definition(parent))[0];
+        assert!(provider.exact_site_context(site, &facts).is_ok());
+        let mut forged = site.clone();
+        let DefinitionRef::Function(id) = lifted.hir.definition("F").unwrap() else {
+            panic!("F must be a function")
+        };
+        forged.span = lifted.hir.function(id).unwrap().name_span;
+        assert_eq!(provider.exact_site_context(&forged, &facts), Err(SummaryBlocker::ForeignCall));
     }
 }
