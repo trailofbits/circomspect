@@ -294,14 +294,14 @@ fn division_requires_exact_input_and_complete_zero_constraint_incidence() {
     assert_rendered(&loaded, &bare, RuleKind::UnconstrainedDivision);
     let (_, constrained) = inspect(
         "template T(){signal input in;signal output out;signal inv;\
-         out <-- 1/in;in*inv===1;}",
+         inv <-- 1/in;out <-- 1/in;in*inv===1;}",
         Curve::Bn254,
         "T",
     );
     assert!(!kinds(&constrained).contains(&RuleKind::UnconstrainedDivision));
     let (_, transitive) = inspect(
         "template T(){signal input in;signal output out;signal inv;\
-         var t=in;out <-- 1/in;t*inv===1;}",
+         var t=in;inv <-- 1/in;out <-- 1/in;t*inv===1;}",
         Curve::Bn254,
         "T",
     );
@@ -338,7 +338,7 @@ fn division_requires_exact_input_and_complete_zero_constraint_incidence() {
 #[test]
 fn called_division_does_not_claim_zero_incidence_without_incoming_closure() {
     let source = "template D(){signal input x;signal output out;out <-- 1/x;}\
-                  template T(){signal input x;signal inv;x*inv===1;\
+                  template T(){signal input x;signal inv;inv<--1/x;x*inv===1;\
                   component d=D();d.x<==x;}component main=T();";
     let (_, called) = inspect_call(source, Curve::Bn254, "T", "D");
     assert!(!kinds(&called).contains(&RuleKind::UnconstrainedDivision));
@@ -502,4 +502,30 @@ fn independent_numeric_scope_guard_retains_typed_abstentions_and_unknown_control
         assert!(!kinds(&result).contains(&RuleKind::BitwiseComplement), "{source}");
         assert!(!kinds(&result).contains(&RuleKind::FieldArithmetic), "{source}");
     }
+}
+
+#[test]
+fn division_requires_source_ready_and_supported_generated_constraints() {
+    let invalid = [
+        "template T(){signal input divisor;signal s;signal output out;out<--s/divisor;}",
+        "template T(){signal input divisor;signal input a;signal input b;signal input c;\
+         signal output out;out<--1/divisor;a*b+a*c===0;}",
+    ];
+    for source in invalid {
+        let (_, result) = inspect(source, Curve::Bn254, "T");
+        assert!(
+            !kinds(&result).contains(&RuleKind::UnconstrainedDivision),
+            "invalid source must not issue division warning: {source}"
+        );
+        assert!(result
+            .abstentions()
+            .iter()
+            .any(|item| { item.kind == RuleKind::UnconstrainedDivision }));
+    }
+    let (_, ready) = inspect(
+        "template T(){signal input divisor;signal s;signal output out;s<--1;out<--s/divisor;}",
+        Curve::Bn254,
+        "T",
+    );
+    assert!(kinds(&ready).contains(&RuleKind::UnconstrainedDivision));
 }

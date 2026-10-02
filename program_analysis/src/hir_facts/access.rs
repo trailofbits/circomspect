@@ -1,13 +1,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use abstract_interpretation::lattice::Lattice;
+use num_traits::ToPrimitive;
 
 use parser::hir::{
     AccessPath, AccessStep, ArrayIndex, ComponentId, ExprId, HirProject, PortId, SymbolId,
 };
 
-use super::field::{FieldContext, FieldValue};
-use super::forward::eval_expression;
+use crate::hir_facts::field::{FieldContext, FieldValue};
+use crate::hir_facts::forward::eval_expression;
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum IndexKey {
@@ -31,6 +32,22 @@ pub struct AccessKey {
 }
 
 impl AccessKey {
+    /// Extract exact array indices for a local scalar or array element.
+    ///
+    /// Component, port, tag, symbolic, and oversized indices are rejected.
+    /// This does not establish source ownership or check declared bounds.
+    pub(crate) fn local_array_indices(&self) -> Option<Vec<usize>> {
+        if self.instance.is_some() {
+            return None;
+        }
+        let mut indices = Vec::with_capacity(self.steps.len());
+        for step in &self.steps {
+            let AccessKeyStep::Index(IndexKey::Exact(value)) = step else { return None };
+            indices.push(value.as_bigint().to_usize()?);
+        }
+        Some(indices)
+    }
+
     /// Whether this key denotes every location denoted by `other`.
     #[must_use]
     pub fn covers(&self, other: &Self) -> bool {
@@ -169,6 +186,35 @@ mod tests {
     use parser::new_frontend::{load_sources, Version, VersionPolicy};
     use program_structure::utils::constants::Curve;
     use std::fs;
+
+    #[test]
+    fn local_array_indices_require_exact_host_sized_local_steps() {
+        let field = FieldContext::for_curve(Curve::Bn254);
+        let (hir, _) = component_paths("template Check(){signal input a[2][6];}");
+        let root = hir.symbols().iter().find(|symbol| symbol.name == "a").unwrap().id;
+        let mut key = AccessKey { root, instance: None, steps: Vec::new() };
+        assert_eq!(key.local_array_indices(), Some(Vec::new()));
+        for value in [0, 5] {
+            key.steps.push(AccessKeyStep::Index(IndexKey::Exact(field.canonical(value.into()))));
+        }
+        assert_eq!(key.local_array_indices(), Some(vec![0, 5]));
+        for step in [
+            AccessKeyStep::Index(IndexKey::Unknown),
+            AccessKeyStep::Index(IndexKey::Exact(field.canonical((-1).into()))),
+            AccessKeyStep::Tag(root),
+        ] {
+            key.steps = vec![step];
+            assert_eq!(key.local_array_indices(), None);
+        }
+        let (hir, paths) = component_paths(
+            "template Child(){signal output out;out<==1;}\
+             template Check(){component c=Child();var x=c.out;}",
+        );
+        let mut component = key_for_path(&hir, &field, &paths[0], &BTreeMap::new());
+        assert_eq!(component.local_array_indices(), None);
+        component.steps.clear();
+        assert_eq!(component.local_array_indices(), None);
+    }
 
     #[test]
     fn may_access_lattice_preserves_exact_indices_and_orders_wildcards() {

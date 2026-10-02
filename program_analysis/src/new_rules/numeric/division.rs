@@ -1,10 +1,7 @@
-use std::collections::BTreeSet;
-
-use parser::hir::{AccessPath, Effect, Expr, ExprId, ExprKind, SymbolKind};
+use parser::hir::{AccessPath, DefinitionRef, Effect, Expr, ExprId, ExprKind, PortId, SymbolKind};
 use parser::new_frontend::{BinaryOperator, PortDirection, Span};
 
 use crate::hir_facts::Incidence;
-use crate::interprocedural::{ContextOrigin, SummaryBlocker};
 use crate::new_rules::{AbstentionReason, RuleContext, RuleKind, RuleResult};
 use crate::new_rules::numeric::{abstain, contained, definition_span, expressions, reachable};
 
@@ -28,18 +25,21 @@ fn witness_values(context: &RuleContext<'_, '_, '_>) -> (Vec<ExprId>, Vec<Span>)
     (values, opaque)
 }
 
-fn is_input(context: &RuleContext<'_, '_, '_>, path: &AccessPath) -> bool {
+fn declared_input(context: &RuleContext<'_, '_, '_>, path: &AccessPath) -> Option<PortId> {
+    let DefinitionRef::Template(id) = context.call_context().definition() else { return None };
     if path.root != path.terminal {
-        return false;
+        return None;
     }
     if !context.hir().symbol(path.root).is_some_and(|symbol| symbol.kind == SymbolKind::Signal) {
-        return false;
+        return None;
     }
-    context
-        .hir()
-        .ports()
-        .iter()
-        .any(|port| port.symbol == path.root && port.direction == Some(PortDirection::Input))
+    for id in &context.hir().template(id)?.ports {
+        let port = context.hir().port(*id)?;
+        if port.symbol == path.root && port.direction == Some(PortDirection::Input) {
+            return Some(*id);
+        }
+    }
+    None
 }
 
 fn inspect_divisor(
@@ -53,30 +53,29 @@ fn inspect_divisor(
         abstain(context, result, kind, expression.span, AbstentionReason::UnsupportedConstruct);
         return;
     };
-    if !is_input(context, path) {
+    let Some(port) = declared_input(context, path) else {
         abstain(context, result, kind, expression.span, AbstentionReason::UnsupportedConstruct);
         return;
-    }
-    let dependencies = context.facts().dependencies(divisor);
-    let Some(dependencies) = dependencies.certified() else {
-        let reason =
-            AbstentionReason::LocalFacts(dependencies.unavailable().cloned().unwrap_or_default());
+    };
+    let key = context.facts().exact_access_key(path);
+    let Some(key) = key.certified() else {
+        let reason = AbstentionReason::LocalFacts(key.unavailable().cloned().unwrap_or_default());
         abstain(context, result, kind, expression.span, reason);
         return;
     };
-    if dependencies.len() != 1 || !dependencies.iter().all(|key| key.exact_alias(key)) {
+    let Some(indices) = key.local_array_indices() else {
         abstain(context, result, kind, expression.span, AbstentionReason::UnsupportedConstruct);
         return;
-    }
-    let incidence = context.facts().incidence(path);
-    match incidence.certified() {
-        Some(Incidence::Zero) => report_local_zero_incidence(context, result, expression),
-        Some(Incidence::May | Incidence::Must) => {}
-        None => {
-            let reason =
-                AbstentionReason::LocalFacts(incidence.unavailable().cloned().unwrap_or_default());
-            abstain(context, result, kind, expression.span, reason);
-        }
+    };
+    let Some(summary) = context.template_port(port, &indices) else { return };
+    let Some(summary) = summary.certified() else {
+        let reason = AbstentionReason::Summary(summary.unavailable().cloned().unwrap_or_default());
+        abstain(context, result, kind, expression.span, reason);
+        return;
+    };
+    match summary.incidence() {
+        Incidence::Zero => report_local_zero_incidence(context, result, expression),
+        Incidence::May | Incidence::Must => {}
     }
 }
 
@@ -86,24 +85,12 @@ fn report_local_zero_incidence(
     expression: &Expr,
 ) {
     let kind = RuleKind::UnconstrainedDivision;
-    match context.origin() {
-        ContextOrigin::SymbolicRoot | ContextOrigin::Main(_) => {
-            result.add_finding(
-                context.finding(
-                    kind,
-                    "No generated constraint depends on this exact input divisor or excludes zero."
-                        .into(),
-                    expression.span,
-                    "Witness-only division has an unconstrained input divisor".into(),
-                ),
-            );
-        }
-        ContextOrigin::Call(_) => {
-            let reason =
-                AbstentionReason::Summary(BTreeSet::from([SummaryBlocker::ExternalSummary]));
-            abstain(context, result, kind, expression.span, reason);
-        }
-    }
+    result.add_finding(context.finding(
+        kind,
+        "No generated constraint depends on this exact input divisor or excludes zero.".into(),
+        expression.span,
+        "Witness-only division has an unconstrained input divisor".into(),
+    ));
 }
 
 pub(super) fn unconstrained_division(context: &RuleContext<'_, '_, '_>) -> RuleResult {

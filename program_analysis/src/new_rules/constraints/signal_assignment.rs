@@ -3,12 +3,11 @@
 use std::collections::BTreeSet;
 
 use abstract_interpretation::graph::FlowGraph;
-use num_traits::ToPrimitive;
 use parser::hir::{AccessPath, DefinitionRef, PortId};
 use parser::new_frontend::{PortDirection, Span};
 
 use crate::hir_cfg::{CfgNode, CfgNodeKind};
-use crate::hir_facts::{AccessKey, AccessKeyStep, Incidence, IndexKey};
+use crate::hir_facts::{AccessKey, Incidence};
 use crate::interprocedural::{ContextOrigin, SummaryBlocker};
 use crate::new_rules::{AbstentionReason, Rule, RuleContext, RuleKind, RuleResult};
 use crate::new_rules::constraints::{abstain, opaque_assignment, witness_only};
@@ -93,7 +92,7 @@ fn inspect_output(
         abstain(context, result, RuleKind::SignalAssignment, span, reason);
         return;
     };
-    let Some(indices) = port_indices(key) else { return };
+    let Some(indices) = key.local_array_indices() else { return };
     let Some(summary) = context.template_port(port, &indices) else { return };
     let Some(summary) = summary.certified() else {
         let reason = AbstentionReason::Summary(summary.unavailable().cloned().unwrap_or_default());
@@ -125,15 +124,6 @@ fn declared_output(context: &RuleContext<'_, '_, '_>, path: &AccessPath) -> Opti
         }
     }
     None
-}
-
-fn port_indices(key: &AccessKey) -> Option<Vec<usize>> {
-    let mut indices = Vec::new();
-    for step in &key.steps {
-        let AccessKeyStep::Index(IndexKey::Exact(value)) = step else { return None };
-        indices.push(value.as_bigint().to_usize()?);
-    }
-    Some(indices)
 }
 
 fn report_zero(
