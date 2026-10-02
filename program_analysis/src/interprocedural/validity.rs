@@ -3,35 +3,48 @@
 
 use std::collections::BTreeSet;
 
-use abstract_interpretation::graph::FlowGraph;
+use abstract_interpretation::graph::{FlowGraph, NodeId};
 use num_traits::Zero;
-use parser::hir::{BusId, BusTarget, DefinitionRef, ExprId, ExprKind, SymbolId};
+use parser::hir::{BusId, BusTarget, CallTarget, DefinitionRef, ExprId, ExprKind, SymbolId};
 use parser::new_frontend::BinaryOperator;
 
 use crate::hir_cfg::{build_cfg, CfgNodeKind};
 use crate::hir_facts::{AnalysisFacts, Range};
-use crate::interprocedural::ProjectSummaries;
+use crate::interprocedural::{
+    CallContext, CallOwner, CallProvenance, CallSite, ProjectSummaries, SummaryBlocker,
+};
 
 impl ProjectSummaries<'_> {
-    pub(super) fn template_definitely_fails(&self, facts: &AnalysisFacts<'_>) -> bool {
+    pub(super) fn template_definitely_fails(
+        &self,
+        facts: &AnalysisFacts<'_>,
+    ) -> Result<bool, SummaryBlocker> {
         let mut pending = Vec::new();
-        if self.has_proven_failure(facts, &mut pending) {
-            return true;
+        if self.has_proven_failure(facts, &mut pending) || self.required_functions_fail(facts)? {
+            return Ok(true);
         }
         let mut visited = BTreeSet::new();
         while let Some(id) = pending.pop() {
             if !visited.insert(id) {
                 continue;
             }
-            let definition = DefinitionRef::Bus(id);
-            let Ok(cfg) = build_cfg(self.hir(), definition) else { continue };
-            let Ok(evidence) = self.symbolic_root(definition) else { continue };
-            let Ok(facts) = self.analyze_for_evidence(&cfg, &evidence, None) else { continue };
-            if self.has_proven_failure(&facts, &mut pending) {
-                return true;
+            if self.bus_definitely_fails(id, &mut pending)? {
+                return Ok(true);
             }
         }
-        false
+        Ok(false)
+    }
+
+    fn bus_definitely_fails(
+        &self,
+        id: BusId,
+        pending: &mut Vec<BusId>,
+    ) -> Result<bool, SummaryBlocker> {
+        let definition = DefinitionRef::Bus(id);
+        let Ok(cfg) = build_cfg(self.hir(), definition) else { return Ok(false) };
+        let Ok(evidence) = self.symbolic_root(definition) else { return Ok(false) };
+        let Ok(facts) = self.analyze_for_evidence(&cfg, &evidence, None) else { return Ok(false) };
+        Ok(self.has_proven_failure(&facts, pending) || self.required_functions_fail(&facts)?)
     }
 
     fn has_proven_failure(&self, facts: &AnalysisFacts<'_>, buses: &mut Vec<BusId>) -> bool {
@@ -40,30 +53,25 @@ impl ProjectSummaries<'_> {
                 continue;
             }
             let Some(node) = facts.cfg().node(*id) else { continue };
-            if self.node_definitely_fails(&node.kind, facts, buses) {
+            if let CfgNodeKind::Declaration { symbol } = &node.kind {
+                self.collect_bus(*symbol, buses);
+            }
+            if self.node_definitely_fails(&node.kind, facts) {
                 return true;
             }
         }
         false
     }
 
-    fn node_definitely_fails(
-        &self,
-        kind: &CfgNodeKind,
-        facts: &AnalysisFacts<'_>,
-        buses: &mut Vec<BusId>,
-    ) -> bool {
+    fn node_definitely_fails(&self, kind: &CfgNodeKind, facts: &AnalysisFacts<'_>) -> bool {
         match kind {
             CfgNodeKind::Assert { condition } => self.proven_zero(*condition, facts),
             CfgNodeKind::Evaluate(expression) => {
                 self.expression_definitely_fails(*expression, facts)
             }
-            CfgNodeKind::Declaration { symbol } => {
-                self.collect_bus(*symbol, buses);
-                facts
-                    .checked_symbol_dimensions(*symbol)
-                    .is_err_and(|e| e.proves_invalid_execution())
-            }
+            CfgNodeKind::Declaration { symbol } => facts
+                .checked_symbol_dimensions(*symbol)
+                .is_err_and(|e| e.proves_invalid_execution()),
             CfgNodeKind::Assignment { target, .. }
             | CfgNodeKind::DeferredAssignment { target, .. }
             | CfgNodeKind::OpaqueAssignment { target, .. }
@@ -103,6 +111,104 @@ impl ProjectSummaries<'_> {
         false
     }
 
+    fn required_functions_fail(&self, facts: &AnalysisFacts<'_>) -> Result<bool, SummaryBlocker> {
+        const MAX_CONTEXTS: usize = 64;
+        let mut pending = Vec::new();
+        self.collect_required_functions(facts, &mut pending);
+        let mut visited = BTreeSet::new();
+        while let Some(context) = pending.pop() {
+            if !visited.insert(context.clone()) {
+                continue;
+            }
+            if visited.len() > MAX_CONTEXTS {
+                return Err(SummaryBlocker::ContextBudget);
+            }
+            let DefinitionRef::Function(id) = context.definition() else { continue };
+            let failure = self.with_local_function(id, &context, |_, _, facts| {
+                self.collect_required_functions(facts, &mut pending);
+                Ok(self.required_local_failure(facts))
+            });
+            // Unavailable function facts cannot prove failure or invalidate independent facts.
+            if failure == Ok(true) {
+                return Ok(true);
+            }
+            if let Err(SummaryBlocker::InvalidAssignment(_)) = failure {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    fn required_local_failure(&self, facts: &AnalysisFacts<'_>) -> bool {
+        for id in facts.cfg().nodes() {
+            if !required_node(facts, *id) {
+                continue;
+            }
+            let Some(node) = facts.cfg().node(*id) else { continue };
+            if self.node_definitely_fails(&node.kind, facts) {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn collect_required_functions(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        pending: &mut Vec<CallContext>,
+    ) {
+        let owner = CallOwner::Definition(facts.definition());
+        for site in self.graph().calls_from(owner) {
+            if let Some(context) = self.required_function_context(site, facts) {
+                pending.push(context);
+            }
+        }
+    }
+
+    fn required_function_context(
+        &self,
+        site: &CallSite,
+        facts: &AnalysisFacts<'_>,
+    ) -> Option<CallContext> {
+        if site.provenance == CallProvenance::Unattached {
+            return None;
+        }
+        let expression = site.expression?;
+        let required = facts.cfg().nodes().iter().any(|id| {
+            let Some(CfgNodeKind::Evaluate(evaluated)) =
+                facts.cfg().node(*id).map(|node| &node.kind)
+            else {
+                return false;
+            };
+            *evaluated == expression && required_node(facts, *id)
+        });
+        if !required {
+            return None;
+        }
+        self.evaluated_function_context(site, expression, facts)
+    }
+
+    fn evaluated_function_context(
+        &self,
+        site: &CallSite,
+        expression: ExprId,
+        facts: &AnalysisFacts<'_>,
+    ) -> Option<CallContext> {
+        let Some(ExprKind::Call { target: CallTarget::Function(function), arguments }) =
+            self.hir().expression(expression).map(|expression| &expression.kind)
+        else {
+            return None;
+        };
+        let definition = DefinitionRef::Function(*function);
+        if site.resolved() != Some(definition) {
+            return None;
+        }
+        // A call is evaluated before its still-untyped assignment consumes the return value.
+        // This proves only required evaluation, not a valid assignment or usable call result.
+        let arguments = self.exact_call_arguments(arguments, facts).ok()?;
+        self.context_for(definition, arguments).ok()
+    }
+
     fn proven_zero(&self, expression: ExprId, facts: &AnalysisFacts<'_>) -> bool {
         let value = facts.range(expression);
         let Some(Range::Exact(value)) = value.certified() else { return false };
@@ -117,4 +223,11 @@ impl ProjectSummaries<'_> {
             buses.push(*id);
         }
     }
+}
+
+fn required_node(facts: &AnalysisFacts<'_>, node: NodeId) -> bool {
+    if facts.must_execute(node).certified() == Some(&true) {
+        return true;
+    }
+    facts.reachable_node(node).certified() == Some(&true) && facts.structurally_must_execute(node)
 }
