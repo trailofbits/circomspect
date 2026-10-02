@@ -238,6 +238,30 @@ enum SpecializedAssignment {
     Constraint,
 }
 
+struct TernaryExpression {
+    expression: ExprId,
+    condition: ExprId,
+    yes: ExprId,
+    no: ExprId,
+}
+
+enum EvaluationFrame {
+    Visit(ExprId),
+    Emit(ExprId),
+    Branch(TernaryExpression),
+    Else { expression: ExprId, branch: NodeId, no: ExprId, control: Option<NodeId> },
+    Join { expression: ExprId, yes_tails: Tails, control: Option<NodeId> },
+}
+
+fn push_expressions(
+    frames: &mut Vec<EvaluationFrame>,
+    expressions: impl DoubleEndedIterator<Item = ExprId>,
+) {
+    for expression in expressions.rev() {
+        frames.push(EvaluationFrame::Visit(expression));
+    }
+}
+
 struct Builder<'a> {
     hir: &'a HirProject,
     calls: Option<&'a ScalarExpressionEvidence>,
@@ -284,81 +308,146 @@ impl Builder<'_> {
         id: ExprId,
         origin: Origin,
     ) -> Result<Tails, BuildError> {
-        let expr = self.hir.expression(id).ok_or(BuildError::MissingExpression(id))?;
-        let mut value_control = None;
+        let mut frames = vec![EvaluationFrame::Visit(id)];
+        while let Some(frame) = frames.pop() {
+            match frame {
+                EvaluationFrame::Visit(expression) => {
+                    self.schedule_expression(expression, &mut frames)?;
+                }
+                EvaluationFrame::Emit(expression) => {
+                    tails = self.emit_expression(tails, expression, origin)?;
+                }
+                EvaluationFrame::Branch(ternary) => {
+                    tails = self.begin_expression_branch(tails, ternary, &mut frames, origin)?;
+                }
+                EvaluationFrame::Else { expression, branch, no, control } => {
+                    frames.push(EvaluationFrame::Join { expression, yes_tails: tails, control });
+                    frames.push(EvaluationFrame::Visit(no));
+                    tails = vec![(branch, EdgeKind::False)];
+                }
+                EvaluationFrame::Join { expression, mut yes_tails, control } => {
+                    yes_tails.append(&mut tails);
+                    tails = self.emit_expression(yes_tails, expression, origin)?;
+                    if let Some(control) = control {
+                        if self.active_deferred.pop() != Some(control) {
+                            return Err(BuildError::UnexpectedEffect);
+                        }
+                    }
+                }
+            }
+        }
+        Ok(tails)
+    }
+
+    fn emit_expression(
+        &mut self,
+        tails: Tails,
+        expression: ExprId,
+        origin: Origin,
+    ) -> Result<Tails, BuildError> {
+        let origin = self.expression_origin(expression, origin)?;
+        Ok(self.append(tails, CfgNodeKind::Evaluate(expression), origin))
+    }
+
+    fn schedule_expression(
+        &mut self,
+        expression: ExprId,
+        frames: &mut Vec<EvaluationFrame>,
+    ) -> Result<(), BuildError> {
+        let expr =
+            self.hir.expression(expression).ok_or(BuildError::MissingExpression(expression))?;
+        if let ExprKind::Ternary { condition, yes, no } = &expr.kind {
+            frames.push(EvaluationFrame::Branch(TernaryExpression {
+                expression,
+                condition: *condition,
+                yes: *yes,
+                no: *no,
+            }));
+            frames.push(EvaluationFrame::Visit(*condition));
+            return Ok(());
+        }
+        frames.push(EvaluationFrame::Emit(expression));
+        self.schedule_operands(expression, frames)
+    }
+
+    fn schedule_operands(
+        &mut self,
+        expression: ExprId,
+        frames: &mut Vec<EvaluationFrame>,
+    ) -> Result<(), BuildError> {
+        let expr =
+            self.hir.expression(expression).ok_or(BuildError::MissingExpression(expression))?;
         match &expr.kind {
             ExprKind::Number(_) | ExprKind::Opaque(_) => {}
             ExprKind::Access(path) => {
                 self.checked_paths.push(path.clone());
-                for step in &path.steps {
-                    if let AccessStep::Index {
-                        index: parser::hir::ArrayIndex::Symbolic(index),
-                        ..
-                    } = step
-                    {
-                        tails = self.evaluate(tails, *index, origin)?;
-                    }
-                }
+                self.schedule_access_indices(path, frames);
             }
             ExprKind::Call { arguments, .. } => {
-                for &argument in arguments {
-                    tails = self.evaluate(tails, argument, origin)?;
-                }
+                push_expressions(frames, arguments.iter().copied());
             }
             ExprKind::AnonymousComponent { arguments, inputs, .. } => {
-                for &argument in arguments {
-                    tails = self.evaluate(tails, argument, origin)?;
-                }
-                for input in inputs {
-                    tails = self.evaluate(tails, input.value, origin)?;
-                }
+                push_expressions(frames, inputs.iter().map(|input| input.value));
+                push_expressions(frames, arguments.iter().copied());
             }
             ExprKind::Array(values) | ExprKind::Tuple(values) => {
-                for &value in values {
-                    tails = self.evaluate(tails, value, origin)?;
-                }
+                push_expressions(frames, values.iter().copied());
             }
             ExprKind::Unary { operand, .. } | ExprKind::Parallel(operand) => {
-                tails = self.evaluate(tails, *operand, origin)?;
+                frames.push(EvaluationFrame::Visit(*operand));
             }
             ExprKind::Binary { left, right, .. } => {
-                tails = self.evaluate(tails, *left, origin)?;
-                tails = self.evaluate(tails, *right, origin)?;
+                frames.push(EvaluationFrame::Visit(*right));
+                frames.push(EvaluationFrame::Visit(*left));
             }
-            ExprKind::Ternary { condition, yes, no } => {
-                tails = self.evaluate(tails, *condition, origin)?;
-                let branch_origin = self.expression_origin(*condition, origin)?;
-                let guard = if expr.knownness == parser::hir::Knownness::Constant {
-                    ControlGuard::CheckedCompileTime
-                } else {
-                    ControlGuard::DeferredScalar
-                };
-                let branch = self.node(
-                    CfgNodeKind::Branch { condition: *condition, guard },
-                    Some(branch_origin),
-                );
-                self.link(tails, branch);
-                if guard == ControlGuard::DeferredScalar {
-                    self.active_deferred.push(branch);
-                }
-                let yes_tail = self.evaluate(vec![(branch, EdgeKind::True)], *yes, origin)?;
-                let no_tail = self.evaluate(vec![(branch, EdgeKind::False)], *no, origin)?;
-                if guard == ControlGuard::DeferredScalar {
-                    self.active_deferred.pop();
-                    value_control = Some(branch);
-                }
-                tails = [yes_tail, no_tail].concat();
+            ExprKind::Ternary { .. } => return Err(BuildError::UnexpectedEffect),
+        }
+        Ok(())
+    }
+
+    fn schedule_access_indices(&self, path: &AccessPath, frames: &mut Vec<EvaluationFrame>) {
+        for step in path.steps.iter().rev() {
+            if let AccessStep::Index { index: parser::hir::ArrayIndex::Symbolic(index), .. } = step
+            {
+                frames.push(EvaluationFrame::Visit(*index));
             }
         }
-        let origin = Origin { expression: Some(id), span: expr.span, ..origin };
-        if let Some(branch) = value_control {
+    }
+
+    fn begin_expression_branch(
+        &mut self,
+        tails: Tails,
+        ternary: TernaryExpression,
+        frames: &mut Vec<EvaluationFrame>,
+        origin: Origin,
+    ) -> Result<Tails, BuildError> {
+        let expr = self
+            .hir
+            .expression(ternary.expression)
+            .ok_or(BuildError::MissingExpression(ternary.expression))?;
+        let guard = if expr.knownness == parser::hir::Knownness::Constant {
+            ControlGuard::CheckedCompileTime
+        } else {
+            ControlGuard::DeferredScalar
+        };
+        let branch_origin = self.expression_origin(ternary.condition, origin)?;
+        let branch = self
+            .node(CfgNodeKind::Branch { condition: ternary.condition, guard }, Some(branch_origin));
+        self.link(tails, branch);
+        let control = if guard == ControlGuard::DeferredScalar {
             self.active_deferred.push(branch);
-        }
-        let tails = self.append(tails, CfgNodeKind::Evaluate(id), origin);
-        if value_control.is_some() {
-            self.active_deferred.pop();
-        }
-        Ok(tails)
+            Some(branch)
+        } else {
+            None
+        };
+        frames.push(EvaluationFrame::Else {
+            expression: ternary.expression,
+            branch,
+            no: ternary.no,
+            control,
+        });
+        frames.push(EvaluationFrame::Visit(ternary.yes));
+        Ok(vec![(branch, EdgeKind::True)])
     }
 
     fn block(&mut self, mut tails: Tails, id: BlockId) -> Result<Tails, BuildError> {
