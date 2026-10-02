@@ -5,8 +5,9 @@ use crate::hir_facts::{AccessHandle, AnalysisFacts};
 use crate::interprocedural::{
     AppliedComponentPort, CallBlocker, CallContext, CallOwner, CallReachability, CallSite,
     CallPathSite, CallSiteId, CallerOutputRead, ComposedConstraintFixedOutput, ContextEvidence,
-    FunctionEffects, FunctionSummary, PortSummary, ProjectOutputUse, ProjectSummaries,
-    SummaryBlocker, SummaryFact, ValidatedDefinition, ValidatedHeader, WitnessSite,
+    EnumeratedComponentOutput, FunctionEffects, FunctionSummary, PortSummary, ProjectOutputUse,
+    ProjectSummaries, SummaryBlocker, SummaryFact, ValidatedDefinition, ValidatedHeader,
+    WitnessSite,
 };
 
 use crate::new_rules::{Finding, RuleKind};
@@ -170,6 +171,15 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
             return Err(SummaryBlocker::WrongContext);
         }
         Ok(self.summaries.closed_main_component_output_use(self.facts, applied))
+    }
+
+    /// Enumerate every checked direct-child output in this exact source scope.
+    ///
+    /// Missing shapes, calls, or the bounded handle budget make the result
+    /// unavailable, so a rule cannot treat a partial list as complete.
+    #[must_use]
+    pub fn exact_component_outputs(&self) -> SummaryFact<Vec<EnumeratedComponentOutput>> {
+        self.summaries.exact_component_outputs(self.facts, self.evidence)
     }
 
     /// Prove that an exact exported output of the active main is read by its environment.

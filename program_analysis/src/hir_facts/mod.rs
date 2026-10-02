@@ -29,7 +29,7 @@ use abstract_interpretation::lattice::Lattice;
 use domains::{DegreeUpper, FieldRange};
 use forward::{ForwardAnalysis, ForwardState};
 use liveness::{LiveState, LivenessAnalysis};
-use use_queries::ReadScope;
+use crate::hir_facts::use_queries::ReadScope;
 pub(crate) use walk::VisitAccesses;
 
 pub use access::{AccessKey, AccessKeyStep, IndexKey};

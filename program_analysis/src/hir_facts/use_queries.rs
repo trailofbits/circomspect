@@ -8,9 +8,9 @@ use parser::hir::{AccessPath, DefinitionRef, SymbolId, SymbolKind};
 
 use crate::hir_cfg::CfgNodeKind;
 
-use super::access::key_for_path;
-use super::liveness::LiveState;
-use super::{AnalysisFacts, Fact, FactBlocker, VisitAccesses};
+use crate::hir_facts::access::key_for_path;
+use crate::hir_facts::liveness::LiveState;
+use crate::hir_facts::{AnalysisFacts, Fact, FactBlocker, VisitAccesses};
 
 pub(super) enum ReadScope {
     Handle,
