@@ -65,7 +65,9 @@ impl ProjectSummaries<'_> {
 
     fn node_definitely_fails(&self, kind: &CfgNodeKind, facts: &AnalysisFacts<'_>) -> bool {
         match kind {
-            CfgNodeKind::Assert { condition } => self.proven_zero(*condition, facts),
+            CfgNodeKind::Assert { condition } | CfgNodeKind::DeferredAssert { condition } => {
+                self.proven_zero(*condition, facts)
+            }
             CfgNodeKind::Evaluate(expression) => {
                 self.expression_definitely_fails(*expression, facts)
             }

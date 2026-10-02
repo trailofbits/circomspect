@@ -9,9 +9,13 @@ use parser::hir::{DefinitionRef, FunctionId};
 use parser::new_frontend::AssignmentOperator;
 
 use crate::hir_cfg::CfgNodeKind;
+use crate::hir_facts::Range;
 
 use super::summary::certified;
-use super::{CallContext, CallOwner, CallReachability, ProjectSummaries, SummaryBlocker, SummaryFact};
+use super::{
+    CallBlocker, CallContext, CallOwner, CallReachability, ProjectSummaries, SummaryBlocker,
+    SummaryFact,
+};
 
 /// Observable effects permitted in a checked Circom function.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -131,6 +135,15 @@ impl ProjectSummaries<'_> {
                     .ok_or(SummaryBlocker::LocalAnalysis("missing effect graph node".into()))?;
                 let effect = match &node.kind {
                     CfgNodeKind::Assert { .. } => Some(Ok(FunctionEffect::Assert)),
+                    CfgNodeKind::DeferredAssert { condition } => {
+                        let fact = match facts.range(*condition).certified() {
+                            Some(Range::Exact(_)) => Ok(FunctionEffect::Assert),
+                            Some(Range::Canonical | Range::Unreachable) | None => {
+                                Err(SummaryBlocker::UnsupportedContext)
+                            }
+                        };
+                        Some(fact)
+                    }
                     CfgNodeKind::Log => Some(Ok(FunctionEffect::Log)),
                     CfgNodeKind::Assignment { operator, .. }
                         if *operator != AssignmentOperator::Assign =>
@@ -160,18 +173,23 @@ impl ProjectSummaries<'_> {
             let mut callees = BTreeSet::new();
             let owner = CallOwner::Definition(DefinitionRef::Function(id));
             for site in self.graph().calls_from(owner) {
-                let call = match self.graph().reachable_call(site.id(), facts) {
+                let context = match self.graph().reachable_call(site.id(), facts) {
                     CallReachability::Unreachable => continue,
-                    CallReachability::Reachable(call) => call,
+                    CallReachability::Reachable(call) => {
+                        if let DefinitionRef::Function(_) = call.callee() {
+                            self.call_context(&call, facts)?
+                        } else {
+                            return Err(SummaryBlocker::ExternalSummary);
+                        }
+                    }
+                    CallReachability::Unavailable(CallBlocker::ProvisionalSite) => {
+                        self.exact_site_context(site, facts)?
+                    }
                     CallReachability::Unavailable(_) => {
                         return Err(SummaryBlocker::ExternalSummary)
                     }
                 };
-                if let DefinitionRef::Function(_) = call.callee() {
-                    callees.insert(self.call_context(&call, facts)?);
-                } else {
-                    return Err(SummaryBlocker::ExternalSummary);
-                }
+                callees.insert(context);
             }
             Ok(EffectRecord { local, callees })
         })

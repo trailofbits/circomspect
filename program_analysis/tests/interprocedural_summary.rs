@@ -274,7 +274,7 @@ fn assertion_coverage_uses_the_bound_context_and_reachable_branch() {
     let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else { panic!("F") };
     let DefinitionRef::Function(g) = lifted.hir.definition("G").unwrap() else { panic!("G") };
     let field = FieldContext::for_curve(Curve::Bn254);
-    for (function, value, complete) in [(f, 0, true), (f, 1, false), (g, 0, true), (g, 1, false)] {
+    for (function, value, complete) in [(f, 0, true), (f, 1, true), (g, 0, true), (g, 1, false)] {
         let context = provider
             .context_for(
                 DefinitionRef::Function(function),
@@ -984,4 +984,144 @@ fn cached_queries_reject_foreign_curve_version_and_project_contexts() {
         bn.function(function, &foreign_context).unavailable(),
         Some(&std::collections::BTreeSet::from([SummaryBlocker::WrongContext]))
     );
+}
+
+#[test]
+fn complete_call_result_agrees_with_inlined_template_constraint() {
+    let lifted = fixture(
+        "function F(){return 7;} \
+         template Inline(){signal output out;out<==7;} \
+         template Called(){signal output out;out<==F();}",
+    );
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    for name in ["Inline", "Called"] {
+        let DefinitionRef::Template(template) = lifted.hir.definition(name).unwrap() else {
+            panic!("template")
+        };
+        let port = lifted.hir.template(template).unwrap().ports[0];
+        let context = provider.symbolic_context_for(DefinitionRef::Template(template)).unwrap();
+        let summary = provider.template_port(template, &context, port);
+        assert_eq!(summary.certified().map(|item| item.incidence()), Some(Incidence::Must));
+        assert_eq!(
+            summary.certified().and_then(|item| item.fixed_value()),
+            Some(&field.canonical(7.into()))
+        );
+    }
+}
+
+#[test]
+fn complete_call_result_flows_through_a_local_variable() {
+    let lifted = fixture(
+        "function F(){return 7;} \
+         function Inline(){var t=7;return t;} \
+         function Called(){var t=F();return t;}",
+    );
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let expected = Range::Exact(FieldContext::for_curve(Curve::Bn254).canonical(7.into()));
+    for name in ["Inline", "Called"] {
+        let DefinitionRef::Function(function) = lifted.hir.definition(name).unwrap() else {
+            panic!("function")
+        };
+        let context = provider.symbolic_context_for(DefinitionRef::Function(function)).unwrap();
+        let summary = provider.function(function, &context);
+        assert_eq!(
+            summary.certified().and_then(|item| item.complete_return()),
+            Some(&expected),
+            "{name}: {summary:?}"
+        );
+    }
+}
+
+#[test]
+fn specialized_call_retains_its_return_argument_dependency() {
+    let lifted = fixture("function Id(a){return a;} function G(n){var t=Id(n);return t;}");
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let DefinitionRef::Function(g) = lifted.hir.definition("G").unwrap() else {
+        panic!("function G")
+    };
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let context = provider
+        .context_for(
+            DefinitionRef::Function(g),
+            vec![ArgumentValue::Scalar(field.canonical(5.into()))],
+        )
+        .unwrap();
+    let summary = provider.function(g, &context);
+    let summary = summary.certified().unwrap();
+    assert_eq!(summary.complete_return(), Some(&Range::Exact(field.canonical(5.into()))));
+    assert_eq!(summary.input_dependencies(), &std::collections::BTreeSet::from([0]));
+}
+
+#[test]
+fn deferred_assertion_uses_the_concrete_scalar_context() {
+    let lifted = fixture(
+        "function F(n){assert(n);return 7;} \
+         template T(n){signal output out;out<==F(n);}",
+    );
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else {
+        panic!("function F")
+    };
+    let DefinitionRef::Template(t) = lifted.hir.definition("T").unwrap() else {
+        panic!("template T")
+    };
+    let output = lifted.hir.template(t).unwrap().ports[0];
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let one = ArgumentValue::Scalar(field.canonical(1.into()));
+    let zero = ArgumentValue::Scalar(field.canonical(0.into()));
+    let negative_one = ArgumentValue::Scalar(field.canonical((-1).into()));
+    let prime = ArgumentValue::Scalar(
+        field
+            .parse("21888242871839275222246405745257275088548364400416034343698204186575808495617")
+            .unwrap(),
+    );
+    let f_one = provider.context_for(DefinitionRef::Function(f), vec![one.clone()]).unwrap();
+    let f_zero = provider.context_for(DefinitionRef::Function(f), vec![zero.clone()]).unwrap();
+    assert_eq!(
+        provider.function(f, &f_one).certified().and_then(|item| item.complete_return()),
+        Some(&Range::Exact(field.canonical(7.into())))
+    );
+    assert!(provider
+        .function(f, &f_zero)
+        .certified()
+        .and_then(|item| item.complete_return())
+        .is_none());
+    let f_negative_one =
+        provider.context_for(DefinitionRef::Function(f), vec![negative_one]).unwrap();
+    assert_eq!(
+        provider.function(f, &f_negative_one).certified().and_then(|item| item.complete_return()),
+        Some(&Range::Exact(field.canonical(7.into())))
+    );
+    let f_prime = provider.context_for(DefinitionRef::Function(f), vec![prime]).unwrap();
+    assert!(provider
+        .function(f, &f_prime)
+        .certified()
+        .and_then(|item| item.complete_return())
+        .is_none());
+    let f_array = provider
+        .context_for(
+            DefinitionRef::Function(f),
+            vec![ArgumentValue::Array(vec![ArgumentValue::Scalar(field.canonical(1.into()))])],
+        )
+        .unwrap();
+    assert!(provider
+        .function(f, &f_array)
+        .certified()
+        .and_then(|item| item.complete_return())
+        .is_none());
+    let t_one = provider.context_for(DefinitionRef::Template(t), vec![one]).unwrap();
+    let t_zero = provider.context_for(DefinitionRef::Template(t), vec![zero]).unwrap();
+    let one_output = provider.template_port(t, &t_one, output);
+    assert_eq!(
+        one_output.certified().and_then(|item| item.fixed_value()),
+        Some(&field.canonical(7.into()))
+    );
+    assert!(provider.template_port(t, &t_zero, output).certified().is_none());
+    let symbolic = provider.symbolic_context_for(DefinitionRef::Function(f)).unwrap();
+    assert!(provider
+        .function(f, &symbolic)
+        .certified()
+        .and_then(|item| item.complete_return())
+        .is_none());
 }

@@ -1,10 +1,9 @@
 use abstract_interpretation::graph::FlowGraph;
 use parser::hir::{DefinitionRef, Effect, PortId, Template, TemplateId};
+use parser::new_frontend::AssignmentOperator;
 
-use crate::hir_cfg::{build_cfg, CfgNodeKind, DefinitionCfg, Origin};
-use crate::hir_facts::{
-    analyze_with_scalar_parameters, AnalysisFacts, FieldContext, FieldValue, Incidence,
-};
+use crate::hir_cfg::{CfgNodeKind, DefinitionCfg, Origin};
+use crate::hir_facts::{AnalysisFacts, FieldValue, Incidence};
 
 use super::summary::certified;
 use crate::interprocedural::cache::PortKey;
@@ -216,12 +215,18 @@ impl ProjectSummaries<'_> {
             .block(origin.block)
             .and_then(|block| block.effects.get(origin.effect_index))
             .ok_or(SummaryBlocker::LocalAnalysis("missing witness effect".into()))?;
-        let provenance = if let Effect::WitnessAssignment { .. } = effect {
-            WitnessProvenance::WitnessOnly
-        } else if let Effect::ConstraintAssignment { .. } = effect {
-            WitnessProvenance::GeneratedConstraint
-        } else {
-            return Err(SummaryBlocker::LocalAnalysis("mismatched witness origin".into()));
+        let provenance = match effect {
+            Effect::WitnessAssignment { .. }
+            | Effect::OpaqueAssignment {
+                operator: AssignmentOperator::Witness | AssignmentOperator::ReverseWitness,
+                ..
+            } => WitnessProvenance::WitnessOnly,
+            Effect::ConstraintAssignment { .. }
+            | Effect::OpaqueAssignment {
+                operator: AssignmentOperator::Constraint | AssignmentOperator::ReverseConstraint,
+                ..
+            } => WitnessProvenance::GeneratedConstraint,
+            _ => return Err(SummaryBlocker::LocalAnalysis("mismatched witness origin".into())),
         };
         Ok(WitnessSite { origin, provenance })
     }
@@ -241,19 +246,16 @@ impl ProjectSummaries<'_> {
             return Err(SummaryBlocker::ExternalSummary);
         }
         let parameters = context.scalar_seeds(&template.parameters)?;
-        let cfg = build_cfg(self.hir(), DefinitionRef::Template(id))
-            .map_err(|error| SummaryBlocker::LocalAnalysis(format!("{error:?}")))?;
-        let field = FieldContext::for_curve(self.curve().clone());
-        let facts = analyze_with_scalar_parameters(self.hir(), &cfg, &field, parameters, None)
-            .map_err(|error| SummaryBlocker::LocalAnalysis(format!("{error:?}")))?;
-        if let Some(expression) =
-            self.invalid_deferred_assignment(&cfg, &template.parameters, context, &facts)
-        {
-            return Err(SummaryBlocker::InvalidAssignment(expression));
-        }
-        if self.template_definitely_fails(&facts)? {
-            return Err(SummaryBlocker::UnsupportedContext);
-        }
-        work(template, &cfg, &facts)
+        self.with_refined_facts(DefinitionRef::Template(id), parameters, |cfg, facts| {
+            if let Some(expression) =
+                self.invalid_deferred_assignment(cfg, &template.parameters, context, facts)
+            {
+                return Err(SummaryBlocker::InvalidAssignment(expression));
+            }
+            if self.template_definitely_fails(facts)? {
+                return Err(SummaryBlocker::UnsupportedContext);
+            }
+            work(template, cfg, facts)
+        })
     }
 }

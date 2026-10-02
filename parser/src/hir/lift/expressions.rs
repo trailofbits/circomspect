@@ -615,12 +615,6 @@ impl Lifter<'_> {
         }
     }
 
-    pub(super) fn scalar_arithmetic_operand(&self, id: ExprId) -> bool {
-        self.expression_is_checked(id)
-            && self.expression_type(id) == ValueType::Plain
-            && self.expression_rank(id) == Some(0)
-    }
-
     pub(super) fn scalar_shape(&self, id: ExprId) -> ScalarShape {
         if !self.expression_is_checked(id) {
             return ScalarShape::Invalid;
@@ -637,8 +631,7 @@ impl Lifter<'_> {
                 ScalarShape::Deferred
             }
             ExprKind::Access(path)
-                if expression.knownness == Knownness::ParameterDependent
-                    && self.hir.symbols[path.terminal.index].kind == SymbolKind::Parameter =>
+                if self.hir.symbols[path.terminal.index].kind == SymbolKind::Parameter =>
             {
                 ScalarShape::Deferred
             }

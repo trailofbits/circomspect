@@ -1,11 +1,11 @@
-use circomspect_program_analysis::hir_facts::FieldContext;
+use circomspect_program_analysis::hir_facts::{FieldContext, Range};
 use circomspect_program_analysis::interprocedural::{
     AnalyzeEvidenceError, ArgumentShape, ArgumentValue, CallOwner, CallReachability, ContextOrigin,
     ProjectSummaries, SummaryBlocker,
 };
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::hir_facts::analyze;
-use parser::hir::{lift_project, LiftedProject, SemanticCode, Severity};
+use parser::hir::{lift_project, ExprKind, LiftedProject, SemanticCode, Severity};
 use parser::new_frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
 use std::fs;
@@ -21,6 +21,38 @@ fn fixture(source: &str, version: Version) -> LiftedProject {
     fs::write(&path, source).unwrap();
     let loaded = load_sources(&[path], &[directory], VersionPolicy::new(version));
     lift_project(&loaded)
+}
+
+#[test]
+fn parameter_writes_cannot_certify_the_stale_incoming_value() {
+    for (statement, expected) in [("n=1;", 1), ("n+=1;", 3), ("n++;", 3)] {
+        let source = format!("template T(n){{{statement}var x=n;}} component main=T(2);");
+        let lifted = fixture(&source, Version::new(2, 2, 3));
+        assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
+        let summaries = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let site = summaries.graph().calls_from(CallOwner::Main(0))[0];
+        let CallReachability::Reachable(call) =
+            summaries.graph().reachable_main_call(site.id(), &lifted.hir)
+        else {
+            panic!("main T(2) is reachable")
+        };
+        let evidence = summaries.main_evidence(&call).unwrap();
+        let cfg = build_cfg(&lifted.hir, evidence.context().definition()).unwrap();
+        let facts = summaries.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+        let mut observed = false;
+        for expression in lifted.hir.expressions() {
+            let ExprKind::Access(path) = &expression.kind else { continue };
+            if lifted.hir.symbol(path.root).unwrap().name != "n" {
+                continue;
+            }
+            observed = true;
+            if let Some(Range::Exact(value)) = facts.range(expression.id).certified() {
+                let field = FieldContext::for_curve(Curve::Bn254);
+                assert_eq!(*value, field.canonical(expected.into()), "{statement}");
+            }
+        }
+        assert!(observed);
+    }
 }
 
 #[test]

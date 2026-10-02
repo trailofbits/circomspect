@@ -30,6 +30,49 @@ fn effect_for<'a>(result: &'a circomspect_parser::hir::LiftedProject, name: &str
     &result.hir.block(definition.body).unwrap().effects
 }
 
+#[test]
+fn parameter_assertion_retains_typed_condition_and_source() {
+    let source = "function F(n){assert(n);return 7;}";
+    let result = lift(&[("case.circom", source)], Version::new(2, 2, 3));
+    let Some(DefinitionRef::Function(id)) = result.hir.definition("F") else {
+        panic!("function F must be present")
+    };
+    let body = result.hir.function(id).unwrap().body;
+    let effects = &result.hir.block(body).unwrap().effects;
+    let Some((condition, span)) = effects.iter().find_map(|effect| {
+        if let Effect::DeferredAssert { condition, span } = effect {
+            Some((condition, span))
+        } else {
+            None
+        }
+    }) else {
+        panic!("assertion condition must remain in HIR")
+    };
+    let expression = result.hir.expression(*condition).unwrap();
+    let ExprKind::Access(_) = &expression.kind else { panic!("assertion reads n") };
+    assert_eq!(source[span.start()..span.end()].trim(), "assert(n);");
+}
+
+#[test]
+fn parameter_writes_preserve_deferred_shape_and_later_reads() {
+    for statement in ["p=1;", "p+=1;", "p++;"] {
+        let source = format!("function F(p){{{statement}return p;}}");
+        let result = lift(&[("parameter_write.circom", &source)], Version::new(2, 2, 3));
+        assert!(result.diagnostics.is_empty(), "{statement}: {:?}", result.diagnostics);
+        let DefinitionRef::Function(id) = result.hir.definition("F").unwrap() else {
+            panic!("function F")
+        };
+        let function = result.hir.function(id).unwrap();
+        let effects = &result.hir.block(function.body).unwrap().effects;
+        let Some(Effect::Return { value, .. }) = effects.last() else { panic!("return") };
+        let ExprKind::Access(path) = &result.hir.expression(*value).unwrap().kind else {
+            panic!("parameter read must remain typed")
+        };
+        assert_eq!(path.root, function.parameters[0]);
+        assert!(effects.len() >= 2, "the parameter write must remain in the body");
+    }
+}
+
 fn max_port_steps(result: &circomspect_parser::hir::LiftedProject) -> usize {
     result
         .hir
