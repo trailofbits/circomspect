@@ -36,6 +36,53 @@ fn included_fixture(library: &str, root: &str) -> LiftedProject {
 }
 
 #[test]
+fn invalid_declaration_dimensions_cannot_certify_function_completion() {
+    for declaration in ["var x[-1];", "var x[2][-1];", "var x[0-1];"] {
+        let lifted = fixture(&format!(
+            "function F(){{{declaration}return 7;}} function Caller(){{var x=F();return 7;}}"
+        ));
+        assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
+        assert!(lifted.syntax_diagnostics.is_empty());
+        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        for name in ["F", "Caller"] {
+            let definition = lifted.hir.definition(name).unwrap();
+            let DefinitionRef::Function(function) = definition else { panic!("function") };
+            let context = provider.symbolic_context_for(definition).unwrap();
+            let summary = provider.function(function, &context);
+            assert!(
+                summary.certified().and_then(|summary| summary.complete_return()).is_none(),
+                "{declaration}: {name}: {summary:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn declaration_dimensions_are_checked_in_the_function_context() {
+    let lifted = fixture("function F(n){var x[n];return 7;}");
+    assert!(lifted.diagnostics.is_empty());
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let definition = lifted.hir.definition("F").unwrap();
+    let DefinitionRef::Function(function) = definition else { panic!("function") };
+    let field = FieldContext::for_curve(Curve::Bn254);
+    for argument in [-1, 0, 1, 2] {
+        let context = provider
+            .context_for(definition, vec![ArgumentValue::Scalar(field.canonical(argument.into()))])
+            .unwrap();
+        let summary = provider.function(function, &context);
+        let result = summary.certified().and_then(|summary| summary.complete_return());
+        if argument < 0 {
+            assert!(result.is_none(), "{summary:?}");
+        } else {
+            assert_eq!(result, Some(&Range::Exact(field.canonical(7.into()))));
+        }
+    }
+    let symbolic = provider.symbolic_context_for(definition).unwrap();
+    let summary = provider.function(function, &symbolic);
+    assert!(summary.certified().and_then(|summary| summary.complete_return()).is_none());
+}
+
+#[test]
 fn concrete_scalar_function_summary_specializes_return_and_branch() {
     let lifted = fixture("function F(n){if(n){return n+2;}return 2;}");
     let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
