@@ -45,10 +45,12 @@ pub use crate::hir_facts::demand::{AssignmentDemand, UnobservedAssignment};
 pub use field::{FieldContext, FieldValue};
 pub use handles::{AccessHandle, AccessHandleError};
 pub use crate::hir_facts::relations::{
-    BitDecomposition, GeneratedEquation, NormalizedEquation, QuadraticPolynomial,
+    BitAmbiguity, BitAmbiguityOutcome, BitDecomposition, BitRepresentation, GeneratedEquation,
+    NoBitAmbiguityCertificate, NormalizedEquation, QuadraticPolynomial,
 };
 pub use crate::hir_facts::write_validity::{BodyWriteStatus, NoRepeatedBodyWrite, RepeatedBodyWrite};
 pub(crate) use handles::InstanceRelation;
+pub(crate) use crate::hir_facts::relations::ProofBudget;
 
 pub(crate) fn exact_compile_time(
     hir: &HirProject,

@@ -1,5 +1,7 @@
 //! Canonical quadratic expressions independent of source execution scope.
 
+mod query;
+
 use std::collections::BTreeMap;
 
 use abstract_interpretation::lattice::Lattice;

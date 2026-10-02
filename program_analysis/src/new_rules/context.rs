@@ -3,7 +3,8 @@ use parser::hir::{AccessPath, DefinitionRef, HirProject, PortId};
 use parser::new_frontend::Span;
 
 use crate::hir_facts::{
-    AccessHandle, AnalysisFacts, AssignmentDemand, BitDecomposition, Fact, GeneratedEquation,
+    AccessHandle, AnalysisFacts, AssignmentDemand, BitAmbiguityOutcome, BitDecomposition, Fact,
+    GeneratedEquation,
 };
 use crate::interprocedural::{
     AppliedComponentPort, CallBlocker, CallContext, CallOwner, CallReachability, CallSite,
@@ -211,6 +212,15 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
         witness: NodeId,
     ) -> SummaryFact<Option<GeneratedEquation>> {
         self.summaries.template_generated_equation(self.facts, self.evidence, witness)
+    }
+
+    /// Request two complete satisfying bit models in a validated leaf root scope.
+    pub fn template_bit_ambiguity(
+        &self,
+        input: &AccessPath,
+        bits: &[AccessPath],
+    ) -> SummaryFact<BitAmbiguityOutcome> {
+        self.summaries.template_bit_ambiguity(self.facts, self.evidence, input, bits)
     }
 
     /// Request a source-valid bit relation in this validated root template scope.

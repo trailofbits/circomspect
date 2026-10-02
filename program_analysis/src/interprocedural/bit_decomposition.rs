@@ -2,11 +2,36 @@
 
 use parser::hir::AccessPath;
 
-use crate::hir_facts::{AnalysisFacts, BitDecomposition};
+use crate::hir_facts::{AnalysisFacts, BitAmbiguityOutcome, BitDecomposition, ProofBudget};
 use crate::interprocedural::summary::certified;
-use crate::interprocedural::{ContextEvidence, ProjectSummaries, SummaryBlocker, SummaryFact};
+use crate::interprocedural::{
+    ContextEvidence, ContextOrigin, ProjectSummaries, SummaryBlocker, SummaryFact,
+};
 
 impl ProjectSummaries<'_> {
+    /// Prove two complete models of a validated leaf template's generated equations.
+    ///
+    /// The bounded candidates share every external input. Unknown control, called
+    /// scopes and symbolic template parameters withhold this existential proof.
+    pub fn template_bit_ambiguity(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        evidence: &ContextEvidence,
+        input: &AccessPath,
+        bits: &[AccessPath],
+    ) -> SummaryFact<BitAmbiguityOutcome> {
+        let result = self.check_template_constraint_scope(facts, evidence).and_then(|()| {
+            if evidence.origin() == ContextOrigin::SymbolicRoot
+                && !evidence.context().arguments().is_empty()
+            {
+                return Err(SummaryBlocker::UnsupportedContext);
+            }
+            let fact = facts.local_bit_ambiguity(input, bits, &mut ProofBudget::default());
+            certified(&fact).cloned()
+        });
+        SummaryFact::from_result(result)
+    }
+
     /// Certify a local bit relation in a validated root template scope.
     ///
     /// This does not establish an accepted input domain or two satisfying bit

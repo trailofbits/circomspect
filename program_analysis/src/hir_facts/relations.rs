@@ -1,5 +1,7 @@
 //! Must-equation evidence bound to provider-issued analysis contexts.
 
+mod ambiguity;
+mod complete;
 mod decomposition;
 mod polynomial;
 
@@ -16,7 +18,11 @@ use crate::hir_facts::{
 };
 use crate::interprocedural::ContextEvidence;
 
+pub use crate::hir_facts::relations::ambiguity::{
+    BitAmbiguity, BitAmbiguityOutcome, BitRepresentation, NoBitAmbiguityCertificate,
+};
 pub use crate::hir_facts::relations::decomposition::BitDecomposition;
+pub(crate) use crate::hir_facts::relations::complete::ProofBudget;
 pub use crate::hir_facts::relations::polynomial::{NormalizedEquation, QuadraticPolynomial};
 pub(crate) use crate::hir_facts::relations::polynomial::{
     constraint_equation, variable_polynomial, ExpressionPolynomial, MustSymbolicVariables,
@@ -52,6 +58,17 @@ impl MustEquations {
     pub(crate) fn origins(&self, equation: &NormalizedEquation) -> Option<&BTreeSet<NodeId>> {
         let Self::Reached { equations, .. } = self else { return None };
         equations.get(equation)
+    }
+
+    fn equation_at_origin(&self, site: NodeId) -> Option<&NormalizedEquation> {
+        let Self::Reached { equations, .. } = self else { return None };
+        let mut found = None;
+        for (equation, origins) in equations {
+            if origins.contains(&site) && found.replace(equation).is_some() {
+                return None;
+            }
+        }
+        found
     }
 
     fn blockers(&self) -> BTreeSet<FactBlocker> {

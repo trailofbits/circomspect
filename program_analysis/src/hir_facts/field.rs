@@ -44,6 +44,11 @@ impl FieldContext {
         &self.curve
     }
 
+    /// The selected prime as an integer, without field reduction.
+    pub(crate) fn modulus(&self) -> &BigInt {
+        &self.modulus
+    }
+
     #[must_use]
     pub fn canonical(&self, value: BigInt) -> FieldValue {
         let mut residue = value % &self.modulus;
