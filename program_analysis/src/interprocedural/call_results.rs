@@ -286,11 +286,12 @@ impl ProjectSummaries<'_> {
         let Some(expression) = self.hir().expression(id) else { return false };
         match &expression.kind {
             ExprKind::Number(_) => true,
-            ExprKind::Access(path) => self.safe_local_scalar_read(path),
+            ExprKind::Access(path) => {
+                self.safe_local_scalar_read(path) || facts.safe_scalar_evaluation(id)
+            }
             ExprKind::Call { .. } => facts.removable_call(id),
-            ExprKind::Unary { .. }
-            | ExprKind::Binary { .. }
-            | ExprKind::Array(_)
+            ExprKind::Unary { .. } | ExprKind::Binary { .. } => facts.safe_scalar_evaluation(id),
+            ExprKind::Array(_)
             | ExprKind::Tuple(_)
             | ExprKind::AnonymousComponent { .. }
             | ExprKind::Ternary { .. }

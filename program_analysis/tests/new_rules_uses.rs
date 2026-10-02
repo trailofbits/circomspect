@@ -216,7 +216,7 @@ fn side_effect_free_assignment_uses_only_a_pure_dead_scalar_value() {
         ("function Check(){var x=1;x=2;return x;}", 1),
         ("function Check(p){var x=p;return x;}", 0),
         ("function Check(p){var x=p;return 7;}", 0),
-        ("function Check(){var x=1+2;return 7;}", 0),
+        ("function Check(){var x=1+2;return 7;}", 1),
     ] {
         run_case(source, "Check", |results, _| {
             assert_eq!(count(results, RuleKind::SideEffectFreeAssignment), expected, "{source}");
@@ -228,42 +228,82 @@ fn side_effect_free_assignment_uses_only_a_pure_dead_scalar_value() {
             .iter()
             .any(|abstention| { abstention.kind == RuleKind::SideEffectFreeAssignment }));
     });
-    run_case("function Check(){var x=1+2;return 7;}", "Check", |results, _| {
-        assert!(results
-            .abstentions()
-            .iter()
-            .any(|abstention| { abstention.kind == RuleKind::SideEffectFreeAssignment }));
-    });
+}
+
+#[test]
+fn exact_dead_arithmetic_uses_shared_evaluation_evidence() {
+    for (source, expected) in [
+        ("function Check(){var x=1+2;return 7;}", 1),
+        ("function Check(){var a=2;var x=-(a+3)*4;return 7;}", 2),
+        ("function Check(){var x=!0;return 7;}", 1),
+        ("function Check(){var x=2<3;return 7;}", 1),
+        ("function Check(){var a=2;var x=-(a+3)*4;return x;}", 0),
+        ("template Check(p){var x=-p+2;}component main=Check(3);", 1),
+        ("template Check(p){var x=p;}component main=Check(3);", 1),
+    ] {
+        run_case(source, "Check", |results, _| {
+            assert_eq!(count(results, RuleKind::SideEffectFreeAssignment), expected, "{source}");
+        });
+    }
+}
+
+#[test]
+fn unsafe_dead_arithmetic_keeps_failure_read_and_call_safeguards() {
+    for source in [
+        "function Check(){var x=1/0;return 7;}",
+        "function Check(p){var x=p+1;return 7;}",
+        "function Check(){var a[2];var x=a[2]+1;return 7;}",
+        "function Check(i){var a[2];var x=a[i]+1;return 7;}",
+        "template Check(){signal s;var x=s+1;s<==2;}",
+        "function Check(){var x=Missing()+1;return 7;}",
+        "function Noisy(){log(1);return 7;}function Check(){var x=Noisy()+1;return 7;}",
+        "function Bad(){assert(0);return 7;}function Check(){var x=Bad()+1;return 7;}",
+    ] {
+        run_case(source, "Check", |results, _| {
+            assert_eq!(count(results, RuleKind::SideEffectFreeAssignment), 0, "{source}");
+            assert!(
+                results
+                    .abstentions()
+                    .iter()
+                    .any(|abstention| { abstention.kind == RuleKind::SideEffectFreeAssignment }),
+                "{source}"
+            );
+        });
+    }
 }
 
 #[test]
 fn pure_dead_local_assignment_retains_both_defined_rule_claims() {
-    run_case("function Check(){var x=1;return 7;}", "Check", |results, sources| {
-        let findings: Vec<_> = results
-            .findings()
-            .iter()
-            .filter(|finding| {
-                finding.kind() == RuleKind::SideEffectFreeAssignment
-                    || finding.kind() == RuleKind::UnusedVariableValue
-            })
-            .cloned()
-            .collect();
-        assert_eq!(findings.len(), 2);
-        let path = std::env::temp_dir().join(format!(
-            "circomspect-use-overlap-{}-{:?}.json",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        assert_eq!(
-            support::render(&findings, sources, MessageCategory::Warning, &[], &path).unwrap(),
-            (2, 2)
-        );
-        let sarif: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        let locations = &sarif["runs"][0]["results"];
-        let first = &locations[0]["locations"][0]["physicalLocation"]["region"];
-        let second = &locations[1]["locations"][0]["physicalLocation"]["region"];
-        assert_eq!(first, second);
-    });
+    for rhs in ["1", "1+2"] {
+        let source = format!("function Check(){{var x={rhs};return 7;}}");
+        run_case(&source, "Check", |results, sources| {
+            let findings: Vec<_> = results
+                .findings()
+                .iter()
+                .filter(|finding| {
+                    finding.kind() == RuleKind::SideEffectFreeAssignment
+                        || finding.kind() == RuleKind::UnusedVariableValue
+                })
+                .cloned()
+                .collect();
+            assert_eq!(findings.len(), 2);
+            let path = std::env::temp_dir().join(format!(
+                "circomspect-use-overlap-{}-{:?}.json",
+                std::process::id(),
+                std::thread::current().id()
+            ));
+            assert_eq!(
+                support::render(&findings, sources, MessageCategory::Warning, &[], &path).unwrap(),
+                (2, 2)
+            );
+            let sarif: serde_json::Value =
+                serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+            let locations = &sarif["runs"][0]["results"];
+            let first = &locations[0]["locations"][0]["physicalLocation"]["region"];
+            let second = &locations[1]["locations"][0]["physicalLocation"]["region"];
+            assert_eq!(first, second);
+        });
+    }
 }
 
 #[test]
@@ -911,6 +951,52 @@ fn complete_reads_of_nested_output_elements_do_not_emit_unused_warning() {
     run_case(source, "Parent", |results, _| {
         assert_eq!(count(results, RuleKind::UnusedOutputSignal), 0);
     });
+}
+
+#[test]
+fn pure_calls_reuse_certified_arithmetic_argument_safety() {
+    for (body, expected) in [
+        ("function Check(){var y=Pure(1+2);return 7;}", 1),
+        ("function Check(){var y=Pure(2**3);return 7;}", 1),
+        ("function Check(){var x=2;var y=Pure(-(x+1));return 7;}", 2),
+        ("function Check(){var y=Pure(Inner()+1);return 7;}", 1),
+        ("function Check(){var y=Pure(1+2)+4;return 7;}", 1),
+        ("function Check(){var x=2;var y=Pure(x+1);return y;}", 0),
+        ("template Check(p){var y=Pure(-p+1);}component main=Check(3);", 1),
+        ("template Check(p){var y=Pure(p);}component main=Check(3);", 1),
+    ] {
+        let source = format!("function Pure(n){{return n;}}function Inner(){{return 2;}}{body}");
+        run_case(&source, "Check", |results, _| {
+            assert_eq!(count(results, RuleKind::SideEffectFreeAssignment), expected, "{source}");
+        });
+    }
+}
+
+#[test]
+fn arithmetic_arguments_retain_nested_call_effects_and_failures() {
+    for source in [
+        "function Noisy(){log(1);return 2;}function Check(){var y=Pure(Noisy()+1);return 7;}",
+        "function Noisy(){log(1);return 2;}function Check(){var y=Pure(0*Noisy());return 7;}",
+        "function Bad(){assert(0);return 2;}function Check(){var y=Pure(Bad()+1);return 7;}",
+        "function Check(){var y=Pure(Missing()+1);return 7;}",
+        "function Check(){var y=Pure(1/0);return 7;}",
+        "function Check(){var y=Pure(2**513);return 7;}",
+        "function Check(p){var y=Pure(p+1);return 7;}",
+        "template Check(p){var y=Pure(p);}",
+        "template Check(){signal s;var y=Pure(s+1);s<==2;}",
+    ] {
+        let source = format!("function Pure(n){{return n;}}{source}");
+        run_case(&source, "Check", |results, _| {
+            assert_eq!(count(results, RuleKind::SideEffectFreeAssignment), 0, "{source}");
+            assert!(
+                results
+                    .abstentions()
+                    .iter()
+                    .any(|item| { item.kind == RuleKind::SideEffectFreeAssignment }),
+                "{source}"
+            );
+        });
+    }
 }
 
 #[test]

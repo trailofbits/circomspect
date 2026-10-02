@@ -356,3 +356,36 @@ fn independent_pure_call_chain_retains_transitive_removal() {
     assert_eq!(results.len(), 1);
     assert!(unobserved(&results[0].1), "{results:?}");
 }
+
+#[test]
+fn exact_arithmetic_releases_only_unobserved_local_demand() {
+    for (source, removable) in [
+        ("function Check(){var x=2;var y=-(x+3)*4;return 7;}", true),
+        ("function Check(){var x=2;var y=-(x+3)*4;return y;}", false),
+        ("function Check(){var x=2;var y=-(x+3)*4;assert(y);return 7;}", false),
+    ] {
+        let results = assignment_demands(source, None);
+        assert_eq!(results.len(), 2);
+        for (_, result) in results {
+            assert_eq!(unobserved(&result), removable, "{source}: {result:?}");
+        }
+    }
+}
+
+#[test]
+fn provisional_arithmetic_never_certifies_an_unobserved_assignment() {
+    for budget in 0..2 {
+        let results =
+            assignment_demands("function Check(){var x=2;var y=-(x+3)*4;return 7;}", Some(budget));
+        assert_eq!(results.len(), 2);
+        assert!(results.iter().all(|(_, result)| !unobserved(result)), "{budget}: {results:?}");
+    }
+}
+
+#[test]
+fn changed_loop_divisor_never_becomes_a_removable_arithmetic_value() {
+    let source = "function Check(){var d=1;for(var i=0;i<2;i++){var x=1/d;d=0;}return 7;}";
+    let results = assignment_demands(source, None);
+    assert!(!results.is_empty());
+    assert!(results.iter().all(|(_, result)| !unobserved(result)), "{results:?}");
+}

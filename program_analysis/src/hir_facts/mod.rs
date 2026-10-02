@@ -9,6 +9,7 @@ mod field;
 mod forward;
 mod handles;
 mod liveness;
+mod purity;
 mod relations;
 mod use_queries;
 mod walk;
@@ -37,6 +38,7 @@ use abstract_interpretation::lattice::Lattice;
 use domains::{DegreeUpper, FieldRange};
 use forward::{ForwardAnalysis, ForwardState};
 use liveness::{LiveState, LivenessAnalysis};
+use crate::hir_facts::purity::ScalarEvaluationSafety;
 pub(crate) use walk::VisitAccesses;
 
 pub use access::{AccessKey, AccessKeyStep, IndexKey};
@@ -187,6 +189,7 @@ pub struct AnalysisFacts<'a> {
     forward: ForwardResult,
     backward: BackwardResult,
     demand: DemandResult,
+    scalar_evaluation_safety: ScalarEvaluationSafety,
     specialized_parameters: BTreeSet<SymbolId>,
     resolved_deferred: BTreeSet<NodeId>,
     evidence_binding: Option<ContextEvidence>,
@@ -238,6 +241,7 @@ pub(crate) fn analyze_owned_with_scalar_calls<'a>(
         forward,
         backward,
         demand,
+        scalar_evaluation_safety,
         specialized_parameters,
         resolved_deferred,
         evidence_binding,
@@ -251,6 +255,7 @@ pub(crate) fn analyze_owned_with_scalar_calls<'a>(
         forward,
         backward,
         demand,
+        scalar_evaluation_safety,
         specialized_parameters,
         resolved_deferred,
         evidence_binding,
@@ -299,8 +304,11 @@ fn analyze_seeded<'a>(
         .with_calls(options.calls);
     let backward =
         solve::<_, _, Backward>(cfg, &liveness, budget).map_err(AnalysisError::InvalidGraph)?;
+    let scalar_evaluation_safety =
+        ScalarEvaluationSafety::certify(hir, cfg, field, &forward, options.calls);
     let demand_analysis = DemandAnalysis::new(hir, field, pruned_edges)
         .with_calls(options.calls)
+        .with_scalar_evaluation_safety(scalar_evaluation_safety.clone())
         .with_resolved_deferred(resolved_deferred.clone());
     let demand = solve::<_, _, Backward>(cfg, &demand_analysis, budget)
         .map_err(AnalysisError::InvalidGraph)?;
@@ -312,6 +320,7 @@ fn analyze_seeded<'a>(
         forward,
         backward,
         demand,
+        scalar_evaluation_safety,
         specialized_parameters,
         resolved_deferred,
         evidence_binding: None,

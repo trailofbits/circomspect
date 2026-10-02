@@ -10,6 +10,7 @@ use parser::new_frontend::{AssignmentOperator, Span};
 
 use crate::hir_cfg::{CfgEdge, CfgNode, CfgNodeKind, DefinitionCfg};
 use crate::hir_facts::access::{key_for_path, AccessKey};
+use crate::hir_facts::purity::ScalarEvaluationSafety;
 use crate::hir_facts::{AnalysisFacts, Fact, FactBlocker, FieldContext, VisitAccesses};
 use crate::interprocedural::{CallContext, ContextEvidence};
 use crate::scalar_evidence::ScalarExpressionEvidence;
@@ -62,6 +63,7 @@ pub(crate) struct DemandAnalysis<'a> {
     calls: Option<&'a ScalarExpressionEvidence>,
     pruned_edges: BTreeSet<EdgeId>,
     resolved_deferred: BTreeSet<NodeId>,
+    scalar_evaluation_safety: ScalarEvaluationSafety,
 }
 
 impl<'a> DemandAnalysis<'a> {
@@ -70,7 +72,14 @@ impl<'a> DemandAnalysis<'a> {
         field: &'a FieldContext,
         pruned_edges: BTreeSet<EdgeId>,
     ) -> Self {
-        Self { hir, field, calls: None, pruned_edges, resolved_deferred: BTreeSet::new() }
+        Self {
+            hir,
+            field,
+            calls: None,
+            pruned_edges,
+            resolved_deferred: BTreeSet::new(),
+            scalar_evaluation_safety: ScalarEvaluationSafety::default(),
+        }
     }
 
     pub(crate) fn with_calls(mut self, calls: Option<&'a ScalarExpressionEvidence>) -> Self {
@@ -81,6 +90,15 @@ impl<'a> DemandAnalysis<'a> {
     pub(crate) fn with_resolved_deferred(mut self, nodes: BTreeSet<NodeId>) -> Self {
         self.resolved_deferred = nodes;
         self
+    }
+
+    pub(super) fn with_scalar_evaluation_safety(mut self, safety: ScalarEvaluationSafety) -> Self {
+        self.scalar_evaluation_safety = safety;
+        self
+    }
+
+    fn pure_scalar_assignment(&self, target: &AccessPath, value: ExprId) -> bool {
+        pure_scalar_assignment(self.hir, target, value, self.calls, &self.scalar_evaluation_safety)
     }
 
     fn removable_call(&self, expression: ExprId) -> bool {
@@ -106,9 +124,7 @@ impl<'a> DemandAnalysis<'a> {
         operator: AssignmentOperator,
         keys: &mut BTreeSet<AccessKey>,
     ) -> bool {
-        if operator != AssignmentOperator::Assign
-            || !pure_scalar_assignment(self.hir, target, value, self.calls)
-        {
+        if operator != AssignmentOperator::Assign || !self.pure_scalar_assignment(target, value) {
             return self.collect_path(target, keys) && self.collect(value, keys);
         }
         let key = key_for_path(self.hir, self.field, target, &BTreeMap::new());
@@ -128,7 +144,13 @@ impl<'a> DemandAnalysis<'a> {
 
     fn collect_evaluation(&self, expression: ExprId, keys: &mut BTreeSet<AccessKey>) -> bool {
         let Some(expr) = self.hir.expression(expression) else { return false };
-        if pure_scalar_value(self.hir, &expr.kind, expression, self.calls) {
+        if pure_scalar_value(
+            self.hir,
+            &expr.kind,
+            expression,
+            self.calls,
+            &self.scalar_evaluation_safety,
+        ) {
             return true;
         }
         self.collect(expression, keys)
@@ -152,7 +174,7 @@ impl<'a> DemandAnalysis<'a> {
         }
         if let CfgNodeKind::DeferredAssignment { target, value, operator } = &node.kind {
             return self.resolved_deferred.contains(&node.id)
-                && pure_scalar_assignment(self.hir, target, *value, self.calls)
+                && self.pure_scalar_assignment(target, *value)
                 && self.transfer_assignment(target, *value, *operator, keys);
         }
         if let CfgNodeKind::Declaration { symbol } = &node.kind {
@@ -251,18 +273,19 @@ impl Transfer<DemandAnalysis<'_>, DemandState, String> for CfgEdge {
     }
 }
 
-pub(crate) fn pure_scalar_assignment(
+fn pure_scalar_assignment(
     hir: &HirProject,
     target: &AccessPath,
     value: ExprId,
     calls: Option<&ScalarExpressionEvidence>,
+    safety: &ScalarEvaluationSafety,
 ) -> bool {
     let Some(symbol) = hir.symbol(target.root) else { return false };
     if symbol.kind != SymbolKind::Variable || symbol.rank != 0 || !target.steps.is_empty() {
         return false;
     }
     let Some(expression) = hir.expression(value) else { return false };
-    pure_scalar_value(hir, &expression.kind, value, calls)
+    pure_scalar_value(hir, &expression.kind, value, calls, safety)
 }
 
 fn pure_scalar_value(
@@ -270,21 +293,22 @@ fn pure_scalar_value(
     kind: &ExprKind,
     expression: ExprId,
     calls: Option<&ScalarExpressionEvidence>,
+    safety: &ScalarEvaluationSafety,
 ) -> bool {
     match kind {
         ExprKind::Number(_) => true,
         ExprKind::Access(path) => {
             let Some(symbol) = hir.symbol(path.root) else { return false };
-            symbol.kind == SymbolKind::Variable
+            (symbol.kind == SymbolKind::Variable
+                || (symbol.kind == SymbolKind::Parameter && safety.contains(expression)))
                 && symbol.rank == 0
                 && path.steps.is_empty()
                 && !path.component_input
                 && !path.component_output
         }
         ExprKind::Call { .. } => calls.is_some_and(|calls| calls.removable_call(expression)),
-        ExprKind::Unary { .. }
-        | ExprKind::Binary { .. }
-        | ExprKind::Array(_)
+        ExprKind::Unary { .. } | ExprKind::Binary { .. } => safety.contains(expression),
+        ExprKind::Array(_)
         | ExprKind::Tuple(_)
         | ExprKind::AnonymousComponent { .. }
         | ExprKind::Ternary { .. }
@@ -365,7 +389,13 @@ impl AnalysisFacts<'_> {
             true
         };
         if *operator != AssignmentOperator::Assign
-            || !pure_scalar_assignment(self.hir, target, *value, self.calls.as_deref())
+            || !pure_scalar_assignment(
+                self.hir,
+                target,
+                *value,
+                self.calls.as_deref(),
+                &self.scalar_evaluation_safety,
+            )
             || !resolved
         {
             return Fact::blocked(BTreeSet::from([FactBlocker::OpaqueNode(
@@ -508,21 +538,25 @@ mod tests {
     }
 
     #[test]
-    fn provider_proven_pure_call_transfer_is_monotone() {
+    fn provider_proven_scalar_transfers_are_monotone() {
+        for source in [
+            "function Pure(n){return n;}function Check(){var x=1;var y=Pure(x);return 7;}",
+            "function Check(){var x=1;var y=-(x+2);return 7;}",
+        ] {
+            assert_scalar_transfer_monotone(source);
+        }
+    }
+
+    fn assert_scalar_transfer_monotone(source: &str) {
         let directory = std::env::temp_dir().join(format!(
             "circomspect-demand-pure-law-{}-{:?}",
             std::process::id(),
             std::thread::current().id()
         ));
         fs::create_dir_all(&directory).unwrap();
-        let source = directory.join("case.circom");
-        fs::write(
-            &source,
-            "function Pure(n){return n;}function Check(){var x=1;var y=Pure(x);return 7;}",
-        )
-        .unwrap();
-        let loaded =
-            load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
+        let path = directory.join("case.circom");
+        fs::write(&path, source).unwrap();
+        let loaded = load_sources(&[path], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
         let lifted = lift_project(&loaded);
         let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
         let definition = lifted.hir.definition("Check").unwrap();
@@ -548,6 +582,7 @@ mod tests {
         let key = key_for_path(&lifted.hir, &field, target, &BTreeMap::new());
         let analysis = DemandAnalysis::new(&lifted.hir, &field, BTreeSet::new())
             .with_calls(facts.calls.as_deref())
+            .with_scalar_evaluation_safety(facts.scalar_evaluation_safety.clone())
             .with_resolved_deferred(facts.resolved_deferred.clone());
         let states = [
             DemandState::Unreachable,
