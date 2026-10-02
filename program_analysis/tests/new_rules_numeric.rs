@@ -529,3 +529,21 @@ fn division_requires_source_ready_and_supported_generated_constraints() {
     );
     assert!(kinds(&ready).contains(&RuleKind::UnconstrainedDivision));
 }
+
+#[test]
+fn independent_division_array_element_requires_bounded_ready_source() {
+    let (_, valid) = inspect(
+        "template T(){signal input divisor[2];signal output out;out<--1/divisor[1];}",
+        Curve::Bn254,
+        "T",
+    );
+    assert!(kinds(&valid).contains(&RuleKind::UnconstrainedDivision));
+    let (_, invalid) = inspect(
+        "template T(){signal input divisor[2];signal numerator[2];signal output out;\
+         out<--numerator[0]/divisor[1];}",
+        Curve::Bn254,
+        "T",
+    );
+    assert!(!kinds(&invalid).contains(&RuleKind::UnconstrainedDivision));
+    assert!(invalid.abstentions().iter().any(|item| item.kind == RuleKind::UnconstrainedDivision));
+}
