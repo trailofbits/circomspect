@@ -3,12 +3,11 @@
 use std::collections::BTreeSet;
 
 use parser::hir::{DefinitionRef, TemplateId};
-use parser::new_frontend::PortDirection;
 
 use crate::hir_cfg::build_cfg;
 use crate::hir_facts::AnalysisFacts;
 use crate::interprocedural::constructor_readiness::{CompletedChild, CompletedTemplate};
-use crate::interprocedural::input_relation::ready_instance_at_use;
+use crate::interprocedural::input_relation::ready_enumerated_instance;
 use crate::interprocedural::output_enumeration::EnumeratedComponentInstance;
 use crate::interprocedural::project_use::{ProjectInstanceStep, ProjectOutputEvidence};
 use crate::interprocedural::{
@@ -126,7 +125,7 @@ impl ProjectSummaries<'_> {
         let DefinitionRef::Template(child) = instance.callee.context().definition() else {
             return Err(SummaryBlocker::WrongInstance);
         };
-        self.check_instance_inputs(facts, instance, child)?;
+        ready_enumerated_instance(facts, instance)?;
         closure.path.push(ProjectInstanceStep::new(
             instance.site,
             instance.target.clone(),
@@ -160,28 +159,6 @@ impl ProjectSummaries<'_> {
             },
         )?;
         self.visit_scope(&child_facts, &instance.callee, closure)
-    }
-
-    fn check_instance_inputs(
-        &self,
-        facts: &AnalysisFacts<'_>,
-        instance: &EnumeratedComponentInstance,
-        child: TemplateId,
-    ) -> Result<(), SummaryBlocker> {
-        let template = self.hir().template(child).ok_or(SummaryBlocker::ForeignDefinition)?;
-        let mut has_inputs = false;
-        for id in &template.ports {
-            let port = self.hir().port(*id).ok_or(SummaryBlocker::ForeignDefinition)?;
-            if port.direction == Some(PortDirection::Input) {
-                has_inputs = true;
-            }
-        }
-        if !has_inputs {
-            return Ok(());
-        }
-        let output = instance.outputs.first().ok_or(SummaryBlocker::UnsupportedContext)?;
-        ready_instance_at_use(facts, output.applied_port(), child)?;
-        Ok(())
     }
 
     fn record_output(

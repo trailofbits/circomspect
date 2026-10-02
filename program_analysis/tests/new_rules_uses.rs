@@ -56,6 +56,70 @@ fn count(results: &RuleResult, kind: RuleKind) -> usize {
 }
 
 #[test]
+fn ready_outputless_input_child_does_not_hide_an_unused_sibling_output() {
+    let source = concat!(
+        "template Leaf(){signal output out;out<==1;}",
+        "template Empty(){signal input x;x===1;}",
+        "template Parent(){component c=Leaf();component e=Empty();e.x<==1;}",
+        "component main=Parent();"
+    );
+    run_case(source, "Parent", |results, sources| {
+        let findings: Vec<_> = results
+            .findings()
+            .iter()
+            .filter(|finding| finding.kind() == RuleKind::UnusedOutputSignal)
+            .cloned()
+            .collect();
+        assert_eq!(findings.len(), 1);
+        let path = std::env::temp_dir().join(format!(
+            "circomspect-outputless-input-{}-{:?}.json",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        assert_eq!(
+            support::render(&findings, sources, MessageCategory::Warning, &[], &path).unwrap(),
+            (1, 1)
+        );
+        let sarif: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        let item = &sarif["runs"][0]["results"][0];
+        assert_eq!(item["ruleId"], "CS0018");
+        assert_eq!(item["level"], "warning");
+        assert!(item["message"]["text"].as_str().unwrap().contains("c.out"));
+        assert_eq!(
+            item["locations"][0]["physicalLocation"]["region"]["startColumn"],
+            source.find("c=Leaf()").unwrap() + 3
+        );
+        fs::remove_file(&path).unwrap();
+    });
+}
+
+#[test]
+fn unavailable_outputless_input_child_withholds_unused_output_warning() {
+    for (body, parent) in [
+        ("x===1;", "component e=Empty();"),
+        ("x===1;", "component e=Empty();e.x<==1;e.x<==1;"),
+        ("x===1;", "component e=Empty();e.x<--1;"),
+        ("x===1;assert(0);", "component e=Empty();e.x<==1;"),
+        ("x===1;var bad=1/0;", "component e=Empty();e.x<==1;"),
+        ("x===1;", "component e[1];e[0]=Empty();e[1].x<==1;"),
+        ("x===1;", "signal input i;component e[1];e[0]=Empty();e[i].x<==1;"),
+    ] {
+        let source = format!(
+            "template Leaf(){{signal output out;out<==1;}}\
+             template Empty(){{signal input x;{body}}}\
+             template Parent(){{component c=Leaf();{parent}}}component main=Parent();"
+        );
+        run_case(&source, "Parent", |results, _| {
+            assert_eq!(count(results, RuleKind::UnusedOutputSignal), 0, "{source}");
+            assert!(
+                results.abstentions().iter().any(|item| item.kind == RuleKind::UnusedOutputSignal),
+                "{source}"
+            );
+        });
+    }
+}
+
+#[test]
 fn pure_dead_assignment_emits_cs0008_and_a_returned_value_does_not() {
     run_case("function Check(){var x=1;return 7;}", "Check", |results, _| {
         assert_eq!(count(results, RuleKind::SideEffectFreeAssignment), 1);

@@ -167,3 +167,17 @@ fn an_unproved_array_index_cannot_fix_a_child_input() {
         .err()
         .is_some_and(|reasons| reasons.contains(&SummaryBlocker::UnsupportedContext)));
 }
+#[test]
+fn composing_one_output_checks_readiness_before_every_sibling_output_read() {
+    for (body, expected) in [
+        ("c.in<==7;signal output y;y<==c.other;", true),
+        ("signal output y;y<==c.other;c.in<==7;", false),
+    ] {
+        let source = format!(
+            "template Child(){{signal input in;signal output out;signal output other;\
+             out<==in;other<==in;}}template Parent(){{component c=Child();{body}}}"
+        );
+        let result = composed(&source, None);
+        assert_eq!(result.is_ok(), expected, "{source}: {result:?}");
+    }
+}

@@ -130,6 +130,76 @@ fn outputless_failing_sibling_blocks_negative_closure() {
 }
 
 #[test]
+fn outputless_child_with_bound_input_preserves_other_unused_outputs() {
+    let source = concat!(
+        "template Leaf(){signal output out;out<==1;}",
+        "template Empty(){signal input x;x===1;}",
+        "template Parent(){component c=Leaf();component e=Empty();e.x<==1;}",
+        "component main=Parent();"
+    );
+    let uses = nested_uses(source);
+    let uses = uses.certified().unwrap_or_else(|| panic!("{uses:?}"));
+    assert_eq!(uses.len(), 1);
+    assert_eq!(uses[0].status(), ProjectOutputStatus::Unused);
+    assert_eq!(uses[0].instance_depth(), 1);
+}
+
+#[test]
+fn nested_outputless_child_inputs_are_checked_before_completing_ancestors() {
+    for binding in ["e.x<==1;", ""] {
+        let source = format!(
+            "template Leaf(){{signal output out;out<==1;}}\
+             template Empty(){{signal input x;x===1;}}\
+             template Middle(){{component e=Empty();{binding}}}\
+             template Parent(){{component c=Leaf();component m=Middle();}}\
+             component main=Parent();"
+        );
+        let uses = nested_uses(&source);
+        if binding.is_empty() {
+            assert!(uses.unavailable().is_some(), "{uses:?}");
+        } else {
+            let uses = uses.certified().unwrap_or_else(|| panic!("{uses:?}"));
+            assert_eq!(uses.len(), 1);
+            assert_eq!(uses[0].status(), ProjectOutputStatus::Unused);
+        }
+    }
+}
+
+#[test]
+fn outputless_instances_cannot_borrow_each_others_input_bindings() {
+    for bindings in ["e[0].x<==1;e[1].x<==1;", "e[0].x<==1;", "e[1].x<==1;"] {
+        let source = format!(
+            "template Leaf(){{signal output out;out<==1;}}\
+             template Empty(){{signal input x;x===1;}}\
+             template Parent(){{component c=Leaf();component e[2];\
+             e[0]=Empty();e[1]=Empty();{bindings}}}component main=Parent();"
+        );
+        let uses = nested_uses(&source);
+        assert_eq!(uses.certified().is_some(), bindings.contains(";e[1]"), "{uses:?}");
+    }
+}
+
+#[test]
+fn outputless_child_keeps_missing_duplicate_witness_and_failure_refusals() {
+    for (body, parent) in [
+        ("x===1;", "component e=Empty();"),
+        ("x===1;", "component e=Empty();e.x<==1;e.x<==1;"),
+        ("x===1;", "component e=Empty();e.x<--1;"),
+        ("x===1;assert(0);", "component e=Empty();e.x<==1;"),
+        ("x===1;var bad=1/0;", "component e=Empty();e.x<==1;"),
+        ("x===1;", "component e[1];e[0]=Empty();e[1].x<==1;"),
+        ("x===1;", "signal input i;component e[1];e[0]=Empty();e[i].x<==1;"),
+    ] {
+        let source = format!(
+            "template Leaf(){{signal output out;out<==1;}}\
+             template Empty(){{signal input x;{body}}}\
+             template Parent(){{component c=Leaf();{parent}}}component main=Parent();"
+        );
+        assert!(nested_uses(&source).unavailable().is_some(), "{source}");
+    }
+}
+
+#[test]
 fn incomplete_signal_witnesses_block_root_leaf_and_nested_closure() {
     let valid_leaf = "template Leaf(){signal output out;out<==1;} ";
     let valid_middle = "template Middle(){component c=Leaf();} ";

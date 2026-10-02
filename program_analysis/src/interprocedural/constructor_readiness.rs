@@ -8,7 +8,7 @@ use parser::new_frontend::PortDirection;
 
 use crate::hir_cfg::{build_cfg, CfgNodeKind};
 use crate::hir_facts::{AnalysisFacts, InstanceRelation};
-use crate::interprocedural::input_relation::ready_instance_at_use;
+use crate::interprocedural::input_relation::ready_enumerated_instance;
 use crate::interprocedural::{
     AppliedComponentPort, CallOwner, CallReachability, CallSiteId, ContextEvidence,
     ProjectSummaries, SummaryBlocker,
@@ -103,22 +103,13 @@ impl ProjectSummaries<'_> {
         if self.call_evidence(&call, facts, caller)? != completed.evidence {
             return Err(SummaryBlocker::WrongContext);
         }
-        let DefinitionRef::Template(child) = completed.evidence.context().definition() else {
+        let DefinitionRef::Template(_) = completed.evidence.context().definition() else {
             return Err(SummaryBlocker::WrongContext);
         };
+        ready_enumerated_instance(facts, instance)?;
         let mut outputs = Vec::new();
         for output in &instance.outputs {
-            ready_instance_at_use(facts, output.applied_port(), child)?;
             outputs.extend(self.checked_output_read_sites(facts, output.applied_port())?);
-        }
-        if instance.outputs.is_empty() {
-            let template = self.hir().template(child).ok_or(SummaryBlocker::ForeignDefinition)?;
-            for id in &template.ports {
-                let port = self.hir().port(*id).ok_or(SummaryBlocker::ForeignDefinition)?;
-                if port.direction == Some(PortDirection::Input) {
-                    return Err(SummaryBlocker::UnsupportedContext);
-                }
-            }
         }
         Ok(CompletedChild {
             caller: caller.clone(),

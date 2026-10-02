@@ -7,12 +7,15 @@ use abstract_interpretation::lattice::Lattice;
 use abstract_interpretation::solver::{
     solve, DataflowAnalysis, Forward, SolveResult, Transfer, TransferOutcome,
 };
-use parser::hir::{AccessPath, AccessStep, ControlGuard, Effect, ExprKind, PortId, PortSchema};
+use parser::hir::{
+    AccessPath, AccessStep, ArrayIndex, ControlGuard, Effect, ExprKind, PortId, PortSchema,
+};
 use parser::new_frontend::PortDirection;
 
 use crate::hir_cfg::{CfgEdge, CfgNode, CfgNodeKind, Origin};
 use crate::hir_facts::{AnalysisFacts, FieldValue, InstanceRelation, Range, VisitAccesses};
 use crate::interprocedural::component::AppliedComponentPort;
+use crate::interprocedural::output_enumeration::EnumeratedComponentInstance;
 use crate::interprocedural::summary::certified;
 use crate::interprocedural::SummaryBlocker;
 
@@ -166,7 +169,8 @@ impl ReadyInstanceAtUse {
 
 struct RelationAnalysis<'a> {
     facts: &'a AnalysisFacts<'a>,
-    applied: &'a AppliedComponentPort,
+    instance: &'a AccessPath,
+    instantiation: NodeId,
     inputs: Vec<PortId>,
 }
 
@@ -223,7 +227,7 @@ impl RelationAnalysis<'_> {
             return TransferOutcome::Known(state);
         }
         let result = match &node.kind {
-            CfgNodeKind::Instantiate { .. } if node.id == self.applied.instantiation() => {
+            CfgNodeKind::Instantiate { .. } if node.id == self.instantiation => {
                 if let RelationState::Reached { instantiated, .. } = &mut state {
                     *instantiated = true;
                 }
@@ -283,10 +287,10 @@ impl RelationAnalysis<'_> {
         value: parser::hir::ExprId,
         state: &mut RelationState,
     ) -> Result<(), SummaryBlocker> {
-        if target.root != self.applied.handle().path().root {
+        if target.root != self.instance.root {
             return Ok(());
         }
-        let relation = self.facts.instance_relation(self.applied.handle(), target);
+        let relation = self.facts.instance_path_relation(self.instance, target);
         if relation == InstanceRelation::Separate {
             return Ok(());
         }
@@ -366,7 +370,10 @@ impl RelationAnalysis<'_> {
             return Err(SummaryBlocker::ExternalSummary);
         };
         let ExprKind::Access(path) = &expr.kind else { return Ok(()) };
-        match self.facts.handle_relation(self.applied.handle(), path) {
+        if !path.component_output {
+            return Ok(());
+        }
+        match self.facts.instance_path_relation(self.instance, path) {
             InstanceRelation::Separate => {}
             InstanceRelation::Exact if state.ready() => {}
             InstanceRelation::Exact | InstanceRelation::Possible => {
@@ -385,7 +392,7 @@ impl RelationAnalysis<'_> {
         for expression in [Some(left), right].into_iter().flatten() {
             let mut touches = false;
             if !expression.visit_accesses(self.facts.hir(), &mut |path| {
-                touches |= self.facts.instance_relation(self.applied.handle(), path)
+                touches |= self.facts.instance_path_relation(self.instance, path)
                     != InstanceRelation::Separate;
             }) {
                 state.invalidate();
@@ -411,20 +418,52 @@ pub(super) fn ready_instance_at_use(
     applied: &AppliedComponentPort,
     child: parser::hir::TemplateId,
 ) -> Result<ReadyInstanceAtUse, SummaryBlocker> {
-    let template = facts.hir().template(child).ok_or(SummaryBlocker::ForeignDefinition)?;
-    let mut inputs = Vec::new();
-    for id in &template.ports {
-        let port = facts.hir().port(*id).ok_or(SummaryBlocker::ForeignDefinition)?;
-        if port.direction != Some(PortDirection::Input) {
-            continue;
-        }
-        let symbol = facts.hir().symbol(port.symbol).ok_or(SummaryBlocker::ForeignDefinition)?;
-        if symbol.rank != 0 || port.schema != PortSchema::Signal {
-            return Err(SummaryBlocker::UnsupportedContext);
-        }
-        inputs.push(*id);
+    let Some(CfgNodeKind::Instantiate { target, .. }) =
+        facts.cfg().node(applied.instantiation()).map(|node| &node.kind)
+    else {
+        return Err(SummaryBlocker::WrongInstance);
+    };
+    if facts.instance_relation(applied.handle(), target) != InstanceRelation::Exact {
+        return Err(SummaryBlocker::WrongInstance);
     }
-    let analysis = RelationAnalysis { facts, applied, inputs };
+    ready_inputs(facts, applied.handle().path(), applied.instantiation(), child)
+}
+
+pub(super) fn ready_enumerated_instance(
+    facts: &AnalysisFacts<'_>,
+    instance: &EnumeratedComponentInstance,
+) -> Result<ReadyInstanceAtUse, SummaryBlocker> {
+    let parser::hir::DefinitionRef::Template(child) = instance.callee.context().definition() else {
+        return Err(SummaryBlocker::WrongInstance);
+    };
+    let Some(CfgNodeKind::Instantiate { target, .. }) =
+        facts.cfg().node(instance.instantiation).map(|node| &node.kind)
+    else {
+        return Err(SummaryBlocker::WrongInstance);
+    };
+    if target != &instance.target {
+        return Err(SummaryBlocker::WrongInstance);
+    }
+    let steps = instance
+        .indices
+        .iter()
+        .map(|index| AccessStep::Index {
+            index: ArrayIndex::Constant(index.to_string()),
+            span: target.span,
+        })
+        .collect();
+    let exact = AccessPath { steps, ..target.clone() };
+    ready_inputs(facts, &exact, instance.instantiation, child)
+}
+
+fn ready_inputs(
+    facts: &AnalysisFacts<'_>,
+    instance: &AccessPath,
+    instantiation: NodeId,
+    child: parser::hir::TemplateId,
+) -> Result<ReadyInstanceAtUse, SummaryBlocker> {
+    let inputs = input_ports(facts, child)?;
+    let analysis = RelationAnalysis { facts, instance, instantiation, inputs };
     let result = solve::<_, _, Forward>(facts.cfg(), &analysis, Some(100_000))
         .map_err(|error| SummaryBlocker::LocalAnalysis(format!("{error:?}")))?;
     let states = match result {
@@ -448,26 +487,53 @@ pub(super) fn ready_instance_at_use(
     };
     let mut bindings = BTreeMap::new();
     for (port, binding) in inputs {
-        let InputState::Bound { value, sites } = binding else {
-            return Err(SummaryBlocker::MissingInputBinding);
-        };
-        let mut origins = Vec::new();
-        for id in sites {
-            let origin = facts
-                .cfg()
-                .node(*id)
-                .and_then(|node| node.origin)
-                .ok_or(SummaryBlocker::ExternalSummary)?;
-            if !origins.contains(&origin) {
-                origins.push(origin);
-            }
-        }
-        if origins.is_empty() {
-            return Err(SummaryBlocker::ExternalSummary);
-        }
-        bindings.insert(*port, ConstrainedInputBinding { value: value.clone(), origins });
+        bindings.insert(*port, constrained_binding(facts, binding)?);
     }
     Ok(ReadyInstanceAtUse { bindings })
+}
+
+fn input_ports(
+    facts: &AnalysisFacts<'_>,
+    child: parser::hir::TemplateId,
+) -> Result<Vec<PortId>, SummaryBlocker> {
+    let template = facts.hir().template(child).ok_or(SummaryBlocker::ForeignDefinition)?;
+    let mut inputs = Vec::new();
+    for id in &template.ports {
+        let port = facts.hir().port(*id).ok_or(SummaryBlocker::ForeignDefinition)?;
+        if port.direction != Some(PortDirection::Input) {
+            continue;
+        }
+        let symbol = facts.hir().symbol(port.symbol).ok_or(SummaryBlocker::ForeignDefinition)?;
+        if symbol.rank != 0 || port.schema != PortSchema::Signal {
+            return Err(SummaryBlocker::UnsupportedContext);
+        }
+        inputs.push(*id);
+    }
+    Ok(inputs)
+}
+
+fn constrained_binding(
+    facts: &AnalysisFacts<'_>,
+    binding: &InputState,
+) -> Result<ConstrainedInputBinding, SummaryBlocker> {
+    let InputState::Bound { value, sites } = binding else {
+        return Err(SummaryBlocker::MissingInputBinding);
+    };
+    let mut origins = Vec::new();
+    for id in sites {
+        let origin = facts
+            .cfg()
+            .node(*id)
+            .and_then(|node| node.origin)
+            .ok_or(SummaryBlocker::ExternalSummary)?;
+        if !origins.contains(&origin) {
+            origins.push(origin);
+        }
+    }
+    if origins.is_empty() {
+        return Err(SummaryBlocker::ExternalSummary);
+    }
+    Ok(ConstrainedInputBinding { value: value.clone(), origins })
 }
 
 #[cfg(test)]
@@ -563,7 +629,17 @@ mod tests {
         };
         let applied = provider.apply_component_output(&facts, &caller, &call, &handle);
         let applied = applied.certified().unwrap();
-        let analysis = RelationAnalysis { facts: &facts, applied, inputs: vec![ports[0]] };
+        let crate::hir_cfg::CfgNodeKind::Instantiate { target, .. } =
+            &facts.cfg().node(applied.instantiation()).unwrap().kind
+        else {
+            panic!("expected a checked instantiation");
+        };
+        let analysis = RelationAnalysis {
+            facts: &facts,
+            instance: target,
+            instantiation: applied.instantiation(),
+            inputs: vec![ports[0]],
+        };
         let field = FieldContext::for_curve(Curve::Bn254);
         let states =
             samples(ports[0], ports[1], field.canonical(7.into()), field.canonical(8.into()));

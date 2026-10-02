@@ -1,6 +1,6 @@
 //! Bounded enumeration of checked direct-child output paths in one source scope.
 
-use abstract_interpretation::graph::FlowGraph;
+use abstract_interpretation::graph::{FlowGraph, NodeId};
 use num_traits::ToPrimitive;
 use parser::hir::{AccessPath, AccessStep, ArrayIndex, ComponentId, DefinitionRef, PortId};
 use parser::new_frontend::{PortDirection, Span};
@@ -26,6 +26,7 @@ pub struct EnumeratedComponentOutput {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct EnumeratedComponentInstance {
     pub site: CallSiteId,
+    pub instantiation: NodeId,
     pub target: AccessPath,
     pub component: ComponentId,
     pub indices: Vec<usize>,
@@ -138,7 +139,7 @@ impl ProjectSummaries<'_> {
         let DefinitionRef::Template(child) = call.callee() else {
             return Err(SummaryBlocker::UnsupportedCallForm);
         };
-        let (component, target) = self.instantiated_component(facts, call)?;
+        let (component, target, instantiation) = self.instantiated_component(facts, call)?;
         let bounds =
             facts.component_bounds(component).map_err(|_| SummaryBlocker::UnsupportedContext)?;
         let instance = exact_instance_indices(facts, &target, &bounds)?;
@@ -158,6 +159,7 @@ impl ProjectSummaries<'_> {
         }
         Ok(EnumeratedComponentInstance {
             site: call.site().id(),
+            instantiation,
             target,
             component,
             indices: instance,
@@ -170,7 +172,7 @@ impl ProjectSummaries<'_> {
         &self,
         facts: &AnalysisFacts<'_>,
         call: &ReachableCall<'_>,
-    ) -> Result<(ComponentId, AccessPath), SummaryBlocker> {
+    ) -> Result<(ComponentId, AccessPath, NodeId), SummaryBlocker> {
         let mut component = None;
         for id in facts.cfg().nodes() {
             let Some(CfgNodeKind::Instantiate { target, value }) =
@@ -192,7 +194,7 @@ impl ProjectSummaries<'_> {
                 .iter()
                 .find(|item| item.symbol == target.root)
                 .ok_or(SummaryBlocker::WrongInstance)?;
-            if component.replace((found.id, target.clone())).is_some() {
+            if component.replace((found.id, target.clone(), *id)).is_some() {
                 return Err(SummaryBlocker::DuplicateInstance);
             }
         }

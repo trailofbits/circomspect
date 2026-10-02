@@ -213,30 +213,19 @@ impl AnalysisFacts<'_> {
         handle: &AccessHandle,
         target: &AccessPath,
     ) -> InstanceRelation {
-        let Some(port_position) = handle.path.steps.iter().position(|step| match step {
-            AccessStep::Port { .. } => true,
-            AccessStep::Index { .. } | AccessStep::Tag { .. } => false,
-        }) else {
-            return InstanceRelation::Possible;
-        };
-        let instance = AccessPath {
-            root: handle.path.root,
-            steps: handle.path.steps[..port_position].to_vec(),
-            terminal: handle.path.root,
-            component_input: false,
-            component_output: false,
-            span: handle.path.span,
-        };
+        self.instance_path_relation(handle.path(), target)
+    }
+
+    /// Compare an already checked instantiation path with another source access.
+    /// This reports aliasing only; it does not certify either input path.
+    pub(crate) fn instance_path_relation(
+        &self,
+        instance: &AccessPath,
+        target: &AccessPath,
+    ) -> InstanceRelation {
+        let instance = component_prefix(instance);
+        let target = component_prefix(target);
         let requested = key_for_path(self.hir, self.field, &instance, &BTreeMap::new());
-        let actual_end = target
-            .steps
-            .iter()
-            .position(|step| match step {
-                AccessStep::Port { .. } => true,
-                AccessStep::Index { .. } | AccessStep::Tag { .. } => false,
-            })
-            .unwrap_or(target.steps.len());
-        let target = AccessPath { steps: target.steps[..actual_end].to_vec(), ..target.clone() };
         let actual = key_for_path(self.hir, self.field, &target, &BTreeMap::new());
         if requested.exact_alias(&actual) {
             InstanceRelation::Exact
@@ -484,5 +473,20 @@ impl AnalysisFacts<'_> {
         } else {
             None
         }
+    }
+}
+
+fn component_prefix(path: &AccessPath) -> AccessPath {
+    let end = path.steps.iter().position(|step| match step {
+        AccessStep::Port { .. } => true,
+        AccessStep::Index { .. } | AccessStep::Tag { .. } => false,
+    });
+    AccessPath {
+        root: path.root,
+        terminal: path.root,
+        steps: path.steps[..end.unwrap_or(path.steps.len())].to_vec(),
+        component_input: false,
+        component_output: false,
+        span: path.span,
     }
 }
