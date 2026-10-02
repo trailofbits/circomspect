@@ -4,9 +4,9 @@ use parser::new_frontend::Span;
 use crate::hir_facts::{AccessHandle, AnalysisFacts};
 use crate::interprocedural::{
     AppliedComponentPort, CallBlocker, CallContext, CallOwner, CallReachability, CallSite,
-    CallSiteId, CallerOutputRead, ComposedConstraintFixedOutput, ContextEvidence, FunctionEffects,
-    FunctionSummary, PortSummary, ProjectOutputUse, ProjectSummaries, SummaryBlocker, SummaryFact,
-    ValidatedDefinition, ValidatedHeader, WitnessSite,
+    CallPathSite, CallSiteId, CallerOutputRead, ComposedConstraintFixedOutput, ContextEvidence,
+    FunctionEffects, FunctionSummary, PortSummary, ProjectOutputUse, ProjectSummaries,
+    SummaryBlocker, SummaryFact, ValidatedDefinition, ValidatedHeader, WitnessSite,
 };
 
 use crate::new_rules::{Finding, RuleKind};
@@ -90,6 +90,18 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
     #[must_use]
     pub fn origin(&self) -> crate::interprocedural::ContextOrigin {
         self.evidence.origin()
+    }
+
+    /// Provider-issued source calls from a main or symbolic root to this scope.
+    #[must_use]
+    pub fn call_path(&self) -> &[CallPathSite] {
+        self.evidence.call_path()
+    }
+
+    /// The exact source call that invoked this scope, if it has one.
+    #[must_use]
+    pub fn incoming_call_site(&self) -> Option<&CallPathSite> {
+        self.call_path().last()
     }
 
     /// List call sites owned by the active definition, including unresolved sites.

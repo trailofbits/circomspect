@@ -22,7 +22,7 @@ use parser::hir::{
 use parser::new_frontend::{AssignmentOperator, InputAssignmentOperator};
 
 use crate::hir_cfg::{CfgNodeKind, DefinitionCfg};
-use crate::interprocedural::CallContext;
+use crate::interprocedural::ContextEvidence;
 use access::key_for_path;
 use abstract_interpretation::lattice::Lattice;
 use domains::{DegreeUpper, FieldRange};
@@ -127,7 +127,7 @@ pub struct AnalysisFacts<'a> {
     backward: BackwardResult,
     specialized_parameters: BTreeSet<SymbolId>,
     resolved_deferred: BTreeSet<NodeId>,
-    context_binding: Option<CallContext>,
+    evidence_binding: Option<ContextEvidence>,
 }
 
 /// Compute local facts. External summaries are unavailable until Phase 5.
@@ -189,7 +189,7 @@ fn analyze_seeded<'a>(
         backward,
         specialized_parameters,
         resolved_deferred,
-        context_binding: None,
+        evidence_binding: None,
     })
 }
 
@@ -362,12 +362,12 @@ impl AnalysisFacts<'_> {
         self.resolved_deferred.contains(&node)
     }
 
-    pub(crate) fn bind_context(&mut self, context: CallContext) {
-        self.context_binding = Some(context);
+    pub(crate) fn bind_evidence(&mut self, evidence: ContextEvidence) {
+        self.evidence_binding = Some(evidence);
     }
 
-    pub(crate) fn matches_context(&self, context: &CallContext) -> bool {
-        self.context_binding.as_ref() == Some(context)
+    pub(crate) fn matches_evidence(&self, evidence: &ContextEvidence) -> bool {
+        self.evidence_binding.as_ref() == Some(evidence)
     }
 
     pub(crate) fn reachable_node(&self, node: NodeId) -> Fact<bool> {
