@@ -8,7 +8,7 @@ use parser::hir::{AccessPath, CallTarget, ExprId, ExprKind, HirProject, SymbolId
 use parser::new_frontend::{AssignmentOperator, BinaryOperator, PostfixOperator, UnaryOperator};
 
 use crate::hir_cfg::{CfgEdge, CfgNode, CfgNodeKind, DefinitionCfg, EdgeKind};
-use crate::call_evidence::ExactCallResults;
+use crate::scalar_evidence::ScalarExpressionEvidence;
 
 use super::access::{key_for_path, AccessKey, MayAccessSet};
 use super::domains::DegreeUpper;
@@ -184,7 +184,7 @@ pub struct ForwardAnalysis<'a> {
     pub hir: &'a HirProject,
     pub field: &'a FieldContext,
     initial_values: BTreeMap<SymbolId, FieldValue>,
-    calls: Option<&'a ExactCallResults>,
+    calls: Option<&'a ScalarExpressionEvidence>,
 }
 
 impl<'a> ForwardAnalysis<'a> {
@@ -204,7 +204,7 @@ impl<'a> ForwardAnalysis<'a> {
         hir: &'a HirProject,
         field: &'a FieldContext,
         values: BTreeMap<SymbolId, FieldValue>,
-        calls: Option<&'a ExactCallResults>,
+        calls: Option<&'a ScalarExpressionEvidence>,
     ) -> Self {
         Self { hir, field, initial_values: values, calls }
     }
@@ -212,7 +212,7 @@ impl<'a> ForwardAnalysis<'a> {
     pub(crate) fn with_call_values(
         hir: &'a HirProject,
         field: &'a FieldContext,
-        calls: Option<&'a ExactCallResults>,
+        calls: Option<&'a ScalarExpressionEvidence>,
     ) -> Self {
         Self { hir, field, initial_values: BTreeMap::new(), calls }
     }
@@ -468,7 +468,7 @@ pub fn expression_dependencies(
         }
         ExprKind::Call { target: CallTarget::Function(_), arguments } => {
             if let Some(indices) =
-                analysis.calls.and_then(|calls| calls.input_dependencies(expression))
+                analysis.calls.and_then(|calls| calls.call_input_dependencies(expression))
             {
                 let mut result = BTreeSet::new();
                 for index in indices {
@@ -570,7 +570,7 @@ pub fn expression_degree(
             }
         }
         ExprKind::Call { .. }
-            if analysis.calls.and_then(|calls| calls.value(expression)).is_some() =>
+            if analysis.calls.and_then(|calls| calls.call_value(expression)).is_some() =>
         {
             DegreeUpper::Constant
         }
@@ -852,7 +852,7 @@ pub(crate) fn eval_expression_with_calls(
     field: &FieldContext,
     id: ExprId,
     variables: &BTreeMap<SymbolId, FieldValue>,
-    calls: Option<&ExactCallResults>,
+    calls: Option<&ScalarExpressionEvidence>,
 ) -> Option<FieldValue> {
     let expression = hir.expression(id)?;
     match &expression.kind {
@@ -900,7 +900,7 @@ pub(crate) fn eval_expression_with_calls(
         ExprKind::Parallel(operand) => {
             eval_expression_with_calls(hir, field, *operand, variables, calls)
         }
-        ExprKind::Call { target: CallTarget::Function(_), .. } => calls?.value(id).cloned(),
+        ExprKind::Call { target: CallTarget::Function(_), .. } => calls?.call_value(id).cloned(),
         ExprKind::Access(_)
         | ExprKind::Call { .. }
         | ExprKind::AnonymousComponent { .. }
