@@ -93,8 +93,27 @@ pub enum AccessHandleError {
     WrongRank,
     #[error("the array dimension is not proved in this context")]
     UnprovedShape,
+    #[error("the array dimension is negative or cannot be represented in this context")]
+    InvalidDimension,
     #[error("the array index is outside its proved dimension")]
     IndexOutOfBounds,
+}
+
+impl AccessHandleError {
+    pub(crate) fn proves_invalid_execution(self) -> bool {
+        match self {
+            Self::InvalidDimension | Self::IndexOutOfBounds => true,
+            Self::ForeignComponent
+            | Self::ForeignPort
+            | Self::PortNotInTemplate
+            | Self::NotOutput
+            | Self::UnresolvedTarget
+            | Self::NoInstantiation
+            | Self::OpaquePort
+            | Self::WrongRank
+            | Self::UnprovedShape => false,
+        }
+    }
 }
 
 impl AnalysisFacts<'_> {
@@ -340,8 +359,20 @@ impl AnalysisFacts<'_> {
             return Err(AccessHandleError::UnprovedShape);
         }
         let mut bounds = Vec::with_capacity(symbol.rank);
+        let mut unproved = false;
         for dimension in &symbol.dimensions {
-            bounds.push(self.dimension_bound(*dimension)?);
+            match self.dimension_bound(*dimension) {
+                Ok(bound) => bounds.push(bound),
+                Err(error) => {
+                    if error.proves_invalid_execution() {
+                        return Err(error);
+                    }
+                    unproved = true;
+                }
+            }
+        }
+        if unproved {
+            return Err(AccessHandleError::UnprovedShape);
         }
         Ok(bounds)
     }
@@ -370,25 +401,20 @@ impl AnalysisFacts<'_> {
 
     fn dimension_bound(&self, expression: ExprId) -> Result<usize, AccessHandleError> {
         let expression = self.hir.expression(expression).ok_or(AccessHandleError::UnprovedShape)?;
-        if let ExprKind::Number(text) = &expression.kind {
-            let (digits, radix) = if let Some(hex) = text.strip_prefix("0x") {
-                (hex, 16)
-            } else {
-                (text.as_str(), 10)
+        let value = if let ExprKind::Number(text) = &expression.kind {
+            self.field.parse(text).ok_or(AccessHandleError::UnprovedShape)?
+        } else {
+            let range = self.range(expression.id);
+            let Some(Range::Exact(value)) = range.certified() else {
+                return Err(AccessHandleError::UnprovedShape);
             };
-            return BigInt::parse_bytes(digits.as_bytes(), radix)
-                .and_then(|value| value.to_usize())
-                .ok_or(AccessHandleError::UnprovedShape);
-        }
-        let range = self.range(expression.id);
-        let Some(Range::Exact(value)) = range.certified() else {
-            return Err(AccessHandleError::UnprovedShape);
+            value.clone()
         };
         let zero = self.field.canonical(0.into());
-        if self.field.compare_signed(value, &zero) == Ordering::Less {
-            return Err(AccessHandleError::UnprovedShape);
+        if self.field.compare_signed(&value, &zero) == Ordering::Less {
+            return Err(AccessHandleError::InvalidDimension);
         }
-        value.as_bigint().to_usize().ok_or(AccessHandleError::UnprovedShape)
+        value.as_bigint().to_usize().ok_or(AccessHandleError::InvalidDimension)
     }
 
     fn check_instantiations(

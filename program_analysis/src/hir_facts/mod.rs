@@ -248,6 +248,55 @@ impl AnalysisFacts<'_> {
         self.cfg
     }
 
+    /// Prove whether one CFG edge is reachable in this bound analysis context.
+    /// A provisional fixed point cannot certify an edge, even if its source was visited.
+    pub fn reachable_edge(&self, id: EdgeId) -> Fact<bool> {
+        let Some(edge) = self.cfg.edge(id) else {
+            return Fact::blocked(BTreeSet::from([FactBlocker::ForeignQuery]));
+        };
+        let SolveResult::Complete(facts) = &self.forward else {
+            return Fact::blocked(self.forward_completion_blockers());
+        };
+        let sites = BTreeSet::from([edge.source, edge.target]);
+        let blockers = self.deferred_control_blockers(&sites);
+        if !blockers.is_empty() {
+            return Fact::blocked(blockers);
+        }
+        let Some(source) = facts.get(&edge.source).and_then(|item| item.output.as_ref()) else {
+            return Fact::known(false);
+        };
+        let analysis = ForwardAnalysis::new(self.hir, self.field);
+        match edge.payload.apply(&analysis, source) {
+            TransferOutcome::Known(state) => Fact::known(state.variables().is_some()),
+            TransferOutcome::Opaque { reason, .. } => {
+                Fact::blocked(BTreeSet::from([FactBlocker::OpaqueEdge(id, reason)]))
+            }
+        }
+    }
+
+    fn forward_completion_blockers(&self) -> BTreeSet<FactBlocker> {
+        let SolveResult::Incomplete { blockers, .. } = &self.forward else {
+            return BTreeSet::new();
+        };
+        let mut reasons = BTreeSet::new();
+        for blocker in blockers {
+            let reason = match blocker {
+                Blocker::PendingNode(node) => FactBlocker::Budget(*node),
+                Blocker::OpaqueNode { node, reason } => {
+                    FactBlocker::OpaqueNode(*node, reason.clone())
+                }
+                Blocker::OpaqueEdge { edge, reason } => {
+                    FactBlocker::OpaqueEdge(*edge, reason.clone())
+                }
+            };
+            reasons.insert(reason);
+        }
+        if reasons.is_empty() {
+            reasons.insert(FactBlocker::MissingExit);
+        }
+        reasons
+    }
+
     pub(crate) fn must_execute(&self, node: NodeId) -> Fact<bool> {
         let reachable = self.reachable_node(node);
         let Some(reachable) = reachable.certified() else {

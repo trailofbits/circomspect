@@ -87,7 +87,15 @@ impl ProjectSummaries<'_> {
         if context.definition() != DefinitionRef::Function(id) {
             return SummaryFact::from_result(Err(SummaryBlocker::WrongContext));
         }
-        SummaryFact::from_result(self.compute_function_effects(context))
+        if self.hir().function(id).is_none() {
+            return SummaryFact::from_result(Err(SummaryBlocker::ForeignDefinition));
+        }
+        if let Err(blocker) = self.check_context(context) {
+            return SummaryFact::from_result(Err(blocker));
+        }
+        self.caches.effects.get_or_compute(context.clone(), || {
+            SummaryFact::from_result(self.compute_function_effects(context))
+        })
     }
 
     fn compute_function_effects(

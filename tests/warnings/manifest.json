@@ -535,7 +535,7 @@
     {
       "id": "underconstrained_signal_emit",
       "rule": "underconstrained_signal",
-      "rule_id": "CS0017",
+      "rule_id": "CA01",
       "source": "cases/underconstrained_signal_emit.circom",
       "scope": "Main",
       "curve": "bn128",
@@ -561,7 +561,7 @@
     {
       "id": "underconstrained_signal_no_finding",
       "rule": "underconstrained_signal",
-      "rule_id": "CS0017",
+      "rule_id": "CA01",
       "source": "cases/underconstrained_signal_no_finding.circom",
       "scope": "Main",
       "curve": "bn128",
@@ -577,7 +577,7 @@
     {
       "id": "underconstrained_signal_abstain",
       "rule": "underconstrained_signal",
-      "rule_id": "CS0017",
+      "rule_id": "CA01",
       "source": "cases/underconstrained_signal_abstain.circom",
       "scope": "Main",
       "curve": "bn128",
@@ -612,7 +612,7 @@
       "compiler_class": "success",
       "reason": "constraint-fixed out-of-range input versus witness-only constant",
       "legacy_rule_id": "CS0014",
-      "legacy_observed_count": 2,
+      "legacy_observed_count": 1,
       "legacy_analyzed": true,
       "legacy_observed_evidence": [
         {
@@ -622,15 +622,6 @@
             "startColumn": 19,
             "endLine": 25,
             "endColumn": 96
-          }
-        },
-        {
-          "message": "Inputs to `LessThan` need to be constrained to ensure that they are non-negative",
-          "span": {
-            "startLine": 26,
-            "startColumn": 19,
-            "endLine": 26,
-            "endColumn": 20
           }
         }
       ]
@@ -647,19 +638,9 @@
       "compiler_class": "success",
       "reason": "constraint-fixed out-of-range input versus witness-only constant",
       "legacy_rule_id": "CS0014",
-      "legacy_observed_count": 1,
+      "legacy_observed_count": 0,
       "legacy_analyzed": true,
-      "legacy_observed_evidence": [
-        {
-          "message": "Inputs to `LessThan` need to be constrained to ensure that they are non-negative",
-          "span": {
-            "startLine": 26,
-            "startColumn": 19,
-            "endLine": 26,
-            "endColumn": 20
-          }
-        }
-      ]
+      "legacy_observed_evidence": []
     },
     {
       "id": "unconstrained_less_than_abstain",
@@ -673,28 +654,9 @@
       "compiler_class": "semantic_error",
       "reason": "constraint-fixed out-of-range input versus witness-only constant",
       "legacy_rule_id": "CS0014",
-      "legacy_observed_count": 2,
+      "legacy_observed_count": 0,
       "legacy_analyzed": true,
-      "legacy_observed_evidence": [
-        {
-          "message": "Inputs to `LessThan` need to be constrained to ensure that they are non-negative",
-          "span": {
-            "startLine": 6,
-            "startColumn": 19,
-            "endLine": 6,
-            "endColumn": 20
-          }
-        },
-        {
-          "message": "Inputs to `LessThan` need to be constrained to ensure that they are non-negative",
-          "span": {
-            "startLine": 5,
-            "startColumn": 19,
-            "endLine": 5,
-            "endColumn": 20
-          }
-        }
-      ]
+      "legacy_observed_evidence": []
     },
     {
       "id": "side_effect_free_assignment_emit",

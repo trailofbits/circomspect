@@ -7,6 +7,7 @@ use crate::hir_facts::{
 };
 
 use super::summary::certified;
+use crate::interprocedural::cache::PortKey;
 use super::{CallContext, ProjectSummaries, SummaryBlocker, SummaryFact};
 
 /// Certified generated-constraint relation for one declared template port.
@@ -73,6 +74,24 @@ impl WitnessSite {
 }
 
 impl ProjectSummaries<'_> {
+    fn checked_port_key(
+        &self,
+        id: TemplateId,
+        context: &CallContext,
+        port: PortId,
+        indices: &[usize],
+    ) -> Result<PortKey, SummaryBlocker> {
+        let template = self.hir().template(id).ok_or(SummaryBlocker::ForeignDefinition)?;
+        if context.definition() != DefinitionRef::Template(id) {
+            return Err(SummaryBlocker::WrongContext);
+        }
+        self.check_context(context)?;
+        if !template.ports.contains(&port) {
+            return Err(SummaryBlocker::ForeignDefinition);
+        }
+        Ok(PortKey::new(context, port, indices))
+    }
+
     /// Generated-constraint facts for one scalar declared port in this context.
     pub fn template_port(
         &self,
@@ -91,23 +110,26 @@ impl ProjectSummaries<'_> {
         port: PortId,
         indices: &[usize],
     ) -> SummaryFact<PortSummary> {
-        SummaryFact::from_result(self.with_local_template(id, context, |template, _, facts| {
-            if !template.ports.contains(&port) {
-                return Err(SummaryBlocker::ForeignDefinition);
-            }
-            let handle = facts
-                .port_handle(port, indices)
-                .map_err(|error| SummaryBlocker::LocalAnalysis(error.to_string()))?;
-            let incidence = facts.incidence_handle(&handle);
-            let fixed = facts.constraint_fixed_handle(&handle);
-            Ok(PortSummary {
-                context: context.clone(),
-                port,
-                indices: indices.to_vec(),
-                incidence: *certified(&incidence)?,
-                fixed_value: certified(&fixed)?.clone(),
-            })
-        }))
+        let key = match self.checked_port_key(id, context, port, indices) {
+            Ok(key) => key,
+            Err(blocker) => return SummaryFact::from_result(Err(blocker)),
+        };
+        self.caches.ports.get_or_compute(key, || {
+            SummaryFact::from_result(self.with_local_template(id, context, |_, _, facts| {
+                let handle = facts
+                    .port_handle(port, indices)
+                    .map_err(|error| SummaryBlocker::LocalAnalysis(error.to_string()))?;
+                let incidence = facts.incidence_handle(&handle);
+                let fixed = facts.constraint_fixed_handle(&handle);
+                Ok(PortSummary {
+                    context: context.clone(),
+                    port,
+                    indices: indices.to_vec(),
+                    incidence: *certified(&incidence)?,
+                    fixed_value: certified(&fixed)?.clone(),
+                })
+            }))
+        })
     }
 
     /// Whether this declared port is read in the template's reachable local body.
@@ -117,16 +139,19 @@ impl ProjectSummaries<'_> {
         context: &CallContext,
         port: PortId,
     ) -> SummaryFact<bool> {
-        SummaryFact::from_result(self.with_local_template(id, context, |template, _, facts| {
-            if !template.ports.contains(&port) {
-                return Err(SummaryBlocker::ForeignDefinition);
-            }
-            let handle = facts
-                .port_handle(port, &[])
-                .map_err(|error| SummaryBlocker::LocalAnalysis(error.to_string()))?;
-            let read = facts.read_handle(&handle);
-            Ok(*certified(&read)?)
-        }))
+        let key = match self.checked_port_key(id, context, port, &[]) {
+            Ok(key) => key,
+            Err(blocker) => return SummaryFact::from_result(Err(blocker)),
+        };
+        self.caches.reads.get_or_compute(key, || {
+            SummaryFact::from_result(self.with_local_template(id, context, |_, _, facts| {
+                let handle = facts
+                    .port_handle(port, &[])
+                    .map_err(|error| SummaryBlocker::LocalAnalysis(error.to_string()))?;
+                let read = facts.read_handle(&handle);
+                Ok(*certified(&read)?)
+            }))
+        })
     }
 
     /// Source sites for reachable witness writes to one exact scalar port.
@@ -136,48 +161,53 @@ impl ProjectSummaries<'_> {
         context: &CallContext,
         port: PortId,
     ) -> SummaryFact<Vec<WitnessSite>> {
-        SummaryFact::from_result(self.with_local_template(id, context, |template, cfg, facts| {
-            if !template.ports.contains(&port) {
-                return Err(SummaryBlocker::ForeignDefinition);
-            }
-            facts
-                .port_handle(port, &[])
-                .map_err(|error| SummaryBlocker::LocalAnalysis(error.to_string()))?;
-            let symbol = self
-                .hir()
-                .port(port)
-                .map(|item| item.symbol)
-                .ok_or(SummaryBlocker::ForeignDefinition)?;
-            let mut sites = Vec::new();
-            for id in cfg.nodes() {
-                let Some(node) = cfg.node(*id) else {
-                    return Err(SummaryBlocker::LocalAnalysis("missing witness node".into()));
-                };
-                let relevant = match &node.kind {
-                    CfgNodeKind::Witness { target, .. }
-                    | CfgNodeKind::OpaqueAssignment { target, .. } => target.root == symbol,
-                    CfgNodeKind::Opaque(_) => true,
-                    _ => false,
-                };
-                if !relevant || !*certified(&facts.reachable_node(*id))? {
-                    continue;
-                }
-                match &node.kind {
-                    CfgNodeKind::Witness { target, .. } if target.steps.is_empty() => {
-                        let origin = node.origin.ok_or(SummaryBlocker::LocalAnalysis(
-                            "missing witness origin".into(),
-                        ))?;
-                        sites.push(self.witness_site(origin)?);
+        let key = match self.checked_port_key(id, context, port, &[]) {
+            Ok(key) => key,
+            Err(blocker) => return SummaryFact::from_result(Err(blocker)),
+        };
+        self.caches.witnesses.get_or_compute(key, || {
+            SummaryFact::from_result(self.with_local_template(id, context, |_, cfg, facts| {
+                facts
+                    .port_handle(port, &[])
+                    .map_err(|error| SummaryBlocker::LocalAnalysis(error.to_string()))?;
+                let symbol = self
+                    .hir()
+                    .port(port)
+                    .map(|item| item.symbol)
+                    .ok_or(SummaryBlocker::ForeignDefinition)?;
+                let mut sites = Vec::new();
+                for id in cfg.nodes() {
+                    let Some(node) = cfg.node(*id) else {
+                        return Err(SummaryBlocker::LocalAnalysis("missing witness node".into()));
+                    };
+                    let relevant = match &node.kind {
+                        CfgNodeKind::Witness { target, .. }
+                        | CfgNodeKind::OpaqueAssignment { target, .. } => target.root == symbol,
+                        CfgNodeKind::Opaque(_) => true,
+                        _ => false,
+                    };
+                    if !relevant || !*certified(&facts.reachable_node(*id))? {
+                        continue;
                     }
-                    CfgNodeKind::Witness { .. } => return Err(SummaryBlocker::UnsupportedContext),
-                    CfgNodeKind::OpaqueAssignment { .. } | CfgNodeKind::Opaque(_) => {
-                        return Err(SummaryBlocker::ExternalSummary);
+                    match &node.kind {
+                        CfgNodeKind::Witness { target, .. } if target.steps.is_empty() => {
+                            let origin = node.origin.ok_or(SummaryBlocker::LocalAnalysis(
+                                "missing witness origin".into(),
+                            ))?;
+                            sites.push(self.witness_site(origin)?);
+                        }
+                        CfgNodeKind::Witness { .. } => {
+                            return Err(SummaryBlocker::UnsupportedContext)
+                        }
+                        CfgNodeKind::OpaqueAssignment { .. } | CfgNodeKind::Opaque(_) => {
+                            return Err(SummaryBlocker::ExternalSummary);
+                        }
+                        _ => {}
                     }
-                    _ => {}
                 }
-            }
-            Ok(sites)
-        }))
+                Ok(sites)
+            }))
+        })
     }
 
     fn witness_site(&self, origin: Origin) -> Result<WitnessSite, SummaryBlocker> {
@@ -220,6 +250,9 @@ impl ProjectSummaries<'_> {
             self.invalid_deferred_assignment(&cfg, &template.parameters, context, &facts)
         {
             return Err(SummaryBlocker::InvalidAssignment(expression));
+        }
+        if self.template_definitely_fails(&facts) {
+            return Err(SummaryBlocker::UnsupportedContext);
         }
         work(template, &cfg, &facts)
     }

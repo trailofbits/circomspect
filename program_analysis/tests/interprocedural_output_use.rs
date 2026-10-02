@@ -33,6 +33,11 @@ fn internal_use(source: &str, index: usize) -> SummaryFact<ProjectOutputUse> {
     internal_use_at(source, index, &[], None)
 }
 
+fn assert_no_internal_use_certificate(source: &str) {
+    let result = internal_use_at_option(source, 0, &[], None);
+    assert!(result.as_ref().and_then(|fact| fact.certified()).is_none(), "{source}: {result:?}");
+}
+
 fn internal_use_at(
     source: &str,
     index: usize,
@@ -431,7 +436,7 @@ fn parent_and_child_traps_block_project_unused() {
             "template Child(){{{trap}signal output out;out<==1;}} \
              template Parent(){{component c=Child();}} component main=Parent();"
         );
-        assert!(internal_use(&child, 0).certified().is_none(), "child trap {trap}");
+        assert_no_internal_use_certificate(&child);
     }
 }
 
@@ -461,7 +466,7 @@ fn invalid_local_declaration_dimensions_block_project_unused() {
              template Parent(){{component c=Child();}} component main=Parent();"
         );
         assert_lifted_complete(&child);
-        assert!(internal_use(&child, 0).certified().is_none(), "child {declaration}");
+        assert_no_internal_use_certificate(&child);
     }
     let bus = concat!(
         "bus B(){signal x;} template Child(){signal output out;out<==1;} ",
@@ -510,7 +515,7 @@ fn invalid_bus_field_dimensions_cannot_close_project_output_use() {
         "template Parent(){component c=Child();} component main=Parent();"
     );
     assert_lifted_complete(child);
-    assert!(internal_use(child, 0).certified().is_none());
+    assert_no_internal_use_certificate(child);
     let output = concat!(
         "bus B(){signal x[-1];} template Child(){signal output out;out<==1;} ",
         "template Parent(){B output b;component c=Child();} component main=Parent();"

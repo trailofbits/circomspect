@@ -1,6 +1,7 @@
 //! Resolved interprocedural calls and certified summaries.
 
 mod graph;
+mod cache;
 mod summary;
 mod effects;
 mod template;
@@ -8,6 +9,7 @@ mod context;
 mod component;
 mod input_relation;
 mod project_use;
+mod validity;
 
 pub use context::{
     AnalyzeEvidenceError, ArgumentShape, ArgumentValue, CallContext, ContextEvidence,
