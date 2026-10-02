@@ -791,6 +791,14 @@ impl Transfer<ForwardAnalysis<'_>, ForwardState, String> for CfgNode {
                 };
             }
             CfgNodeKind::Instantiate { .. } => {}
+            CfgNodeKind::DeferredAssert { condition } => {
+                if analysis.evaluate(*condition, variables).is_none() {
+                    return TransferOutcome::Opaque {
+                        provisional: output,
+                        reason: "deferred assertion shape".to_owned(),
+                    };
+                }
+            }
             CfgNodeKind::Entry
             | CfgNodeKind::Exit
             | CfgNodeKind::LoopHeader

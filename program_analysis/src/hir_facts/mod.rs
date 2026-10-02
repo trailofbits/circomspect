@@ -1275,6 +1275,7 @@ impl AnalysisFacts<'_> {
             | CfgNodeKind::Declaration { .. }
             | CfgNodeKind::Return(_)
             | CfgNodeKind::Assert { .. }
+            | CfgNodeKind::DeferredAssert { .. }
             | CfgNodeKind::Log => false,
         }
     }
@@ -1427,6 +1428,7 @@ impl AnalysisFacts<'_> {
             | parser::hir::Effect::For { .. }
             | parser::hir::Effect::Return { .. }
             | parser::hir::Effect::Assert { .. }
+            | parser::hir::Effect::DeferredAssert { .. }
             | parser::hir::Effect::Log { .. }
             | parser::hir::Effect::AnonymousComponent { .. }
             | parser::hir::Effect::Block(_)

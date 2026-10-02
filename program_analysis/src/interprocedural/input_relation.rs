@@ -257,6 +257,7 @@ impl RelationAnalysis<'_> {
             | CfgNodeKind::Declaration { .. }
             | CfgNodeKind::Return(_)
             | CfgNodeKind::Assert { .. }
+            | CfgNodeKind::DeferredAssert { .. }
             | CfgNodeKind::Log => Ok(()),
         };
         match result {

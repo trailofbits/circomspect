@@ -400,6 +400,10 @@ pub enum Effect {
         condition: ExprId,
         span: Span,
     },
+    DeferredAssert {
+        condition: ExprId,
+        span: Span,
+    },
     Log {
         values: Vec<ExprId>,
         span: Span,

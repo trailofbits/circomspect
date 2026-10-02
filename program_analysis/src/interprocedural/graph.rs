@@ -394,6 +394,9 @@ impl<'a> Scanner<'a> {
                 self.expression(*value)?
             }
             Effect::Assert { condition, .. } => self.expression(*condition)?,
+            Effect::DeferredAssert { condition, .. } => {
+                self.provisional(|scanner| scanner.expression(*condition))?;
+            }
             Effect::Log { values, .. } => {
                 for value in values {
                     self.expression(*value)?;

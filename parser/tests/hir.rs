@@ -30,6 +30,26 @@ fn effect_for<'a>(result: &'a circomspect_parser::hir::LiftedProject, name: &str
     &result.hir.block(definition.body).unwrap().effects
 }
 
+#[test]
+fn parameter_assertion_retains_typed_condition_and_source() {
+    let source = "function F(n){assert(n);return 7;}";
+    let result = lift(&[("case.circom", source)], Version::new(2, 2, 3));
+    let Some(DefinitionRef::Function(id)) = result.hir.definition("F") else {
+        panic!("function F must be present")
+    };
+    let body = result.hir.function(id).unwrap().body;
+    let effects = &result.hir.block(body).unwrap().effects;
+    let Some((condition, span)) = effects.iter().find_map(|effect| match effect {
+        Effect::DeferredAssert { condition, span } => Some((condition, span)),
+        _ => None,
+    }) else {
+        panic!("assertion condition must remain in HIR")
+    };
+    let expression = result.hir.expression(*condition).unwrap();
+    let ExprKind::Access(_) = &expression.kind else { panic!("assertion reads n") };
+    assert_eq!(source[span.start()..span.end()].trim(), "assert(n);");
+}
+
 fn max_port_steps(result: &circomspect_parser::hir::LiftedProject) -> usize {
     result
         .hir

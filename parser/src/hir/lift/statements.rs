@@ -91,6 +91,7 @@ impl Lifter<'_> {
                         | Effect::For { .. }
                         | Effect::Return { .. }
                         | Effect::Assert { .. }
+                        | Effect::DeferredAssert { .. }
                         | Effect::Log { .. }
                         | Effect::AnonymousComponent { .. }
                         | Effect::Block(_)
@@ -172,6 +173,7 @@ impl Lifter<'_> {
                     | Effect::For { .. }
                     | Effect::Return { .. }
                     | Effect::Assert { .. }
+                    | Effect::DeferredAssert { .. }
                     | Effect::Log { .. }
                     | Effect::AnonymousComponent { .. }
                     | Effect::Block(_)
@@ -199,7 +201,8 @@ impl Lifter<'_> {
             Effect::If { condition, span, .. }
             | Effect::While { condition, span, .. }
             | Effect::For { condition, span, .. }
-            | Effect::Assert { condition, span } => {
+            | Effect::Assert { condition, span }
+            | Effect::DeferredAssert { condition, span } => {
                 expressions.contains(condition).then_some(Effect::Opaque { reason, span: *span })
             }
             Effect::Return { value, span }
@@ -445,6 +448,7 @@ impl Lifter<'_> {
             Effect::Return { value, .. } | Effect::Assert { condition: value, .. } => {
                 self.expression_is_witness_only(*value)
             }
+            Effect::DeferredAssert { .. } => false,
             Effect::Log { values, .. } => {
                 values.iter().all(|id| self.expression_is_witness_only(*id))
             }
@@ -509,10 +513,13 @@ impl Lifter<'_> {
             }
             Statement::Assert { condition, .. } => {
                 let condition = self.lift_expression(condition);
-                if !self.scalar_arithmetic_operand(condition) {
-                    return vec![self.opaque(span, IncompleteReason::UnknownType)];
+                match self.scalar_shape(condition) {
+                    ScalarShape::Checked => vec![Effect::Assert { condition, span }],
+                    ScalarShape::Deferred => vec![Effect::DeferredAssert { condition, span }],
+                    ScalarShape::Invalid => {
+                        vec![self.opaque(span, IncompleteReason::UnknownType)]
+                    }
                 }
-                vec![Effect::Assert { condition, span }]
             }
             Statement::Log { arguments, .. } => {
                 let values = arguments

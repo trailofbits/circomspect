@@ -9,6 +9,7 @@ use parser::hir::{DefinitionRef, FunctionId};
 use parser::new_frontend::AssignmentOperator;
 
 use crate::hir_cfg::CfgNodeKind;
+use crate::hir_facts::Range;
 
 use super::summary::certified;
 use super::{
@@ -134,6 +135,15 @@ impl ProjectSummaries<'_> {
                     .ok_or(SummaryBlocker::LocalAnalysis("missing effect graph node".into()))?;
                 let effect = match &node.kind {
                     CfgNodeKind::Assert { .. } => Some(Ok(FunctionEffect::Assert)),
+                    CfgNodeKind::DeferredAssert { condition } => {
+                        let fact = match facts.range(*condition).certified() {
+                            Some(Range::Exact(_)) => Ok(FunctionEffect::Assert),
+                            Some(Range::Canonical | Range::Unreachable) | None => {
+                                Err(SummaryBlocker::UnsupportedContext)
+                            }
+                        };
+                        Some(fact)
+                    }
                     CfgNodeKind::Log => Some(Ok(FunctionEffect::Log)),
                     CfgNodeKind::Assignment { operator, .. }
                         if *operator != AssignmentOperator::Assign =>

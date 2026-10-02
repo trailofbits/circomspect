@@ -74,6 +74,9 @@ pub enum CfgNodeKind {
     Assert {
         condition: ExprId,
     },
+    DeferredAssert {
+        condition: ExprId,
+    },
     Log,
     Opaque(IncompleteReason),
 }
@@ -446,6 +449,14 @@ impl Builder<'_> {
                 let tails = self.evaluate(tails, *condition, origin)?;
                 Ok(self.append(tails, CfgNodeKind::Assert { condition: *condition }, origin))
             }
+            Effect::DeferredAssert { condition, .. } => {
+                let tails = self.evaluate(tails, *condition, origin)?;
+                Ok(self.append(
+                    tails,
+                    CfgNodeKind::DeferredAssert { condition: *condition },
+                    origin,
+                ))
+            }
             Effect::Log { values, .. } => {
                 let mut tails = tails;
                 for &value in values {
@@ -746,6 +757,7 @@ impl Builder<'_> {
             | Effect::EqualityConstraint { .. }
             | Effect::OpaqueEquality { .. }
             | Effect::Assert { .. }
+            | Effect::DeferredAssert { .. }
             | Effect::Log { .. } => false,
             Effect::ComponentInstantiation { .. }
             | Effect::If { .. }
@@ -853,6 +865,7 @@ fn effect_span(effect: &Effect, block_span: Span) -> Span {
         | Effect::For { span, .. }
         | Effect::Return { span, .. }
         | Effect::Assert { span, .. }
+        | Effect::DeferredAssert { span, .. }
         | Effect::Log { span, .. }
         | Effect::AnonymousComponent { span, .. }
         | Effect::Opaque { span, .. } => *span,

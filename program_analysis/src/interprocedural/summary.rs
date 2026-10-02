@@ -342,7 +342,7 @@ impl ProjectSummaries<'_> {
         field: &FieldContext,
     ) -> bool {
         match kind {
-            CfgNodeKind::Assert { condition } => {
+            CfgNodeKind::Assert { condition } | CfgNodeKind::DeferredAssert { condition } => {
                 !is_proven_nonzero(facts.range(*condition).certified(), field)
             }
             CfgNodeKind::Opaque(_)
