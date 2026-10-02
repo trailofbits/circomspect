@@ -4,11 +4,12 @@ use std::collections::BTreeSet;
 
 use abstract_interpretation::graph::{FlowGraph, NodeId};
 use parser::hir::{
-    AccessStep, ArrayIndex, CallTarget, ControlGuard, DefinitionRef, ExprId, ExprKind, PortSchema,
+    AccessStep, ArrayIndex, BusTarget, CallTarget, ControlGuard, DefinitionRef, ExprId, ExprKind,
+    PortSchema, Symbol, SymbolId, SymbolKind,
 };
 use parser::new_frontend::{AssignmentOperator, PortDirection};
 
-use crate::hir_cfg::{CfgNodeKind, DefinitionCfg, Origin};
+use crate::hir_cfg::{build_cfg, CfgNodeKind, DefinitionCfg, Origin};
 use crate::hir_facts::{AccessHandle, AnalysisFacts, FieldContext, Range};
 use crate::interprocedural::input_relation::ready_instance_at_use;
 
@@ -356,13 +357,59 @@ impl ProjectSummaries<'_> {
             | CfgNodeKind::OpaqueAssignment { .. }
             | CfgNodeKind::OpaqueEquality { .. }
             | CfgNodeKind::LoopHeader => true,
-            CfgNodeKind::Declaration { symbol } => {
-                facts.checked_symbol_dimensions(*symbol).is_err()
-            }
+            CfgNodeKind::Declaration { symbol } => self.declaration_may_fail(*symbol, facts),
             CfgNodeKind::Entry | CfgNodeKind::Exit | CfgNodeKind::Return(_) | CfgNodeKind::Log => {
                 false
             }
         }
+    }
+
+    fn declaration_may_fail(&self, id: SymbolId, facts: &AnalysisFacts<'_>) -> bool {
+        let Some(symbol) = self.hir().symbol(id) else { return true };
+        if facts.checked_symbol_dimensions(id).is_err() {
+            return true;
+        }
+        if let SymbolKind::Bus = symbol.kind {
+            return self.bus_schema_may_fail(symbol);
+        }
+        false
+    }
+
+    fn bus_schema_may_fail(&self, symbol: &Symbol) -> bool {
+        let Some(BusTarget::Bus(id)) = &symbol.bus_type else { return true };
+        let Some(bus) = self.hir().bus(*id) else { return true };
+        if !bus.parameters.is_empty() || !symbol.bus_arguments.is_empty() {
+            return true;
+        }
+        let definition = DefinitionRef::Bus(*id);
+        let Ok(cfg) = build_cfg(self.hir(), definition) else { return true };
+        let Ok(evidence) = self.symbolic_root(definition) else { return true };
+        let Ok(facts) = self.analyze_for_evidence(&cfg, &evidence, None) else { return true };
+        let field = FieldContext::for_curve(self.curve().clone());
+        for id in cfg.nodes() {
+            let Some(node) = cfg.node(*id) else { return true };
+            if facts.reachable_node(*id).certified() != Some(&true) {
+                return true;
+            }
+            match node.kind {
+                CfgNodeKind::Entry | CfgNodeKind::Exit => {}
+                CfgNodeKind::Evaluate(expression) => {
+                    if self.expression_may_fail(expression, &facts, &field) {
+                        return true;
+                    }
+                }
+                CfgNodeKind::Declaration { symbol } => {
+                    let Some(field) = self.hir().symbol(symbol) else { return true };
+                    if field.kind == SymbolKind::Bus
+                        || facts.checked_symbol_dimensions(symbol).is_err()
+                    {
+                        return true;
+                    }
+                }
+                _ => return true,
+            }
+        }
+        false
     }
 
     fn template_expression_may_fail(

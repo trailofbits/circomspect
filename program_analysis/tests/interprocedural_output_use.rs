@@ -498,6 +498,28 @@ fn context_bound_and_sibling_dimensions_need_valid_sizes() {
 }
 
 #[test]
+fn invalid_bus_field_dimensions_cannot_close_project_output_use() {
+    let source = concat!(
+        "bus B(){signal x[-1];} template Child(){signal output out;out<==1;} ",
+        "template Parent(){component c=Child();B b;} component main=Parent();"
+    );
+    assert_lifted_complete(source);
+    assert!(internal_use(source, 0).certified().is_none());
+    let child = concat!(
+        "bus B(){signal x[-1];} template Child(){B b;signal output out;out<==1;} ",
+        "template Parent(){component c=Child();} component main=Parent();"
+    );
+    assert_lifted_complete(child);
+    assert!(internal_use(child, 0).certified().is_none());
+    let valid = source.replace("x[-1]", "x[1]");
+    assert_lifted_complete(&valid);
+    assert_eq!(
+        internal_use(&valid, 0).certified().map(ProjectOutputUse::status),
+        Some(ProjectOutputStatus::Unused)
+    );
+}
+
+#[test]
 fn a_failing_direct_sibling_template_blocks_project_unused() {
     let source = concat!(
         "template Child(){signal output out;out<==1;} ",
