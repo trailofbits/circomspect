@@ -107,6 +107,53 @@ fn total_handle_cap_is_enforced_across_small_component_arrays() {
 }
 
 #[test]
+fn exactly_256_handles_form_a_complete_certificate() {
+    let mut source = String::from("template Child(){signal output out[16];} template Parent(){");
+    for index in 0..16 {
+        source.push_str(&format!("component c{index}=Child();"));
+    }
+    source.push_str("} component main=Parent();");
+    let result = enumerated(&source);
+    assert_eq!(result.certified().map(Vec::len), Some(256), "{result:?}");
+}
+
+#[test]
+fn duplicate_instantiation_never_yields_a_partial_certificate() {
+    let source = concat!(
+        "template Child(){signal output out;out<==1;} ",
+        "template Parent(){component c;c=Child();c=Child();} ",
+        "component main=Parent();"
+    );
+    let result = enumerated(source);
+    assert!(result.certified().is_none(), "{result:?}");
+}
+
+#[test]
+fn unbound_child_input_enumerates_a_candidate_but_cannot_prove_project_unused() {
+    let source = concat!(
+        "template Child(){signal input x;signal output out;out<==x;} ",
+        "template Parent(){component c=Child();} component main=Parent();"
+    );
+    let lifted = fixture(source);
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let parent = lifted.hir.definition("Parent").unwrap();
+    let site = provider.graph().calls_from(CallOwner::Main(0))[0];
+    let CallReachability::Reachable(main) =
+        provider.graph().reachable_main_call(site.id(), provider.hir())
+    else {
+        panic!("main must be reachable")
+    };
+    let root = provider.main_evidence(&main).unwrap();
+    let cfg = build_cfg(provider.hir(), parent).unwrap();
+    let facts = provider.analyze_for_evidence(&cfg, &root, None).unwrap();
+    let outputs = provider.exact_component_outputs(&facts, &root);
+    let outputs = outputs.certified().unwrap();
+    assert_eq!(outputs.len(), 1);
+    let use_fact = provider.closed_main_component_output_use(&facts, outputs[0].applied_port());
+    assert!(use_fact.certified().is_none());
+}
+
+#[test]
 fn symbolic_child_output_shape_cannot_produce_a_partial_list() {
     let source = concat!(
         "template Child(n){signal output out[n];} ",

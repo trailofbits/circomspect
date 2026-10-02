@@ -91,6 +91,51 @@ fn parameter_query_counts_reachable_reads_after_unrelated_overwrites() {
 }
 
 #[test]
+fn deferred_parameter_overwrite_cannot_certify_no_later_read() {
+    let (hir, definition) = fixture("function Check(p){p=1;return p;}");
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let result = facts.parameter_read(parameter(&hir, definition));
+    assert_ne!(result.certified(), Some(&false));
+}
+
+#[test]
+fn symbolic_assertion_of_parameter_cannot_certify_no_read() {
+    let (hir, definition) = fixture("function Check(p){assert(p);return 7;}");
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let result = facts.parameter_read(parameter(&hir, definition));
+    assert_ne!(result.certified(), Some(&false));
+}
+
+#[test]
+fn every_small_budget_keeps_a_reachable_parameter_read_from_becoming_unused() {
+    let source = "function Check(p){var x=0;for(var i=0;i<17;i++){x+=p;}return x;}";
+    let (hir, definition) = fixture(source);
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    for budget in 0..160 {
+        let facts = analyze(&hir, &cfg, &field, Some(budget)).unwrap();
+        let result = facts.parameter_read(parameter(&hir, definition));
+        assert_ne!(result.certified(), Some(&false), "budget {budget}: {result:?}");
+    }
+}
+
+#[test]
+fn parameter_read_rejects_a_symbol_from_another_definition() {
+    let source = "function Check(p){return 7;} function Other(q){return q;}";
+    let (hir, definition) = fixture(source);
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let other = hir.definition("Other").unwrap();
+    let result = facts.parameter_read(parameter(&hir, other));
+    assert!(result.unavailable().unwrap().contains(&FactBlocker::ForeignDefinition));
+}
+
+#[test]
 fn opaque_dependency_blocks_negative_parameter_proof_but_unrelated_work_does_not() {
     for (source, expected) in [
         ("function Check(p){var x=p;x=1;return x;}", None),

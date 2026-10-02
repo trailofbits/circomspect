@@ -171,6 +171,7 @@ impl AnalysisFacts<'_> {
             | CfgNodeKind::Declaration { .. }
             | CfgNodeKind::Return(_)
             | CfgNodeKind::Assert { .. }
+            | CfgNodeKind::DeferredAssert { .. }
             | CfgNodeKind::Log
             | CfgNodeKind::Opaque(_) => false,
         };
