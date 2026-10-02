@@ -719,6 +719,7 @@ impl<'a> ProjectSummaries<'a> {
         }
         self.check_facts_for_evidence(facts, caller)?;
         let context = self.call_context(call, facts)?;
+        self.check_warning_execution_scope(facts, caller)?;
         self.extend_call_evidence(call.site(), context, caller)
     }
 
