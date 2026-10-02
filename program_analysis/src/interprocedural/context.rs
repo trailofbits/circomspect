@@ -15,6 +15,7 @@ use crate::hir_facts::{
 };
 
 use super::{build_call_graph, CallGraph, CallGraphError, CallOwner, CallSiteId, ReachableCall};
+use crate::interprocedural::cache::SummaryCaches;
 
 const MAX_ARGUMENT_NODES: usize = 4096;
 const MAX_ARGUMENT_DEPTH: usize = 64;
@@ -179,13 +180,19 @@ pub struct ProjectSummaries<'a> {
     lifted: &'a LiftedProject,
     field: FieldContext,
     graph: CallGraph,
+    pub(super) caches: SummaryCaches,
 }
 
 impl<'a> ProjectSummaries<'a> {
     /// Build a provider for one selected compiler curve and the lifted language version.
     pub fn build(lifted: &'a LiftedProject, curve: Curve) -> Result<Self, CallGraphError> {
         let graph = build_call_graph(&lifted.hir)?;
-        Ok(Self { lifted, field: FieldContext::for_curve(curve), graph })
+        Ok(Self {
+            lifted,
+            field: FieldContext::for_curve(curve),
+            graph,
+            caches: SummaryCaches::default(),
+        })
     }
 
     #[must_use]
