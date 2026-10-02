@@ -97,8 +97,12 @@ pub(super) fn unused_values(context: &RuleContext<'_, '_, '_>, result: &mut Rule
     }
     for id in context.facts().cfg().nodes() {
         let Some(node) = context.facts().cfg().node(*id) else { continue };
-        if let CfgNodeKind::Assignment { target, operator: AssignmentOperator::Assign, .. } =
-            &node.kind
+        if let CfgNodeKind::Assignment { target, operator: AssignmentOperator::Assign, .. }
+        | CfgNodeKind::DeferredAssignment {
+            target,
+            operator: AssignmentOperator::Assign,
+            ..
+        } = &node.kind
         {
             if context
                 .hir()

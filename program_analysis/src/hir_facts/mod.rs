@@ -295,7 +295,8 @@ fn analyze_seeded<'a>(
     let pruned_edges = forward_pruned_edges(hir, cfg, field, &forward, options.calls);
     let liveness = LivenessAnalysis::new(hir, field, cfg.definition())
         .with_pruned_edges(pruned_edges.clone())
-        .with_resolved_deferred(resolved_deferred.clone());
+        .with_resolved_deferred(resolved_deferred.clone())
+        .with_calls(options.calls);
     let backward =
         solve::<_, _, Backward>(cfg, &liveness, budget).map_err(AnalysisError::InvalidGraph)?;
     let demand_analysis = DemandAnalysis::new(hir, field, pruned_edges)

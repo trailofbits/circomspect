@@ -622,7 +622,7 @@ fn dead_pure_call_chain_emits_cs0008_at_both_assignment_sources() {
             .cloned()
             .collect();
         assert_eq!(findings.len(), 2);
-        assert_eq!(count(results, RuleKind::UnusedVariableValue), 0);
+        assert_eq!(count(results, RuleKind::UnusedVariableValue), 1);
         let path = std::env::temp_dir().join(format!(
             "circomspect-pure-call-chain-{}-{:?}.json",
             std::process::id(),
@@ -653,6 +653,58 @@ fn dead_pure_call_chain_emits_cs0008_at_both_assignment_sources() {
             (0, 0)
         );
     });
+}
+
+#[test]
+fn resolved_call_results_use_syntactic_liveness_for_cs0006() {
+    for (body, expected) in [
+        ("var y=Pure();return 1;", 1),
+        ("var y=Pure();return y;", 0),
+        ("var y=Pure();y=1;return y;", 1),
+        ("var y=Pure();var z=y;return 1;", 1),
+    ] {
+        let source = format!("function Pure(){{return 7;}}function Check(){{{body}}}");
+        run_case(&source, "Check", |results, _| {
+            assert_eq!(count(results, RuleKind::UnusedVariableValue), expected, "{source}");
+        });
+    }
+}
+
+#[test]
+fn unused_call_result_retains_all_evaluated_argument_reads() {
+    for callee in ["function Pure(a,b){return 7;}", "function Pure(a,b){log(a);return b;}"] {
+        let source = format!(
+            "{callee}function Inner(a){{return 2;}}\
+             function Check(){{var x=1;var z=2;var y=Pure(x,Inner(z));return 7;}}"
+        );
+        run_case(&source, "Check", |results, sources| {
+            let findings: Vec<_> = results
+                .findings()
+                .iter()
+                .filter(|finding| finding.kind() == RuleKind::UnusedVariableValue)
+                .collect();
+            assert_eq!(findings.len(), 1, "{source}");
+            assert!(findings[0].to_report(sources).unwrap().message().contains("`y`"));
+        });
+    }
+}
+
+#[test]
+fn unresolved_or_invalid_calls_withhold_unused_assigned_values() {
+    for callee in ["", "function Pure(){assert(0);return 7;}", "function Pure(){return Missing();}"]
+    {
+        let source = format!("{callee}function Check(){{var y=Pure();return 1;}}");
+        run_case(&source, "Check", |results, _| {
+            assert_eq!(count(results, RuleKind::UnusedVariableValue), 0, "{source}");
+            assert!(
+                results
+                    .abstentions()
+                    .iter()
+                    .any(|abstention| { abstention.kind == RuleKind::UnusedVariableValue }),
+                "{source}"
+            );
+        });
+    }
 }
 
 #[test]

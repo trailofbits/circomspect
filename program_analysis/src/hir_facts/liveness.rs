@@ -9,6 +9,7 @@ use parser::hir::{DefinitionRef, ExprId, HirProject, SymbolId};
 use parser::new_frontend::{AssignmentOperator, PortDirection};
 
 use crate::hir_cfg::{CfgEdge, CfgNode, CfgNodeKind, DefinitionCfg, EdgeKind};
+use crate::scalar_evidence::ScalarExpressionEvidence;
 
 use super::access::{key_for_path, AccessKey};
 use super::field::FieldContext;
@@ -66,6 +67,7 @@ pub struct LivenessAnalysis<'a> {
     pub observable_outputs: BTreeSet<SymbolId>,
     pruned_edges: BTreeSet<EdgeId>,
     resolved_deferred: BTreeSet<NodeId>,
+    calls: Option<&'a ScalarExpressionEvidence>,
 }
 
 impl LivenessAnalysis<'_> {
@@ -91,6 +93,7 @@ impl LivenessAnalysis<'_> {
             observable_outputs,
             pruned_edges: BTreeSet::new(),
             resolved_deferred: BTreeSet::new(),
+            calls: None,
         }
     }
 
@@ -101,6 +104,13 @@ impl LivenessAnalysis<'_> {
 
     pub fn with_resolved_deferred(mut self, nodes: BTreeSet<NodeId>) -> Self {
         self.resolved_deferred = nodes;
+        self
+    }
+}
+
+impl<'a> LivenessAnalysis<'a> {
+    pub(crate) fn with_calls(mut self, calls: Option<&'a ScalarExpressionEvidence>) -> Self {
+        self.calls = calls;
         self
     }
 }
@@ -220,9 +230,13 @@ fn collect(
     live: &mut BTreeSet<AccessKey>,
     variables: &BTreeMap<parser::hir::SymbolId, super::field::FieldValue>,
 ) -> bool {
-    expression.visit_accesses(analysis.hir, &mut |path| {
-        live.insert(key_for_path(analysis.hir, analysis.field, path, variables));
-    })
+    expression.visit_accesses_with(
+        analysis.hir,
+        &|id| analysis.calls.is_some_and(|calls| calls.call_value(id).is_some()),
+        &mut |path| {
+            live.insert(key_for_path(analysis.hir, analysis.field, path, variables));
+        },
+    )
 }
 
 impl Transfer<LivenessAnalysis<'_>, LiveState, String> for CfgEdge {
