@@ -55,6 +55,7 @@ pub enum GraphError<N, E> {
 }
 
 /// A simple graph with IDs fixed by insertion order.
+#[derive(Clone)]
 pub struct IndexedGraph<N, E> {
     node_ids: Vec<NodeId>,
     edge_ids: Vec<EdgeId>,

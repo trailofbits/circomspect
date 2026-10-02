@@ -5,10 +5,10 @@ use std::collections::BTreeSet;
 use abstract_interpretation::graph::FlowGraph;
 use parser::hir::{CallTarget, DefinitionRef, ExprId, ExprKind, FunctionId};
 
-use crate::call_evidence::ExactCallResults;
+use crate::scalar_evidence::ScalarExpressionEvidence;
 use crate::hir_cfg::{build_cfg_with_exact_calls, CfgNodeKind, DefinitionCfg};
-use crate::hir_facts::{AnalysisFacts, Range};
-use crate::hir_facts::{analyze_with_scalar_calls, FieldContext, FieldValue};
+use crate::hir_facts::{AnalysisFacts, FieldValue, OwnedAnalysisOptions, Range};
+use crate::hir_facts::analyze_owned_with_scalar_calls;
 use crate::interprocedural::{CallContext, CallOwner, CallProvenance, CallSite, ProjectSummaries};
 use crate::interprocedural::SummaryBlocker;
 use parser::hir::SymbolId;
@@ -26,22 +26,36 @@ impl ProjectSummaries<'_> {
         parameters: BTreeMap<SymbolId, FieldValue>,
         work: impl FnOnce(&DefinitionCfg, &AnalysisFacts<'_>) -> Result<T, SummaryBlocker>,
     ) -> Result<T, SummaryBlocker> {
+        let facts = self.refined_facts(definition, parameters, None)?;
+        work(facts.cfg(), &facts)
+    }
+
+    pub(super) fn refined_facts<'a>(
+        &'a self,
+        definition: DefinitionRef,
+        parameters: BTreeMap<SymbolId, FieldValue>,
+        budget: Option<usize>,
+    ) -> Result<AnalysisFacts<'a>, SummaryBlocker> {
         const MAX_REFINEMENTS: usize = 64;
-        let field = FieldContext::for_curve(self.curve().clone());
-        let mut calls = ExactCallResults::empty(self.hir(), definition, self.curve().clone());
+        let mut calls =
+            ScalarExpressionEvidence::empty(self.hir(), definition, self.curve().clone());
         for _ in 0..MAX_REFINEMENTS {
             let cfg = build_cfg_with_exact_calls(self.hir(), definition, &calls)
                 .map_err(|error| SummaryBlocker::LocalAnalysis(format!("{error:?}")))?;
-            let facts =
-                analyze_with_scalar_calls(self.hir(), &cfg, &field, parameters.clone(), &calls)
-                    .map_err(|error| SummaryBlocker::LocalAnalysis(format!("{error:?}")))?;
-            let discovered = self.exact_call_results(definition, &facts);
+            let facts = analyze_owned_with_scalar_calls(
+                self.hir(),
+                cfg,
+                self.field_context(),
+                OwnedAnalysisOptions { values: parameters.clone(), calls: calls.clone(), budget },
+            )
+            .map_err(|error| SummaryBlocker::LocalAnalysis(format!("{error:?}")))?;
+            let discovered = self.certified_scalar_evidence(definition, &facts);
             let mut next = calls.clone();
             let changed =
                 next.merge(&discovered).map_err(|()| SummaryBlocker::UnsupportedContext)?;
             if !changed {
-                self.check_exact_assignment_shapes(&cfg, &facts)?;
-                return work(&cfg, &facts);
+                self.check_exact_assignment_shapes(facts.cfg(), &facts)?;
+                return Ok(facts);
             }
             calls = next;
         }
@@ -105,12 +119,13 @@ impl ProjectSummaries<'_> {
         self.context_for(DefinitionRef::Function(*id), arguments)
     }
 
-    pub(super) fn exact_call_results(
+    fn certified_scalar_evidence(
         &self,
         definition: DefinitionRef,
         facts: &AnalysisFacts<'_>,
-    ) -> ExactCallResults {
-        let mut results = ExactCallResults::empty(self.hir(), definition, self.curve().clone());
+    ) -> ScalarExpressionEvidence {
+        let mut results =
+            ScalarExpressionEvidence::empty(self.hir(), definition, self.curve().clone());
         if facts.definition() != definition
             || self.hir().identity() != facts.hir().identity()
             || self.curve() != facts.curve()
@@ -126,7 +141,16 @@ impl ProjectSummaries<'_> {
             else {
                 continue;
             };
-            results.insert(expression, value, dependencies);
+            results.insert_call(expression, value, dependencies);
+        }
+        for expression in self.hir().expressions() {
+            let ExprKind::Access(path) = &expression.kind else { continue };
+            if !path.steps.is_empty() {
+                continue;
+            }
+            let fact = facts.range(expression.id);
+            let Some(Range::Exact(value)) = fact.certified() else { continue };
+            results.insert_access(expression.id, value.clone());
         }
         results
     }

@@ -71,6 +71,49 @@ fn incomplete_body_preserves_valid_header_but_blocks_complete_cfg() {
 }
 
 #[test]
+fn complete_call_result_discharge_is_limited_to_checked_source_sites() {
+    with_scope(
+        "function F(){return 7;} template Check(){var x=F();signal output out;out<==x;}",
+        |context| assert!(context.validated_definition().is_ok()),
+    );
+    with_scope(
+        "function F(){return 7;} template Check(){var x=Missing();signal output out;out<==x;}",
+        |context| {
+            assert_eq!(
+                context.validated_definition().err(),
+                Some(SummaryBlocker::IncompleteDefinition)
+            );
+        },
+    );
+}
+
+#[test]
+fn nonconstant_call_result_paths_cannot_discharge_incomplete_shape() {
+    with_scope(
+        "function F(){return 7;} template Check(n){var x=F();if(n){x=8;}signal output out;out<==x;}",
+        |context| {
+            assert_eq!(
+                context.validated_definition().err(),
+                Some(SummaryBlocker::IncompleteDefinition)
+            );
+        },
+    );
+}
+
+#[test]
+fn budget_limited_call_result_cannot_validate_a_partial_definition() {
+    let lifted =
+        fixture("function F(){return 7;} template Check(){var x=F();signal output out;out<==x;}");
+    let definition = lifted.hir.definition("Check").unwrap();
+    let cfg = build_cfg(&lifted.hir, definition).unwrap();
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let evidence = provider.symbolic_root(definition).unwrap();
+    let facts = provider.analyze_for_evidence(&cfg, &evidence, Some(1)).unwrap();
+    let context = RuleContext::new(&facts, &provider, &evidence).unwrap();
+    assert_eq!(context.validated_definition().err(), Some(SummaryBlocker::IncompleteDefinition));
+}
+
+#[test]
 fn another_definition_error_does_not_invalidate_this_header_or_body() {
     let source = "function Broken(){var x=Missing();return 0;} function Check(){return 7;}";
     with_scope(source, |context| {

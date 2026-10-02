@@ -791,6 +791,27 @@ fn template_port_summary_specializes_constraint_provenance() {
 }
 
 #[test]
+fn complete_call_result_through_local_access_agrees_with_inlining() {
+    let field = FieldContext::for_curve(Curve::Bn254);
+    for value in ["7", "F()"] {
+        let source = format!(
+            "function F(){{return 7;}} template T(){{var x={value};signal output out;out<==x;}}"
+        );
+        let lifted = fixture(&source);
+        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let DefinitionRef::Template(template) = lifted.hir.definition("T").unwrap() else {
+            panic!("template T")
+        };
+        let port = lifted.hir.template(template).unwrap().ports[0];
+        let context = provider.symbolic_context_for(DefinitionRef::Template(template)).unwrap();
+        let summary = provider.template_port(template, &context, port);
+        let summary = summary.certified().expect("complete call result");
+        assert_eq!(summary.incidence(), Incidence::Must, "{value}");
+        assert_eq!(summary.fixed_value(), Some(&field.canonical(7.into())), "{value}");
+    }
+}
+
+#[test]
 fn deferred_variable_guard_specializes_template_constraint_incidence() {
     let lifted = fixture("template T(n){var x=n;signal output y;if(x){y<==1;}else{y<--1;}}");
     let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();

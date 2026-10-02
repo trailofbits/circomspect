@@ -9,7 +9,7 @@ use parser::hir::{
 };
 use parser::new_frontend::{AssignmentOperator, BinaryOperator, PostfixOperator, Span};
 
-use crate::call_evidence::ExactCallResults;
+use crate::scalar_evidence::ScalarExpressionEvidence;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Origin {
@@ -123,6 +123,7 @@ pub struct CfgEdge {
 /// use abstract_interpretation::graph::NodeId;
 /// fn forge(mut cfg: DefinitionCfg, value: NodeId) { cfg.exit = value; }
 /// ```
+#[derive(Clone)]
 pub struct DefinitionCfg {
     graph: IndexedGraph<CfgNode, CfgEdge>,
     local_symbols: BTreeSet<SymbolId>,
@@ -239,7 +240,7 @@ enum SpecializedAssignment {
 
 struct Builder<'a> {
     hir: &'a HirProject,
-    calls: Option<&'a ExactCallResults>,
+    calls: Option<&'a ScalarExpressionEvidence>,
     nodes: Vec<CfgNode>,
     edges: Vec<(NodeId, NodeId, CfgEdge)>,
     conditions: BTreeMap<NodeId, (ExprId, ControlGuard)>,
@@ -901,7 +902,7 @@ pub fn build_cfg(hir: &HirProject, definition: DefinitionRef) -> Result<Definiti
 pub(crate) fn build_cfg_with_exact_calls(
     hir: &HirProject,
     definition: DefinitionRef,
-    calls: &ExactCallResults,
+    calls: &ScalarExpressionEvidence,
 ) -> Result<DefinitionCfg, BuildError> {
     if !calls.belongs_to_definition(hir, definition) {
         return Err(BuildError::ForeignCallResults);
@@ -912,7 +913,7 @@ pub(crate) fn build_cfg_with_exact_calls(
 fn build_cfg_inner<'a>(
     hir: &'a HirProject,
     definition: DefinitionRef,
-    calls: Option<&'a ExactCallResults>,
+    calls: Option<&'a ScalarExpressionEvidence>,
 ) -> Result<DefinitionCfg, BuildError> {
     let (body, local_symbols) = definition_symbols(hir, definition)?;
     let mut builder = Builder {
