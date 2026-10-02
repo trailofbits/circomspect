@@ -877,8 +877,22 @@ impl ForwardState {
         operator: PostfixOperator,
     ) -> Result<(), String> {
         let Self::Reached { variables, symbolic, degrees, .. } = self else { return Ok(()) };
-        symbolic.remove(target.root);
-        apply_update(analysis, target, operator, variables).map_err(str::to_owned)?;
+        let previous = symbolic.get(target.root).cloned();
+        if let Err(reason) = apply_update(analysis, target, operator, variables) {
+            symbolic.remove(target.root);
+            return Err(reason.into());
+        }
+        if let Some(mut previous) = previous {
+            let one = analysis.field.canonical(1.into());
+            let delta = match operator {
+                PostfixOperator::Increment => one,
+                PostfixOperator::Decrement => analysis.field.negate(&one),
+            };
+            previous.add(analysis.field, ExpressionPolynomial::constant(analysis.field, delta));
+            symbolic.insert(target.root, previous);
+        } else {
+            symbolic.remove(target.root);
+        }
         degrees.insert(target.root, DegreeUpper::Constant);
         Ok(())
     }
@@ -1090,6 +1104,7 @@ pub(crate) fn eval_expression_with_calls(
                 BinaryOperator::Add => Some(field.add(&left, &right)),
                 BinaryOperator::Subtract => Some(field.subtract(&left, &right)),
                 BinaryOperator::Multiply => Some(field.multiply(&left, &right)),
+                BinaryOperator::Power => field.bounded_power(&left, &right),
                 BinaryOperator::Equal => Some(field.canonical(i32::from(left == right).into())),
                 BinaryOperator::NotEqual => Some(field.canonical(i32::from(left != right).into())),
                 BinaryOperator::Less => Some(field.canonical(
@@ -1104,7 +1119,16 @@ pub(crate) fn eval_expression_with_calls(
                 BinaryOperator::GreaterEqual => Some(field.canonical(
                     i32::from(field.compare_signed(&left, &right) != Ordering::Less).into(),
                 )),
-                _ => None,
+                BinaryOperator::BooleanOr
+                | BinaryOperator::BooleanAnd
+                | BinaryOperator::BitOr
+                | BinaryOperator::BitXor
+                | BinaryOperator::BitAnd
+                | BinaryOperator::ShiftLeft
+                | BinaryOperator::ShiftRight
+                | BinaryOperator::Divide
+                | BinaryOperator::IntegerDivide
+                | BinaryOperator::Modulo => None,
             }
         }
         ExprKind::Ternary { condition, yes, no } => {
@@ -1134,6 +1158,95 @@ mod tests {
     use parser::new_frontend::{load_sources, Version, VersionPolicy};
     use program_structure::utils::constants::Curve;
     use std::fs;
+
+    #[test]
+    fn compile_time_power_requires_a_bounded_nonnegative_exponent() {
+        let directory =
+            std::env::temp_dir().join(format!("circomspect-exponent-{}", std::process::id()));
+        fs::create_dir_all(&directory).unwrap();
+        let source = directory.join("case.circom");
+        fs::write(&source, "function F(i){return 2**i;}").unwrap();
+        let loaded =
+            load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
+        let hir = lift_project(&loaded).hir;
+        let expression = hir.expressions().iter().find_map(|expression| {
+            let ExprKind::Binary { operator: BinaryOperator::Power, .. } = expression.kind else {
+                return None;
+            };
+            Some(expression.id)
+        });
+        let expression = expression.unwrap();
+        let parameter = hir.symbols().iter().find(|symbol| symbol.name == "i").unwrap().id;
+        for curve in [Curve::Bn254, Curve::Goldilocks] {
+            let field = FieldContext::for_curve(curve);
+            for exponent in [0usize, 1, 64, 254, 512] {
+                let value = field.canonical(exponent.into());
+                let variables = BTreeMap::from([(parameter, value)]);
+                let result = eval_expression(&hir, &field, expression, &variables);
+                let expected = field.canonical(num_bigint::BigInt::from(1u8) << exponent);
+                assert_eq!(result, Some(expected));
+            }
+            for exponent in [513_i32, -1] {
+                let value = field.canonical(exponent.into());
+                let variables = BTreeMap::from([(parameter, value)]);
+                assert_eq!(eval_expression(&hir, &field, expression, &variables), None);
+            }
+            assert_eq!(eval_expression(&hir, &field, expression, &BTreeMap::new()), None);
+        }
+    }
+
+    #[test]
+    fn proved_induction_update_retains_constant_symbolic_shape_monotonically() {
+        let directory =
+            std::env::temp_dir().join(format!("circomspect-induction-{}", std::process::id()));
+        fs::create_dir_all(&directory).unwrap();
+        let source = directory.join("case.circom");
+        fs::write(&source, "function F(){var i=0;i++;return i;}").unwrap();
+        let loaded =
+            load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
+        let hir = lift_project(&loaded).hir;
+        let cfg = crate::hir_cfg::build_cfg(&hir, hir.definition("F").unwrap()).unwrap();
+        let node = cfg
+            .nodes()
+            .iter()
+            .filter_map(|site| cfg.node(*site))
+            .find(|node| {
+                let CfgNodeKind::Update { .. } = &node.kind else { return false };
+                true
+            })
+            .unwrap();
+        let i = hir.symbols().iter().find(|symbol| symbol.name == "i").unwrap().id;
+        let field = FieldContext::for_curve(Curve::Bn254);
+        let zero = field.canonical(0.into());
+        let one = field.canonical(1.into());
+        let mut precise = ForwardState::boundary();
+        let ForwardState::Reached { variables, symbolic, .. } = &mut precise else {
+            panic!("reached boundary")
+        };
+        variables.insert(i, zero.clone());
+        symbolic.insert(i, ExpressionPolynomial::constant(&field, zero.clone()));
+        let mut broad = ForwardState::boundary();
+        let ForwardState::Reached { variables, .. } = &mut broad else {
+            panic!("reached boundary")
+        };
+        variables.insert(i, zero);
+        assert!(precise.leq(&broad));
+        let analysis = ForwardAnalysis::new(&hir, &field);
+        let TransferOutcome::Known(precise) = node.apply(&analysis, &precise) else {
+            panic!("proved induction update")
+        };
+        let TransferOutcome::Known(broad) = node.apply(&analysis, &broad) else {
+            panic!("proved induction update")
+        };
+        assert!(precise.leq(&broad));
+        assert_eq!(precise.variables().unwrap().get(&i), Some(&one));
+        assert_eq!(broad.variables().unwrap().get(&i), Some(&one));
+        assert_eq!(
+            precise.symbolic().unwrap().get(i),
+            Some(&ExpressionPolynomial::constant(&field, one))
+        );
+        assert!(broad.symbolic().unwrap().get(i).is_none());
+    }
 
     fn exit_value(alternative: &str) -> Option<FieldValue> {
         let directory = std::env::temp_dir()

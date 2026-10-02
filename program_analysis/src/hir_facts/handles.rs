@@ -13,8 +13,10 @@ use parser::hir::{
 use parser::new_frontend::PortDirection;
 use program_structure::utils::constants::Curve;
 
-use super::access::{key_for_path, AccessKey};
-use super::{AnalysisFacts, Range};
+use crate::hir_facts::access::{key_for_path, AccessKey};
+use crate::hir_facts::field::FieldValue;
+use crate::hir_facts::forward::eval_expression;
+use crate::hir_facts::{AnalysisFacts, Range};
 use crate::hir_cfg::{CfgNode, CfgNodeKind};
 use crate::interprocedural::CallContext;
 
@@ -119,6 +121,29 @@ impl AccessHandleError {
 impl AnalysisFacts<'_> {
     /// Prove every indexed step of a source access under these bound facts.
     pub(crate) fn checked_access_bounds(&self, path: &AccessPath) -> Result<(), AccessHandleError> {
+        self.checked_access_bounds_using(path, &|index| self.access_index_value(index))
+    }
+
+    pub(crate) fn checked_access_bounds_at(
+        &self,
+        path: &AccessPath,
+        values: &BTreeMap<SymbolId, FieldValue>,
+    ) -> Result<(), AccessHandleError> {
+        self.checked_access_bounds_using(path, &|index| match index {
+            ArrayIndex::Constant(_) => self.access_index_value(index),
+            ArrayIndex::Symbolic(expression) => {
+                eval_expression(self.hir, self.field, *expression, values)
+                    .map(|value| value.as_bigint().clone())
+                    .ok_or(AccessHandleError::UnprovedShape)
+            }
+        })
+    }
+
+    fn checked_access_bounds_using(
+        &self,
+        path: &AccessPath,
+        index_value: &impl Fn(&ArrayIndex) -> Result<BigInt, AccessHandleError>,
+    ) -> Result<(), AccessHandleError> {
         let mut symbol = self.hir.symbol(path.root).ok_or(AccessHandleError::UnprovedShape)?;
         let mut dimension = 0;
         for step in &path.steps {
@@ -131,7 +156,7 @@ impl AnalysisFacts<'_> {
                         .dimensions
                         .get(dimension)
                         .ok_or(AccessHandleError::UnprovedShape)?;
-                    let value = self.access_index_value(index)?;
+                    let value = index_value(index)?;
                     self.check_index_bound(&value, size)?;
                     dimension += 1;
                 }

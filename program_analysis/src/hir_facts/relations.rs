@@ -335,7 +335,7 @@ impl AnalysisFacts<'_> {
             self.hir,
             &|expression| self.exact_call_value(expression).is_some(),
             &mut |path| {
-                let fact = self.exact_access_key(path);
+                let fact = self.exact_access_key_at(path, site);
                 if let Some(unavailable) = fact.unavailable() {
                     blockers.extend(unavailable.iter().cloned());
                 }

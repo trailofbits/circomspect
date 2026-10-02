@@ -9,8 +9,10 @@ use program_structure::utils::constants::Curve;
 use crate::hir_cfg::Origin;
 use crate::hir_facts::relations::polynomial::{boolean_equation, reconstruction_equation};
 use crate::hir_facts::relations::MustEquations;
-use crate::hir_facts::{AccessKey, AnalysisFacts, Fact, FactBlocker};
+use crate::hir_facts::{AccessHandle, AccessKey, AnalysisFacts, Fact, FactBlocker};
 use crate::interprocedural::ContextEvidence;
+
+const MAX_PROVED_BITS: usize = 512;
 
 /// Generated local equations for an exact input and ordered Boolean bits.
 ///
@@ -74,7 +76,6 @@ impl AnalysisFacts<'_> {
         input: &AccessPath,
         bits: &[AccessPath],
     ) -> Fact<Option<BitDecomposition>> {
-        const MAX_PROVED_BITS: usize = 512;
         if bits.is_empty() || bits.len() > MAX_PROVED_BITS {
             return Fact::blocked(BTreeSet::from([FactBlocker::Budget(self.cfg.exit())]));
         }
@@ -89,6 +90,44 @@ impl AnalysisFacts<'_> {
             Ok(keys) => keys,
             Err(blockers) => return Fact::blocked(blockers),
         };
+        self.certify_bit_decomposition(evidence, input, bits)
+    }
+
+    /// Prove a local decomposition using context-bound, schema-checked ports.
+    ///
+    /// Handles can name exact array elements even when source uses an induction
+    /// variable. Every handle must belong to this definition and context.
+    pub fn bit_decomposition_handles(
+        &self,
+        input: &AccessHandle,
+        bits: &[AccessHandle],
+    ) -> Fact<Option<BitDecomposition>> {
+        if bits.is_empty() || bits.len() > MAX_PROVED_BITS {
+            return Fact::blocked(BTreeSet::from([FactBlocker::Budget(self.cfg.exit())]));
+        }
+        let Some(evidence) = &self.evidence_binding else {
+            return Fact::blocked(BTreeSet::from([FactBlocker::ForeignQuery]));
+        };
+        let input = match self.local_signal_handle_key(input) {
+            Ok(key) => key,
+            Err(blockers) => return Fact::blocked(blockers),
+        };
+        let mut keys = Vec::with_capacity(bits.len());
+        for bit in bits {
+            match self.local_signal_handle_key(bit) {
+                Ok(key) => keys.push(key),
+                Err(blockers) => return Fact::blocked(blockers),
+            }
+        }
+        self.certify_bit_decomposition(evidence, input, keys)
+    }
+
+    fn certify_bit_decomposition(
+        &self,
+        evidence: &ContextEvidence,
+        input: AccessKey,
+        bits: Vec<AccessKey>,
+    ) -> Fact<Option<BitDecomposition>> {
         let mut unique = BTreeSet::new();
         for bit in &bits {
             if bit == &input || !unique.insert(bit) {
@@ -114,14 +153,28 @@ impl AnalysisFacts<'_> {
     }
 
     fn local_signal_key(&self, path: &AccessPath) -> Result<AccessKey, BTreeSet<FactBlocker>> {
+        self.check_local_signal(path)?;
+        let fact = self.exact_access_key(path);
+        fact.certified().cloned().ok_or_else(|| fact.unavailable().cloned().unwrap_or_default())
+    }
+
+    fn local_signal_handle_key(
+        &self,
+        handle: &AccessHandle,
+    ) -> Result<AccessKey, BTreeSet<FactBlocker>> {
+        self.check_local_signal(handle.path())?;
+        let fact = self.exact_handle_key(handle);
+        fact.certified().cloned().ok_or_else(|| fact.unavailable().cloned().unwrap_or_default())
+    }
+
+    fn check_local_signal(&self, path: &AccessPath) -> Result<(), BTreeSet<FactBlocker>> {
         let Some(symbol) = self.hir.symbol(path.root) else {
             return Err(BTreeSet::from([FactBlocker::ForeignQuery]));
         };
         if symbol.kind != SymbolKind::Signal || path.root != path.terminal {
             return Err(BTreeSet::from([FactBlocker::AggregateAccess]));
         }
-        let fact = self.exact_access_key(path);
-        fact.certified().cloned().ok_or_else(|| fact.unavailable().cloned().unwrap_or_default())
+        Ok(())
     }
 
     fn local_bit_keys(

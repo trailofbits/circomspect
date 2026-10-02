@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
 use num_bigint::BigInt;
-use num_traits::{Signed, Zero};
+use num_traits::{Signed, ToPrimitive, Zero};
 use program_structure::utils::constants::Curve;
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -78,6 +78,19 @@ impl FieldContext {
     #[must_use]
     pub fn multiply(&self, left: &FieldValue, right: &FieldValue) -> FieldValue {
         self.canonical(&left.0 * &right.0)
+    }
+
+    /// Evaluate a proved small compile-time exponent in the selected field.
+    pub(crate) fn bounded_power(
+        &self,
+        base: &FieldValue,
+        exponent: &FieldValue,
+    ) -> Option<FieldValue> {
+        let exponent = exponent.0.to_u16()?;
+        if exponent > 512 {
+            return None;
+        }
+        Some(FieldValue(base.0.modpow(&BigInt::from(exponent), &self.modulus)))
     }
 
     /// Invert a nonzero canonical value in the selected prime field.

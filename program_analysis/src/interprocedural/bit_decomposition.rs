@@ -2,7 +2,9 @@
 
 use parser::hir::AccessPath;
 
-use crate::hir_facts::{AnalysisFacts, BitAmbiguityOutcome, BitDecomposition, ProofBudget};
+use crate::hir_facts::{
+    AccessHandle, AnalysisFacts, BitAmbiguityOutcome, BitDecomposition, ProofBudget,
+};
 use crate::interprocedural::summary::certified;
 use crate::interprocedural::{
     ContextEvidence, ContextOrigin, ProjectSummaries, SummaryBlocker, SummaryFact,
@@ -45,6 +47,23 @@ impl ProjectSummaries<'_> {
         bits: &[AccessPath],
     ) -> SummaryFact<Option<BitDecomposition>> {
         SummaryFact::from_result(self.validated_bit_decomposition(facts, evidence, input, bits))
+    }
+
+    /// Certify a local relation for exact, context-bound template ports.
+    ///
+    /// This proves generated body equations in a validated root scope. An
+    /// accepted input domain and two satisfying models require separate proof.
+    pub fn template_bit_decomposition_handles(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        evidence: &ContextEvidence,
+        input: &AccessHandle,
+        bits: &[AccessHandle],
+    ) -> SummaryFact<Option<BitDecomposition>> {
+        let result = self
+            .check_template_constraint_scope(facts, evidence)
+            .and_then(|()| Ok(certified(&facts.bit_decomposition_handles(input, bits))?.clone()));
+        SummaryFact::from_result(result)
     }
 
     fn validated_bit_decomposition(

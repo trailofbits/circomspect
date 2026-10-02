@@ -359,7 +359,7 @@ impl AnalysisFacts<'_> {
                 .insert(FactBlocker::SignalRead(check.site, SignalReadIssue::UnresolvedAccess));
             return;
         }
-        let key = self.exact_access_key(path);
+        let key = self.exact_access_key_at(path, check.site);
         let Some(key) = key.certified() else {
             check.blockers.extend(key.unavailable().cloned().unwrap_or_default());
             return;
@@ -526,7 +526,7 @@ impl AnalysisFacts<'_> {
         for site in self.cfg.nodes() {
             let Some(node) = self.cfg.node(*site) else { continue };
             let CfgNodeKind::Witness { target, .. } = &node.kind else { continue };
-            if self.exact_access_key(target).certified() != Some(key) {
+            if self.exact_access_key_at(target, *site).certified() != Some(key) {
                 continue;
             }
             let Some(WriteState::Reached { may_written, .. }) =
@@ -634,7 +634,7 @@ impl AnalysisFacts<'_> {
             | CfgNodeKind::DeferredAssert { .. }
             | CfgNodeKind::Log => return,
         };
-        let key = self.exact_access_key(path);
+        let key = self.exact_access_key_at(path, site);
         if let Some(key) = key.certified() {
             exact.insert(site, key.clone());
         } else {

@@ -233,6 +233,16 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
         self.summaries.template_bit_decomposition(self.facts, self.evidence, input, bits)
     }
 
+    /// Request a validated bit relation for exact ports in this root template.
+    #[must_use]
+    pub fn template_bit_decomposition_handles(
+        &self,
+        input: &AccessHandle,
+        bits: &[AccessHandle],
+    ) -> SummaryFact<Option<BitDecomposition>> {
+        self.summaries.template_bit_decomposition_handles(self.facts, self.evidence, input, bits)
+    }
+
     /// Enumerate every checked direct-child output in this exact source scope.
     ///
     /// Missing shapes, calls, or the bounded handle budget make the result
