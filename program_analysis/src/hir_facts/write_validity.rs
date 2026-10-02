@@ -228,13 +228,14 @@ struct ReadCheck<'a> {
     uncertain: &'a [UncertainWrite],
     blockers: &'a mut BTreeSet<FactBlocker>,
     constructor: &'a dyn Fn(ExprId) -> bool,
+    output: &'a dyn Fn(&AccessPath) -> bool,
 }
 
 impl AnalysisFacts<'_> {
     /// Require every reachable signal read to have a prior exact body write
     /// or an input-port initialization; input-port writes are invalid.
     pub(crate) fn body_signal_reads_ready(&self) -> Fact<()> {
-        self.body_signal_reads_ready_by(&|_| false)
+        self.body_signal_reads_ready_by(&|_| false, &|_| false)
     }
 
     /// Permit only provider-validated constructors bound to these exact source facts.
@@ -245,10 +246,16 @@ impl AnalysisFacts<'_> {
         if self.evidence_binding.as_ref() != Some(constructors.evidence()) {
             return Fact::blocked(BTreeSet::from([FactBlocker::ForeignQuery]));
         }
-        self.body_signal_reads_ready_by(&|call| constructors.contains(call))
+        self.body_signal_reads_ready_by(&|call| constructors.contains(call), &|path| {
+            constructors.allows_output(self, path)
+        })
     }
 
-    fn body_signal_reads_ready_by(&self, constructor: &dyn Fn(ExprId) -> bool) -> Fact<()> {
+    fn body_signal_reads_ready_by(
+        &self,
+        constructor: &dyn Fn(ExprId) -> bool,
+        output: &dyn Fn(&AccessPath) -> bool,
+    ) -> Fact<()> {
         let (facts, uncertain) = match self.solve_body_writes() {
             Ok(result) => result,
             Err(blockers) => return Fact::blocked(blockers),
@@ -268,6 +275,7 @@ impl AnalysisFacts<'_> {
                 uncertain: &uncertain,
                 blockers: &mut blockers,
                 constructor,
+                output,
             };
             self.node_read_blockers(&node.kind, &mut check);
         }
@@ -324,6 +332,9 @@ impl AnalysisFacts<'_> {
     }
 
     fn path_read_blockers(&self, path: &AccessPath, check: &mut ReadCheck<'_>) {
+        if (check.output)(path) {
+            return;
+        }
         let Some(symbol) = self.hir.symbol(path.terminal) else {
             check
                 .blockers

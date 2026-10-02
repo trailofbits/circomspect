@@ -4,20 +4,18 @@ use std::collections::BTreeSet;
 
 use abstract_interpretation::graph::{FlowGraph, NodeId};
 use parser::hir::{
-    AccessStep, ArrayIndex, BusTarget, CallTarget, ControlGuard, DefinitionRef, ExprId, ExprKind,
-    PortSchema, Symbol, SymbolId, SymbolKind,
+    AccessPath, AccessStep, ArrayIndex, BusTarget, CallTarget, ControlGuard, DefinitionRef, ExprId,
+    ExprKind, PortSchema, Symbol, SymbolId, SymbolKind,
 };
-use parser::new_frontend::{AssignmentOperator, PortDirection};
+use parser::new_frontend::{AssignmentOperator, PortDirection, Span};
 
 use crate::hir_cfg::{build_cfg, CfgNodeKind, DefinitionCfg, Origin};
 use crate::hir_facts::{AccessHandle, AnalysisFacts, FieldContext, Range};
-use crate::interprocedural::input_relation::ready_instance_at_use;
-
-use super::component::LocalOutputUse;
-use super::summary::{certified, is_proven_nonzero};
-use super::{
-    AppliedComponentPort, CallOwner, CallReachability, ContextEvidence, ContextOrigin,
-    ProjectSummaries, SummaryBlocker, SummaryFact,
+use crate::interprocedural::component::LocalOutputUse;
+use crate::interprocedural::summary::{certified, is_proven_nonzero};
+use crate::interprocedural::{
+    AppliedComponentPort, CallOwner, CallSiteId, ContextEvidence, ContextOrigin, ProjectSummaries,
+    SummaryBlocker, SummaryFact,
 };
 
 /// Project-root observation of one exact output path.
@@ -33,7 +31,7 @@ enum OutputTarget {
     Exported(Box<AccessHandle>),
 }
 
-/// A project-wide output-use result for the bounded direct-main subset.
+/// A project-wide output-use result for one bounded main-rooted instance chain.
 ///
 /// Only the provider can construct this after validating main, project
 /// completeness, and an exact output path. `Unused` never describes a library
@@ -44,6 +42,48 @@ pub struct ProjectOutputUse {
     target: OutputTarget,
     status: ProjectOutputStatus,
     source_reads: Vec<Origin>,
+    source_span: Span,
+    instance_path: Vec<ProjectInstanceStep>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProjectInstanceStep {
+    site: CallSiteId,
+    target: AccessPath,
+    indices: Vec<usize>,
+    callee: ContextEvidence,
+}
+
+impl ProjectInstanceStep {
+    pub(super) fn new(
+        site: CallSiteId,
+        target: AccessPath,
+        indices: Vec<usize>,
+        callee: ContextEvidence,
+    ) -> Self {
+        Self { site, target, indices, callee }
+    }
+
+    #[must_use]
+    pub fn site(&self) -> CallSiteId {
+        self.site
+    }
+
+    #[must_use]
+    pub fn indices(&self) -> &[usize] {
+        &self.indices
+    }
+
+    #[must_use]
+    pub fn callee_evidence(&self) -> &ContextEvidence {
+        &self.callee
+    }
+}
+
+pub(super) struct ProjectOutputEvidence {
+    pub reads: Vec<Origin>,
+    pub span: Span,
+    pub path: Vec<ProjectInstanceStep>,
 }
 
 impl ProjectOutputUse {
@@ -69,6 +109,43 @@ impl ProjectOutputUse {
     pub fn source_reads(&self) -> &[Origin] {
         &self.source_reads
     }
+
+    #[must_use]
+    pub fn source_span(&self) -> Span {
+        self.source_span
+    }
+
+    #[must_use]
+    pub fn instance_depth(&self) -> usize {
+        self.instance_path.len()
+    }
+
+    #[must_use]
+    pub fn instance_path(&self) -> &[ProjectInstanceStep] {
+        &self.instance_path
+    }
+
+    #[must_use]
+    pub fn output_indices(&self) -> Option<&[usize]> {
+        let OutputTarget::Component(applied) = &self.target else { return None };
+        Some(applied.port_summary().indices())
+    }
+
+    pub(super) fn component(
+        main: ContextEvidence,
+        applied: AppliedComponentPort,
+        status: ProjectOutputStatus,
+        evidence: ProjectOutputEvidence,
+    ) -> Self {
+        Self {
+            main,
+            target: OutputTarget::Component(Box::new(applied)),
+            status,
+            source_reads: evidence.reads,
+            source_span: evidence.span,
+            instance_path: evidence.path,
+        }
+    }
 }
 
 impl ProjectSummaries<'_> {
@@ -90,53 +167,20 @@ impl ProjectSummaries<'_> {
         facts: &AnalysisFacts<'_>,
         applied: &AppliedComponentPort,
     ) -> Result<ProjectOutputUse, SummaryBlocker> {
-        let main = applied.caller_evidence();
-        self.check_main_root(facts, main)?;
-        let DefinitionRef::Template(child) = applied.callee_evidence().context().definition()
-        else {
-            return Err(SummaryBlocker::WrongInstance);
+        self.check_facts_for_evidence(facts, applied.caller_evidence())?;
+        let ContextOrigin::Main(_) = applied.caller_evidence().origin() else {
+            return Err(SummaryBlocker::UnsupportedContext);
         };
-        let template = self.hir().template(child).ok_or(SummaryBlocker::ForeignDefinition)?;
-        let mut has_inputs = false;
-        for id in &template.ports {
-            let port = self.hir().port(*id).ok_or(SummaryBlocker::ForeignDefinition)?;
-            if port.direction == Some(PortDirection::Input) {
-                has_inputs = true;
-            }
-        }
-        self.check_parent_components_complete(facts)?;
-        self.check_template_execution(facts.cfg(), facts)?;
-        self.check_direct_siblings(facts, applied, has_inputs)?;
-        if has_inputs {
-            let root = applied.handle().path().root;
-            let component = self.hir().symbol(root).ok_or(SummaryBlocker::ForeignDefinition)?;
-            if component.rank != 0 {
-                return Err(SummaryBlocker::UnsupportedContext);
-            }
-            ready_instance_at_use(facts, applied, child)?;
-        }
-        self.check_child_has_no_components(child, applied)?;
-        self.with_local_template(child, applied.callee_evidence().context(), |_, cfg, facts| {
-            self.check_template_execution(cfg, facts)
-        })?;
-        let use_state = self.local_output_use_result(facts, applied)?;
-        let use_state = match use_state {
-            LocalOutputUse::Read(sites) => LocalOutputUse::Read(sites),
-            LocalOutputUse::NoLocalRead => self.child_output_use(child, applied)?,
-        };
-        let (status, source_reads) = match use_state {
-            LocalOutputUse::Read(sites) => (ProjectOutputStatus::Read, sites),
-            LocalOutputUse::NoLocalRead => (ProjectOutputStatus::Unused, Vec::new()),
-        };
-        Ok(ProjectOutputUse {
-            main: main.clone(),
-            target: OutputTarget::Component(Box::new(applied.clone())),
-            status,
-            source_reads,
-        })
+        let uses = self.closed_project_uses(facts, applied.caller_evidence())?;
+        uses.into_iter()
+            .find(|proof| match &proof.target {
+                OutputTarget::Component(found) => found.as_ref() == applied,
+                OutputTarget::Exported(_) => false,
+            })
+            .ok_or(SummaryBlocker::WrongInstance)
     }
 
-    fn check_parent_components_complete(
+    pub(super) fn check_parent_components_complete(
         &self,
         facts: &AnalysisFacts<'_>,
     ) -> Result<(), SummaryBlocker> {
@@ -203,102 +247,7 @@ impl ProjectSummaries<'_> {
         }
     }
 
-    fn check_direct_siblings(
-        &self,
-        facts: &AnalysisFacts<'_>,
-        applied: &AppliedComponentPort,
-        has_inputs: bool,
-    ) -> Result<(), SummaryBlocker> {
-        for id in facts.cfg().nodes() {
-            if *id == applied.instantiation() {
-                continue;
-            }
-            let Some(CfgNodeKind::Instantiate { value, .. }) =
-                facts.cfg().node(*id).map(|node| &node.kind)
-            else {
-                continue;
-            };
-            if !*certified(&facts.reachable_node(*id))? {
-                continue;
-            }
-            if has_inputs {
-                return Err(SummaryBlocker::UnsupportedContext);
-            }
-            self.check_no_input_sibling(facts, *value, applied.caller_evidence())?;
-        }
-        Ok(())
-    }
-
-    fn check_no_input_sibling(
-        &self,
-        facts: &AnalysisFacts<'_>,
-        value: ExprId,
-        caller: &ContextEvidence,
-    ) -> Result<(), SummaryBlocker> {
-        let expression = self.hir().expression(value).ok_or(SummaryBlocker::ExternalSummary)?;
-        let Some(CallTarget::Template(template)) = expression.call_target() else {
-            return Err(SummaryBlocker::ExternalSummary);
-        };
-        let template = self.hir().template(*template).ok_or(SummaryBlocker::ForeignDefinition)?;
-        for port in &template.ports {
-            let port = self.hir().port(*port).ok_or(SummaryBlocker::ForeignDefinition)?;
-            if port.direction == Some(PortDirection::Input) {
-                return Err(SummaryBlocker::UnsupportedContext);
-            }
-        }
-        for site in
-            self.graph().calls_from(CallOwner::Definition(DefinitionRef::Template(template.id)))
-        {
-            if let Some(DefinitionRef::Function(_)) = site.resolved() {
-                continue;
-            }
-            return Err(SummaryBlocker::UnsupportedContext);
-        }
-        let owner = CallOwner::Definition(facts.definition());
-        let site = self
-            .graph()
-            .calls_from(owner)
-            .into_iter()
-            .find(|site| site.expression == Some(value))
-            .ok_or(SummaryBlocker::ExternalSummary)?;
-        let CallReachability::Reachable(call) = self.graph().reachable_call(site.id(), facts)
-        else {
-            return Err(SummaryBlocker::ExternalSummary);
-        };
-        let evidence = self.call_evidence(&call, facts, caller)?;
-        self.with_local_template(template.id, evidence.context(), |_, cfg, facts| {
-            self.check_template_execution(cfg, facts)
-        })?;
-        Ok(())
-    }
-
-    fn check_child_has_no_components(
-        &self,
-        child: parser::hir::TemplateId,
-        applied: &AppliedComponentPort,
-    ) -> Result<(), SummaryBlocker> {
-        self.with_local_template(child, applied.callee_evidence().context(), |_, cfg, facts| {
-            for id in cfg.nodes() {
-                let node = cfg.node(*id).ok_or(SummaryBlocker::ExternalSummary)?;
-                let mut nested = false;
-                if let CfgNodeKind::Instantiate { .. } = &node.kind {
-                    nested = true;
-                }
-                if let CfgNodeKind::Evaluate(id) = &node.kind {
-                    let expr = self.hir().expression(*id).ok_or(SummaryBlocker::ExternalSummary)?;
-                    if let ExprKind::AnonymousComponent { .. } = &expr.kind {
-                        nested = true;
-                    }
-                }
-                if nested && *certified(&facts.reachable_node(*id))? {
-                    return Err(SummaryBlocker::UnsupportedContext);
-                }
-            }
-            Ok(())
-        })
-    }
-
-    fn check_template_execution(
+    pub(super) fn check_template_execution(
         &self,
         cfg: &DefinitionCfg,
         facts: &AnalysisFacts<'_>,
@@ -437,7 +386,7 @@ impl ProjectSummaries<'_> {
         self.expression_may_fail(id, facts, field)
     }
 
-    fn child_output_use(
+    pub(super) fn child_output_use(
         &self,
         child: parser::hir::TemplateId,
         applied: &AppliedComponentPort,
@@ -500,6 +449,8 @@ impl ProjectSummaries<'_> {
             target: OutputTarget::Exported(Box::new(handle.clone())),
             status: ProjectOutputStatus::Read,
             source_reads: Vec::new(),
+            source_span: handle.span(),
+            instance_path: Vec::new(),
         })
     }
 
@@ -514,7 +465,7 @@ impl ProjectSummaries<'_> {
         Ok(indices)
     }
 
-    fn check_main_root(
+    pub(super) fn check_main_root(
         &self,
         facts: &AnalysisFacts<'_>,
         main: &ContextEvidence,

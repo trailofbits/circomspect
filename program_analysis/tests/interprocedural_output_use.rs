@@ -328,15 +328,22 @@ fn an_exhausted_scalar_input_analysis_cannot_claim_unused() {
 
 #[test]
 fn unproved_sibling_inputs_block_project_wide_unused_claims() {
-    for bindings in ["c[1].in<==2;", "c[0].in<==1;c[1].in<==2;"] {
+    for (bindings, expected) in
+        [("c[1].in<==2;", None), ("c[0].in<==1;c[1].in<==2;", Some(ProjectOutputStatus::Unused))]
+    {
         let same_child = format!(
             "template Child(){{signal input in;signal output out;out<==in;}} \
              template Parent(){{component c[2];c[0]=Child();c[1]=Child();{bindings}}} \
              component main=Parent();"
         );
-        assert!(internal_use(&same_child, 1)
-            .unavailable()
-            .is_some_and(|reasons| reasons.contains(&SummaryBlocker::UnsupportedContext)));
+        let claim = internal_use(&same_child, 1);
+        if let Some(status) = expected {
+            assert_eq!(claim.certified().map(ProjectOutputUse::status), Some(status));
+        } else {
+            assert!(claim
+                .unavailable()
+                .is_some_and(|reasons| { reasons.contains(&SummaryBlocker::MissingInputBinding) }));
+        }
     }
     let other_child = concat!(
         "template Child(){signal output out;out<==1;} ",
@@ -346,7 +353,7 @@ fn unproved_sibling_inputs_block_project_wide_unused_claims() {
     );
     assert!(internal_use(other_child, 0)
         .unavailable()
-        .is_some_and(|reasons| reasons.contains(&SummaryBlocker::UnsupportedContext)));
+        .is_some_and(|reasons| reasons.contains(&SummaryBlocker::MissingInputBinding)));
     let nested_sibling = concat!(
         "template Child(){signal output out;out<==1;} ",
         "template Needs(){signal input in;signal output out;out<==in;} ",

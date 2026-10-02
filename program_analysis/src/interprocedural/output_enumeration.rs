@@ -23,6 +23,16 @@ pub struct EnumeratedComponentOutput {
     applied: AppliedComponentPort,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct EnumeratedComponentInstance {
+    pub site: CallSiteId,
+    pub target: AccessPath,
+    pub component: ComponentId,
+    pub indices: Vec<usize>,
+    pub callee: ContextEvidence,
+    pub outputs: Vec<EnumeratedComponentOutput>,
+}
+
 impl EnumeratedComponentOutput {
     #[must_use]
     pub fn site(&self) -> CallSiteId {
@@ -43,11 +53,12 @@ impl EnumeratedComponentOutput {
 struct Enumeration {
     outputs: Vec<EnumeratedComponentOutput>,
     inspected: usize,
+    limit: usize,
 }
 
 impl Enumeration {
     fn reserve(&mut self) -> Result<(), SummaryBlocker> {
-        if self.inspected >= MAX_OUTPUT_HANDLES {
+        if self.inspected >= self.limit {
             return Err(SummaryBlocker::ContextBudget);
         }
         self.inspected += 1;
@@ -74,10 +85,29 @@ impl ProjectSummaries<'_> {
         facts: &AnalysisFacts<'_>,
         caller: &ContextEvidence,
     ) -> Result<Vec<EnumeratedComponentOutput>, SummaryBlocker> {
+        let mut state =
+            Enumeration { outputs: Vec::new(), inspected: 0, limit: MAX_OUTPUT_HANDLES };
+        self.visit_component_calls(facts, caller, |call| {
+            let remaining = MAX_OUTPUT_HANDLES - state.inspected;
+            let instance = self.enumerate_call(facts, caller, call, remaining)?;
+            for output in instance.outputs {
+                state.reserve()?;
+                state.outputs.push(output);
+            }
+            Ok(())
+        })?;
+        Ok(state.outputs)
+    }
+
+    pub(super) fn visit_component_calls(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        caller: &ContextEvidence,
+        mut visit: impl FnMut(&ReachableCall<'_>) -> Result<(), SummaryBlocker>,
+    ) -> Result<(), SummaryBlocker> {
         self.check_facts_for_evidence(facts, caller)?;
         self.validated_definition(facts)?;
         let owner = CallOwner::Definition(facts.definition());
-        let mut state = Enumeration { outputs: Vec::new(), inspected: 0 };
         for site in self.graph().calls_from(owner) {
             let Some(expression) = site.expression else {
                 return Err(SummaryBlocker::UnsupportedCallForm);
@@ -90,23 +120,21 @@ impl ProjectSummaries<'_> {
             }
             let call = self.graph().reachable_call(site.id(), facts);
             match call {
-                CallReachability::Reachable(call) => {
-                    self.enumerate_call(facts, caller, &call, &mut state)?;
-                }
+                CallReachability::Reachable(call) => visit(&call)?,
                 CallReachability::Unreachable => {}
                 CallReachability::Unavailable(blocker) => return Err(call_blocker(blocker)),
             }
         }
-        Ok(state.outputs)
+        Ok(())
     }
 
-    fn enumerate_call(
+    pub(super) fn enumerate_call(
         &self,
         facts: &AnalysisFacts<'_>,
         caller: &ContextEvidence,
         call: &ReachableCall<'_>,
-        state: &mut Enumeration,
-    ) -> Result<(), SummaryBlocker> {
+        limit: usize,
+    ) -> Result<EnumeratedComponentInstance, SummaryBlocker> {
         let DefinitionRef::Template(child) = call.callee() else {
             return Err(SummaryBlocker::UnsupportedCallForm);
         };
@@ -116,18 +144,26 @@ impl ProjectSummaries<'_> {
         let instance = exact_instance_indices(facts, &target, &bounds)?;
         let callee = self.call_evidence(call, facts, caller)?;
         let ports = self.output_ports(child, callee.context())?;
+        let mut state = Enumeration { outputs: Vec::new(), inspected: 0, limit };
         for (port, port_bounds) in &ports {
-            let remaining = MAX_OUTPUT_HANDLES - state.inspected;
+            let remaining = state.limit - state.inspected;
             let elements = checked_indices(port_bounds, remaining)?;
             for element in elements {
                 state.reserve()?;
                 let handle = facts
                     .component_output_handle(component, &instance, *port, &element)
                     .map_err(|_| SummaryBlocker::UnsupportedContext)?;
-                self.push_applied(facts, caller, call, handle, state)?;
+                self.push_applied(facts, caller, call, handle, &mut state)?;
             }
         }
-        Ok(())
+        Ok(EnumeratedComponentInstance {
+            site: call.site().id(),
+            target,
+            component,
+            indices: instance,
+            callee,
+            outputs: state.outputs,
+        })
     }
 
     fn instantiated_component(
