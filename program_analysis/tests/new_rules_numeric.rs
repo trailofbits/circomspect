@@ -342,6 +342,35 @@ fn main_division_retains_local_zero_incidence_rule() {
 }
 
 #[test]
+fn unresolved_conversion_analysis_records_a_scoped_abstention() {
+    let (_, no_main) = inspect("template T(n){signal input x;}", Curve::Bn254, "T");
+    assert!(no_main.abstentions().iter().any(|item| {
+        item.kind == RuleKind::NonstrictBinaryConversion
+            && item.reason == AbstentionReason::UnsupportedConstruct
+    }));
+
+    let source = "template T(n){signal input x;} component main=T(1);";
+    let (_, library) = inspect(source, Curve::Bn254, "T");
+    let library_abstention = library
+        .abstentions()
+        .iter()
+        .find(|item| item.kind == RuleKind::NonstrictBinaryConversion)
+        .expect("conversion analysis must disclose incomplete coverage");
+    assert_eq!(library_abstention.reason, AbstentionReason::UnsupportedConstruct);
+    assert_eq!(library_abstention.span.start(), 0);
+    assert!(!kinds(&library).contains(&RuleKind::NonstrictBinaryConversion));
+
+    let main = inspect_main(source, Curve::Bn254);
+    let main_abstention = main
+        .abstentions()
+        .iter()
+        .find(|item| item.kind == RuleKind::NonstrictBinaryConversion)
+        .expect("reachable main also needs scoped incomplete coverage");
+    assert_eq!(main_abstention.reason, AbstentionReason::UnsupportedConstruct);
+    assert_ne!(library_abstention.context, main_abstention.context);
+}
+
+#[test]
 fn certified_call_specialization_changes_numeric_decisions() {
     let source = "template Child(n){if(n){var x=1;}}\
                   template Parent(){component c=Child(1);}";

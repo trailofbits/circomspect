@@ -36,8 +36,20 @@ impl Rule for NumericRule {
             RuleKind::FieldArithmetic => expression::field_arithmetic(context),
             RuleKind::FieldComparison => expression::field_comparison(context),
             RuleKind::UnconstrainedDivision => division::unconstrained_division(context),
-            RuleKind::NonstrictBinaryConversion
-            | RuleKind::SignalAssignment
+            RuleKind::NonstrictBinaryConversion => {
+                let mut result = RuleResult::default();
+                if let Some(span) = definition_span(context) {
+                    abstain(
+                        context,
+                        &mut result,
+                        RuleKind::NonstrictBinaryConversion,
+                        span,
+                        AbstentionReason::UnsupportedConstruct,
+                    );
+                }
+                result
+            }
+            RuleKind::SignalAssignment
             | RuleKind::RedundantWitnessAssignment
             | RuleKind::UnconstrainedSignal
             | RuleKind::UnconstrainedLessThan
