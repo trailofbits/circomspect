@@ -13,6 +13,7 @@ mod project_use;
 mod output_enumeration;
 mod validity;
 mod shape_validity;
+mod internal_signal;
 
 pub use context::{
     AnalyzeEvidenceError, ArgumentShape, ArgumentValue, CallContext, CallPathSite, ContextEvidence,

@@ -173,6 +173,15 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
         Ok(self.summaries.closed_main_component_output_use(self.facts, applied))
     }
 
+    /// Prove incidence for an exact internal signal in this validated root template.
+    #[must_use]
+    pub fn template_internal_signal_incidence(
+        &self,
+        path: &parser::hir::AccessPath,
+    ) -> SummaryFact<crate::hir_facts::Incidence> {
+        self.summaries.template_internal_signal_incidence(self.facts, self.evidence, path)
+    }
+
     /// Enumerate every checked direct-child output in this exact source scope.
     ///
     /// Missing shapes, calls, or the bounded handle budget make the result
