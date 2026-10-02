@@ -328,7 +328,7 @@ impl ProjectSummaries<'_> {
         if handle.path().root != component.symbol {
             return Err(SummaryBlocker::WrongInstance);
         }
-        let instantiation = self.bind_instantiation(facts, call, handle)?;
+        self.bind_instantiation(facts, call, handle)?;
         let callee = self.call_evidence(call, facts, caller)?;
         let (port, indices) = handle.output_port().ok_or(SummaryBlocker::WrongInstance)?;
         let summary = self.template_port_at(template, callee.context(), port, &indices);
@@ -339,13 +339,28 @@ impl ProjectSummaries<'_> {
                 .cloned()
                 .unwrap_or(SummaryBlocker::ExternalSummary)
         })?;
-        Ok(AppliedComponentPort {
-            caller: caller.clone(),
-            callee,
-            handle: handle.clone(),
-            port,
-            instantiation,
-        })
+        self.bind_local_output_summary(facts, caller, call, (handle.clone(), port))
+    }
+
+    pub(super) fn bind_local_output_summary(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        caller: &ContextEvidence,
+        call: &ReachableCall<'_>,
+        output: (AccessHandle, PortSummary),
+    ) -> Result<AppliedComponentPort, SummaryBlocker> {
+        let (handle, port) = output;
+        self.check_facts_for_evidence(facts, caller)?;
+        let callee = self.call_evidence(call, facts, caller)?;
+        if !handle.matches_context(caller.context()) || port.context() != callee.context() {
+            return Err(SummaryBlocker::WrongContext);
+        }
+        let (id, indices) = handle.output_port().ok_or(SummaryBlocker::WrongInstance)?;
+        if id != port.port() || indices != port.indices() {
+            return Err(SummaryBlocker::WrongInstance);
+        }
+        let instantiation = self.bind_instantiation(facts, call, &handle)?;
+        Ok(AppliedComponentPort { caller: caller.clone(), callee, handle, port, instantiation })
     }
 
     fn bind_instantiation(

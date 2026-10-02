@@ -312,6 +312,55 @@ impl AnalysisFacts<'_> {
         port: PortId,
         port_indices: &[usize],
     ) -> Result<AccessHandle, AccessHandleError> {
+        let mut path = self.component_port_prefix(component, component_indices, port)?;
+        let terminal = self.hir.symbol(path.terminal).ok_or(AccessHandleError::ForeignPort)?;
+        path.steps.extend(self.checked_indices(terminal, port_indices)?);
+        Ok(AccessHandle {
+            definition: self.cfg.definition(),
+            curve: self.field.curve().clone(),
+            path,
+            component: Some(component),
+            context: self.evidence_binding.as_ref().map(|evidence| evidence.context().clone()),
+        })
+    }
+
+    /// Combine checked caller indices with a callee-local port issued in its own context.
+    /// The provider must bind the local handle to the exact source call before using this.
+    pub(crate) fn component_output_from_local(
+        &self,
+        component: ComponentId,
+        component_indices: &[usize],
+        local: &AccessHandle,
+    ) -> Result<AccessHandle, AccessHandleError> {
+        let DefinitionRef::Template(template) = local.definition else {
+            return Err(AccessHandleError::ForeignPort);
+        };
+        if local.curve != *self.field.curve() || local.component.is_some() {
+            return Err(AccessHandleError::ForeignPort);
+        }
+        let template = self.hir.template(template).ok_or(AccessHandleError::ForeignPort)?;
+        let port = template
+            .ports
+            .iter()
+            .find_map(|id| self.hir.port(*id).filter(|port| port.symbol == local.path.root))
+            .ok_or(AccessHandleError::ForeignPort)?;
+        let mut path = self.component_port_prefix(component, component_indices, port.id)?;
+        path.steps.extend(local.path.steps.iter().cloned());
+        Ok(AccessHandle {
+            definition: self.cfg.definition(),
+            curve: self.field.curve().clone(),
+            path,
+            component: Some(component),
+            context: self.evidence_binding.as_ref().map(|evidence| evidence.context().clone()),
+        })
+    }
+
+    fn component_port_prefix(
+        &self,
+        component: ComponentId,
+        component_indices: &[usize],
+        port: PortId,
+    ) -> Result<AccessPath, AccessHandleError> {
         let component = self.hir.component(component).ok_or(AccessHandleError::ForeignComponent)?;
         if !self.cfg.owns_symbol(component.symbol) {
             return Err(AccessHandleError::ForeignComponent);
@@ -335,21 +384,13 @@ impl AnalysisFacts<'_> {
         let mut steps = self.checked_indices(root, component_indices)?;
         self.check_instantiations(component.symbol, &steps, template.id)?;
         steps.push(AccessStep::Port { port: port.id, span: port.span });
-        steps.extend(self.checked_indices(terminal, port_indices)?);
-        let path = AccessPath {
+        Ok(AccessPath {
             root: root.id,
             steps,
             terminal: terminal.id,
             component_input: false,
             component_output: true,
             span: component.span,
-        };
-        Ok(AccessHandle {
-            definition: self.cfg.definition(),
-            curve: self.field.curve().clone(),
-            path,
-            component: Some(component.id),
-            context: self.evidence_binding.as_ref().map(|evidence| evidence.context().clone()),
         })
     }
 

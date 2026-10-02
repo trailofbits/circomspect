@@ -8,6 +8,7 @@ mod effects;
 mod template;
 mod context;
 mod component;
+mod component_port;
 mod input_relation;
 mod project_use;
 mod project_output_closure;

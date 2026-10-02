@@ -286,7 +286,7 @@ fn require_no_repeated_body_write(
     }
 }
 
-fn port_summary(
+pub(super) fn port_summary(
     facts: &AnalysisFacts<'_>,
     context: &CallContext,
     port: PortId,

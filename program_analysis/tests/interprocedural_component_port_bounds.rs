@@ -1,0 +1,299 @@
+use std::fs;
+
+use circomspect_program_analysis::hir_cfg::build_cfg;
+use circomspect_program_analysis::hir_facts::{AccessHandle, AnalysisFacts};
+use circomspect_program_analysis::interprocedural::{
+    CallOwner, CallReachability, ContextEvidence, ProjectSummaries,
+};
+use parser::hir::{lift_project, LiftedProject};
+use parser::new_frontend::{load_sources, Version, VersionPolicy};
+use program_structure::utils::constants::Curve;
+
+fn fixture(source: &str) -> LiftedProject {
+    let directory = std::env::temp_dir().join(format!(
+        "circomspect-component-port-bounds-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    fs::create_dir_all(&directory).unwrap();
+    let file = directory.join("case.circom");
+    fs::write(&file, source).unwrap();
+    let loaded = load_sources(&[file], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
+    lift_project(&loaded)
+}
+
+fn main_evidence(provider: &ProjectSummaries<'_>, project: &LiftedProject) -> ContextEvidence {
+    let site = provider.graph().calls_from(CallOwner::Main(0))[0];
+    let CallReachability::Reachable(call) =
+        provider.graph().reachable_main_call(site.id(), &project.hir)
+    else {
+        panic!("main must resolve")
+    };
+    provider.main_evidence(&call).unwrap()
+}
+
+fn with_parent<T>(
+    project: &LiftedProject,
+    curve: Curve,
+    work: impl FnOnce(&ProjectSummaries<'_>, &AnalysisFacts<'_>, &ContextEvidence) -> T,
+) -> T {
+    let provider = ProjectSummaries::build(project, curve).unwrap();
+    let caller = main_evidence(&provider, project);
+    let definition = project.hir.definition("Parent").unwrap();
+    let cfg = build_cfg(&project.hir, definition).unwrap();
+    let facts = provider.analyze_for_evidence(&cfg, &caller, None).unwrap();
+    work(&provider, &facts, &caller)
+}
+
+fn local_handle(
+    project: &LiftedProject,
+    curve: Curve,
+    call_index: usize,
+    port_name: &str,
+    indices: &[usize],
+) -> AccessHandle {
+    with_parent(project, curve, |provider, facts, caller| {
+        let site =
+            provider.graph().calls_from(CallOwner::Definition(facts.definition()))[call_index];
+        let CallReachability::Reachable(call) = provider.graph().reachable_call(site.id(), facts)
+        else {
+            panic!("child call must be reachable");
+        };
+        let child = provider.call_evidence(&call, facts, caller).unwrap();
+        let cfg = build_cfg(&project.hir, call.callee()).unwrap();
+        let child_facts = provider.analyze_for_evidence(&cfg, &child, None).unwrap();
+        let port = project
+            .hir
+            .ports()
+            .iter()
+            .find(|port| project.hir.symbol(port.symbol).unwrap().name == port_name)
+            .unwrap();
+        child_facts.port_handle(port.id, indices).unwrap()
+    })
+}
+
+const TWO_INSTANCES: &str = concat!(
+    "template Child(n){signal input in;signal output bits[n];",
+    "bits[0]<==0;if(n>1){bits[1]<==1;}}",
+    "template Parent(){component c[2];c[0]=Child(1);c[1]=Child(2);",
+    "c[0].in<==0;c[1].in<==0;}component main=Parent();"
+);
+
+#[test]
+fn exact_child_parameter_checks_output_port_dimensions() {
+    for dimension in ["2", "n", "n+0"] {
+        let source = format!(
+            "template Child(n){{signal output bits[{dimension}];bits[0]<==0;bits[1]<==1;}}\
+             template Parent(){{component c=Child(2);}}component main=Parent();"
+        );
+        let project = fixture(&source);
+        let provider = ProjectSummaries::build(&project, Curve::Bn254).unwrap();
+        let main = main_evidence(&provider, &project);
+        let definition = project.hir.definition("Parent").unwrap();
+        let cfg = build_cfg(&project.hir, definition).unwrap();
+        let facts = provider.analyze_for_evidence(&cfg, &main, None).unwrap();
+        let outputs = provider.exact_component_outputs(&facts, &main);
+        assert_eq!(outputs.certified().map(Vec::len), Some(2), "{dimension}: {outputs:?}");
+    }
+}
+
+#[test]
+fn provider_binds_a_parameter_checked_local_output_to_its_exact_call() {
+    let project = fixture(concat!(
+        "template Child(n){signal output bits[n];bits[0]<==0;bits[1]<==1;}",
+        "template Parent(){component c=Child(2);}component main=Parent();"
+    ));
+    let provider = ProjectSummaries::build(&project, Curve::Bn254).unwrap();
+    let caller = main_evidence(&provider, &project);
+    let definition = project.hir.definition("Parent").unwrap();
+    let cfg = build_cfg(&project.hir, definition).unwrap();
+    let facts = provider.analyze_for_evidence(&cfg, &caller, None).unwrap();
+    let site = provider.graph().calls_from(CallOwner::Definition(definition))[0];
+    let CallReachability::Reachable(call) = provider.graph().reachable_call(site.id(), &facts)
+    else {
+        panic!("child call must be reachable");
+    };
+    let child = provider.call_evidence(&call, &facts, &caller).unwrap();
+    let cfg = build_cfg(&project.hir, call.callee()).unwrap();
+    let child_facts = provider.analyze_for_evidence(&cfg, &child, None).unwrap();
+    let output = project
+        .hir
+        .ports()
+        .iter()
+        .find(|port| project.hir.symbol(port.symbol).unwrap().name == "bits")
+        .unwrap();
+    let local = child_facts.port_handle(output.id, &[1]).unwrap();
+    let result = provider.apply_component_local_output(&facts, &caller, &call, &local);
+    let applied = result.certified().unwrap_or_else(|| panic!("{result:?}"));
+    assert_eq!(applied.caller_evidence(), &caller);
+    assert_eq!(applied.callee_evidence(), &child);
+    assert_eq!(applied.port_summary().indices(), [1]);
+    assert!(child_facts.port_handle(output.id, &[2]).is_err());
+}
+
+#[test]
+fn differing_parameter_instances_keep_contexts_and_port_bounds_separate() {
+    let project = fixture(TWO_INSTANCES);
+    let short = local_handle(&project, Curve::Bn254, 0, "bits", &[0]);
+    let long = local_handle(&project, Curve::Bn254, 1, "bits", &[0]);
+    with_parent(&project, Curve::Bn254, |provider, facts, caller| {
+        let sites = provider.graph().calls_from(CallOwner::Definition(facts.definition()));
+        for (index, local) in [short, long].iter().enumerate() {
+            for (site_index, site) in sites.iter().enumerate() {
+                let CallReachability::Reachable(call) =
+                    provider.graph().reachable_call(site.id(), facts)
+                else {
+                    panic!("child must be reachable")
+                };
+                let applied = provider.apply_component_local_output(facts, caller, &call, local);
+                assert_eq!(applied.certified().is_some(), index == site_index, "{applied:?}");
+            }
+        }
+        let outputs = provider.exact_component_outputs(facts, caller);
+        let outputs = outputs.certified().unwrap_or_else(|| panic!("{outputs:?}"));
+        assert_eq!(outputs.len(), 3);
+        assert_eq!(outputs[0].applied_port().port_summary().indices(), [0]);
+        assert_eq!(outputs[2].applied_port().port_summary().indices(), [1]);
+        assert_ne!(
+            outputs[0].applied_port().callee_evidence(),
+            outputs[2].applied_port().callee_evidence()
+        );
+        assert_ne!(outputs[0].applied_port().handle(), outputs[2].applied_port().handle());
+    });
+}
+
+#[test]
+fn foreign_curve_project_and_input_handles_cannot_be_applied() {
+    let project = fixture(TWO_INSTANCES);
+    let foreign = fixture(TWO_INSTANCES);
+    let handles = [
+        local_handle(&project, Curve::Goldilocks, 0, "bits", &[0]),
+        local_handle(&foreign, Curve::Bn254, 0, "bits", &[0]),
+        local_handle(&project, Curve::Bn254, 0, "in", &[]),
+    ];
+    with_parent(&project, Curve::Bn254, |provider, facts, caller| {
+        let site = provider.graph().calls_from(CallOwner::Definition(facts.definition()))[0];
+        let CallReachability::Reachable(call) = provider.graph().reachable_call(site.id(), facts)
+        else {
+            panic!("child must be reachable")
+        };
+        for handle in handles {
+            let result = provider.apply_component_local_output(facts, caller, &call, &handle);
+            assert!(result.unavailable().is_some(), "{result:?}");
+        }
+    });
+}
+
+#[test]
+fn wrong_caller_and_incomplete_caller_cannot_borrow_a_valid_local_handle() {
+    let project = fixture(TWO_INSTANCES);
+    let local = local_handle(&project, Curve::Bn254, 0, "bits", &[0]);
+    with_parent(&project, Curve::Bn254, |provider, facts, caller| {
+        let site = provider.graph().calls_from(CallOwner::Definition(facts.definition()))[0];
+        let CallReachability::Reachable(call) = provider.graph().reachable_call(site.id(), facts)
+        else {
+            panic!("child must be reachable")
+        };
+        let wrong = provider.symbolic_root(facts.definition()).unwrap();
+        let result = provider.apply_component_local_output(facts, &wrong, &call, &local);
+        assert!(result.unavailable().is_some(), "{result:?}");
+        let cfg = build_cfg(&project.hir, facts.definition()).unwrap();
+        for limit in [0, 1, 4] {
+            let pending = provider.analyze_for_evidence(&cfg, caller, Some(limit)).unwrap();
+            let result = provider.apply_component_local_output(&pending, caller, &call, &local);
+            assert!(result.unavailable().is_some(), "{limit}: {result:?}");
+        }
+    });
+}
+
+#[test]
+fn source_instance_bounds_and_child_failures_still_block_enumeration() {
+    for source in [
+        concat!(
+            "template Child(n){signal output out[n];out[0]<==1;}",
+            "template Parent(){component c[1];c[1]=Child(1);}component main=Parent();"
+        ),
+        concat!(
+            "template Child(n){signal output out[n];out[0]<==1;}",
+            "template Parent(){signal input i;component c[1];c[i]=Child(1);}",
+            "component main=Parent();"
+        ),
+        concat!(
+            "template Child(n){signal output out[n];out[0]<==1;assert(0);}",
+            "template Parent(){component c=Child(1);}component main=Parent();"
+        ),
+        concat!(
+            "template Child(n){signal output out[n];out[0]<==1;}",
+            "template Parent(){signal input n;component c=Child(n);}component main=Parent();"
+        ),
+    ] {
+        let project = fixture(source);
+        with_parent(&project, Curve::Bn254, |provider, facts, caller| {
+            let result = provider.exact_component_outputs(facts, caller);
+            assert!(result.unavailable().is_some(), "{source}: {result:?}");
+        });
+    }
+}
+
+#[test]
+fn parameterized_multidimensional_ports_keep_all_checked_indices() {
+    let project = fixture(concat!(
+        "template Child(n){signal output bits[n][2];",
+        "bits[0][0]<==0;bits[0][1]<==1;bits[1][0]<==2;bits[1][1]<==3;}",
+        "template Parent(){component c=Child(2);}component main=Parent();"
+    ));
+    with_parent(&project, Curve::Bn254, |provider, facts, caller| {
+        let outputs = provider.exact_component_outputs(facts, caller);
+        let outputs = outputs.certified().unwrap_or_else(|| panic!("{outputs:?}"));
+        let indices: Vec<_> =
+            outputs.iter().map(|output| output.applied_port().port_summary().indices()).collect();
+        assert_eq!(indices, [&[0, 0][..], &[0, 1], &[1, 0], &[1, 1]]);
+    });
+}
+
+#[test]
+fn a_function_call_cannot_apply_a_template_output_handle() {
+    let project = fixture(concat!(
+        "function F(){return 1;}template Child(){signal output bits;bits<==1;}",
+        "template Parent(){component c=Child();log(F());}component main=Parent();"
+    ));
+    let local = local_handle(&project, Curve::Bn254, 0, "bits", &[]);
+    with_parent(&project, Curve::Bn254, |provider, facts, caller| {
+        let sites = provider.graph().calls_from(CallOwner::Definition(facts.definition()));
+        for (index, site) in sites.iter().enumerate() {
+            let CallReachability::Reachable(call) =
+                provider.graph().reachable_call(site.id(), facts)
+            else {
+                panic!("call must be reachable")
+            };
+            let result = provider.apply_component_local_output(facts, caller, &call, &local);
+            assert_eq!(result.certified().is_some(), index == 0, "{result:?}");
+        }
+    });
+}
+
+#[test]
+fn same_parameter_instances_stay_distinct_and_late_bad_shapes_withhold_all_outputs() {
+    for (second_size, complete) in [(1, true), (0, false)] {
+        let source = format!(
+            "template Child(n){{signal output bits[n];bits[0]<==1;}}\
+             template Parent(n){{component c[n];c[0]=Child(1);c[1]=Child({second_size});}}\
+             component main=Parent(2);"
+        );
+        let project = fixture(&source);
+        with_parent(&project, Curve::Bn254, |provider, facts, caller| {
+            let outputs = provider.exact_component_outputs(facts, caller);
+            if complete {
+                let outputs = outputs.certified().unwrap_or_else(|| panic!("{outputs:?}"));
+                assert_eq!(outputs.len(), 2);
+                assert_eq!(
+                    outputs[0].applied_port().callee_evidence().context(),
+                    outputs[1].applied_port().callee_evidence().context()
+                );
+                assert_ne!(outputs[0].applied_port().handle(), outputs[1].applied_port().handle());
+            } else {
+                assert!(outputs.unavailable().is_some(), "{outputs:?}");
+            }
+        });
+    }
+}

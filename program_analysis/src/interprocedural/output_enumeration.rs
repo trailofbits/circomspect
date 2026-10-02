@@ -6,7 +6,8 @@ use parser::hir::{AccessPath, AccessStep, ArrayIndex, ComponentId, DefinitionRef
 use parser::new_frontend::{PortDirection, Span};
 
 use crate::hir_cfg::CfgNodeKind;
-use crate::hir_facts::{AccessHandle, AnalysisFacts, Range};
+use crate::hir_facts::{AnalysisFacts, Range};
+use crate::interprocedural::component_port::LocalOutputPort;
 
 use crate::interprocedural::{
     AppliedComponentPort, CallBlocker, CallOwner, CallReachability, CallSiteId, ContextEvidence,
@@ -144,19 +145,32 @@ impl ProjectSummaries<'_> {
             facts.component_bounds(component).map_err(|_| SummaryBlocker::UnsupportedContext)?;
         let instance = exact_instance_indices(facts, &target, &bounds)?;
         let callee = self.call_evidence(call, facts, caller)?;
-        let ports = self.output_ports(child, callee.context())?;
-        let mut state = Enumeration { outputs: Vec::new(), inspected: 0, limit };
-        for (port, port_bounds) in &ports {
-            let remaining = state.limit - state.inspected;
-            let elements = checked_indices(port_bounds, remaining)?;
-            for element in elements {
-                state.reserve()?;
-                let handle = facts
-                    .component_output_handle(component, &instance, *port, &element)
-                    .map_err(|_| SummaryBlocker::UnsupportedContext)?;
-                self.push_applied(facts, caller, call, handle, &mut state)?;
+        let outputs = self.with_component_port_facts(&callee, |child_facts| {
+            let ports = self.output_ports(child, child_facts)?;
+            let mut state = Enumeration { outputs: Vec::new(), inspected: 0, limit };
+            for (port, port_bounds) in &ports {
+                let remaining = state.limit - state.inspected;
+                let elements = checked_indices(port_bounds, remaining)?;
+                for element in elements {
+                    state.reserve()?;
+                    let handle = child_facts
+                        .port_handle(*port, &element)
+                        .map_err(|_| SummaryBlocker::UnsupportedContext)?;
+                    let applied = self.apply_local_port(
+                        facts,
+                        caller,
+                        call,
+                        LocalOutputPort { facts: child_facts, handle: &handle },
+                    )?;
+                    state.outputs.push(EnumeratedComponentOutput {
+                        site: call.site().id(),
+                        source_span: call.site().span,
+                        applied,
+                    });
+                }
             }
-        }
+            Ok(state.outputs)
+        })?;
         Ok(EnumeratedComponentInstance {
             site: call.site().id(),
             instantiation,
@@ -164,11 +178,11 @@ impl ProjectSummaries<'_> {
             component,
             indices: instance,
             callee,
-            outputs: state.outputs,
+            outputs,
         })
     }
 
-    fn instantiated_component(
+    pub(super) fn instantiated_component(
         &self,
         facts: &AnalysisFacts<'_>,
         call: &ReachableCall<'_>,
@@ -204,47 +218,25 @@ impl ProjectSummaries<'_> {
     fn output_ports(
         &self,
         child: parser::hir::TemplateId,
-        context: &crate::interprocedural::CallContext,
-    ) -> Result<Vec<(PortId, Vec<usize>)>, SummaryBlocker> {
-        self.with_local_template(child, context, |template, _, facts| {
-            let mut ports = Vec::new();
-            for id in &template.ports {
-                let port = self.hir().port(*id).ok_or(SummaryBlocker::ForeignDefinition)?;
-                if port.direction != Some(PortDirection::Output) {
-                    continue;
-                }
-                let bounds = facts
-                    .checked_symbol_dimensions(port.symbol)
-                    .map_err(|_| SummaryBlocker::UnsupportedContext)?;
-                ports.push((*id, bounds));
-            }
-            Ok(ports)
-        })
-    }
-
-    fn push_applied(
-        &self,
         facts: &AnalysisFacts<'_>,
-        caller: &ContextEvidence,
-        call: &ReachableCall<'_>,
-        handle: AccessHandle,
-        state: &mut Enumeration,
-    ) -> Result<(), SummaryBlocker> {
-        let fact = self.apply_component_output(facts, caller, call, &handle);
-        if let Some(applied) = fact.certified() {
-            state.outputs.push(EnumeratedComponentOutput {
-                site: call.site().id(),
-                source_span: call.site().span,
-                applied: applied.clone(),
-            });
-            return Ok(());
+    ) -> Result<Vec<(PortId, Vec<usize>)>, SummaryBlocker> {
+        let template = self.hir().template(child).ok_or(SummaryBlocker::ForeignDefinition)?;
+        let mut ports = Vec::new();
+        for id in &template.ports {
+            let port = self.hir().port(*id).ok_or(SummaryBlocker::ForeignDefinition)?;
+            if port.direction != Some(PortDirection::Output) {
+                continue;
+            }
+            let bounds = facts
+                .checked_symbol_dimensions(port.symbol)
+                .map_err(|_| SummaryBlocker::UnsupportedContext)?;
+            ports.push((*id, bounds));
         }
-        let blockers = fact.unavailable().ok_or(SummaryBlocker::ExternalSummary)?;
-        Err(blockers.iter().next().cloned().unwrap_or(SummaryBlocker::ExternalSummary))
+        Ok(ports)
     }
 }
 
-fn exact_instance_indices(
+pub(super) fn exact_instance_indices(
     facts: &AnalysisFacts<'_>,
     target: &AccessPath,
     bounds: &[usize],
