@@ -371,7 +371,7 @@ impl ProjectSummaries<'_> {
         }
     }
 
-    fn expression_may_fail(
+    pub(super) fn expression_may_fail(
         &self,
         id: ExprId,
         facts: &AnalysisFacts<'_>,
@@ -582,7 +582,7 @@ impl ProjectSummaries<'_> {
     }
 }
 
-fn is_proven_nonzero(value: Option<&Range>, field: &FieldContext) -> bool {
+pub(super) fn is_proven_nonzero(value: Option<&Range>, field: &FieldContext) -> bool {
     match value {
         Some(Range::Exact(value)) => !field.is_zero(value),
         Some(Range::Canonical | Range::Unreachable) | None => false,
