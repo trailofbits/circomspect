@@ -173,7 +173,11 @@ fn complement_reports_only_reachable_resolved_expression_with_selected_curve() {
     assert!(!kinds(&symbolic).contains(&RuleKind::BitwiseComplement));
     assert!(symbolic.abstentions().iter().any(|a| a.kind == RuleKind::BitwiseComplement));
     let (_, variable) = inspect("template T(n){var x=~n;}", Curve::Goldilocks, "T");
-    assert!(kinds(&variable).contains(&RuleKind::BitwiseComplement));
+    assert!(
+        kinds(&variable).contains(&RuleKind::BitwiseComplement),
+        "{:?}",
+        variable.abstentions()
+    );
 }
 
 #[test]
@@ -434,4 +438,49 @@ fn numeric_findings_obey_level_allow_and_root_filters() {
         support::render(result.findings(), &sources, MessageCategory::Info, &[], &output).unwrap(),
         (0, 0)
     );
+}
+
+#[test]
+fn independent_numeric_events_after_known_failure_do_not_warn() {
+    for (declaration, end) in [("template T()", ""), ("function T()", "return 7;")] {
+        for (prefix, should_emit) in [
+            ("assert(0);", false),
+            ("var z=1/0;", false),
+            ("assert(1);", true),
+            ("var z=1/1;", true),
+            ("if(0){assert(0);}", true),
+        ] {
+            let source = format!("{declaration}{{{prefix}var x=~1;var y=0-1;{end}}}");
+            let (_, result) = inspect(&source, Curve::Bn254, "T");
+            for kind in [RuleKind::BitwiseComplement, RuleKind::FieldArithmetic] {
+                assert_eq!(kinds(&result).contains(&kind), should_emit, "{source}: {kind:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn independent_numeric_scope_guard_retains_typed_abstentions_and_unknown_controls() {
+    for prefix in ["assert(0);", "var z=1/0;"] {
+        let source = format!("template T(){{{prefix}var x=~1;var y=0-1;}}");
+        let (_, result) = inspect(&source, Curve::Bn254, "T");
+        for kind in [RuleKind::BitwiseComplement, RuleKind::FieldArithmetic] {
+            assert!(result.abstentions().iter().any(|item| {
+                let AbstentionReason::Summary(reasons) = &item.reason else { return false };
+                item.kind == kind && !reasons.is_empty()
+            }));
+        }
+    }
+    let source = "template T(){signal input p;assert(p);var x=~1;var y=0-1;}";
+    let (_, result) = inspect(source, Curve::Bn254, "T");
+    assert!(kinds(&result).contains(&RuleKind::BitwiseComplement), "{source}");
+    assert!(kinds(&result).contains(&RuleKind::FieldArithmetic), "{source}");
+    for source in [
+        "pragma custom_templates;template custom T(){var x=~1;var y=0-1;}",
+        "template extern_c T(){var x=~1;var y=0-1;}",
+    ] {
+        let (_, result) = inspect(source, Curve::Bn254, "T");
+        assert!(!kinds(&result).contains(&RuleKind::BitwiseComplement), "{source}");
+        assert!(!kinds(&result).contains(&RuleKind::FieldArithmetic), "{source}");
+    }
 }
