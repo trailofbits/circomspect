@@ -1,4 +1,4 @@
-//! Validate parameter operations against the original concrete argument shape.
+//! Validate access bounds and assignment ranks in one concrete argument context.
 
 use std::collections::BTreeMap;
 
@@ -6,13 +6,16 @@ use abstract_interpretation::graph::FlowGraph;
 use num_traits::ToPrimitive;
 use parser::hir::{
     AccessPath, AccessStep, ArrayIndex, ExprId, ExprKind, SemanticCode, SemanticDiagnostic,
-    Severity, SymbolId, ValueEvidence,
+    Severity, SymbolId,
 };
 use parser::new_frontend::{AssignmentOperator, Span};
 
 use crate::hir_cfg::CfgNodeKind;
 use crate::hir_facts::{AnalysisFacts, FieldContext, Range};
-use crate::interprocedural::{ArgumentShape, ArgumentValue, CallContext, ProjectSummaries};
+use crate::interprocedural::{
+    AnalyzeEvidenceError, ArgumentShape, ArgumentValue, CallContext, ProjectSummaries,
+    SummaryBlocker,
+};
 use crate::interprocedural::context::MAX_ARGUMENT_DEPTH;
 
 #[derive(Clone, Copy)]
@@ -23,13 +26,19 @@ enum ShapeError {
     AggregateUpdate,
 }
 
-pub(super) struct ParameterFailure {
-    pub parameter: SymbolId,
+#[derive(Clone, Copy)]
+enum FailureSubject {
+    ScalarAssignment(ExprId),
+    ValueUse(SymbolId),
+}
+
+pub(super) struct ShapeFailure {
+    subject: FailureSubject,
     span: Span,
     error: ShapeError,
 }
 
-impl ParameterFailure {
+impl ShapeFailure {
     pub fn diagnostic(&self) -> SemanticDiagnostic {
         let (code, message) = match self.error {
             ShapeError::ScalarIndex => {
@@ -38,12 +47,19 @@ impl ParameterFailure {
             ShapeError::IndexOutOfBounds => {
                 (SemanticCode::InvalidArrayAccess, "parameter index exceeds the argument bounds")
             }
-            ShapeError::AssignmentRank => {
-                (SemanticCode::InvalidAssignment, "assignment changes the parameter argument rank")
-            }
+            ShapeError::AssignmentRank => (
+                SemanticCode::InvalidAssignment,
+                "assignment value has a different rank than its target",
+            ),
             ShapeError::AggregateUpdate => {
                 (SemanticCode::InvalidAssignment, "arithmetic update requires a scalar parameter")
             }
+        };
+        let message = match self.subject {
+            FailureSubject::ScalarAssignment(_) => {
+                "a scalar variable assignment received an aggregate argument"
+            }
+            FailureSubject::ValueUse(_) => message,
         };
         SemanticDiagnostic {
             code,
@@ -54,22 +70,42 @@ impl ParameterFailure {
             actual_kind: None,
         }
     }
+
+    pub fn summary_blocker(&self) -> SummaryBlocker {
+        match self.subject {
+            FailureSubject::ScalarAssignment(value) => SummaryBlocker::InvalidAssignment(value),
+            FailureSubject::ValueUse(symbol) => SummaryBlocker::InvalidValueUse(symbol),
+        }
+    }
+
+    pub fn into_analysis_error(self, context: &CallContext) -> AnalyzeEvidenceError {
+        let diagnostic = Box::new(self.diagnostic());
+        let context = Box::new(context.clone());
+        match self.subject {
+            FailureSubject::ScalarAssignment(_) => {
+                AnalyzeEvidenceError::InvalidAssignment { context, diagnostic }
+            }
+            FailureSubject::ValueUse(_) => {
+                AnalyzeEvidenceError::InvalidValueUse { context, diagnostic }
+            }
+        }
+    }
 }
 
-struct ParameterValidator<'a, 'hir> {
+struct ShapeValidator<'a, 'hir> {
     arguments: BTreeMap<SymbolId, &'a ArgumentValue>,
     facts: &'a AnalysisFacts<'hir>,
     field: &'a FieldContext,
 }
 
 impl ProjectSummaries<'_> {
-    pub(super) fn invalid_parameter_use(
+    pub(super) fn invalid_value_use(
         &self,
         parameters: &[SymbolId],
         context: &CallContext,
         facts: &AnalysisFacts<'_>,
-    ) -> Option<ParameterFailure> {
-        let validator = ParameterValidator {
+    ) -> Option<ShapeFailure> {
+        let validator = ShapeValidator {
             arguments: parameters.iter().copied().zip(context.arguments()).collect(),
             facts,
             field: self.field_context(),
@@ -87,8 +123,8 @@ impl ProjectSummaries<'_> {
     }
 }
 
-impl ParameterValidator<'_, '_> {
-    fn node_failure(&self, kind: &CfgNodeKind) -> Option<ParameterFailure> {
+impl ShapeValidator<'_, '_> {
+    fn node_failure(&self, kind: &CfgNodeKind) -> Option<ShapeFailure> {
         match kind {
             CfgNodeKind::Evaluate(id) => {
                 let ExprKind::Access(path) = &self.facts.hir().expression(*id)?.kind else {
@@ -125,8 +161,8 @@ impl ParameterValidator<'_, '_> {
         }
     }
 
-    fn failure(&self, path: &AccessPath, error: ShapeError) -> ParameterFailure {
-        ParameterFailure { parameter: path.root, span: path.span, error }
+    fn failure(&self, path: &AccessPath, error: ShapeError) -> ShapeFailure {
+        ShapeFailure { subject: FailureSubject::ValueUse(path.root), span: path.span, error }
     }
 
     fn assignment_failure(
@@ -134,8 +170,8 @@ impl ParameterValidator<'_, '_> {
         target: &AccessPath,
         value: ExprId,
         operator: AssignmentOperator,
-    ) -> Option<ParameterFailure> {
-        let target_rank = match self.access_rank(target) {
+    ) -> Option<ShapeFailure> {
+        let target_rank = match self.target_rank(target) {
             Err(error) => return Some(self.failure(target, error)),
             Ok(rank) => rank?,
         };
@@ -143,7 +179,15 @@ impl ParameterValidator<'_, '_> {
             return Some(self.failure(target, ShapeError::AggregateUpdate));
         }
         let value_rank = self.expression_rank(value, 0)?;
-        (target_rank != value_rank).then(|| self.failure(target, ShapeError::AssignmentRank))
+        if target_rank == value_rank {
+            return None;
+        }
+        let mut failure = self.failure(target, ShapeError::AssignmentRank);
+        if crate::hir_facts::deferred_scalar_target(self.facts.hir(), target) {
+            failure.subject = FailureSubject::ScalarAssignment(value);
+            failure.span = self.facts.hir().expression(value)?.span;
+        }
+        Some(failure)
     }
 
     fn access_rank(&self, path: &AccessPath) -> Result<Option<usize>, ShapeError> {
@@ -236,12 +280,20 @@ impl ParameterValidator<'_, '_> {
         (yes == no).then_some(yes)
     }
 
-    fn expression_access_rank(&self, path: &AccessPath) -> Option<usize> {
+    fn target_rank(&self, path: &AccessPath) -> Result<Option<usize>, ShapeError> {
         if self.arguments.contains_key(&path.root) {
-            return self.access_rank(path).ok()?;
+            return self.access_rank(path);
         }
+        Ok(self.declared_rank(path))
+    }
+
+    fn expression_access_rank(&self, path: &AccessPath) -> Option<usize> {
+        self.target_rank(path).ok()?
+    }
+
+    fn declared_rank(&self, path: &AccessPath) -> Option<usize> {
         let symbol = self.facts.hir().symbol(path.terminal)?;
-        if !symbol.shape_checked || symbol.value_evidence == ValueEvidence::Deferred {
+        if !symbol.shape_checked || symbol.bus_type.is_some() {
             return None;
         }
         let mut indices = 0;

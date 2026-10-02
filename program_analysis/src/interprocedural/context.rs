@@ -4,8 +4,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use abstract_interpretation::graph::FlowGraph;
 use parser::hir::{
     BlockId, DefinitionRef, Effect, ExprId, ExprKind, HirProject, IncompleteReason,
-    IncompleteRegion, LiftedProject, ProjectIdentity, SemanticCode, SemanticDiagnostic, Severity,
-    SymbolId, SymbolKind,
+    IncompleteRegion, LiftedProject, ProjectIdentity, SemanticDiagnostic, Severity, SymbolId,
+    SymbolKind,
 };
 use parser::new_frontend::{AssignmentOperator, SourceId, Span, Version};
 use program_structure::utils::constants::Curve;
@@ -22,13 +22,6 @@ use crate::interprocedural::cache::SummaryCaches;
 
 const MAX_ARGUMENT_NODES: usize = 4096;
 pub(super) const MAX_ARGUMENT_DEPTH: usize = 64;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ProvedValueShape {
-    Scalar,
-    Aggregate,
-    Unknown,
-}
 
 /// Shape of a compile-time argument before a concrete value is known.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -205,7 +198,7 @@ pub enum SummaryBlocker {
     LocalFacts(BTreeSet<FactBlocker>),
     UnsupportedContext,
     InvalidAssignment(ExprId),
-    InvalidParameterUse(SymbolId),
+    InvalidValueUse(SymbolId),
     WrongInstance,
     DuplicateInstance,
     SymbolicInstance,
@@ -316,7 +309,7 @@ impl SourceScope {
 pub enum AnalyzeEvidenceError {
     Blocked(SummaryBlocker),
     InvalidAssignment { context: Box<CallContext>, diagnostic: Box<SemanticDiagnostic> },
-    InvalidParameterUse { context: Box<CallContext>, diagnostic: Box<SemanticDiagnostic> },
+    InvalidValueUse { context: Box<CallContext>, diagnostic: Box<SemanticDiagnostic> },
 }
 
 impl AnalyzeEvidenceError {
@@ -324,7 +317,7 @@ impl AnalyzeEvidenceError {
     pub fn diagnostic(&self) -> Option<&SemanticDiagnostic> {
         match self {
             Self::InvalidAssignment { diagnostic, .. }
-            | Self::InvalidParameterUse { diagnostic, .. } => Some(diagnostic),
+            | Self::InvalidValueUse { diagnostic, .. } => Some(diagnostic),
             Self::Blocked(_) => None,
         }
     }
@@ -872,32 +865,8 @@ impl<'a> ProjectSummaries<'a> {
         let mut facts = self
             .refined_facts(cfg.definition(), seeds, budget)
             .map_err(AnalyzeEvidenceError::Blocked)?;
-        if let Some(expression) =
-            self.invalid_deferred_assignment(facts.cfg(), parameters, evidence.context(), &facts)
-        {
-            let span = self
-                .hir()
-                .expression(expression)
-                .ok_or(AnalyzeEvidenceError::Blocked(SummaryBlocker::ForeignDefinition))?
-                .span;
-            let diagnostic = SemanticDiagnostic {
-                code: SemanticCode::InvalidAssignment,
-                severity: Severity::Error,
-                span,
-                message: "a scalar variable assignment received an aggregate argument".into(),
-                expected_kind: None,
-                actual_kind: None,
-            };
-            return Err(AnalyzeEvidenceError::InvalidAssignment {
-                context: Box::new(evidence.context.clone()),
-                diagnostic: Box::new(diagnostic),
-            });
-        }
-        if let Some(failure) = self.invalid_parameter_use(parameters, evidence.context(), &facts) {
-            return Err(AnalyzeEvidenceError::InvalidParameterUse {
-                context: Box::new(evidence.context.clone()),
-                diagnostic: Box::new(failure.diagnostic()),
-            });
+        if let Some(failure) = self.invalid_value_use(parameters, evidence.context(), &facts) {
+            return Err(failure.into_analysis_error(evidence.context()));
         }
         facts.bind_evidence(evidence.clone());
         Ok(facts)
@@ -1003,99 +972,6 @@ impl<'a> ProjectSummaries<'a> {
                 self.hir().template(id).map(|item| item.parameters.as_slice())
             }
             DefinitionRef::Bus(id) => self.hir().bus(id).map(|item| item.parameters.as_slice()),
-        }
-    }
-
-    pub(crate) fn invalid_deferred_assignment(
-        &self,
-        cfg: &DefinitionCfg,
-        parameters: &[SymbolId],
-        context: &CallContext,
-        facts: &AnalysisFacts<'_>,
-    ) -> Option<ExprId> {
-        let aggregate: BTreeSet<_> = parameters
-            .iter()
-            .zip(context.arguments())
-            .filter_map(|(symbol, argument)| match argument {
-                ArgumentValue::Array(_) | ArgumentValue::Bus(_) => Some(*symbol),
-                ArgumentValue::Scalar(_) | ArgumentValue::Symbolic(_) => None,
-            })
-            .collect();
-        if aggregate.is_empty() {
-            return None;
-        }
-        for id in cfg.nodes() {
-            let Some(CfgNodeKind::DeferredAssignment { target, value, .. }) =
-                cfg.node(*id).map(|node| &node.kind)
-            else {
-                continue;
-            };
-            if !crate::hir_facts::deferred_scalar_target(self.hir(), target) {
-                continue;
-            }
-            if self.proved_value_shape(*value, &aggregate, facts, 0) == ProvedValueShape::Aggregate
-                && facts.reachable_node(*id).certified() == Some(&true)
-                && facts.structurally_must_execute(*id)
-            {
-                return Some(*value);
-            }
-        }
-        None
-    }
-
-    fn proved_value_shape(
-        &self,
-        expression: ExprId,
-        aggregate: &BTreeSet<SymbolId>,
-        facts: &AnalysisFacts<'_>,
-        depth: usize,
-    ) -> ProvedValueShape {
-        if depth >= MAX_ARGUMENT_DEPTH {
-            return ProvedValueShape::Unknown;
-        }
-        let Some(expression) = self.hir().expression(expression) else {
-            return ProvedValueShape::Unknown;
-        };
-        match &expression.kind {
-            ExprKind::Number(_) => ProvedValueShape::Scalar,
-            ExprKind::Array(_) | ExprKind::Tuple(_) => ProvedValueShape::Aggregate,
-            ExprKind::Access(path) if aggregate.contains(&path.root) && path.steps.is_empty() => {
-                ProvedValueShape::Aggregate
-            }
-            ExprKind::Ternary { condition, yes, no } => {
-                self.ternary_value_shape(*condition, *yes, *no, aggregate, facts, depth)
-            }
-            ExprKind::Parallel(inner) => {
-                self.proved_value_shape(*inner, aggregate, facts, depth + 1)
-            }
-            ExprKind::Access(_)
-            | ExprKind::Call { .. }
-            | ExprKind::AnonymousComponent { .. }
-            | ExprKind::Unary { .. }
-            | ExprKind::Binary { .. }
-            | ExprKind::Opaque(_) => ProvedValueShape::Unknown,
-        }
-    }
-
-    fn ternary_value_shape(
-        &self,
-        condition: ExprId,
-        yes: ExprId,
-        no: ExprId,
-        aggregate: &BTreeSet<SymbolId>,
-        facts: &AnalysisFacts<'_>,
-        depth: usize,
-    ) -> ProvedValueShape {
-        if let Some(Range::Exact(value)) = facts.range(condition).certified() {
-            let selected = if self.field.is_zero(value) { no } else { yes };
-            return self.proved_value_shape(selected, aggregate, facts, depth + 1);
-        }
-        let yes = self.proved_value_shape(yes, aggregate, facts, depth + 1);
-        let no = self.proved_value_shape(no, aggregate, facts, depth + 1);
-        if yes == no {
-            yes
-        } else {
-            ProvedValueShape::Unknown
         }
     }
 

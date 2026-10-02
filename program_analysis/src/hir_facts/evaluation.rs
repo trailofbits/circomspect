@@ -5,17 +5,71 @@ use std::collections::BTreeSet;
 use abstract_interpretation::graph::{EdgeId, FlowGraph, NodeId};
 
 use crate::hir_cfg::{CfgNodeKind, EdgeKind};
-use crate::hir_facts::{AnalysisFacts, Fact, Range};
+use crate::hir_facts::{AnalysisFacts, Fact, FactBlocker, Range, VisitAccesses};
 
 impl AnalysisFacts<'_> {
-    /// Prove evaluation on every possible entry-to-exit path, before its value is consumed.
-    /// Unavailable guards keep both paths; this cannot certify a call's result or effects.
+    /// Prove evaluation is necessary on every successful entry-to-exit completion.
+    /// Unavailable guards keep both paths. Typed value effects may themselves fail;
+    /// this certificate cannot prove that preceding effects complete or produce a value.
     pub(crate) fn required_evaluation(&self, node: NodeId) -> Fact<bool> {
-        let reachable = self.reachable_node(node);
+        let reachable = self.reachable_for_completion(node);
         if reachable.certified() != Some(&true) {
             return reachable;
         }
         Fact::known(!self.path_bypasses(node, &self.certified_guard_edges()))
+    }
+
+    fn reachable_for_completion(&self, node: NodeId) -> Fact<bool> {
+        if self.cfg.node(node).is_none() {
+            return Fact::blocked(BTreeSet::from([FactBlocker::ForeignQuery]));
+        }
+        if self.certified_dead_node(node) {
+            return Fact::known(false);
+        }
+        let mut blockers = self.reachability_blockers(&BTreeSet::from([node]));
+        blockers.retain(|blocker| match blocker {
+            FactBlocker::OpaqueNode(id, _) => !self.typed_value_effect(*id),
+            FactBlocker::Budget(_)
+            | FactBlocker::OpaqueEdge(_, _)
+            | FactBlocker::ExternalSummary
+            | FactBlocker::AggregateAccess
+            | FactBlocker::DeferredShape(_)
+            | FactBlocker::AggregateConstraint(_)
+            | FactBlocker::DeferredControl(_)
+            | FactBlocker::OpaqueExpression(_)
+            | FactBlocker::MissingExit
+            | FactBlocker::ForeignQuery
+            | FactBlocker::ForeignDefinition => true,
+        });
+        if !blockers.is_empty() {
+            return Fact::blocked(blockers);
+        }
+        Fact::known(self.site_state(node).is_some_and(|state| state.variables().is_some()))
+    }
+
+    fn typed_value_effect(&self, node: NodeId) -> bool {
+        let Some(node) = self.cfg.node(node) else { return false };
+        match &node.kind {
+            CfgNodeKind::Evaluate(expression) => expression.visit_accesses(self.hir, &mut |_| {}),
+            CfgNodeKind::Assignment { .. }
+            | CfgNodeKind::DeferredAssignment { .. }
+            | CfgNodeKind::OpaqueAssignment { .. }
+            | CfgNodeKind::Update { .. } => true,
+            CfgNodeKind::Entry
+            | CfgNodeKind::Exit
+            | CfgNodeKind::LoopHeader
+            | CfgNodeKind::Branch { .. }
+            | CfgNodeKind::Witness { .. }
+            | CfgNodeKind::Constraint { .. }
+            | CfgNodeKind::Instantiate { .. }
+            | CfgNodeKind::Declaration { .. }
+            | CfgNodeKind::Return(_)
+            | CfgNodeKind::Assert { .. }
+            | CfgNodeKind::DeferredAssert { .. }
+            | CfgNodeKind::Log
+            | CfgNodeKind::Opaque(_)
+            | CfgNodeKind::OpaqueEquality { .. } => false,
+        }
     }
 
     fn certified_guard_edges(&self) -> BTreeSet<EdgeId> {
