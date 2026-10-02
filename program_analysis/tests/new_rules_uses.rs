@@ -550,15 +550,22 @@ fn independent_internal_signal_guards_cover_external_bodies_and_bounds() {
 }
 
 #[test]
-fn dead_plain_assignment_does_not_create_incomplete_analysis() {
-    let source = "function Check(){if(0){var x=1;}return 7;}";
-    run_case(source, "Check", |results, _| {
-        assert_eq!(count(results, RuleKind::SideEffectFreeAssignment), 0);
-        assert!(!results
-            .abstentions()
-            .iter()
-            .any(|item| { item.kind == RuleKind::SideEffectFreeAssignment }));
-    });
+fn dead_assignments_do_not_create_incomplete_analysis() {
+    for source in [
+        "function Check(){if(0){var x=1;}return 7;}",
+        "function F(){return 7;}function Check(){if(0){var x=F();}return 7;}",
+    ] {
+        run_case(source, "Check", |results, _| {
+            assert_eq!(count(results, RuleKind::SideEffectFreeAssignment), 0, "{source}");
+            assert!(
+                !results
+                    .abstentions()
+                    .iter()
+                    .any(|item| item.kind == RuleKind::SideEffectFreeAssignment),
+                "dead source must not produce an incomplete scope: {source}"
+            );
+        });
+    }
 }
 
 #[test]

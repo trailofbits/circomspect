@@ -57,3 +57,22 @@ fn live_known_call_still_resolves_in_a_complete_definition() {
     let source = "function F(){return 7;}function Check(){var x=F();return 7;}";
     assert_eq!(validated(source, None), Ok(()));
 }
+
+#[test]
+fn independent_one_live_loop_copy_keeps_unknown_region_blocked() {
+    let source = concat!(
+        "function F(n){return n;}",
+        "function Check(n){for(var i=0;i<2;i++){if(i){var x=F(n);}}return 7;}"
+    );
+    assert_eq!(validated(source, None), Err(SummaryBlocker::IncompleteDefinition));
+}
+
+#[test]
+fn independent_dead_source_errors_are_not_discharged() {
+    for source in [
+        "function Check(){if(0){var x=1+;}return 7;}",
+        "function F(n){return n;}function Check(){if(0){var x=F();}return 7;}",
+    ] {
+        assert_eq!(validated(source, None), Err(SummaryBlocker::IncompleteDefinition));
+    }
+}
