@@ -1,6 +1,7 @@
 //! Resolved interprocedural calls and certified summaries.
 
 mod graph;
+mod cache;
 mod summary;
 mod effects;
 mod template;

@@ -32,7 +32,7 @@ enum SummaryState<T> {
 }
 
 impl<T> SummaryFact<T> {
-    fn known(value: T) -> Self {
+    pub(super) fn known(value: T) -> Self {
         Self(SummaryState::Certified(value))
     }
 
@@ -256,7 +256,12 @@ impl ProjectSummaries<'_> {
         if context.definition() != DefinitionRef::Function(id) {
             return SummaryFact::blocked(SummaryBlocker::WrongContext);
         }
-        SummaryFact::from_result(self.compute_function(context))
+        if let Err(blocker) = self.check_context(context) {
+            return SummaryFact::blocked(blocker);
+        }
+        self.caches.returns.get_or_compute(context.clone(), || {
+            SummaryFact::from_result(self.compute_function(context))
+        })
     }
 
     fn compute_function(&self, context: &CallContext) -> Result<FunctionSummary, SummaryBlocker> {
