@@ -609,3 +609,94 @@ fn dead_known_call_is_quiet_and_independent_assignment_still_warns() {
             .any(|item| { item.kind == RuleKind::SideEffectFreeAssignment }));
     });
 }
+
+#[test]
+fn dead_pure_call_chain_emits_cs0008_at_both_assignment_sources() {
+    let source =
+        concat!("function Pure(n){return n;}", "function Check(){var x=1;var y=Pure(x);return 7;}");
+    run_case(source, "Check", |results, sources| {
+        let findings: Vec<_> = results
+            .findings()
+            .iter()
+            .filter(|item| item.kind() == RuleKind::SideEffectFreeAssignment)
+            .cloned()
+            .collect();
+        assert_eq!(findings.len(), 2);
+        assert_eq!(count(results, RuleKind::UnusedVariableValue), 0);
+        let path = std::env::temp_dir().join(format!(
+            "circomspect-pure-call-chain-{}-{:?}.json",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        assert_eq!(
+            support::render(&findings, sources, MessageCategory::Warning, &[], &path).unwrap(),
+            (2, 2)
+        );
+        let sarif: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        let items = sarif["runs"][0]["results"].as_array().unwrap();
+        let columns: Vec<_> = items
+            .iter()
+            .map(|item| {
+                assert_eq!(item["ruleId"], "CS0008");
+                assert_eq!(item["level"], "warning");
+                item["locations"][0]["physicalLocation"]["region"]["startColumn"].as_u64().unwrap()
+                    as usize
+            })
+            .collect();
+        assert_eq!(
+            columns,
+            vec![source.find("x=1").unwrap() + 1, source.find("y=Pure").unwrap() + 1]
+        );
+        assert_eq!(
+            support::render(&findings, sources, MessageCategory::Warning, &["CS0008"], &path)
+                .unwrap(),
+            (0, 0)
+        );
+    });
+}
+
+#[test]
+fn nested_pure_call_result_is_removable_but_observed_result_keeps_argument_chain() {
+    run_case(
+        "function Pure(n){return n;}function Inner(){return 1;}\
+         function Check(){var y=Pure(Inner());return 7;}",
+        "Check",
+        |results, _| assert_eq!(count(results, RuleKind::SideEffectFreeAssignment), 1),
+    );
+    run_case(
+        "function Pure(){return 7;}template Check(){var y=Pure();}component main=Check();",
+        "Check",
+        |results, _| assert_eq!(count(results, RuleKind::SideEffectFreeAssignment), 1),
+    );
+    for observation in ["return y;", "assert(y);return 7;"] {
+        let source = format!(
+            "function Pure(n){{return 7;}}\
+             function Check(){{var x=1;var y=Pure(x);{observation}}}"
+        );
+        run_case(&source, "Check", |results, _| {
+            assert_eq!(count(results, RuleKind::SideEffectFreeAssignment), 0, "{source}");
+        });
+    }
+}
+
+#[test]
+fn impure_or_unproven_calls_keep_cs0008_unavailable() {
+    for source in [
+        "function Loggy(){log(1);return 7;}function Check(){var y=Loggy();return 7;}",
+        "function Loggy(){log(1);return 2;}function Pure(n){return 7;}\
+         function Check(){var y=Pure(Loggy());return 7;}",
+        "function F(){return F();}function Check(){var y=F();return 7;}",
+        "function Bad(n,n){return 7;}function Check(){var y=Bad(1,2);return 7;}",
+    ] {
+        run_case(source, "Check", |results, _| {
+            assert_eq!(count(results, RuleKind::SideEffectFreeAssignment), 0, "{source}");
+            assert!(
+                results
+                    .abstentions()
+                    .iter()
+                    .any(|item| { item.kind == RuleKind::SideEffectFreeAssignment }),
+                "{source}"
+            );
+        });
+    }
+}

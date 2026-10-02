@@ -4,7 +4,7 @@ use parser::new_frontend::AssignmentOperator;
 
 use crate::hir_cfg::{CfgNode, CfgNodeKind};
 use crate::hir_facts::{AssignmentDemand, Incidence};
-use crate::new_rules::{AbstentionReason, RuleContext, RuleKind, RuleResult};
+use crate::new_rules::{RuleContext, RuleKind, RuleResult};
 use crate::new_rules::uses::{abstain, local_abstain, summary_abstain, summary_reason, validated};
 
 pub(super) fn side_effect_free(context: &RuleContext<'_, '_, '_>, result: &mut RuleResult) {
@@ -14,38 +14,22 @@ pub(super) fn side_effect_free(context: &RuleContext<'_, '_, '_>, result: &mut R
     }
     for id in context.facts().cfg().nodes() {
         let Some(node) = context.facts().cfg().node(*id) else { continue };
-        if let CfgNodeKind::DeferredAssignment { target, .. } = &node.kind {
-            abstain_deferred_assignment(context, node, target, result);
-            continue;
-        }
-        let CfgNodeKind::Assignment { target, operator: AssignmentOperator::Assign, .. } =
-            &node.kind
-        else {
-            continue;
-        };
+        let target =
+            if let CfgNodeKind::Assignment {
+                target, operator: AssignmentOperator::Assign, ..
+            } = &node.kind
+            {
+                target
+            } else if let CfgNodeKind::DeferredAssignment { target, .. } = &node.kind {
+                target
+            } else {
+                continue;
+            };
         let Some(symbol) = context.hir().symbol(target.root) else { continue };
         if symbol.kind != SymbolKind::Variable {
             continue;
         }
         report_removable_assignment(context, node, target, result);
-    }
-}
-
-fn abstain_deferred_assignment(
-    context: &RuleContext<'_, '_, '_>,
-    node: &CfgNode,
-    target: &AccessPath,
-    result: &mut RuleResult,
-) {
-    let Some(symbol) = context.hir().symbol(target.root) else { return };
-    if symbol.kind == SymbolKind::Variable && assignment_reachable(context, node, target, result) {
-        abstain(
-            result,
-            context,
-            RuleKind::SideEffectFreeAssignment,
-            target.span,
-            AbstentionReason::UnsupportedConstruct,
-        );
     }
 }
 
