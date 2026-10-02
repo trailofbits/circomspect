@@ -1123,3 +1123,60 @@ fn three_level_output_warning_retains_every_ancestor_location() {
         );
     });
 }
+
+#[test]
+fn overwrites_and_zero_coefficient_arguments_preserve_source_reads() {
+    for (body, unused) in [
+        ("var x=2;var y=Pure(0*x);return 7;", "y"),
+        ("var x=2;var y=Pure(x);y=5;return y;", "y"),
+        ("var x=2;var y=Pure(x);return 0*y;", ""),
+    ] {
+        let source = format!("function Pure(n){{return 7;}}function Check(){{{body}}}");
+        run_case(&source, "Check", |results, sources| {
+            let findings: Vec<_> = results
+                .findings()
+                .iter()
+                .filter(|finding| finding.kind() == RuleKind::UnusedVariableValue)
+                .collect();
+            if unused.is_empty() {
+                assert!(findings.is_empty(), "{source}");
+            } else {
+                assert_eq!(findings.len(), 1, "{source}");
+                assert!(findings[0].to_report(sources).unwrap().message().contains("`y`"));
+            }
+        });
+    }
+}
+
+#[test]
+fn all_outputless_child_inputs_need_valid_unique_generated_bindings() {
+    for (bindings, emits) in [
+        ("e.x<==1;e.y<==2;", true),
+        ("e.x<==1;", false),
+        ("e.x<==1;e.y<--2;", false),
+        ("e.x<==1;e.y<==2;e.x<==1;", false),
+    ] {
+        let source = format!(
+            "template Leaf(){{signal output out;out<==1;}}\
+             template Empty(){{signal input x;signal input y;x===1;y===2;}}\
+             template Parent(){{component c=Leaf();component e=Empty();{bindings}}}\
+             component main=Parent();"
+        );
+        run_case(&source, "Parent", |results, _| {
+            assert_eq!(
+                count(results, RuleKind::UnusedOutputSignal),
+                usize::from(emits),
+                "{source}"
+            );
+            if !emits {
+                assert!(
+                    results
+                        .abstentions()
+                        .iter()
+                        .any(|item| item.kind == RuleKind::UnusedOutputSignal),
+                    "{source}"
+                );
+            }
+        });
+    }
+}
