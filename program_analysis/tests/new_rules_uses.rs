@@ -680,6 +680,164 @@ fn nested_pure_call_result_is_removable_but_observed_result_keeps_argument_chain
 }
 
 #[test]
+fn nested_unused_array_output_preserves_full_instance_path_and_sarif_location() {
+    let source = concat!(
+        "template Leaf(){signal output out[2];out[0]<==1;out[1]<==2;} ",
+        "template Middle(){component c=Leaf();signal output y;y<==c.out[0];} ",
+        "template Parent(){component m=Middle();signal output z;z<==m.y;} ",
+        "component main=Parent();"
+    );
+    run_case(source, "Parent", |results, sources| {
+        let findings: Vec<_> = results
+            .findings()
+            .iter()
+            .filter(|item| item.kind() == RuleKind::UnusedOutputSignal)
+            .cloned()
+            .collect();
+        assert_eq!(findings.len(), 1);
+        let path = std::env::temp_dir().join(format!(
+            "circomspect-nested-output-{}-{:?}.json",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        assert_eq!(
+            support::render(&findings, sources, MessageCategory::Warning, &[], &path).unwrap(),
+            (1, 1)
+        );
+        let sarif: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        let item = &sarif["runs"][0]["results"][0];
+        assert_eq!(item["ruleId"], "CS0018");
+        assert_eq!(item["level"], "warning");
+        assert!(item["message"]["text"].as_str().unwrap().contains("m.c.out[1]"));
+        assert_eq!(item["relatedLocations"][0]["message"]["text"], "instance `m`");
+        assert_eq!(
+            item["relatedLocations"][0]["physicalLocation"]["region"]["startColumn"],
+            source.find("m=Middle()").unwrap() + "m=".len() + 1
+        );
+        assert_eq!(
+            item["locations"][0]["physicalLocation"]["region"]["startColumn"],
+            source.find("c=Leaf()").unwrap() + 3
+        );
+        assert_eq!(
+            support::render(&findings, sources, MessageCategory::Warning, &["CS0018"], &path)
+                .unwrap(),
+            (0, 0)
+        );
+        fs::remove_file(&path).unwrap();
+    });
+}
+
+#[test]
+fn equal_nested_source_sites_keep_distinct_rooted_instance_warnings() {
+    let source = concat!(
+        "template Leaf(){signal output a;signal output b;a<==1;b<==2;} ",
+        "template Middle(){component c=Leaf();signal output y;y<==c.a;} ",
+        "template Parent(){component m[2];m[0]=Middle();m[1]=Middle();",
+        "signal output z;z<==m[0].y;}component main=Parent();"
+    );
+    run_case(source, "Parent", |results, sources| {
+        let findings: Vec<_> = results
+            .findings()
+            .iter()
+            .filter(|item| item.kind() == RuleKind::UnusedOutputSignal)
+            .cloned()
+            .collect();
+        assert_eq!(findings.len(), 3);
+        let path = std::env::temp_dir().join(format!(
+            "circomspect-nested-instances-{}-{:?}.json",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        assert_eq!(
+            support::render(&findings, sources, MessageCategory::Warning, &[], &path).unwrap(),
+            (3, 3)
+        );
+        let sarif: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        let items = sarif["runs"][0]["results"].as_array().unwrap();
+        let messages: Vec<_> =
+            items.iter().map(|item| item["message"]["text"].as_str().unwrap()).collect();
+        assert!(messages.iter().any(|message| message.contains("m[0].c.b")));
+        assert!(messages.iter().any(|message| message.contains("m[1].c.b")));
+        assert!(messages.iter().any(|message| message.contains("m[1].y")));
+        for (index, label) in ["m[0]", "m[1]"].iter().enumerate() {
+            let item = items
+                .iter()
+                .find(|item| {
+                    item["message"]["text"].as_str().unwrap().contains(&format!("{label}.c.b"))
+                })
+                .unwrap();
+            assert_eq!(
+                item["relatedLocations"][0]["message"]["text"],
+                format!("instance `{label}`")
+            );
+            assert_eq!(
+                item["relatedLocations"][0]["physicalLocation"]["region"]["startColumn"],
+                source.find(&format!("m[{index}]=Middle()")).unwrap() + "m[0]=".len() + 1
+            );
+            assert_eq!(
+                item["locations"][0]["physicalLocation"]["region"]["startColumn"],
+                source.find("c=Leaf()").unwrap() + "c=".len() + 1
+            );
+        }
+        fs::remove_file(&path).unwrap();
+    });
+}
+
+#[test]
+fn complete_reads_of_nested_output_elements_do_not_emit_unused_warning() {
+    let source = concat!(
+        "template Leaf(){signal output out[2];out[0]<==1;out[1]<==2;} ",
+        "template Middle(){component c=Leaf();signal output y[2];",
+        "y[0]<==c.out[0];y[1]<==c.out[1];} ",
+        "template Parent(){component m=Middle();signal output z[2];",
+        "z[0]<==m.y[0];z[1]<==m.y[1];}component main=Parent();"
+    );
+    run_case(source, "Parent", |results, _| {
+        assert_eq!(count(results, RuleKind::UnusedOutputSignal), 0);
+    });
+}
+
+#[test]
+fn opaque_sibling_and_budget_exhaustion_withhold_nested_unused_warnings() {
+    let opaque = concat!(
+        "template Leaf(){signal output out;out<==1;} ",
+        "template Parent(){component c=Leaf();component missing=Missing();} ",
+        "component main=Parent();"
+    );
+    run_case(opaque, "Parent", |results, _| {
+        assert_eq!(count(results, RuleKind::UnusedOutputSignal), 0);
+        assert!(results.abstentions().iter().any(|item| item.kind == RuleKind::UnusedOutputSignal));
+    });
+    let budget = concat!(
+        "template Leaf(){signal output out[256];} ",
+        "template Parent(){component c=Leaf();}component main=Parent();"
+    );
+    run_case(budget, "Parent", |results, _| {
+        assert_eq!(count(results, RuleKind::UnusedOutputSignal), 0);
+        assert!(results.abstentions().iter().any(|item| {
+            item.kind == RuleKind::UnusedOutputSignal
+                && if let AbstentionReason::Summary(blockers) = &item.reason {
+                    blockers.contains(&SummaryBlocker::ContextBudget)
+                } else {
+                    false
+                }
+        }));
+    });
+}
+
+#[test]
+fn uninstantiated_library_output_never_becomes_a_project_unused_warning() {
+    let source = concat!(
+        "template Leaf(){signal output out;out<==1;} ",
+        "template Parent(){component c=Leaf();}"
+    );
+    run_case(source, "Parent", |results, _| {
+        assert_eq!(count(results, RuleKind::UnusedOutputSignal), 0);
+        assert!(results.abstentions().iter().any(|item| item.kind == RuleKind::UnusedOutputSignal));
+    });
+}
+
+#[test]
 fn impure_or_unproven_calls_keep_cs0008_unavailable() {
     for source in [
         "function Loggy(){log(1);return 7;}function Check(){var y=Loggy();return 7;}",
@@ -699,4 +857,33 @@ fn impure_or_unproven_calls_keep_cs0008_unavailable() {
             );
         });
     }
+}
+
+#[test]
+fn three_level_output_warning_retains_every_ancestor_location() {
+    let source = concat!(
+        "template Leaf(){signal output out;out<==1;}",
+        "template Middle(){component leaf=Leaf();}",
+        "template Outer(){component mid=Middle();}",
+        "template Parent(){component top=Outer();}component main=Parent();"
+    );
+    run_case(source, "Parent", |results, sources| {
+        let findings: Vec<_> = results
+            .findings()
+            .iter()
+            .filter(|finding| finding.kind() == RuleKind::UnusedOutputSignal)
+            .collect();
+        assert_eq!(findings.len(), 1);
+        let report = findings[0].to_report(sources).unwrap();
+        assert!(report.message().contains("top.mid.leaf.out"));
+        assert_eq!(report.secondary().len(), 2);
+        assert_eq!(
+            report.secondary()[0].range.start,
+            source.find("top=Outer()").unwrap() + "top=".len()
+        );
+        assert_eq!(
+            report.secondary()[1].range.start,
+            source.find("mid=Middle()").unwrap() + "mid=".len()
+        );
+    });
 }

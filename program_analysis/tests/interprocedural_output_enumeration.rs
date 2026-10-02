@@ -149,7 +149,7 @@ fn unbound_child_input_enumerates_a_candidate_but_cannot_prove_project_unused() 
     let outputs = provider.exact_component_outputs(&facts, &root);
     let outputs = outputs.certified().unwrap();
     assert_eq!(outputs.len(), 1);
-    let use_fact = provider.closed_main_component_output_use(&facts, outputs[0].applied_port());
+    let use_fact = provider.closed_project_output_uses(&facts, &root);
     assert!(use_fact.certified().is_none());
 }
 
@@ -184,10 +184,15 @@ fn enumerated_outputs_retain_closed_project_use_provenance() {
     let facts = provider.analyze_for_evidence(&cfg, &root, None).unwrap();
     let result = provider.exact_component_outputs(&facts, &root);
     let outputs = result.certified().unwrap();
+    let project_uses = provider.closed_project_output_uses(&facts, &root);
+    let project_uses = project_uses.certified().unwrap();
     let mut statuses = Vec::new();
     for output in outputs {
-        let use_fact = provider.closed_main_component_output_use(&facts, output.applied_port());
-        statuses.push(use_fact.certified().unwrap().status());
+        let use_fact = project_uses
+            .iter()
+            .find(|proof| proof.handle() == output.applied_port().handle())
+            .unwrap();
+        statuses.push(use_fact.status());
     }
     assert_eq!(statuses, [ProjectOutputStatus::Read, ProjectOutputStatus::Unused]);
 }

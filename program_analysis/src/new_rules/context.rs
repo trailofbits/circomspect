@@ -183,18 +183,13 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
         Ok(self.summaries.caller_output_read(self.facts, applied))
     }
 
-    /// Prove output use for an exact direct child of the active, validated main.
+    /// Certify output use across every exact instance path below the active main.
     ///
-    /// The applied port must belong to this exact source scope. Library roots and
-    /// incomplete project execution produce unavailable evidence, never an unused proof.
-    pub fn closed_main_component_output_use(
-        &self,
-        applied: &AppliedComponentPort,
-    ) -> Result<SummaryFact<ProjectOutputUse>, SummaryBlocker> {
-        if applied.caller_evidence() != self.evidence {
-            return Err(SummaryBlocker::WrongContext);
-        }
-        Ok(self.summaries.closed_main_component_output_use(self.facts, applied))
+    /// An incomplete project or uninstantiated library root returns unavailable
+    /// evidence. Positive local reads remain available independently.
+    #[must_use]
+    pub fn closed_project_output_uses(&self) -> SummaryFact<Vec<ProjectOutputUse>> {
+        self.summaries.closed_project_output_uses(self.facts, self.evidence)
     }
 
     /// Prove incidence for an exact internal signal in this validated root template.

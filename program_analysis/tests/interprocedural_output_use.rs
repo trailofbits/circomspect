@@ -1,9 +1,10 @@
+use std::collections::BTreeSet;
 use std::fs;
 
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::interprocedural::{
     CallOwner, CallReachability, ProjectOutputStatus, ProjectOutputUse, ProjectSummaries,
-    SummaryBlocker, SummaryFact,
+    SummaryBlocker,
 };
 use parser::hir::{lift_project, DefinitionRef, LiftedProject};
 use parser::new_frontend::{load_sources, PortDirection, Version, VersionPolicy};
@@ -29,7 +30,25 @@ fn assert_lifted_complete(source: &str) {
     assert!(lifted.incomplete.is_empty(), "{:?}", lifted.incomplete);
 }
 
-fn internal_use(source: &str, index: usize) -> SummaryFact<ProjectOutputUse> {
+#[derive(Debug)]
+enum SelectedUse {
+    Certified(ProjectOutputUse),
+    Unavailable(BTreeSet<SummaryBlocker>),
+}
+
+impl SelectedUse {
+    fn certified(&self) -> Option<&ProjectOutputUse> {
+        let Self::Certified(proof) = self else { return None };
+        Some(proof)
+    }
+
+    fn unavailable(&self) -> Option<&BTreeSet<SummaryBlocker>> {
+        let Self::Unavailable(blockers) = self else { return None };
+        Some(blockers)
+    }
+}
+
+fn internal_use(source: &str, index: usize) -> SelectedUse {
     internal_use_at(source, index, &[], None)
 }
 
@@ -43,7 +62,7 @@ fn internal_use_at(
     index: usize,
     output_indices: &[usize],
     budget: Option<usize>,
-) -> SummaryFact<ProjectOutputUse> {
+) -> SelectedUse {
     internal_use_at_option(source, index, output_indices, budget)
         .unwrap_or_else(|| panic!("the selected component output must be applicable"))
 }
@@ -53,7 +72,7 @@ fn internal_use_at_option(
     index: usize,
     output_indices: &[usize],
     budget: Option<usize>,
-) -> Option<SummaryFact<ProjectOutputUse>> {
+) -> Option<SelectedUse> {
     let lifted = fixture(source);
     let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
@@ -104,12 +123,22 @@ fn internal_use_at_option(
     };
     let applied = provider.apply_component_output(&facts, &root, &call, &handle);
     let applied = applied.certified()?;
-    if let Some(limit) = budget {
+    let closure = if let Some(limit) = budget {
         let pending = provider.analyze_for_evidence(&cfg, &root, Some(limit)).unwrap();
-        Some(provider.closed_main_component_output_use(&pending, applied))
+        provider.closed_project_output_uses(&pending, &root)
     } else {
-        Some(provider.closed_main_component_output_use(&facts, applied))
+        provider.closed_project_output_uses(&facts, &root)
+    };
+    if let Some(uses) = closure.certified() {
+        let Some(proof) = uses.iter().find(|proof| proof.handle() == applied.handle()) else {
+            panic!("complete project closure omitted an applied output")
+        };
+        return Some(SelectedUse::Certified(proof.clone()));
     }
+    let Some(blockers) = closure.unavailable() else {
+        panic!("project closure had neither a certificate nor blockers")
+    };
+    Some(SelectedUse::Unavailable(blockers.clone()))
 }
 
 #[test]
@@ -187,9 +216,6 @@ fn symbolic_facts_cannot_borrow_a_concrete_main_output_use_proof() {
     ));
     let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
-    let DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap() else {
-        panic!("Child must be a template")
-    };
     let site = provider.graph().calls_from(CallOwner::Main(0))[0];
     let CallReachability::Reachable(main) =
         provider.graph().reachable_main_call(site.id(), &lifted.hir)
@@ -198,21 +224,9 @@ fn symbolic_facts_cannot_borrow_a_concrete_main_output_use_proof() {
     };
     let concrete = provider.main_evidence(&main).unwrap();
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
-    let concrete_facts = provider.analyze_for_evidence(&cfg, &concrete, None).unwrap();
-    let output = lifted.hir.template(child).unwrap().ports[0];
-    let component = lifted.hir.components()[0].id;
-    let handle = concrete_facts.component_output_handle(component, &[], output, &[]).unwrap();
-    let call_site = provider.graph().calls_from(CallOwner::Definition(parent))[0];
-    let CallReachability::Reachable(call) =
-        provider.graph().reachable_call(call_site.id(), &concrete_facts)
-    else {
-        panic!("child must be reachable")
-    };
-    let applied = provider.apply_component_output(&concrete_facts, &concrete, &call, &handle);
-    let applied = applied.certified().unwrap();
     let symbolic = provider.symbolic_root(parent).unwrap();
     let symbolic_facts = provider.analyze_for_evidence(&cfg, &symbolic, None).unwrap();
-    let result = provider.closed_main_component_output_use(&symbolic_facts, applied);
+    let result = provider.closed_project_output_uses(&symbolic_facts, &concrete);
     assert!(result
         .unavailable()
         .is_some_and(|reasons| reasons.contains(&SummaryBlocker::WrongContext)));
@@ -555,7 +569,7 @@ fn a_failing_direct_sibling_template_blocks_project_unused() {
 }
 
 #[test]
-fn an_indirect_child_of_main_cannot_borrow_the_direct_main_claim() {
+fn a_symbolic_indirect_child_cannot_borrow_main_output_use() {
     let lifted = fixture(concat!(
         "template Child(){signal input in;signal output out;out<==in;} ",
         "template Parent(){component c=Child();c.in<==1;} ",
@@ -563,23 +577,10 @@ fn an_indirect_child_of_main_cannot_borrow_the_direct_main_claim() {
     ));
     let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
-    let DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap() else {
-        panic!("Child must be a template")
-    };
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
     let root = provider.symbolic_root(parent).unwrap();
     let facts = provider.analyze_for_evidence(&cfg, &root, None).unwrap();
-    let output = lifted.hir.template(child).unwrap().ports[1];
-    let handle =
-        facts.component_output_handle(lifted.hir.components()[0].id, &[], output, &[]).unwrap();
-    let site = provider.graph().calls_from(CallOwner::Definition(parent))[0];
-    let CallReachability::Reachable(call) = provider.graph().reachable_call(site.id(), &facts)
-    else {
-        panic!("child must be reachable")
-    };
-    let applied = provider.apply_component_output(&facts, &root, &call, &handle);
-    let applied = applied.certified().unwrap();
-    assert!(provider.closed_main_component_output_use(&facts, applied).certified().is_none());
+    assert!(provider.closed_project_output_uses(&facts, &root).certified().is_none());
 }
 
 #[test]

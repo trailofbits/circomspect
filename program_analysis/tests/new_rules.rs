@@ -271,8 +271,7 @@ fn exact_caller_output_read_does_not_certify_an_unused_sibling() {
             .component_output_handle(lifted.hir.components()[0].id, &[index], output, &[])
             .unwrap();
         let applied = context.applied_component_port(site.id(), &handle).unwrap().unwrap();
-        let project_use =
-            context.closed_main_component_output_use(applied.certified().unwrap()).unwrap();
+        let project_use = context.closed_project_output_uses();
         assert!(project_use.certified().is_none());
         let read = context.caller_output_read(applied.certified().unwrap()).unwrap();
         if index == 0 {
@@ -316,6 +315,8 @@ fn main_rule_context_exposes_exact_project_output_use() {
     let context = RuleContext::new(&facts, &summaries, &evidence).unwrap();
     let output = lifted.hir.template(child).unwrap().ports[0];
     let statuses = [ProjectOutputStatus::Read, ProjectOutputStatus::Unused];
+    let project_uses = context.closed_project_output_uses();
+    let project_uses = project_uses.certified().unwrap();
     let sites = context.call_sites();
     assert_eq!(sites.len(), statuses.len());
     for (index, site) in sites.iter().enumerate() {
@@ -323,9 +324,10 @@ fn main_rule_context_exposes_exact_project_output_use() {
             .component_output_handle(lifted.hir.components()[0].id, &[index], output, &[])
             .unwrap();
         let applied = context.applied_component_port(site.id(), &handle).unwrap().unwrap();
-        let result =
-            context.closed_main_component_output_use(applied.certified().unwrap()).unwrap();
-        let result = result.certified().unwrap();
+        let result = project_uses
+            .iter()
+            .find(|proof| proof.handle() == applied.certified().unwrap().handle())
+            .unwrap();
         assert_eq!(result.status(), statuses[index]);
         assert_eq!(result.handle(), &handle);
         assert_eq!(result.main_evidence(), &evidence);
@@ -386,10 +388,7 @@ fn composed_output_constraint_requires_the_active_caller_scope() {
         Some(SummaryBlocker::WrongContext)
     );
     assert_eq!(other_context.caller_output_read(applied).err(), Some(SummaryBlocker::WrongContext));
-    assert_eq!(
-        other_context.closed_main_component_output_use(applied).err(),
-        Some(SummaryBlocker::WrongContext)
-    );
+    assert_eq!(other_context.closed_project_output_uses().certified(), None);
     let other_handle = other_context
         .facts()
         .component_output_handle(lifted.hir.components()[1].id, &[], output, &[])

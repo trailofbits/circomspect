@@ -69,7 +69,7 @@ impl ProjectSummaries<'_> {
         SummaryFact::from_result(self.closed_project_uses(facts, main))
     }
 
-    pub(super) fn closed_project_uses(
+    fn closed_project_uses(
         &self,
         facts: &AnalysisFacts<'_>,
         main: &ContextEvidence,

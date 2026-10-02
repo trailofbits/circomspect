@@ -74,6 +74,12 @@ impl ProjectInstanceStep {
         &self.indices
     }
 
+    /// Exact source component target for this step of the checked instance path.
+    #[must_use]
+    pub fn target(&self) -> &AccessPath {
+        &self.target
+    }
+
     #[must_use]
     pub fn callee_evidence(&self) -> &ContextEvidence {
         &self.callee
@@ -149,37 +155,6 @@ impl ProjectOutputUse {
 }
 
 impl ProjectSummaries<'_> {
-    /// Prove use or non-use of an exact direct child of validated main.
-    ///
-    /// An input-bearing child requires a scalar component and certified scalar
-    /// bindings. It is the only reachable component instance in this bounded
-    /// project closure.
-    pub fn closed_main_component_output_use(
-        &self,
-        facts: &AnalysisFacts<'_>,
-        applied: &AppliedComponentPort,
-    ) -> SummaryFact<ProjectOutputUse> {
-        SummaryFact::from_result(self.closed_component_result(facts, applied))
-    }
-
-    fn closed_component_result(
-        &self,
-        facts: &AnalysisFacts<'_>,
-        applied: &AppliedComponentPort,
-    ) -> Result<ProjectOutputUse, SummaryBlocker> {
-        self.check_facts_for_evidence(facts, applied.caller_evidence())?;
-        let ContextOrigin::Main(_) = applied.caller_evidence().origin() else {
-            return Err(SummaryBlocker::UnsupportedContext);
-        };
-        let uses = self.closed_project_uses(facts, applied.caller_evidence())?;
-        uses.into_iter()
-            .find(|proof| match &proof.target {
-                OutputTarget::Component(found) => found.as_ref() == applied,
-                OutputTarget::Exported(_) => false,
-            })
-            .ok_or(SummaryBlocker::WrongInstance)
-    }
-
     pub(super) fn check_parent_components_complete(
         &self,
         facts: &AnalysisFacts<'_>,
