@@ -13,15 +13,15 @@ permissions:
 
 jobs:
   quality:
-    name: Rust 1.98.1 quality gates
+    name: Rust 1.99.0 quality gates
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install Rust 1.98.1
-        run: rustup toolchain install 1.98.1 --profile minimal --component clippy,rustfmt
+      - name: Install Rust 1.99.0
+        run: rustup toolchain install 1.99.0 --profile minimal --component clippy,rustfmt
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Run Clippy
@@ -50,8 +50,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install Rust 1.98.1
-        run: rustup toolchain install 1.98.1 --profile minimal
+      - name: Install Rust 1.99.0
+        run: rustup toolchain install 1.99.0 --profile minimal
       - name: Build pinned Circom compiler
         run: bash tests/conformance/prepare_compiler.sh "$RUNNER_TEMP/circom-oracle"
       - name: Compare grammar corpus
