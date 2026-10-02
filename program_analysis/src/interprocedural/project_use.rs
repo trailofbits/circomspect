@@ -356,11 +356,12 @@ impl ProjectSummaries<'_> {
             | CfgNodeKind::OpaqueAssignment { .. }
             | CfgNodeKind::OpaqueEquality { .. }
             | CfgNodeKind::LoopHeader => true,
-            CfgNodeKind::Entry
-            | CfgNodeKind::Exit
-            | CfgNodeKind::Declaration { .. }
-            | CfgNodeKind::Return(_)
-            | CfgNodeKind::Log => false,
+            CfgNodeKind::Declaration { symbol } => {
+                facts.checked_symbol_dimensions(*symbol).is_err()
+            }
+            CfgNodeKind::Entry | CfgNodeKind::Exit | CfgNodeKind::Return(_) | CfgNodeKind::Log => {
+                false
+            }
         }
     }
 

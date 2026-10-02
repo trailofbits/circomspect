@@ -22,6 +22,13 @@ fn fixture(source: &str) -> LiftedProject {
     lift_project(&loaded)
 }
 
+fn assert_lifted_complete(source: &str) {
+    let lifted = fixture(source);
+    assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
+    assert!(lifted.syntax_diagnostics.is_empty(), "{:?}", lifted.syntax_diagnostics);
+    assert!(lifted.incomplete.is_empty(), "{:?}", lifted.incomplete);
+}
+
 fn internal_use(source: &str, index: usize) -> SummaryFact<ProjectOutputUse> {
     internal_use_at(source, index, &[], None)
 }
@@ -69,7 +76,10 @@ fn internal_use_at_option(
         .iter()
         .copied()
         .find(|id| {
-            lifted.hir.port(*id).is_some_and(|port| port.direction == Some(PortDirection::Output))
+            lifted.hir.port(*id).is_some_and(|port| {
+                port.direction == Some(PortDirection::Output)
+                    && lifted.hir.symbol(port.symbol).is_some_and(|symbol| symbol.name == "out")
+            })
         })
         .unwrap();
     let component = lifted
@@ -435,6 +445,56 @@ fn compound_division_cannot_support_a_project_unused_certificate() {
         let result = internal_use_at_option(&source, 0, &[], None);
         assert!(result.as_ref().map_or(true, |fact| fact.certified().is_none()));
     }
+}
+
+#[test]
+fn invalid_local_declaration_dimensions_block_project_unused() {
+    for declaration in ["var x[-1];", "signal x[-1];", "signal output x[-1];"] {
+        let parent = format!(
+            "template Child(){{signal output out;out<==1;}} \
+             template Parent(){{component c=Child();{declaration}}} component main=Parent();"
+        );
+        assert_lifted_complete(&parent);
+        assert!(internal_use(&parent, 0).certified().is_none(), "parent {declaration}");
+        let child = format!(
+            "template Child(){{{declaration}signal output out;out<==1;}} \
+             template Parent(){{component c=Child();}} component main=Parent();"
+        );
+        assert_lifted_complete(&child);
+        assert!(internal_use(&child, 0).certified().is_none(), "child {declaration}");
+    }
+    let bus = concat!(
+        "bus B(){signal x;} template Child(){signal output out;out<==1;} ",
+        "template Parent(){component c=Child();B b[-1];} component main=Parent();"
+    );
+    assert_lifted_complete(bus);
+    assert!(internal_use(bus, 0).certified().is_none());
+}
+
+#[test]
+fn context_bound_and_sibling_dimensions_need_valid_sizes() {
+    let parameter = concat!(
+        "template Child(){signal output out;out<==1;} ",
+        "template Parent(n){component c=Child();var x[n];} component main=Parent(-1);"
+    );
+    assert_lifted_complete(parameter);
+    assert!(internal_use(parameter, 0).certified().is_none());
+    let sibling = concat!(
+        "template Child(){signal output out;out<==1;} ",
+        "template Sibling(){signal output out;var x[-1];out<==1;} ",
+        "template Parent(){component c=Child();component d=Sibling();} ",
+        "component main=Parent();"
+    );
+    assert_lifted_complete(sibling);
+    assert!(internal_use(sibling, 0).certified().is_none());
+    let valid = concat!(
+        "template Child(){signal output out;out<==1;} ",
+        "template Parent(){component c=Child();var x[1];x[0]=1;} component main=Parent();"
+    );
+    assert_eq!(
+        internal_use(valid, 0).certified().map(ProjectOutputUse::status),
+        Some(ProjectOutputStatus::Unused)
+    );
 }
 
 #[test]

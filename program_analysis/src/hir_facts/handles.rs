@@ -8,7 +8,7 @@ use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use parser::hir::{
     AccessPath, AccessStep, ArrayIndex, CallTarget, ComponentId, DefinitionRef, ExprId, ExprKind,
-    PortId, PortSchema, Symbol, TemplateId,
+    PortId, PortSchema, Symbol, SymbolId, TemplateId,
 };
 use parser::new_frontend::PortDirection;
 use program_structure::utils::constants::Curve;
@@ -325,11 +325,17 @@ impl AnalysisFacts<'_> {
         component: ComponentId,
     ) -> Result<Vec<usize>, AccessHandleError> {
         let component = self.hir.component(component).ok_or(AccessHandleError::ForeignComponent)?;
-        if !self.cfg.owns_symbol(component.symbol) {
-            return Err(AccessHandleError::ForeignComponent);
+        self.checked_symbol_dimensions(component.symbol)
+    }
+
+    pub(crate) fn checked_symbol_dimensions(
+        &self,
+        symbol: SymbolId,
+    ) -> Result<Vec<usize>, AccessHandleError> {
+        if !self.cfg.owns_symbol(symbol) {
+            return Err(AccessHandleError::UnprovedShape);
         }
-        let symbol =
-            self.hir.symbol(component.symbol).ok_or(AccessHandleError::ForeignComponent)?;
+        let symbol = self.hir.symbol(symbol).ok_or(AccessHandleError::UnprovedShape)?;
         if !symbol.shape_checked || symbol.dimensions.len() != symbol.rank {
             return Err(AccessHandleError::UnprovedShape);
         }
