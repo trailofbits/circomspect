@@ -63,6 +63,65 @@ fn pure_dead_assignment_emits_cs0008_and_a_returned_value_does_not() {
 }
 
 #[test]
+fn side_effect_free_assignment_uses_only_a_pure_dead_scalar_value() {
+    for (source, expected) in [
+        ("function Check(){var x=1;return 7;}", 1),
+        ("function Check(){var a=1;var x=a;return a;}", 1),
+        ("function Check(){var x=1;return x;}", 0),
+        ("function Check(){var x=1;x=2;return x;}", 1),
+        ("function Check(p){var x=p;return x;}", 0),
+        ("function Check(p){var x=p;return 7;}", 0),
+        ("function Check(){var x=1+2;return 7;}", 0),
+    ] {
+        run_case(source, "Check", |results, _| {
+            assert_eq!(count(results, RuleKind::SideEffectFreeAssignment), expected, "{source}");
+        });
+    }
+    run_case("function Check(p){var x=p;return 7;}", "Check", |results, _| {
+        assert!(results
+            .abstentions()
+            .iter()
+            .any(|abstention| { abstention.kind == RuleKind::SideEffectFreeAssignment }));
+    });
+    run_case("function Check(){var x=1+2;return 7;}", "Check", |results, _| {
+        assert!(results
+            .abstentions()
+            .iter()
+            .any(|abstention| { abstention.kind == RuleKind::SideEffectFreeAssignment }));
+    });
+}
+
+#[test]
+fn pure_dead_local_assignment_retains_both_defined_rule_claims() {
+    run_case("function Check(){var x=1;return 7;}", "Check", |results, sources| {
+        let findings: Vec<_> = results
+            .findings()
+            .iter()
+            .filter(|finding| {
+                finding.kind() == RuleKind::SideEffectFreeAssignment
+                    || finding.kind() == RuleKind::UnusedVariableValue
+            })
+            .cloned()
+            .collect();
+        assert_eq!(findings.len(), 2);
+        let path = std::env::temp_dir().join(format!(
+            "circomspect-use-overlap-{}-{:?}.json",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        assert_eq!(
+            support::render(&findings, sources, MessageCategory::Warning, &[], &path).unwrap(),
+            (2, 2)
+        );
+        let sarif: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        let locations = &sarif["runs"][0]["results"];
+        let first = &locations[0]["locations"][0]["physicalLocation"]["region"];
+        let second = &locations[1]["locations"][0]["physicalLocation"]["region"];
+        assert_eq!(first, second);
+    });
+}
+
+#[test]
 fn unused_local_value_and_internal_signal_emit_cs0006() {
     run_case("function Check(){var x=1;x=2;return x;}", "Check", |results, _| {
         assert_eq!(count(results, RuleKind::UnusedVariableValue), 1);
@@ -72,6 +131,33 @@ fn unused_local_value_and_internal_signal_emit_cs0006() {
     });
     run_case("template Check(){signal output x;x<--7;}", "Check", |results, _| {
         assert_eq!(count(results, RuleKind::UnusedVariableValue), 0)
+    });
+}
+
+#[test]
+fn unused_value_respects_overwrite_and_export_boundaries() {
+    for (source, expected) in [
+        ("function Check(){var x=1;x=2;return x;}", 1),
+        ("function Check(){var x=1;return x;}", 0),
+        ("function Check(){var x=1;x=2;return 7;}", 2),
+        ("template Check(){signal x;x<--7;}", 1),
+        ("template Check(){signal output x;x<--7;}", 0),
+        ("template Check(){signal input x;signal output y;y<==x;}", 0),
+    ] {
+        run_case(source, "Check", |results, _| {
+            assert_eq!(count(results, RuleKind::UnusedVariableValue), expected, "{source}");
+        });
+    }
+}
+
+#[test]
+fn symbolic_signal_index_and_constraint_are_may_uses_of_internal_values() {
+    let source = concat!(
+        "template Check(){signal input i;signal x[2];x[0]<--1;",
+        "signal output y;y<==x[i];}"
+    );
+    run_case(source, "Check", |results, _| {
+        assert_eq!(count(results, RuleKind::UnusedVariableValue), 0);
     });
 }
 
@@ -86,6 +172,24 @@ fn unread_validated_parameter_emits_cs0007_but_any_reachable_read_suppresses_it(
     run_case("function Check(p){if(0){return p;}return 7;}", "Check", |results, _| {
         assert_eq!(count(results, RuleKind::UnusedParameterValue), 1);
     });
+}
+
+#[test]
+fn parameter_read_paths_never_become_false_unread_proofs() {
+    for (source, expected) in [
+        ("function Check(p){return 7;}", 1),
+        ("function Check(p){return p;}", 0),
+        ("function Check(p){p=1;return p;}", 0),
+        ("function Check(p){return p[0];}", 0),
+        ("function Check(p){assert(p);return 7;}", 0),
+        ("function Check(p){if(p){return 1;}return 7;}", 0),
+        ("function Check(p){if(0){return p;}return 7;}", 1),
+        ("function Child(q){return q;}function Check(p){var x=Child(p);return 7;}", 0),
+    ] {
+        run_case(source, "Check", |results, _| {
+            assert_eq!(count(results, RuleKind::UnusedParameterValue), expected, "{source}");
+        });
+    }
 }
 
 #[test]
@@ -108,29 +212,155 @@ fn closed_main_unused_exact_child_output_emits_cs0018_and_library_abstains() {
 }
 
 #[test]
-fn use_warning_renders_with_fixed_id_span_and_allow_filter() {
-    let source = "function Check(p){return 7;}";
-    run_case(source, "Check", |results, sources| {
-        let findings: Vec<_> = results
-            .findings()
-            .iter()
-            .filter(|finding| finding.kind() == RuleKind::UnusedParameterValue)
-            .cloned()
-            .collect();
-        assert_eq!(findings.len(), 1);
-        let path = std::env::temp_dir()
-            .join(format!("circomspect-uses-sarif-{}.json", std::process::id()));
-        let rendered =
-            support::render(&findings, sources, MessageCategory::Warning, &[], &path).unwrap();
-        assert_eq!(rendered, (1, 1));
-        let sarif: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        let results = sarif["runs"][0]["results"].as_array().unwrap();
-        assert_eq!(results[0]["ruleId"], "CS0007");
-        assert_eq!(results[0]["level"], "warning");
-        assert_eq!(results[0]["locations"][0]["physicalLocation"]["region"]["startLine"], 1);
-        let hidden =
-            support::render(&findings, sources, MessageCategory::Warning, &["CS0007"], &path)
-                .unwrap();
-        assert_eq!(hidden, (0, 0));
+fn exact_output_array_reads_report_only_unread_indices() {
+    let source = concat!(
+        "template Child(){signal output out[2];out[0]<==1;out[1]<==2;} ",
+        "template Parent(){component c=Child();signal output y;y<==c.out[0];}",
+        "component main=Parent();"
+    );
+    run_case(source, "Parent", |results, _| {
+        assert_eq!(count(results, RuleKind::UnusedOutputSignal), 1);
     });
+}
+
+#[test]
+fn component_array_reads_report_only_unread_instance_outputs() {
+    let source = concat!(
+        "template Child(){signal output out;out<==1;} ",
+        "template Parent(){component c[2];c[0]=Child();c[1]=Child();",
+        "signal output y;y<==c[0].out;} component main=Parent();"
+    );
+    run_case(source, "Parent", |results, _| {
+        assert_eq!(count(results, RuleKind::UnusedOutputSignal), 1);
+    });
+}
+
+#[test]
+fn symbolic_output_index_is_a_may_read_for_every_exact_element() {
+    let source = concat!(
+        "template Child(){signal output out[2];out[0]<==1;out[1]<==2;} ",
+        "template Parent(){signal input i;component c=Child();",
+        "signal output y;y<==c.out[i];} component main=Parent();"
+    );
+    run_case(source, "Parent", |results, _| {
+        assert_eq!(count(results, RuleKind::UnusedOutputSignal), 0);
+    });
+}
+
+#[test]
+fn unknown_child_and_incomplete_local_scope_abstain_without_output_warning() {
+    let source = concat!(
+        "template Child(){signal output out;out<==1;} ",
+        "template Parent(){component c=Child();component d=Missing();} ",
+        "component main=Parent();"
+    );
+    run_case(source, "Parent", |results, _| {
+        assert_eq!(count(results, RuleKind::UnusedOutputSignal), 0);
+        assert!(results
+            .abstentions()
+            .iter()
+            .any(|abstention| { abstention.kind == RuleKind::UnusedOutputSignal }));
+    });
+}
+
+#[test]
+fn output_enumeration_cap_abstains_instead_of_reporting_a_partial_prefix() {
+    let mut source = String::from("template Child(){signal output out[16];} template Parent(){");
+    for index in 0..17 {
+        source.push_str(&format!("component c{index}=Child();"));
+    }
+    source.push_str("} component main=Parent();");
+    run_case(&source, "Parent", |results, _| {
+        assert_eq!(count(results, RuleKind::UnusedOutputSignal), 0);
+        assert!(results
+            .abstentions()
+            .iter()
+            .any(|abstention| { abstention.kind == RuleKind::UnusedOutputSignal }));
+    });
+}
+
+#[test]
+fn invalid_unrelated_library_definition_does_not_hide_unread_parameter() {
+    let source =
+        concat!("function Broken(){var x=Missing();return 7;} ", "function Check(p){return 7;}");
+    run_case(source, "Check", |results, _| {
+        assert_eq!(count(results, RuleKind::UnusedParameterValue), 1);
+    });
+}
+
+#[test]
+fn incomplete_local_definition_does_not_emit_unread_parameter() {
+    run_case("function Check(p){var x=Missing();return 7;}", "Check", |results, _| {
+        assert_eq!(count(results, RuleKind::UnusedParameterValue), 0);
+        assert!(results
+            .abstentions()
+            .iter()
+            .any(|abstention| { abstention.kind == RuleKind::UnusedParameterValue }));
+    });
+}
+
+#[test]
+fn every_use_rule_keeps_its_id_severity_span_and_allow_filter() {
+    let cases = [
+        (
+            "function Check(){var x=1;return 7;}",
+            "Check",
+            RuleKind::SideEffectFreeAssignment,
+            "CS0008",
+            "x=1",
+        ),
+        (
+            "template Check(){signal x;x<--7;}",
+            "Check",
+            RuleKind::UnusedVariableValue,
+            "CS0006",
+            "x<--7",
+        ),
+        ("function Check(p){return 7;}", "Check", RuleKind::UnusedParameterValue, "CS0007", "p){"),
+        (
+            concat!(
+                "template Child(){signal output a;signal output b;a<==1;b<==2;} ",
+                "template Parent(){component c=Child();signal output y;y<==c.a;} ",
+                "component main=Parent();"
+            ),
+            "Parent",
+            RuleKind::UnusedOutputSignal,
+            "CS0018",
+            "Child();signal",
+        ),
+    ];
+    for (source, definition, kind, code, marker) in cases {
+        run_case(source, definition, |results, sources| {
+            let findings: Vec<_> = results
+                .findings()
+                .iter()
+                .filter(|finding| finding.kind() == kind)
+                .cloned()
+                .collect();
+            assert_eq!(findings.len(), 1, "{code}");
+            let path = std::env::temp_dir().join(format!(
+                "circomspect-use-rule-{}-{}-{:?}.json",
+                std::process::id(),
+                code,
+                std::thread::current().id()
+            ));
+            let rendered =
+                support::render(&findings, sources, MessageCategory::Warning, &[], &path).unwrap();
+            assert_eq!(rendered, (1, 1), "{code}");
+            let sarif: serde_json::Value =
+                serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+            let result = &sarif["runs"][0]["results"][0];
+            assert_eq!(result["ruleId"], code);
+            assert_eq!(result["level"], "warning");
+            let location = &result["locations"][0]["physicalLocation"];
+            assert_eq!(location["region"]["startLine"], 1);
+            assert_eq!(location["region"]["startColumn"], source.find(marker).unwrap() + 1);
+            assert_eq!(
+                support::render(&findings, sources, MessageCategory::Warning, &[code], &path)
+                    .unwrap(),
+                (0, 0),
+                "{code}"
+            );
+        });
+    }
 }

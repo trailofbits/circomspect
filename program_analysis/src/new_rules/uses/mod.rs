@@ -63,15 +63,17 @@ impl Rule for UseRule {
 
 fn validated(context: &RuleContext<'_, '_, '_>, kind: RuleKind, result: &mut RuleResult) -> bool {
     let Err(blocker) = context.validated_definition() else { return true };
-    abstain(result, context, kind, definition_span(context), summary_reason(blocker));
+    if let Some(span) = definition_span(context) {
+        abstain(result, context, kind, span, summary_reason(blocker));
+    }
     false
 }
 
-fn definition_span(context: &RuleContext<'_, '_, '_>) -> Span {
+fn definition_span(context: &RuleContext<'_, '_, '_>) -> Option<Span> {
     match context.call_context().definition() {
-        DefinitionRef::Function(id) => context.hir().function(id).unwrap().name_span,
-        DefinitionRef::Template(id) => context.hir().template(id).unwrap().name_span,
-        DefinitionRef::Bus(id) => context.hir().bus(id).unwrap().name_span,
+        DefinitionRef::Function(id) => context.hir().function(id).map(|item| item.name_span),
+        DefinitionRef::Template(id) => context.hir().template(id).map(|item| item.name_span),
+        DefinitionRef::Bus(id) => context.hir().bus(id).map(|item| item.name_span),
     }
 }
 
@@ -93,7 +95,27 @@ fn abstain(
 fn summary_reason(blocker: SummaryBlocker) -> AbstentionReason {
     match blocker {
         SummaryBlocker::IncompleteDefinition => AbstentionReason::IncompleteDefinition,
-        blocker => AbstentionReason::Summary(BTreeSet::from([blocker])),
+        SummaryBlocker::ForeignDefinition
+        | SummaryBlocker::ForeignCall
+        | SummaryBlocker::WrongContext
+        | SummaryBlocker::WrongArity { .. }
+        | SummaryBlocker::UnprovenArgument(_)
+        | SummaryBlocker::UnsupportedCallForm
+        | SummaryBlocker::LocalFacts(_)
+        | SummaryBlocker::UnsupportedContext
+        | SummaryBlocker::InvalidAssignment(_)
+        | SummaryBlocker::InvalidValueUse(_)
+        | SummaryBlocker::WrongInstance
+        | SummaryBlocker::DuplicateInstance
+        | SummaryBlocker::SymbolicInstance
+        | SummaryBlocker::MissingInputBinding
+        | SummaryBlocker::DuplicateInputBinding
+        | SummaryBlocker::WitnessOnlyInput
+        | SummaryBlocker::ExternalSummary
+        | SummaryBlocker::MissingReturn
+        | SummaryBlocker::LocalAnalysis(_)
+        | SummaryBlocker::RecursiveCycle
+        | SummaryBlocker::ContextBudget => AbstentionReason::Summary(BTreeSet::from([blocker])),
     }
 }
 

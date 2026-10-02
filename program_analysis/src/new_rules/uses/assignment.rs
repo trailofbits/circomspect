@@ -29,6 +29,19 @@ impl DeadAssignmentClaim {
             Self::UnusedValue => format!("Assigned value of `{name}` is never read"),
         }
     }
+
+    fn supported(self, context: &RuleContext<'_, '_, '_>, node: &CfgNode) -> bool {
+        match self {
+            Self::UnusedValue => true,
+            Self::SideEffectFree => {
+                let CfgNodeKind::Assignment { target, value, operator } = &node.kind else {
+                    return false;
+                };
+                *operator == AssignmentOperator::Assign
+                    && pure_local_assignment(context, target, *value)
+            }
+        }
+    }
 }
 
 pub(super) fn side_effect_free(context: &RuleContext<'_, '_, '_>, result: &mut RuleResult) {
@@ -38,10 +51,13 @@ pub(super) fn side_effect_free(context: &RuleContext<'_, '_, '_>, result: &mut R
     }
     for id in context.facts().cfg().nodes() {
         let Some(node) = context.facts().cfg().node(*id) else { continue };
-        let CfgNodeKind::Assignment { target, value, operator } = &node.kind else { continue };
-        if *operator != AssignmentOperator::Assign
-            || !pure_local_assignment(context, target, *value)
-        {
+        let CfgNodeKind::Assignment { target, operator: AssignmentOperator::Assign, .. } =
+            &node.kind
+        else {
+            continue;
+        };
+        let Some(symbol) = context.hir().symbol(target.root) else { continue };
+        if symbol.kind != SymbolKind::Variable {
             continue;
         }
         report_dead_assignment(context, DeadAssignmentClaim::SideEffectFree, node, target, result);
@@ -125,8 +141,12 @@ fn report_dead_assignment(
     let live = context.facts().live_after(node.id, target);
     match live.certified() {
         Some(false) => {
-            let name = &context.hir().symbol(target.root).unwrap().name;
-            let message = claim.message(name);
+            if !claim.supported(context, node) {
+                abstain(result, context, kind, target.span, AbstentionReason::UnsupportedConstruct);
+                return;
+            }
+            let Some(symbol) = context.hir().symbol(target.root) else { return };
+            let message = claim.message(&symbol.name);
             result.add_finding(context.finding(kind, message, target.span, "unused value".into()));
         }
         Some(true) => {}
@@ -166,9 +186,12 @@ fn unused_internal_signal(
 
 fn exported_port(context: &RuleContext<'_, '_, '_>, symbol: SymbolId) -> bool {
     let DefinitionRef::Template(id) = context.call_context().definition() else { return false };
-    let Some(template) = context.hir().template(id) else { return false };
-    template
-        .ports
-        .iter()
-        .any(|port| context.hir().port(*port).is_some_and(|port| port.symbol == symbol))
+    let Some(template) = context.hir().template(id) else { return true };
+    for port in &template.ports {
+        let Some(port) = context.hir().port(*port) else { return true };
+        if port.symbol == symbol {
+            return true;
+        }
+    }
+    false
 }

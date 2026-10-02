@@ -6,7 +6,9 @@ pub(super) fn unused_outputs(context: &RuleContext<'_, '_, '_>, result: &mut Rul
     let kind = RuleKind::UnusedOutputSignal;
     let outputs = context.exact_component_outputs();
     let Some(outputs) = outputs.certified() else {
-        summary_abstain(context, kind, definition_span(context), &outputs, result);
+        if let Some(span) = definition_span(context) {
+            summary_abstain(context, kind, span, &outputs, result);
+        }
         return;
     };
     for output in outputs {
