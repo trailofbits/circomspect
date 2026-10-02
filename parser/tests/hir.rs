@@ -73,6 +73,29 @@ fn parameter_writes_preserve_deferred_shape_and_later_reads() {
     }
 }
 
+#[test]
+fn parameter_indices_remain_deferred_without_assuming_a_scalar_argument() {
+    for source in [
+        "function F(p){return p[0];}",
+        "function F(p){p[0]=1;return p[0];}",
+        "function F(p){return p[0][1];}",
+    ] {
+        let result = lift(&[("parameter_index.circom", source)], Version::new(2, 2, 3));
+        assert!(result.diagnostics.is_empty(), "{source}: {:?}", result.diagnostics);
+        let DefinitionRef::Function(id) = result.hir.definition("F").unwrap() else {
+            panic!("function F")
+        };
+        let function = result.hir.function(id).unwrap();
+        let effects = &result.hir.block(function.body).unwrap().effects;
+        let Some(Effect::Return { value, .. }) = effects.last() else { panic!("return") };
+        let ExprKind::Access(path) = &result.hir.expression(*value).unwrap().kind else {
+            panic!("indexed parameter read must remain typed")
+        };
+        assert!(!path.steps.is_empty());
+        assert_eq!(path.root, function.parameters[0]);
+    }
+}
+
 fn max_port_steps(result: &circomspect_parser::hir::LiftedProject) -> usize {
     result
         .hir

@@ -83,7 +83,7 @@ impl Scopes {
 struct AccessState {
     ty: ValueType,
     terminal: SymbolId,
-    remaining_dimensions: usize,
+    remaining_dimensions: Option<usize>,
     component_input: bool,
     component_output: bool,
     indexed_current: bool,

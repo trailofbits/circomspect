@@ -464,6 +464,10 @@ impl ProjectSummaries<'_> {
         self.check_context(context)?;
         let parameters = context.scalar_seeds(&function.parameters)?;
         self.with_refined_facts(DefinitionRef::Function(id), parameters, |cfg, facts| {
+            if let Some(failure) = self.invalid_parameter_use(&function.parameters, context, facts)
+            {
+                return Err(SummaryBlocker::InvalidParameterUse(failure.parameter));
+            }
             if let Some(expression) =
                 self.invalid_deferred_assignment(cfg, &function.parameters, context, facts)
             {

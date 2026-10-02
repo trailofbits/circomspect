@@ -432,3 +432,53 @@ fn local_facts_must_match_the_exact_evidence_scope() {
     );
     assert!(provider.check_facts_for_evidence(&symbolic, &root).is_ok());
 }
+
+fn parameter_operation_error(source: &str) -> Option<AnalyzeEvidenceError> {
+    let lifted = fixture(source, Version::new(2, 2, 3));
+    assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let site = provider.graph().calls_from(CallOwner::Main(0))[0];
+    let CallReachability::Reachable(call) =
+        provider.graph().reachable_main_call(site.id(), provider.hir())
+    else {
+        panic!("main must be reachable")
+    };
+    let evidence = provider.main_evidence(&call).unwrap();
+    let cfg = build_cfg(provider.hir(), evidence.context().definition()).unwrap();
+    provider.analyze_for_evidence(&cfg, &evidence, None).err()
+}
+
+#[test]
+fn parameter_shape_errors_are_located_in_the_reachable_main_context() {
+    for (statement, argument, code, location) in [
+        ("var x=n[0];", "1", SemanticCode::InvalidArrayAccess, "n[0]"),
+        ("n[1]=1;", "[2]", SemanticCode::InvalidArrayAccess, "n[1]"),
+        ("n[0][1]=1;", "[[2]]", SemanticCode::InvalidArrayAccess, "n[0][1]"),
+        ("n=1;", "[2]", SemanticCode::InvalidAssignment, "n"),
+        ("n=[1];", "2", SemanticCode::InvalidAssignment, "n"),
+        ("n+=1;", "[2]", SemanticCode::InvalidAssignment, "n"),
+        ("n++;", "[2]", SemanticCode::InvalidAssignment, "n"),
+    ] {
+        let source = format!("template T(n){{{statement}}} component main=T({argument});");
+        let error = parameter_operation_error(&source).expect("invalid concrete parameter use");
+        let diagnostic = error.diagnostic().expect("a located semantic diagnostic");
+        assert_eq!(diagnostic.code, code, "{source}");
+        assert_eq!(&source[diagnostic.span.start()..diagnostic.span.end()], location);
+    }
+}
+
+#[test]
+fn parameter_shape_validation_preserves_valid_and_unexecuted_operations() {
+    for (statement, argument) in [
+        ("n=1;", "2"),
+        ("n=[1];", "[2]"),
+        ("n=[1,2];", "[2]"),
+        ("n[0]=1;", "[2]"),
+        ("n[0][0]=1;", "[[2]]"),
+        ("if(0){n[1]=1;}", "[2]"),
+        ("if(1){n[0]=1;}else{n[1]=1;}", "[2]"),
+    ] {
+        let source = format!("template T(n){{{statement}}} component main=T({argument});");
+        assert!(parameter_operation_error(&source).is_none(), "{source}");
+    }
+}

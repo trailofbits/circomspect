@@ -21,7 +21,7 @@ use super::{
 use crate::interprocedural::cache::SummaryCaches;
 
 const MAX_ARGUMENT_NODES: usize = 4096;
-const MAX_ARGUMENT_DEPTH: usize = 64;
+pub(super) const MAX_ARGUMENT_DEPTH: usize = 64;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ProvedValueShape {
@@ -205,6 +205,7 @@ pub enum SummaryBlocker {
     LocalFacts(BTreeSet<FactBlocker>),
     UnsupportedContext,
     InvalidAssignment(ExprId),
+    InvalidParameterUse(SymbolId),
     WrongInstance,
     DuplicateInstance,
     SymbolicInstance,
@@ -315,13 +316,15 @@ impl SourceScope {
 pub enum AnalyzeEvidenceError {
     Blocked(SummaryBlocker),
     InvalidAssignment { context: Box<CallContext>, diagnostic: Box<SemanticDiagnostic> },
+    InvalidParameterUse { context: Box<CallContext>, diagnostic: Box<SemanticDiagnostic> },
 }
 
 impl AnalyzeEvidenceError {
     #[must_use]
     pub fn diagnostic(&self) -> Option<&SemanticDiagnostic> {
         match self {
-            Self::InvalidAssignment { diagnostic, .. } => Some(diagnostic),
+            Self::InvalidAssignment { diagnostic, .. }
+            | Self::InvalidParameterUse { diagnostic, .. } => Some(diagnostic),
             Self::Blocked(_) => None,
         }
     }
@@ -890,6 +893,12 @@ impl<'a> ProjectSummaries<'a> {
                 diagnostic: Box::new(diagnostic),
             });
         }
+        if let Some(failure) = self.invalid_parameter_use(parameters, evidence.context(), &facts) {
+            return Err(AnalyzeEvidenceError::InvalidParameterUse {
+                context: Box::new(evidence.context.clone()),
+                diagnostic: Box::new(failure.diagnostic()),
+            });
+        }
         facts.bind_evidence(evidence.clone());
         Ok(facts)
     }
@@ -1016,11 +1025,14 @@ impl<'a> ProjectSummaries<'a> {
             return None;
         }
         for id in cfg.nodes() {
-            let Some(CfgNodeKind::DeferredAssignment { value, .. }) =
+            let Some(CfgNodeKind::DeferredAssignment { target, value, .. }) =
                 cfg.node(*id).map(|node| &node.kind)
             else {
                 continue;
             };
+            if parameters.contains(&target.root) {
+                continue;
+            }
             if self.proved_value_shape(*value, &aggregate, facts, 0) == ProvedValueShape::Aggregate
                 && facts.reachable_node(*id).certified() == Some(&true)
                 && facts.structurally_must_execute(*id)
