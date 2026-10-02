@@ -66,6 +66,84 @@ fn pure_dead_assignment_emits_cs0008_and_a_returned_value_does_not() {
 }
 
 #[test]
+fn dead_scalar_chain_emits_two_cs0008_findings_at_assignment_sources() {
+    let source = "function Check(){var x=1;var y=x;return 7;}";
+    run_case(source, "Check", |results, sources| {
+        let findings: Vec<_> = results
+            .findings()
+            .iter()
+            .filter(|finding| finding.kind() == RuleKind::SideEffectFreeAssignment)
+            .cloned()
+            .collect();
+        assert_eq!(findings.len(), 2);
+        assert_eq!(count(results, RuleKind::UnusedVariableValue), 1);
+        let path = std::env::temp_dir().join(format!(
+            "circomspect-dead-chain-{}-{:?}.json",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        assert_eq!(
+            support::render(&findings, sources, MessageCategory::Warning, &[], &path).unwrap(),
+            (2, 2)
+        );
+        let sarif: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        let results = sarif["runs"][0]["results"].as_array().unwrap();
+        let columns: Vec<_> = results
+            .iter()
+            .map(|result| {
+                assert_eq!(result["ruleId"], "CS0008");
+                assert_eq!(result["level"], "warning");
+                assert_eq!(result["locations"][0]["physicalLocation"]["region"]["startLine"], 1);
+                result["locations"][0]["physicalLocation"]["region"]["startColumn"]
+                    .as_u64()
+                    .unwrap() as usize
+            })
+            .collect();
+        assert_eq!(columns, vec![source.find("x=1").unwrap() + 1, source.find("y=x").unwrap() + 1]);
+        assert_eq!(
+            support::render(&findings, sources, MessageCategory::Warning, &["CS0008"], &path)
+                .unwrap(),
+            (0, 0)
+        );
+    });
+}
+
+#[test]
+fn observed_scalar_chain_keeps_both_assignments_and_syntactic_reads() {
+    for source in [
+        "function Check(){var x=1;var y=x;return y;}",
+        "function Check(){var x=1;var y=x;assert(y);return 7;}",
+        "template Check(){var x=1;var y=x;signal output z;z<==y;}",
+    ] {
+        run_case(source, "Check", |results, _| {
+            assert_eq!(count(results, RuleKind::SideEffectFreeAssignment), 0, "{source}");
+            assert_eq!(count(results, RuleKind::UnusedVariableValue), 0, "{source}");
+        });
+    }
+}
+
+#[test]
+fn unsafe_or_unknown_chain_rhs_cannot_be_reported_removable() {
+    for source in [
+        "function Child(){assert(1);return 7;}function Check(){var x=Child();return 7;}",
+        "template Check(){signal input s;var x=s;}",
+        "function Check(i){var a[2];var x=a[i];return 7;}",
+        "function Check(){var x=Missing();return 7;}",
+    ] {
+        run_case(source, "Check", |results, _| {
+            assert_eq!(count(results, RuleKind::SideEffectFreeAssignment), 0, "{source}");
+            assert!(
+                results
+                    .abstentions()
+                    .iter()
+                    .any(|abstention| { abstention.kind == RuleKind::SideEffectFreeAssignment }),
+                "{source}"
+            );
+        });
+    }
+}
+
+#[test]
 fn side_effect_free_assignment_uses_only_a_pure_dead_scalar_value() {
     for (source, expected) in [
         ("function Check(){var x=1;return 7;}", 1),
