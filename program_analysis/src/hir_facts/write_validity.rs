@@ -16,7 +16,7 @@ use crate::hir_facts::{
     forward_pruned_edges, AccessHandle, AccessKey, AnalysisFacts, Fact, FactBlocker,
     SignalReadIssue, VisitAccesses, WitnessWriteIssue,
 };
-use crate::interprocedural::ContextEvidence;
+use crate::interprocedural::{ContextEvidence, ValidatedConstructorReads};
 
 /// Proof that one exact target has no repeated body witness write in this scope.
 /// Incoming component input initialization is outside this certificate's claim.
@@ -227,12 +227,28 @@ struct ReadCheck<'a> {
     must: &'a BTreeSet<AccessKey>,
     uncertain: &'a [UncertainWrite],
     blockers: &'a mut BTreeSet<FactBlocker>,
+    constructor: &'a dyn Fn(ExprId) -> bool,
 }
 
 impl AnalysisFacts<'_> {
     /// Require every reachable signal read to have a prior exact body write
     /// or an input-port initialization; input-port writes are invalid.
-    pub(crate) fn body_relation_reads_ready(&self) -> Fact<()> {
+    pub(crate) fn body_signal_reads_ready(&self) -> Fact<()> {
+        self.body_signal_reads_ready_by(&|_| false)
+    }
+
+    /// Permit only provider-validated constructors bound to these exact source facts.
+    pub(crate) fn body_signal_reads_ready_with(
+        &self,
+        constructors: &ValidatedConstructorReads,
+    ) -> Fact<()> {
+        if self.evidence_binding.as_ref() != Some(constructors.evidence()) {
+            return Fact::blocked(BTreeSet::from([FactBlocker::ForeignQuery]));
+        }
+        self.body_signal_reads_ready_by(&|call| constructors.contains(call))
+    }
+
+    fn body_signal_reads_ready_by(&self, constructor: &dyn Fn(ExprId) -> bool) -> Fact<()> {
         let (facts, uncertain) = match self.solve_body_writes() {
             Ok(result) => result,
             Err(blockers) => return Fact::blocked(blockers),
@@ -251,6 +267,7 @@ impl AnalysisFacts<'_> {
                 must: must_written,
                 uncertain: &uncertain,
                 blockers: &mut blockers,
+                constructor,
             };
             self.node_read_blockers(&node.kind, &mut check);
         }
@@ -295,9 +312,10 @@ impl AnalysisFacts<'_> {
     }
 
     fn expression_read_blockers(&self, expression: ExprId, check: &mut ReadCheck<'_>) {
+        let constructor = check.constructor;
         let complete = expression.visit_accesses_with(
             self.hir,
-            &|call| self.exact_call_value(call).is_some(),
+            &|call| self.exact_call_value(call).is_some() || constructor(call),
             &mut |path| self.path_read_blockers(path, check),
         );
         if !complete {

@@ -5,9 +5,11 @@ use parser::new_frontend::AssignmentOperator;
 use crate::hir_cfg::{CfgNodeKind, DefinitionCfg, Origin};
 use crate::hir_facts::{AccessHandle, AnalysisFacts, BodyWriteStatus, FieldValue, Incidence};
 
-use super::summary::certified;
+use crate::interprocedural::summary::certified;
 use crate::interprocedural::cache::PortKey;
-use super::{CallContext, ProjectSummaries, SummaryBlocker, SummaryFact};
+use crate::interprocedural::{
+    CallContext, ContextEvidence, ProjectSummaries, SummaryBlocker, SummaryFact,
+};
 
 /// Certified generated-constraint relation for one declared template port.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -115,21 +117,29 @@ impl ProjectSummaries<'_> {
         };
         self.caches.ports.get_or_compute(key, || {
             SummaryFact::from_result(self.with_local_template(id, context, |_, _, facts| {
-                let handle = facts
-                    .port_handle(port, indices)
-                    .map_err(|error| SummaryBlocker::LocalAnalysis(error.to_string()))?;
-                require_no_repeated_body_write(facts, &handle)?;
-                let incidence = facts.incidence_handle(&handle);
-                let fixed = facts.constraint_fixed_handle(&handle);
-                Ok(PortSummary {
-                    context: context.clone(),
-                    port,
-                    indices: indices.to_vec(),
-                    incidence: *certified(&incidence)?,
-                    fixed_value: certified(&fixed)?.clone(),
-                })
+                port_summary(facts, context, port, indices)
             }))
         })
+    }
+
+    /// Certify port constraints in this provider-issued, source-valid root template scope.
+    ///
+    /// Every reachable signal read must have proven initialization, and generated
+    /// constraints must have supported source form. Constructors require validated
+    /// leaf children without input ports; deeper or unbound execution abstains.
+    /// The supplied facts retain their original analysis budget and specialization;
+    /// called contexts and foreign evidence cannot authorize this root-scope claim.
+    pub fn template_port_for_evidence(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        evidence: &ContextEvidence,
+        port: PortId,
+        indices: &[usize],
+    ) -> SummaryFact<PortSummary> {
+        let result = self
+            .check_template_incidence_scope(facts, evidence)
+            .and_then(|()| port_summary(facts, evidence.context(), port, indices));
+        SummaryFact::from_result(result)
     }
 
     /// Whether this declared port is read in the template's reachable local body.
@@ -234,12 +244,15 @@ impl ProjectSummaries<'_> {
         Ok(WitnessSite { origin, provenance })
     }
 
-    pub(super) fn with_local_template<T>(
+    pub(super) fn with_local_template<T, F>(
         &self,
         id: TemplateId,
         context: &CallContext,
-        work: impl FnOnce(&Template, &DefinitionCfg, &AnalysisFacts<'_>) -> Result<T, SummaryBlocker>,
-    ) -> Result<T, SummaryBlocker> {
+        work: F,
+    ) -> Result<T, SummaryBlocker>
+    where
+        F: FnOnce(&Template, &DefinitionCfg, &AnalysisFacts<'_>) -> Result<T, SummaryBlocker>,
+    {
         let template = self.hir().template(id).ok_or(SummaryBlocker::ForeignDefinition)?;
         if context.definition() != DefinitionRef::Template(id) {
             return Err(SummaryBlocker::WrongContext);
@@ -271,4 +284,25 @@ fn require_no_repeated_body_write(
         BodyWriteStatus::NoRepeat(_) => Ok(()),
         BodyWriteStatus::DefinitelyRepeated(_) => Err(SummaryBlocker::UnsupportedContext),
     }
+}
+
+fn port_summary(
+    facts: &AnalysisFacts<'_>,
+    context: &CallContext,
+    port: PortId,
+    indices: &[usize],
+) -> Result<PortSummary, SummaryBlocker> {
+    let handle = facts
+        .port_handle(port, indices)
+        .map_err(|error| SummaryBlocker::LocalAnalysis(error.to_string()))?;
+    require_no_repeated_body_write(facts, &handle)?;
+    let incidence = facts.incidence_handle(&handle);
+    let fixed = facts.constraint_fixed_handle(&handle);
+    Ok(PortSummary {
+        context: context.clone(),
+        port,
+        indices: indices.to_vec(),
+        incidence: *certified(&incidence)?,
+        fixed_value: certified(&fixed)?.clone(),
+    })
 }

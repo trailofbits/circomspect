@@ -13,7 +13,9 @@ impl ProjectSummaries<'_> {
     ///
     /// Facts must belong to this provider-issued scope. Failed execution, custom templates,
     /// exported ports, unknown control, and incomplete solving withhold the certificate.
-    /// Called contexts abstain until their incoming constraint closure can be checked.
+    /// Local reads require initialization and supported generated-constraint source form.
+    /// Constructors require validated leaf children without unbound inputs. Called
+    /// contexts abstain until their incoming constraint closure can be checked.
     pub fn template_internal_signal_incidence(
         &self,
         facts: &AnalysisFacts<'_>,
@@ -29,7 +31,7 @@ impl ProjectSummaries<'_> {
         evidence: &ContextEvidence,
         path: &AccessPath,
     ) -> Result<Incidence, SummaryBlocker> {
-        self.check_template_constraint_scope(facts, evidence)?;
+        self.check_template_incidence_scope(facts, evidence)?;
         self.check_internal_signal(path)?;
         certified(&facts.exact_access_key(path))?;
         Ok(*certified(&facts.incidence(path))?)

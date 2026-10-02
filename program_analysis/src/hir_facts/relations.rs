@@ -158,7 +158,7 @@ impl AnalysisFacts<'_> {
             Some(false) => return Fact::known(None),
             None => return Fact::blocked(must_execute.unavailable().cloned().unwrap_or_default()),
         }
-        let readiness = self.body_relation_reads_ready();
+        let readiness = self.body_signal_reads_ready();
         if let Some(blockers) = readiness.unavailable() {
             return Fact::blocked(blockers.clone());
         }
@@ -191,18 +191,32 @@ impl AnalysisFacts<'_> {
         let Some(exit) = facts.get(&self.cfg.exit()).and_then(|item| item.output.as_ref()) else {
             return Fact::blocked(BTreeSet::from([FactBlocker::MissingExit]));
         };
-        let blockers = self.reachable_relation_blockers(facts);
-        if !blockers.is_empty() {
-            return Fact::blocked(blockers);
-        }
-        let blockers = exit.must_equations().blockers();
-        if !blockers.is_empty() {
-            return Fact::blocked(blockers);
+        let generated = self.generated_constraints_valid();
+        if let Some(blockers) = generated.unavailable() {
+            return Fact::blocked(blockers.clone());
         }
         let Some(origins) = exit.must_equations().origins(&equation) else {
             return Fact::known(None);
         };
         self.equation_certificate(evidence, node.origin, equation, origins)
+    }
+
+    /// Check source form and exact operands of every reachable generated constraint.
+    /// This establishes neither witness readiness nor satisfiability.
+    pub(crate) fn generated_constraints_valid(&self) -> Fact<()> {
+        let SolveResult::Complete(facts) = &self.forward else {
+            return Fact::blocked(self.forward_completion_blockers());
+        };
+        let Some(exit) = facts.get(&self.cfg.exit()).and_then(|item| item.output.as_ref()) else {
+            return Fact::blocked(BTreeSet::from([FactBlocker::MissingExit]));
+        };
+        let mut blockers = self.reachable_relation_blockers(facts);
+        blockers.extend(exit.must_equations().blockers());
+        if blockers.is_empty() {
+            Fact::known(())
+        } else {
+            Fact::blocked(blockers)
+        }
     }
 
     fn equation_certificate(

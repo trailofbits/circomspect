@@ -221,7 +221,7 @@ fn called_outputs_and_internal_signals_abstain_without_incoming_constraint_closu
 #[test]
 fn independent_output_indices_follow_values_at_their_own_sites() {
     for (body, expected) in [
-        ("var i=0;out[i]<--1;i=1;out[i]===1;", 1),
+        ("var i=0;out[i]<--1;i=1;out[i]<--1;out[i]===1;", 1),
         ("out[0]<--1;var i=0;out[i]===1;", 0),
         ("out[0x0]<--1;out[0]===1;", 0),
         ("out[2]<--1;", 0),
@@ -503,5 +503,109 @@ fn independent_redundant_witness_origins_preserve_all_branch_constraints() {
     assert_eq!(report.secondary().len(), 2);
     for origin in report.secondary() {
         assert_eq!(&source[origin.range.clone()], "x===1;");
+    }
+}
+
+#[test]
+fn zero_incidence_rules_withhold_warnings_after_uninitialized_signal_reads() {
+    for body in [
+        "signal y;x<--y;y<--1;",
+        "signal y;var t=y;y<--1;x<--1;",
+        "signal y;log(y);y<--1;x<--1;",
+        "x<--x+1;",
+        "signal y;if(n){y<--1;}x<--y;",
+        "signal y[2];y[0]<--1;x<--y[1];",
+        "signal input y;y<--1;x<--1;",
+        "signal input y[1];var t=y[1];x<--1;",
+        "signal input y[2];var t=y[n];x<--1;",
+    ] {
+        for (declaration, kind) in [
+            ("signal output x", RuleKind::SignalAssignment),
+            ("signal x", RuleKind::UnconstrainedSignal),
+        ] {
+            let source = format!("template T(n){{{declaration};{body}}}");
+            let (_, result) = inspect(&source, None);
+            assert_eq!(count(&result, kind), 0, "{source}");
+            assert_abstention(&result, kind);
+        }
+    }
+}
+
+#[test]
+fn zero_incidence_rules_keep_initialized_signal_and_dead_read_controls() {
+    for body in [
+        "signal input y;x<--y;",
+        "signal y;y<--1;x<--y;",
+        "signal y[2];y[0]<--1;x<--y[0];",
+        "signal y;if(1){y<--1;}x<--y;",
+        "signal y;if(0){log(y);}x<--1;",
+        "signal input y[2];var i=1;var t=y[i];x<--1;",
+        "signal y;y<==1;x<--y;",
+    ] {
+        for (declaration, kind) in [
+            ("signal output x", RuleKind::SignalAssignment),
+            ("signal x", RuleKind::UnconstrainedSignal),
+        ] {
+            let source = format!("template T(){{{declaration};{body}}}");
+            let (_, result) = inspect(&source, None);
+            assert!(count(&result, kind) > 0, "{source}: {:?}", result.abstentions());
+        }
+    }
+}
+
+#[test]
+fn zero_incidence_readiness_budgets_never_release_invalid_scope_warnings() {
+    for budget in 0..65 {
+        for (declaration, kind) in [
+            ("signal output x", RuleKind::SignalAssignment),
+            ("signal x", RuleKind::UnconstrainedSignal),
+        ] {
+            let source = format!("template T(){{{declaration};signal y;x<--y;y<--1;}}");
+            let (_, result) = inspect(&source, Some(budget));
+            assert_eq!(count(&result, kind), 0, "budget={budget}, {source}");
+        }
+    }
+}
+
+#[test]
+fn invalid_child_execution_cannot_authorize_constraint_warnings() {
+    let mut observed = Vec::new();
+    for child in [
+        "signal a;signal b;b<--a;a<--1;",
+        "signal a;signal b;signal c;signal z;a<--1;b<--1;c<--1;\
+         z<--a*b+a*c;z===a*b+a*c;",
+    ] {
+        let source = format!(
+            "template Child(){{{child}}}template T(){{signal s;s<--1;\
+             signal output x;x<--1;x===1;component c=Child();}}"
+        );
+        let (_, result) = inspect(&source, None);
+        observed.push((
+            count(&result, RuleKind::UnconstrainedSignal),
+            count(&result, RuleKind::RedundantWitnessAssignment),
+        ));
+    }
+    assert_eq!(observed, vec![(0, 0), (0, 0)]);
+}
+
+#[test]
+fn a_later_array_index_read_requires_its_own_prior_witness_write() {
+    let source = "template T(){signal output out[2];var i=0;out[i]<--1;i=1;out[i]===1;}";
+    let (_, result) = inspect(source, None);
+    assert_abstention(&result, RuleKind::SignalAssignment);
+}
+
+#[test]
+fn invalid_generated_source_form_withholds_other_zero_incidence_warnings() {
+    for (declaration, kind) in [
+        ("signal output s", RuleKind::SignalAssignment),
+        ("signal s", RuleKind::UnconstrainedSignal),
+    ] {
+        let source = format!(
+            "template T(){{{declaration};s<--1;signal a;signal b;signal c;signal z;\
+             a<--1;b<--1;c<--1;z<--a*b+a*c;z===a*b+a*c;}}"
+        );
+        let (_, result) = inspect(&source, None);
+        assert_abstention(&result, kind);
     }
 }

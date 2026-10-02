@@ -254,8 +254,8 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
         port: PortId,
         indices: &[usize],
     ) -> Option<SummaryFact<PortSummary>> {
-        let DefinitionRef::Template(id) = self.call_context().definition() else { return None };
-        Some(self.summaries.template_port_at(id, self.call_context(), port, indices))
+        let DefinitionRef::Template(_) = self.call_context().definition() else { return None };
+        Some(self.summaries.template_port_for_evidence(self.facts, self.evidence, port, indices))
     }
 
     /// Return whether the active template reads a declared port.
