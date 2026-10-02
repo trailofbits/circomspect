@@ -101,6 +101,16 @@ fn deferred_parameter_overwrite_cannot_certify_no_later_read() {
 }
 
 #[test]
+fn symbolic_parameter_index_read_cannot_certify_no_read() {
+    let (hir, definition) = fixture("function Check(p){return p[0];}");
+    let cfg = build_cfg(&hir, definition).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let facts = analyze(&hir, &cfg, &field, None).unwrap();
+    let result = facts.parameter_read(parameter(&hir, definition));
+    assert_ne!(result.certified(), Some(&false));
+}
+
+#[test]
 fn symbolic_assertion_of_parameter_cannot_certify_no_read() {
     let (hir, definition) = fixture("function Check(p){assert(p);return 7;}");
     let cfg = build_cfg(&hir, definition).unwrap();

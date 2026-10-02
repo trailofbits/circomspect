@@ -75,7 +75,7 @@ impl ProjectSummaries<'_> {
         caller: &ContextEvidence,
     ) -> Result<Vec<EnumeratedComponentOutput>, SummaryBlocker> {
         self.check_facts_for_evidence(facts, caller)?;
-        self.validated_definition(facts.definition())?;
+        self.validated_definition(facts)?;
         let owner = CallOwner::Definition(facts.definition());
         let mut state = Enumeration { outputs: Vec::new(), inspected: 0 };
         for site in self.graph().calls_from(owner) {
