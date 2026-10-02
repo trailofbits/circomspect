@@ -556,88 +556,241 @@ fn anonymous_call(mut node: SyntaxNode) -> Result<AnonymousCallExpr, SyntaxDiagn
     })
 }
 
-fn expression_operator(node: SyntaxNode) -> Result<Expression, SyntaxDiagnostic> {
+enum ExpressionFrame {
+    Visit(SyntaxNode),
+    Operator(OperatorFrame),
+    Collection(CollectionFrame),
+}
+
+enum OperatorFrame {
+    Unary(UnaryOperator, Span),
+    Binary(BinaryOperator, Span),
+    Ternary(Span),
+    Parallel(Span),
+    Group(Span),
+}
+
+enum CollectionFrame {
+    Call(Identifier, Span, usize),
+    Array(Span, usize),
+    Tuple(Span, usize),
+}
+
+fn expression(node: SyntaxNode) -> Result<Expression, SyntaxDiagnostic> {
     let span = node.span;
-    match node.kind {
-        SyntaxKind::Unary => {
-            let operator = unary_operator(&node)?;
-            let operand = expression(one_child(node)?)?;
-            Ok(Expression::Unary { operator, operand: Box::new(operand), span })
-        }
-        SyntaxKind::Binary => {
-            let operator = binary_operator(&node)?;
-            let (left, right) = two_children(node)?;
-            Ok(Expression::Binary {
-                operator,
-                left: Box::new(expression(left)?),
-                right: Box::new(expression(right)?),
-                span,
-            })
-        }
-        SyntaxKind::Ternary => {
-            if node.children.len() != 3 {
-                return Err(malformed(&node, "ternary expression needs three operands"));
+    let mut work = vec![ExpressionFrame::Visit(node)];
+    let mut results = Vec::new();
+    while let Some(frame) = work.pop() {
+        match frame {
+            ExpressionFrame::Visit(node) => schedule_expression(node, &mut work, &mut results)?,
+            ExpressionFrame::Operator(operator) => {
+                let expression = assemble_operator(operator, &mut results)?;
+                results.push(expression);
             }
-            let mut children = node.children.into_iter();
-            let condition = children.next().ok_or_else(|| {
-                SyntaxDiagnostic::new(DiagnosticKind::Syntax, span, "missing ternary condition")
-            })?;
-            let yes = children.next().ok_or_else(|| {
-                SyntaxDiagnostic::new(DiagnosticKind::Syntax, span, "missing ternary true arm")
-            })?;
-            let no = children.next().ok_or_else(|| {
-                SyntaxDiagnostic::new(DiagnosticKind::Syntax, span, "missing ternary false arm")
-            })?;
-            Ok(Expression::Ternary {
-                condition: Box::new(expression(condition)?),
-                yes: Box::new(expression(yes)?),
-                no: Box::new(expression(no)?),
-                span,
-            })
+            ExpressionFrame::Collection(collection) => {
+                let expression = assemble_collection(collection, &mut results)?;
+                results.push(expression);
+            }
         }
-        SyntaxKind::Parallel => {
-            Ok(Expression::Parallel { operand: Box::new(expression(one_child(node)?)?), span })
-        }
-        SyntaxKind::Group => {
-            Ok(Expression::Group { expression: Box::new(expression(one_child(node)?)?), span })
-        }
-        _ => Err(malformed(&node, "expected expression operator")),
+    }
+    let result = take_expression(&mut results, span)?;
+    if !results.is_empty() {
+        return Err(SyntaxDiagnostic::new(
+            DiagnosticKind::Syntax,
+            span,
+            "expression conversion left unused operands",
+        ));
+    }
+    Ok(result)
+}
+
+fn schedule_expression(
+    node: SyntaxNode,
+    work: &mut Vec<ExpressionFrame>,
+    results: &mut Vec<Expression>,
+) -> Result<(), SyntaxDiagnostic> {
+    if node.kind == SyntaxKind::Unary
+        || node.kind == SyntaxKind::Binary
+        || node.kind == SyntaxKind::Ternary
+        || node.kind == SyntaxKind::Parallel
+        || node.kind == SyntaxKind::Group
+    {
+        schedule_operator(node, work)
+    } else {
+        schedule_primary(node, work, results)
     }
 }
 
-fn expression(mut node: SyntaxNode) -> Result<Expression, SyntaxDiagnostic> {
+fn schedule_operator(
+    node: SyntaxNode,
+    work: &mut Vec<ExpressionFrame>,
+) -> Result<(), SyntaxDiagnostic> {
     let span = node.span;
-    match node.kind {
-        SyntaxKind::Name => Ok(Expression::Name {
-            identifier: leading_identifier(&mut node)?,
-            access: node.children.into_iter().map(access).collect::<Result<_, _>>()?,
-            span,
-        }),
-        SyntaxKind::Identifier => {
-            Ok(Expression::Name { identifier: identifier(node)?, access: Vec::new(), span })
+    if node.kind == SyntaxKind::Unary {
+        let operator = unary_operator(&node)?;
+        work.push(ExpressionFrame::Operator(OperatorFrame::Unary(operator, span)));
+        work.push(ExpressionFrame::Visit(one_child(node)?));
+        return Ok(());
+    }
+    if node.kind == SyntaxKind::Binary {
+        let operator = binary_operator(&node)?;
+        let (left, right) = two_children(node)?;
+        work.push(ExpressionFrame::Operator(OperatorFrame::Binary(operator, span)));
+        work.push(ExpressionFrame::Visit(right));
+        work.push(ExpressionFrame::Visit(left));
+        return Ok(());
+    }
+    if node.kind == SyntaxKind::Ternary {
+        if node.children.len() != 3 {
+            return Err(malformed(&node, "ternary expression needs three operands"));
         }
-        SyntaxKind::Number => Ok(Expression::Number { text: required_text(&node)?, span }),
-        SyntaxKind::Call => Ok(Expression::Call {
-            name: leading_identifier(&mut node)?,
-            arguments: node.children.into_iter().map(expression).collect::<Result<_, _>>()?,
+        work.push(ExpressionFrame::Operator(OperatorFrame::Ternary(span)));
+        push_children(node.children, work);
+        return Ok(());
+    }
+    let operator = if node.kind == SyntaxKind::Parallel {
+        OperatorFrame::Parallel(span)
+    } else if node.kind == SyntaxKind::Group {
+        OperatorFrame::Group(span)
+    } else {
+        return Err(malformed(&node, "expected expression operator"));
+    };
+    work.push(ExpressionFrame::Operator(operator));
+    work.push(ExpressionFrame::Visit(one_child(node)?));
+    Ok(())
+}
+
+fn schedule_primary(
+    mut node: SyntaxNode,
+    work: &mut Vec<ExpressionFrame>,
+    results: &mut Vec<Expression>,
+) -> Result<(), SyntaxDiagnostic> {
+    let span = node.span;
+    if node.kind == SyntaxKind::Name {
+        let identifier = leading_identifier(&mut node)?;
+        let access = node.children.into_iter().map(access).collect::<Result<_, _>>()?;
+        results.push(Expression::Name { identifier, access, span });
+        return Ok(());
+    }
+    if node.kind == SyntaxKind::Identifier {
+        results.push(Expression::Name { identifier: identifier(node)?, access: Vec::new(), span });
+        return Ok(());
+    }
+    if node.kind == SyntaxKind::Number {
+        results.push(Expression::Number { text: required_text(&node)?, span });
+        return Ok(());
+    }
+    if node.kind == SyntaxKind::AnonymousCall {
+        results.push(Expression::AnonymousCall(anonymous_call(node)?));
+        return Ok(());
+    }
+    if node.kind == SyntaxKind::Error {
+        results.push(Expression::Error { span });
+        return Ok(());
+    }
+    schedule_collection(node, work)
+}
+
+fn schedule_collection(
+    mut node: SyntaxNode,
+    work: &mut Vec<ExpressionFrame>,
+) -> Result<(), SyntaxDiagnostic> {
+    let span = node.span;
+    if node.kind == SyntaxKind::Call {
+        let name = leading_identifier(&mut node)?;
+        work.push(ExpressionFrame::Collection(CollectionFrame::Call(
+            name,
+            span,
+            node.children.len(),
+        )));
+    } else if node.kind == SyntaxKind::Array {
+        work.push(ExpressionFrame::Collection(CollectionFrame::Array(span, node.children.len())));
+    } else if node.kind == SyntaxKind::Tuple {
+        work.push(ExpressionFrame::Collection(CollectionFrame::Tuple(span, node.children.len())));
+    } else {
+        return Err(malformed(&node, "expected expression"));
+    }
+    push_children(node.children, work);
+    Ok(())
+}
+
+fn push_children(children: Vec<SyntaxNode>, work: &mut Vec<ExpressionFrame>) {
+    for child in children.into_iter().rev() {
+        work.push(ExpressionFrame::Visit(child));
+    }
+}
+
+fn take_expression(
+    results: &mut Vec<Expression>,
+    span: Span,
+) -> Result<Expression, SyntaxDiagnostic> {
+    results.pop().ok_or_else(|| {
+        SyntaxDiagnostic::new(DiagnosticKind::Syntax, span, "missing expression operand")
+    })
+}
+
+fn take_expressions(
+    results: &mut Vec<Expression>,
+    span: Span,
+    count: usize,
+) -> Result<Vec<Expression>, SyntaxDiagnostic> {
+    let mut values = Vec::with_capacity(count);
+    for _ in 0..count {
+        values.push(take_expression(results, span)?);
+    }
+    values.reverse();
+    Ok(values)
+}
+
+fn assemble_operator(
+    frame: OperatorFrame,
+    results: &mut Vec<Expression>,
+) -> Result<Expression, SyntaxDiagnostic> {
+    match frame {
+        OperatorFrame::Unary(operator, span) => Ok(Expression::Unary {
+            operator,
+            operand: Box::new(take_expression(results, span)?),
             span,
         }),
-        SyntaxKind::AnonymousCall => Ok(Expression::AnonymousCall(anonymous_call(node)?)),
-        SyntaxKind::Array => Ok(Expression::Array {
-            elements: node.children.into_iter().map(expression).collect::<Result<_, _>>()?,
-            span,
-        }),
-        SyntaxKind::Tuple => Ok(Expression::Tuple {
-            elements: node.children.into_iter().map(expression).collect::<Result<_, _>>()?,
-            span,
-        }),
-        SyntaxKind::Unary
-        | SyntaxKind::Binary
-        | SyntaxKind::Ternary
-        | SyntaxKind::Parallel
-        | SyntaxKind::Group => expression_operator(node),
-        SyntaxKind::Error => Ok(Expression::Error { span }),
-        _ => Err(malformed(&node, "expected expression")),
+        OperatorFrame::Binary(operator, span) => {
+            let right = take_expression(results, span)?;
+            let left = take_expression(results, span)?;
+            Ok(Expression::Binary { operator, left: Box::new(left), right: Box::new(right), span })
+        }
+        OperatorFrame::Ternary(span) => {
+            let no = take_expression(results, span)?;
+            let yes = take_expression(results, span)?;
+            let condition = take_expression(results, span)?;
+            Ok(Expression::Ternary {
+                condition: Box::new(condition),
+                yes: Box::new(yes),
+                no: Box::new(no),
+                span,
+            })
+        }
+        OperatorFrame::Parallel(span) => {
+            Ok(Expression::Parallel { operand: Box::new(take_expression(results, span)?), span })
+        }
+        OperatorFrame::Group(span) => {
+            Ok(Expression::Group { expression: Box::new(take_expression(results, span)?), span })
+        }
+    }
+}
+
+fn assemble_collection(
+    frame: CollectionFrame,
+    results: &mut Vec<Expression>,
+) -> Result<Expression, SyntaxDiagnostic> {
+    match frame {
+        CollectionFrame::Call(name, span, count) => {
+            Ok(Expression::Call { name, arguments: take_expressions(results, span, count)?, span })
+        }
+        CollectionFrame::Array(span, count) => {
+            Ok(Expression::Array { elements: take_expressions(results, span, count)?, span })
+        }
+        CollectionFrame::Tuple(span, count) => {
+            Ok(Expression::Tuple { elements: take_expressions(results, span, count)?, span })
+        }
     }
 }
 
