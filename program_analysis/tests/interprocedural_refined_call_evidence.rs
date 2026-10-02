@@ -133,6 +133,35 @@ fn warning_scope_rejects_custom_templates_before_rules_run() {
     assert_eq!(context.check_warning_execution_scope(), Err(SummaryBlocker::ExternalSummary));
 }
 
+fn ordinary_call_after(source: &str) -> Result<(), SummaryBlocker> {
+    let lifted = fixture(source);
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let parent = lifted.hir.definition("T").unwrap();
+    let caller = provider.symbolic_root(parent).unwrap();
+    let cfg = build_cfg(&lifted.hir, parent).unwrap();
+    let facts = provider.analyze_for_evidence(&cfg, &caller, None).unwrap();
+    let site = provider.graph().calls_from(CallOwner::Definition(parent))[0];
+    let CallReachability::Reachable(call) = provider.graph().reachable_call(site.id(), &facts)
+    else {
+        panic!("component call must remain may-reachable in the raw graph")
+    };
+    provider.call_evidence(&call, &facts, &caller).map(|_| ())
+}
+
+#[test]
+fn known_caller_failure_cannot_mint_ordinary_child_evidence() {
+    for source in [
+        "template C(){var p=7;}template T(){assert(0);component c=C();}",
+        "template C(){var p=7;}template T(){var z=1/0;component c=C();}",
+    ] {
+        assert_eq!(ordinary_call_after(source), Err(SummaryBlocker::UnsupportedContext));
+    }
+    assert_eq!(
+        ordinary_call_after("template C(){var p=7;}template T(){assert(1);component c=C();}"),
+        Ok(())
+    );
+}
+
 #[test]
 fn foreign_site_or_caller_cannot_authorize_a_refined_call() {
     let lifted = fixture("function F(){return 7;} template T(){var x=F();}component main=T();");
