@@ -548,3 +548,23 @@ fn independent_internal_signal_guards_cover_external_bodies_and_bounds() {
         assert_eq!(count(results, RuleKind::UnusedVariableValue), 1);
     });
 }
+
+#[test]
+fn dead_plain_assignment_does_not_create_incomplete_analysis() {
+    let source = "function Check(){if(0){var x=1;}return 7;}";
+    run_case(source, "Check", |results, _| {
+        assert_eq!(count(results, RuleKind::SideEffectFreeAssignment), 0);
+        assert!(!results
+            .abstentions()
+            .iter()
+            .any(|item| { item.kind == RuleKind::SideEffectFreeAssignment }));
+    });
+}
+
+#[test]
+fn dead_chains_in_a_partial_library_keep_exact_findings() {
+    let source = "function Broken(){return Missing();}function Check(){var x=1;var y=x;return 7;}";
+    run_case(source, "Check", |results, _| {
+        assert_eq!(count(results, RuleKind::SideEffectFreeAssignment), 2);
+    });
+}

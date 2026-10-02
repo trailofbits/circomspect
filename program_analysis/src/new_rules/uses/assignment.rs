@@ -15,7 +15,7 @@ pub(super) fn side_effect_free(context: &RuleContext<'_, '_, '_>, result: &mut R
     for id in context.facts().cfg().nodes() {
         let Some(node) = context.facts().cfg().node(*id) else { continue };
         if let CfgNodeKind::DeferredAssignment { target, .. } = &node.kind {
-            abstain_deferred_assignment(context, target, result);
+            abstain_deferred_assignment(context, node, target, result);
             continue;
         }
         let CfgNodeKind::Assignment { target, operator: AssignmentOperator::Assign, .. } =
@@ -33,11 +33,12 @@ pub(super) fn side_effect_free(context: &RuleContext<'_, '_, '_>, result: &mut R
 
 fn abstain_deferred_assignment(
     context: &RuleContext<'_, '_, '_>,
+    node: &CfgNode,
     target: &AccessPath,
     result: &mut RuleResult,
 ) {
     let Some(symbol) = context.hir().symbol(target.root) else { return };
-    if symbol.kind == SymbolKind::Variable {
+    if symbol.kind == SymbolKind::Variable && assignment_reachable(context, node, target, result) {
         abstain(
             result,
             context,
@@ -54,6 +55,9 @@ fn report_removable_assignment(
     target: &AccessPath,
     result: &mut RuleResult,
 ) {
+    if !assignment_reachable(context, node, target, result) {
+        return;
+    }
     let kind = RuleKind::SideEffectFreeAssignment;
     match context.assignment_demand(node.id, target) {
         Ok(fact) => match fact.certified() {
@@ -75,6 +79,29 @@ fn report_removable_assignment(
         },
         Err(blocker) => {
             abstain(result, context, kind, target.span, summary_reason(blocker));
+        }
+    }
+}
+
+fn assignment_reachable(
+    context: &RuleContext<'_, '_, '_>,
+    node: &CfgNode,
+    target: &AccessPath,
+    result: &mut RuleResult,
+) -> bool {
+    let reachable = context.facts().reachable_node(node.id);
+    match reachable.certified() {
+        Some(true) => true,
+        Some(false) => false,
+        None => {
+            local_abstain(
+                context,
+                RuleKind::SideEffectFreeAssignment,
+                target.span,
+                &reachable,
+                result,
+            );
+            false
         }
     }
 }
