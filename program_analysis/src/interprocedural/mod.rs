@@ -13,8 +13,8 @@ mod project_use;
 mod validity;
 
 pub use context::{
-    AnalyzeEvidenceError, ArgumentShape, ArgumentValue, CallContext, ContextEvidence,
-    ContextOrigin, ProjectSummaries, SummaryBlocker,
+    AnalyzeEvidenceError, ArgumentShape, ArgumentValue, CallContext, CallPathSite, ContextEvidence,
+    ContextOrigin, ProjectSummaries, SummaryBlocker, ValidatedDefinition, ValidatedHeader,
 };
 
 pub use graph::{

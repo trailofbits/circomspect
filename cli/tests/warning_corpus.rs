@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use program_analysis::new_rules::RuleKind;
 use serde_json::{json, Value};
 
 fn root() -> PathBuf {
@@ -116,6 +117,31 @@ fn compiler_class(binary: &Path, case: &Value) -> String {
 }
 
 #[test]
+fn corpus_target_ids_match_the_frozen_rule_contract() {
+    let kinds = HashMap::from([
+        ("bitwise_complement", RuleKind::BitwiseComplement),
+        ("bn254_specific", RuleKind::Bn254SpecificCircuit),
+        ("complexity", RuleKind::Complexity),
+        ("constant_conditional", RuleKind::ConstantConditional),
+        ("field_arithmetic", RuleKind::FieldArithmetic),
+        ("field_comparison", RuleKind::FieldComparison),
+        ("nonstrict_conversion", RuleKind::NonstrictBinaryConversion),
+        ("redundant_witness", RuleKind::RedundantWitnessAssignment),
+        ("side_effect_free_assignment", RuleKind::SideEffectFreeAssignment),
+        ("signal_assignment", RuleKind::SignalAssignment),
+        ("too_many_arguments", RuleKind::TooManyArguments),
+        ("unconstrained_division", RuleKind::UnconstrainedDivision),
+        ("unconstrained_less_than", RuleKind::UnconstrainedLessThan),
+        ("underconstrained_signal", RuleKind::UnconstrainedSignal),
+        ("unused_output", RuleKind::UnusedOutputSignal),
+    ]);
+    for case in manifest() {
+        let kind = kinds.get(field(&case, "rule")).expect("corpus rule has a frozen contract");
+        assert_eq!(field(&case, "rule_id"), kind.code().id(), "{}", field(&case, "id"));
+    }
+}
+
+#[test]
 fn warning_labels_and_legacy_results_are_frozen() {
     let cases = manifest();
     let mut ids = HashSet::new();
@@ -160,9 +186,9 @@ fn warning_labels_and_legacy_results_are_frozen() {
     assert_eq!(labels.len(), 15);
     assert!(labels.values().all(|set| set.len() == 3));
     assert_eq!(totals.get("TP"), Some(&8));
-    assert_eq!(totals.get("FP"), Some(&3));
+    assert_eq!(totals.get("FP"), Some(&2));
     assert_eq!(totals.get("FN"), Some(&7));
-    assert_eq!(totals.get("TN"), Some(&12));
+    assert_eq!(totals.get("TN"), Some(&13));
     assert_eq!(totals.get("abstention"), Some(&15));
 }
 

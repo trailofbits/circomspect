@@ -1,11 +1,12 @@
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 
 use abstract_interpretation::graph::FlowGraph;
 use parser::hir::{
-    DefinitionRef, ExprId, ExprKind, HirProject, LiftedProject, ProjectIdentity, SemanticCode,
-    SemanticDiagnostic, Severity, SymbolId,
+    BlockId, DefinitionRef, ExprId, ExprKind, HirProject, LiftedProject, ProjectIdentity,
+    SemanticCode, SemanticDiagnostic, Severity, SymbolId, SymbolKind,
 };
-use parser::new_frontend::Version;
+use parser::new_frontend::{SourceId, Span, Version};
 use program_structure::utils::constants::Curve;
 
 use crate::hir_cfg::{CfgNodeKind, DefinitionCfg};
@@ -14,7 +15,9 @@ use crate::hir_facts::{
     FieldValue, Range,
 };
 
-use super::{build_call_graph, CallGraph, CallGraphError, CallOwner, CallSiteId, ReachableCall};
+use super::{
+    build_call_graph, CallGraph, CallGraphError, CallOwner, CallSite, CallSiteId, ReachableCall,
+};
 use crate::interprocedural::cache::SummaryCaches;
 
 const MAX_ARGUMENT_NODES: usize = 4096;
@@ -114,11 +117,63 @@ pub enum ContextOrigin {
     Call(CallSiteId),
 }
 
+/// One provider-issued source call in the exact path to a rule scope.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CallPathSite {
+    site: CallSiteId,
+    owner: CallOwner,
+    callee: DefinitionRef,
+    span: Span,
+}
+
+impl CallPathSite {
+    fn from_site(site: &CallSite) -> Result<Self, SummaryBlocker> {
+        let callee = site.resolved().ok_or(SummaryBlocker::ForeignCall)?;
+        Ok(Self { site: site.id(), owner: site.owner, callee, span: site.span })
+    }
+
+    #[must_use]
+    pub const fn span(self) -> Span {
+        self.span
+    }
+
+    #[must_use]
+    pub const fn owner(self) -> CallOwner {
+        self.owner
+    }
+
+    #[must_use]
+    pub const fn callee(self) -> DefinitionRef {
+        self.callee
+    }
+}
+
+impl Ord for CallPathSite {
+    fn cmp(&self, other: &Self) -> Ordering {
+        (self.site, self.owner, self.callee, self.span.source(), self.span.start(), self.span.end())
+            .cmp(&(
+                other.site,
+                other.owner,
+                other.callee,
+                other.span.source(),
+                other.span.start(),
+                other.span.end(),
+            ))
+    }
+}
+
+impl PartialOrd for CallPathSite {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 /// A nonforgeable scope linking a context to a library root or reachable call.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ContextEvidence {
     context: CallContext,
     origin: ContextOrigin,
+    call_path: Vec<CallPathSite>,
 }
 
 impl ContextEvidence {
@@ -131,12 +186,17 @@ impl ContextEvidence {
     pub fn origin(&self) -> ContextOrigin {
         self.origin
     }
+
+    pub(crate) fn call_path(&self) -> &[CallPathSite] {
+        &self.call_path
+    }
 }
 
 /// Why a context cannot be used as certified summary evidence.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum SummaryBlocker {
     ForeignDefinition,
+    IncompleteDefinition,
     ForeignCall,
     WrongContext,
     WrongArity { expected: usize, actual: usize },
@@ -156,6 +216,98 @@ pub enum SummaryBlocker {
     LocalAnalysis(String),
     RecursiveCycle,
     ContextBudget,
+}
+
+/// A checked function or template header bound to this HIR project.
+/// Callers cannot construct a validation certificate from a parameter count.
+///
+/// ```compile_fail
+/// use circomspect_program_analysis::interprocedural::ValidatedHeader;
+/// fn forge(header: &mut ValidatedHeader) { header.parameter_count = 8; }
+/// ```
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ValidatedHeader {
+    definition: DefinitionRef,
+    name: String,
+    name_span: Span,
+    parameter_count: usize,
+}
+
+impl ValidatedHeader {
+    #[must_use]
+    pub fn definition(&self) -> DefinitionRef {
+        self.definition
+    }
+
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    #[must_use]
+    pub fn name_span(&self) -> Span {
+        self.name_span
+    }
+
+    #[must_use]
+    pub fn parameter_count(&self) -> usize {
+        self.parameter_count
+    }
+}
+
+/// A checked header whose entire definition has no parser, lifting, or semantic errors.
+///
+/// ```compile_fail
+/// use circomspect_program_analysis::interprocedural::{ValidatedDefinition, ValidatedHeader};
+/// fn forge(definition: &mut ValidatedDefinition, header: ValidatedHeader) {
+///     definition.header = header;
+/// }
+/// ```
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ValidatedDefinition {
+    header: ValidatedHeader,
+}
+
+impl ValidatedDefinition {
+    #[must_use]
+    pub fn header(&self) -> &ValidatedHeader {
+        &self.header
+    }
+}
+
+struct DefinitionParts<'a> {
+    name: &'a str,
+    name_span: Span,
+    span: Span,
+    body: BlockId,
+    parameters: &'a [SymbolId],
+}
+
+#[derive(Clone, Copy)]
+struct SourceScope {
+    source: SourceId,
+    start: usize,
+    end: usize,
+}
+
+impl SourceScope {
+    fn from_span(span: Span) -> Self {
+        Self { source: span.source(), start: span.start(), end: span.end() }
+    }
+
+    fn contains(self, span: Span) -> bool {
+        self.source == span.source() && self.start <= span.start() && span.end() <= self.end
+    }
+
+    fn overlaps(self, span: Span) -> bool {
+        if self.source != span.source() {
+            return false;
+        }
+        if span.start() == span.end() {
+            return self.start <= span.start() && span.start() <= self.end;
+        }
+        span.start() < self.end && self.start < span.end()
+    }
 }
 
 /// A failed context analysis, retaining a located semantic error when specialization proves one.
@@ -204,6 +356,107 @@ impl<'a> ProjectSummaries<'a> {
         self.lifted.diagnostics.is_empty()
             && self.lifted.syntax_diagnostics.is_empty()
             && self.lifted.incomplete.is_empty()
+    }
+
+    pub(crate) fn validated_header(
+        &self,
+        definition: DefinitionRef,
+    ) -> Result<ValidatedHeader, SummaryBlocker> {
+        let parts = self.definition_parts(definition)?;
+        let body = self.hir().block(parts.body).ok_or(SummaryBlocker::IncompleteDefinition)?;
+        let definition_scope = SourceScope::from_span(parts.span);
+        if !definition_scope.contains(parts.name_span)
+            || !definition_scope.contains(body.span)
+            || body.span.start() < parts.name_span.end()
+        {
+            return Err(SummaryBlocker::IncompleteDefinition);
+        }
+        let header = SourceScope {
+            source: parts.span.source(),
+            start: parts.span.start(),
+            end: body.span.start(),
+        };
+        if self.scope_has_issue(header) || !self.parameters_valid(parts.parameters, header) {
+            return Err(SummaryBlocker::IncompleteDefinition);
+        }
+        Ok(ValidatedHeader {
+            definition,
+            name: parts.name.to_string(),
+            name_span: parts.name_span,
+            parameter_count: parts.parameters.len(),
+        })
+    }
+
+    pub(crate) fn validated_definition(
+        &self,
+        definition: DefinitionRef,
+    ) -> Result<ValidatedDefinition, SummaryBlocker> {
+        let header = self.validated_header(definition)?;
+        let parts = self.definition_parts(definition)?;
+        if self.scope_has_issue(SourceScope::from_span(parts.span)) {
+            return Err(SummaryBlocker::IncompleteDefinition);
+        }
+        Ok(ValidatedDefinition { header })
+    }
+
+    fn definition_parts(
+        &self,
+        definition: DefinitionRef,
+    ) -> Result<DefinitionParts<'_>, SummaryBlocker> {
+        let parts = match definition {
+            DefinitionRef::Function(id) => {
+                let item = self.hir().function(id).ok_or(SummaryBlocker::ForeignDefinition)?;
+                DefinitionParts {
+                    name: &item.name,
+                    name_span: item.name_span,
+                    span: item.span,
+                    body: item.body,
+                    parameters: &item.parameters,
+                }
+            }
+            DefinitionRef::Template(id) => {
+                let item = self.hir().template(id).ok_or(SummaryBlocker::ForeignDefinition)?;
+                DefinitionParts {
+                    name: &item.name,
+                    name_span: item.name_span,
+                    span: item.span,
+                    body: item.body,
+                    parameters: &item.parameters,
+                }
+            }
+            DefinitionRef::Bus(_) => return Err(SummaryBlocker::UnsupportedContext),
+        };
+        Ok(parts)
+    }
+
+    fn parameters_valid(&self, parameters: &[SymbolId], header: SourceScope) -> bool {
+        let mut names = BTreeSet::new();
+        for id in parameters {
+            let Some(symbol) = self.hir().symbol(*id) else { return false };
+            if symbol.kind != SymbolKind::Parameter
+                || !header.contains(symbol.span)
+                || !names.insert(symbol.name.as_str())
+            {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn scope_has_issue(&self, scope: SourceScope) -> bool {
+        for diagnostic in &self.lifted.syntax_diagnostics {
+            if diagnostic.span().is_some_and(|span| scope.overlaps(span)) {
+                return true;
+            }
+        }
+        for region in &self.lifted.incomplete {
+            if region.span().is_some_and(|span| scope.overlaps(span)) {
+                return true;
+            }
+        }
+        self.lifted.diagnostics.iter().any(|diagnostic| {
+            diagnostic.severity == Severity::Error && scope.overlaps(diagnostic.span)
+        })
     }
 
     #[must_use]
@@ -269,6 +522,7 @@ impl<'a> ProjectSummaries<'a> {
         Ok(ContextEvidence {
             context: self.symbolic_context_for(definition)?,
             origin: ContextOrigin::SymbolicRoot,
+            call_path: Vec::new(),
         })
     }
 
@@ -288,7 +542,11 @@ impl<'a> ProjectSummaries<'a> {
         }
         let arguments = self.exact_main_arguments(&main.arguments)?;
         let context = self.context_for(call.callee(), arguments)?;
-        Ok(ContextEvidence { context, origin: ContextOrigin::Main(site.id()) })
+        Ok(ContextEvidence {
+            context,
+            origin: ContextOrigin::Main(site.id()),
+            call_path: vec![CallPathSite::from_site(site)?],
+        })
     }
 
     /// Bind a checked reachable definition call to certified exact argument values.
@@ -303,7 +561,9 @@ impl<'a> ProjectSummaries<'a> {
         }
         self.check_facts_for_evidence(facts, caller)?;
         let context = self.call_context(call, facts)?;
-        Ok(ContextEvidence { context, origin: ContextOrigin::Call(call.site().id()) })
+        let mut call_path = caller.call_path.clone();
+        call_path.push(CallPathSite::from_site(call.site())?);
+        Ok(ContextEvidence { context, origin: ContextOrigin::Call(call.site().id()), call_path })
     }
 
     pub(super) fn call_context(
@@ -353,26 +613,79 @@ impl<'a> ProjectSummaries<'a> {
         self.check_context(&evidence.context)?;
         match evidence.origin {
             ContextOrigin::SymbolicRoot => {
-                if evidence
+                if !evidence
                     .context
                     .arguments
                     .iter()
                     .all(|value| matches!(value, ArgumentValue::Symbolic(ArgumentShape::Unknown)))
                 {
+                    return Err(SummaryBlocker::WrongContext);
+                }
+            }
+            ContextOrigin::Main(_) | ContextOrigin::Call(_) => {}
+        }
+        self.check_call_path(evidence)
+    }
+
+    fn check_call_path(&self, evidence: &ContextEvidence) -> Result<(), SummaryBlocker> {
+        self.check_path_origin(evidence)?;
+        if evidence.call_path.is_empty() {
+            return Ok(());
+        }
+        let mut previous = None;
+        for step in &evidence.call_path {
+            previous = Some(self.check_path_site(*step, previous)?);
+        }
+        if previous != Some(evidence.context.definition) {
+            return Err(SummaryBlocker::ForeignCall);
+        }
+        Ok(())
+    }
+
+    fn check_path_origin(&self, evidence: &ContextEvidence) -> Result<(), SummaryBlocker> {
+        match evidence.origin {
+            ContextOrigin::SymbolicRoot => {
+                if evidence.call_path.is_empty() {
                     Ok(())
                 } else {
                     Err(SummaryBlocker::WrongContext)
                 }
             }
-            ContextOrigin::Main(id) | ContextOrigin::Call(id) => {
-                let site = self.graph.site(id).ok_or(SummaryBlocker::ForeignCall)?;
-                if site.resolved() == Some(evidence.context.definition) {
+            ContextOrigin::Main(id) => self.check_main_path(id, &evidence.call_path),
+            ContextOrigin::Call(id) => {
+                if evidence.call_path.last().is_some_and(|site| site.site == id) {
                     Ok(())
                 } else {
                     Err(SummaryBlocker::ForeignCall)
                 }
             }
         }
+    }
+
+    fn check_main_path(&self, id: CallSiteId, path: &[CallPathSite]) -> Result<(), SummaryBlocker> {
+        let [site] = path else { return Err(SummaryBlocker::ForeignCall) };
+        if site.site != id {
+            return Err(SummaryBlocker::ForeignCall);
+        }
+        let CallOwner::Main(_) = site.owner else { return Err(SummaryBlocker::ForeignCall) };
+        Ok(())
+    }
+
+    fn check_path_site(
+        &self,
+        step: CallPathSite,
+        previous: Option<DefinitionRef>,
+    ) -> Result<DefinitionRef, SummaryBlocker> {
+        let site = self.graph.site(step.site).ok_or(SummaryBlocker::ForeignCall)?;
+        if CallPathSite::from_site(site)? != step {
+            return Err(SummaryBlocker::ForeignCall);
+        }
+        if let Some(previous) = previous {
+            if step.owner != CallOwner::Definition(previous) {
+                return Err(SummaryBlocker::ForeignCall);
+            }
+        }
+        Ok(step.callee)
     }
 
     /// Analyze one definition under a validated source scope and bind the result to it.
@@ -416,7 +729,7 @@ impl<'a> ProjectSummaries<'a> {
                 diagnostic: Box::new(diagnostic),
             });
         }
-        facts.bind_context(evidence.context.clone());
+        facts.bind_evidence(evidence.clone());
         Ok(facts)
     }
 
@@ -430,7 +743,7 @@ impl<'a> ProjectSummaries<'a> {
         if facts.hir().identity() != self.hir().identity()
             || facts.curve() != self.curve()
             || facts.definition() != evidence.context.definition
-            || !facts.matches_context(&evidence.context)
+            || !facts.matches_evidence(evidence)
         {
             return Err(SummaryBlocker::WrongContext);
         }
@@ -631,20 +944,17 @@ impl<'a> ProjectSummaries<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
-
     use parser::hir::{lift_project, DefinitionRef, SemanticCode, Severity};
     use parser::new_frontend::{load_sources, Version, VersionPolicy};
     use program_structure::utils::constants::Curve;
 
     use crate::hir_cfg::build_cfg;
-    use crate::hir_facts::analyze_with_scalar_parameters;
     use crate::interprocedural::{
         ArgumentValue, CallOwner, CallReachability, ProjectSummaries, SummaryBlocker,
     };
 
     #[test]
-    fn a_different_concrete_seed_cannot_borrow_a_reachable_origin() {
+    fn a_symbolic_scope_cannot_borrow_a_reachable_origin() {
         let directory = std::env::temp_dir().join(format!(
             "circomspect-summary-binding-{}-{:?}",
             std::process::id(),
@@ -668,23 +978,9 @@ mod tests {
             panic!("main call")
         };
         let evidence = provider.main_evidence(&call).unwrap();
-        let two = provider
-            .context_for(
-                DefinitionRef::Template(template),
-                vec![ArgumentValue::Scalar(provider.field.canonical(2.into()))],
-            )
-            .unwrap();
         let cfg = build_cfg(provider.hir(), DefinitionRef::Template(template)).unwrap();
-        let parameter = provider.hir().template(template).unwrap().parameters[0];
-        let mut wrong = analyze_with_scalar_parameters(
-            provider.hir(),
-            &cfg,
-            &provider.field,
-            BTreeMap::from([(parameter, provider.field.canonical(2.into()))]),
-            None,
-        )
-        .unwrap();
-        wrong.bind_context(two);
+        let symbolic = provider.symbolic_root(DefinitionRef::Template(template)).unwrap();
+        let wrong = provider.analyze_for_evidence(&cfg, &symbolic, None).unwrap();
         assert_eq!(
             provider.check_facts_for_evidence(&wrong, &evidence),
             Err(SummaryBlocker::WrongContext)

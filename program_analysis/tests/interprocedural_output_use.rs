@@ -407,7 +407,7 @@ fn parent_assertions_require_a_proven_true_condition() {
 }
 
 #[test]
-fn unproved_parameter_assertions_abstain_for_concrete_main_contexts() {
+fn concrete_main_assertions_follow_the_bound_parameter_value() {
     for argument in [0, 1] {
         let source = format!(
             "template Child(){{signal output out;out<==1;}} \
@@ -416,11 +416,13 @@ fn unproved_parameter_assertions_abstain_for_concrete_main_contexts() {
         );
         let lifted = fixture(&source);
         assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
-        assert!(!lifted.incomplete.is_empty());
+        assert!(lifted.incomplete.is_empty(), "{:?}", lifted.incomplete);
         let result = internal_use(&source, 0);
-        assert!(result
-            .unavailable()
-            .is_some_and(|reasons| reasons.contains(&SummaryBlocker::ExternalSummary)));
+        if argument == 0 {
+            assert!(result.certified().is_none());
+        } else {
+            assert_eq!(result.certified().unwrap().status(), ProjectOutputStatus::Unused);
+        }
     }
 }
 

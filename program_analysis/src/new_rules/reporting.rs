@@ -1,9 +1,11 @@
 use std::collections::BTreeMap;
 use std::cmp::Ordering;
 
+use parser::hir::{SemanticCode, SemanticDiagnostic, Severity};
 use parser::new_frontend::{LoadedProject, SourceId, Span};
 use program_structure::file_definition::{FileID, FileLibrary};
 use program_structure::report::{MessageCategory, Report};
+use program_structure::report_code::ReportCode;
 
 use crate::interprocedural::CallContext;
 
@@ -52,6 +54,18 @@ impl<'a> SourceMap<'a> {
         self.sources.get(&source).map(|(file, _)| *file)
     }
 
+    /// Convert a typed HIR diagnostic through the existing report renderers.
+    pub fn semantic_report(&self, diagnostic: &SemanticDiagnostic) -> Result<Report, RenderError> {
+        let (file, range) = self.location(diagnostic.span)?;
+        let code = semantic_report_code(diagnostic.code);
+        let mut report = match diagnostic.severity {
+            Severity::Error => Report::error(diagnostic.message.clone(), code),
+            Severity::Warning => Report::warning(diagnostic.message.clone(), code),
+        };
+        report.add_primary(range, file, diagnostic.message.clone());
+        Ok(report)
+    }
+
     fn location(&self, span: Span) -> Result<(FileID, std::ops::Range<usize>), RenderError> {
         let (file, text) =
             self.sources.get(&span.source()).ok_or(RenderError::UnknownSource(span.source()))?;
@@ -64,6 +78,41 @@ impl<'a> SourceMap<'a> {
             return Err(RenderError::InvalidSpan(span));
         }
         Ok((*file, range))
+    }
+}
+
+fn semantic_report_code(code: SemanticCode) -> ReportCode {
+    match code {
+        SemanticCode::MissingCall => ReportCode::UnresolvedCall,
+        SemanticCode::WrongFunction => ReportCode::UndefinedFunction,
+        SemanticCode::WrongTemplate => ReportCode::UndefinedTemplate,
+        SemanticCode::DuplicateFunction => ReportCode::SameFunctionDeclaredTwice,
+        SemanticCode::DuplicateTemplate => ReportCode::SameTemplateDeclaredTwice,
+        SemanticCode::DuplicateSymbol => ReportCode::SameSymbolDeclaredTwice,
+        SemanticCode::Shadowing => ReportCode::ShadowingVariable,
+        SemanticCode::ParameterCollision => ReportCode::ParameterNameCollision,
+        SemanticCode::MissingBusType => ReportCode::MissingBusType,
+        SemanticCode::InvalidAssignment => ReportCode::WrongTypesInAssignOperation,
+        SemanticCode::WrongBusAssignment => ReportCode::WrongBusAssignment,
+        SemanticCode::WrongAssignmentExpression => ReportCode::WrongAssignmentExpression,
+        SemanticCode::WrongAssignmentRank => ReportCode::WrongAssignmentRank,
+        SemanticCode::InvalidCallArgument => ReportCode::InvalidArgumentInCall,
+        SemanticCode::InvalidSignalAccess => ReportCode::InvalidSignalAccess,
+        SemanticCode::InvalidTag => ReportCode::InvalidTag,
+        SemanticCode::InputTagAccess => ReportCode::InputTagAccess,
+        SemanticCode::InvalidTagAfterArray => ReportCode::InvalidTagAfterArray,
+        SemanticCode::InvalidArrayAccess => ReportCode::InvalidArrayAccess,
+        SemanticCode::InvalidArrayIndexDimension => ReportCode::InvalidArraySize,
+        SemanticCode::InvalidArrayIndexBus => ReportCode::InvalidArrayIndexBus,
+        SemanticCode::AnonymousInput => ReportCode::AnonymousComponentError,
+        SemanticCode::ForbiddenDeclaration => ReportCode::ForbiddenDeclarationInFunction,
+        SemanticCode::TemplateReturn => ReportCode::TemplateWithReturnStatement,
+        SemanticCode::ConstraintInFunction => ReportCode::ConstraintGeneratorInFunction,
+        SemanticCode::UnknownSymbol => ReportCode::NonExistentSymbol,
+        SemanticCode::WrongArity => ReportCode::WrongArityUnspecified,
+        SemanticCode::NonConstantArrayLength => ReportCode::NonConstantArrayLength,
+        SemanticCode::NonComputableExpression => ReportCode::NonComputableExpression,
+        SemanticCode::FeatureVersion => ReportCode::CompilerVersionError,
     }
 }
 

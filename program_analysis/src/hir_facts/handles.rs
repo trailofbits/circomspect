@@ -286,7 +286,7 @@ impl AnalysisFacts<'_> {
             curve: self.field.curve().clone(),
             path,
             component: None,
-            context: self.context_binding.clone(),
+            context: self.evidence_binding.as_ref().map(|evidence| evidence.context().clone()),
         })
     }
 
@@ -335,7 +335,7 @@ impl AnalysisFacts<'_> {
             curve: self.field.curve().clone(),
             path,
             component: Some(component.id),
-            context: self.context_binding.clone(),
+            context: self.evidence_binding.as_ref().map(|evidence| evidence.context().clone()),
         })
     }
 

@@ -2,6 +2,7 @@
 
 mod access;
 mod domains;
+mod evaluation;
 mod field;
 mod forward;
 mod handles;
@@ -20,9 +21,9 @@ use parser::hir::{
 };
 use parser::new_frontend::{AssignmentOperator, InputAssignmentOperator};
 
-use crate::hir_cfg::{CfgNodeKind, DefinitionCfg};
 use crate::call_evidence::ExactCallResults;
-use crate::interprocedural::CallContext;
+use crate::hir_cfg::{CfgNodeKind, DefinitionCfg};
+use crate::interprocedural::ContextEvidence;
 use access::key_for_path;
 use abstract_interpretation::lattice::Lattice;
 use domains::{DegreeUpper, FieldRange};
@@ -135,7 +136,7 @@ pub struct AnalysisFacts<'a> {
     backward: BackwardResult,
     specialized_parameters: BTreeSet<SymbolId>,
     resolved_deferred: BTreeSet<NodeId>,
-    context_binding: Option<CallContext>,
+    evidence_binding: Option<ContextEvidence>,
 }
 
 /// Compute local facts. External summaries are unavailable until Phase 5.
@@ -220,7 +221,7 @@ fn analyze_seeded<'a>(
         backward,
         specialized_parameters,
         resolved_deferred,
-        context_binding: None,
+        evidence_binding: None,
     })
 }
 
@@ -308,6 +309,59 @@ impl AnalysisFacts<'_> {
         self.cfg
     }
 
+    /// Prove whether one CFG edge is reachable in this bound analysis context.
+    /// A provisional fixed point cannot certify an edge, even if its source was visited.
+    pub fn reachable_edge(&self, id: EdgeId) -> Fact<bool> {
+        let Some(edge) = self.cfg.edge(id) else {
+            return Fact::blocked(BTreeSet::from([FactBlocker::ForeignQuery]));
+        };
+        let SolveResult::Complete(facts) = &self.forward else {
+            return Fact::blocked(self.forward_completion_blockers());
+        };
+        let Some(source) = facts.get(&edge.source).and_then(|item| item.output.as_ref()) else {
+            return Fact::known(false);
+        };
+        let analysis = self.forward_analysis();
+        match edge.payload.apply(&analysis, source) {
+            TransferOutcome::Known(state) if state.variables().is_none() => Fact::known(false),
+            TransferOutcome::Known(_) => {
+                let sites = BTreeSet::from([edge.source, edge.target]);
+                let blockers = self.deferred_control_blockers(&sites);
+                if blockers.is_empty() {
+                    Fact::known(true)
+                } else {
+                    Fact::blocked(blockers)
+                }
+            }
+            TransferOutcome::Opaque { reason, .. } => {
+                Fact::blocked(BTreeSet::from([FactBlocker::OpaqueEdge(id, reason)]))
+            }
+        }
+    }
+
+    fn forward_completion_blockers(&self) -> BTreeSet<FactBlocker> {
+        let SolveResult::Incomplete { blockers, .. } = &self.forward else {
+            return BTreeSet::new();
+        };
+        let mut reasons = BTreeSet::new();
+        for blocker in blockers {
+            let reason = match blocker {
+                Blocker::PendingNode(node) => FactBlocker::Budget(*node),
+                Blocker::OpaqueNode { node, reason } => {
+                    FactBlocker::OpaqueNode(*node, reason.clone())
+                }
+                Blocker::OpaqueEdge { edge, reason } => {
+                    FactBlocker::OpaqueEdge(*edge, reason.clone())
+                }
+            };
+            reasons.insert(reason);
+        }
+        if reasons.is_empty() {
+            reasons.insert(FactBlocker::MissingExit);
+        }
+        reasons
+    }
+
     pub(crate) fn must_execute(&self, node: NodeId) -> Fact<bool> {
         let reachable = self.reachable_node(node);
         let Some(reachable) = reachable.certified() else {
@@ -369,17 +423,20 @@ impl AnalysisFacts<'_> {
         self.resolved_deferred.contains(&node)
     }
 
-    pub(crate) fn bind_context(&mut self, context: CallContext) {
-        self.context_binding = Some(context);
+    pub(crate) fn bind_evidence(&mut self, evidence: ContextEvidence) {
+        self.evidence_binding = Some(evidence);
     }
 
-    pub(crate) fn matches_context(&self, context: &CallContext) -> bool {
-        self.context_binding.as_ref() == Some(context)
+    pub(crate) fn matches_evidence(&self, evidence: &ContextEvidence) -> bool {
+        self.evidence_binding.as_ref() == Some(evidence)
     }
 
     pub(crate) fn reachable_node(&self, node: NodeId) -> Fact<bool> {
         if self.cfg.node(node).is_none() {
             return Fact::blocked(BTreeSet::from([FactBlocker::ForeignQuery]));
+        }
+        if self.certified_dead_node(node) {
+            return Fact::known(false);
         }
         let blockers = self.reachability_blockers(&BTreeSet::from([node]));
         if !blockers.is_empty() {
@@ -990,6 +1047,16 @@ impl AnalysisFacts<'_> {
         facts.input.as_ref()
     }
 
+    fn certified_dead_node(&self, id: NodeId) -> bool {
+        // Only a completed fixed point can turn an absent input into a dead-path proof.
+        let SolveResult::Complete(facts) = &self.forward else { return false };
+        facts
+            .get(&id)
+            .and_then(|item| item.input.as_ref())
+            .and_then(ForwardState::variables)
+            .is_none()
+    }
+
     fn site_touches(&self, id: NodeId, query: &AccessKey) -> bool {
         let unknown = ForwardState::boundary();
         let state = self.site_state(id).unwrap_or(&unknown);
@@ -1194,14 +1261,20 @@ impl AnalysisFacts<'_> {
     fn deferred_control_blockers(&self, sites: &BTreeSet<NodeId>) -> BTreeSet<FactBlocker> {
         let mut blockers = BTreeSet::new();
         for site in sites {
+            if self.certified_dead_node(*site) {
+                continue;
+            }
             if let Some(node) = self.cfg.node(*site) {
                 for control in &node.deferred_controls {
-                    if !self.specialized_guard(*control) {
+                    if !self.certified_dead_node(*control) && !self.specialized_guard(*control) {
                         blockers.insert(FactBlocker::DeferredControl(*control));
                     }
                 }
             }
             for branch in self.cfg.nodes() {
+                if self.certified_dead_node(*branch) {
+                    continue;
+                }
                 let Some(CfgNodeKind::Branch {
                     guard: parser::hir::ControlGuard::DeferredScalar,
                     ..

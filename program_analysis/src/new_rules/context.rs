@@ -4,9 +4,9 @@ use parser::new_frontend::Span;
 use crate::hir_facts::{AccessHandle, AnalysisFacts};
 use crate::interprocedural::{
     AppliedComponentPort, CallBlocker, CallContext, CallOwner, CallReachability, CallSite,
-    CallSiteId, CallerOutputRead, ComposedConstraintFixedOutput, ContextEvidence, FunctionEffects,
-    FunctionSummary, PortSummary, ProjectOutputUse, ProjectSummaries, SummaryBlocker, SummaryFact,
-    WitnessSite,
+    CallPathSite, CallSiteId, CallerOutputRead, ComposedConstraintFixedOutput, ContextEvidence,
+    FunctionEffects, FunctionSummary, PortSummary, ProjectOutputUse, ProjectSummaries,
+    SummaryBlocker, SummaryFact, ValidatedDefinition, ValidatedHeader, WitnessSite,
 };
 
 use crate::new_rules::{Finding, RuleKind};
@@ -77,9 +77,31 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
         self.evidence.context()
     }
 
+    /// Validate this active function or template's header and parameter list.
+    pub fn validated_header(&self) -> Result<ValidatedHeader, SummaryBlocker> {
+        self.summaries.validated_header(self.call_context().definition())
+    }
+
+    /// Validate source recovery across this active definition's body and header.
+    pub fn validated_definition(&self) -> Result<ValidatedDefinition, SummaryBlocker> {
+        self.summaries.validated_definition(self.call_context().definition())
+    }
+
     #[must_use]
     pub fn origin(&self) -> crate::interprocedural::ContextOrigin {
         self.evidence.origin()
+    }
+
+    /// Provider-issued source calls from a main or symbolic root to this scope.
+    #[must_use]
+    pub fn call_path(&self) -> &[CallPathSite] {
+        self.evidence.call_path()
+    }
+
+    /// The exact source call that invoked this scope, if it has one.
+    #[must_use]
+    pub fn incoming_call_site(&self) -> Option<&CallPathSite> {
+        self.call_path().last()
     }
 
     /// List call sites owned by the active definition, including unresolved sites.
