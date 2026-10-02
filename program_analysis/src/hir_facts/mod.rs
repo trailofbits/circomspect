@@ -7,6 +7,7 @@ mod field;
 mod forward;
 mod handles;
 mod liveness;
+mod use_queries;
 mod walk;
 
 use std::borrow::Cow;
@@ -30,6 +31,7 @@ use abstract_interpretation::lattice::Lattice;
 use domains::{DegreeUpper, FieldRange};
 use forward::{ForwardAnalysis, ForwardState};
 use liveness::{LiveState, LivenessAnalysis};
+use crate::hir_facts::use_queries::ReadScope;
 pub(crate) use walk::VisitAccesses;
 
 pub use access::{AccessKey, AccessKeyStep, IndexKey};
@@ -922,31 +924,7 @@ impl AnalysisFacts<'_> {
         if handle.curve != *self.field.curve() {
             return Fact::blocked(BTreeSet::from([FactBlocker::ForeignQuery]));
         }
-        let blockers = self.backward_blockers_query(&handle.path, true);
-        if !blockers.is_empty() {
-            return Fact::blocked(blockers);
-        }
-        let SolveResult::Complete(facts) = &self.backward else {
-            return Fact::blocked(BTreeSet::from([FactBlocker::MissingExit]));
-        };
-        let key = key_for_path(self.hir, self.field, &handle.path, &BTreeMap::new());
-        let mut observed = false;
-        for node in self.cfg.nodes() {
-            let Some(state) = facts.get(node).and_then(|facts| facts.input.as_ref()) else {
-                continue;
-            };
-            let Some(read) = state.contains_alias(&key) else {
-                continue;
-            };
-            observed = true;
-            if read {
-                return Fact::known(true);
-            }
-        }
-        if !observed {
-            return Fact::blocked(BTreeSet::from([FactBlocker::MissingExit]));
-        }
-        Fact::known(false)
+        self.read_path(&handle.path, ReadScope::Handle)
     }
 
     fn backward_blockers(&self, path: &AccessPath) -> BTreeSet<FactBlocker> {

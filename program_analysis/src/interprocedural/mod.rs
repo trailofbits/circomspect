@@ -10,6 +10,7 @@ mod context;
 mod component;
 mod input_relation;
 mod project_use;
+mod output_enumeration;
 mod validity;
 mod shape_validity;
 
@@ -27,3 +28,4 @@ pub use effects::{FunctionEffect, FunctionEffects};
 pub use template::{PortSummary, WitnessProvenance, WitnessSite};
 pub use component::{AppliedComponentPort, CallerOutputRead, ComposedConstraintFixedOutput};
 pub use project_use::{ProjectOutputStatus, ProjectOutputUse};
+pub use output_enumeration::EnumeratedComponentOutput;
