@@ -561,3 +561,55 @@ fn independent_scope_refusal_keeps_dead_and_unknown_failures_distinct() {
         );
     }
 }
+
+#[test]
+fn independent_partial_callers_keep_exact_calls_but_block_scope_warnings() {
+    for source in [
+        "function F(){return 7;}template T(){var x=F();var z=Missing();}",
+        "template F(){signal output x;x<==7;}template T(){component c=F();var z=Missing();}",
+    ] {
+        let lifted = fixture(source);
+        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let definition = lifted.hir.definition("T").unwrap();
+        let caller = provider.symbolic_root(definition).unwrap();
+        let cfg = build_cfg(&lifted.hir, definition).unwrap();
+        let facts = provider.analyze_for_evidence(&cfg, &caller, None).unwrap();
+        let site = provider.graph().calls_from(CallOwner::Definition(definition))[0];
+        let child = match provider.graph().reachable_call(site.id(), &facts) {
+            CallReachability::Reachable(call) => provider.call_evidence(&call, &facts, &caller),
+            CallReachability::Unavailable(CallBlocker::ProvisionalSite) => {
+                provider.refined_function_call_evidence(site.id(), &facts, &caller)
+            }
+            CallReachability::Unreachable => panic!("unexpected dead call: {source}"),
+            CallReachability::Unavailable(blocker) => panic!("{source}: {blocker:?}"),
+        };
+        assert!(child.is_ok(), "{source}: {child:?}");
+        assert_eq!(
+            provider.check_warning_execution_scope(&facts, &caller),
+            Err(SummaryBlocker::IncompleteDefinition)
+        );
+    }
+}
+
+#[test]
+fn independent_warning_refusal_prioritizes_binding_then_failure_over_partial_source() {
+    let source =
+        "function F(){return 7;}template T(){assert(0);var x=F();var z=Missing();}template U(){}";
+    let lifted = fixture(source);
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let definition = lifted.hir.definition("T").unwrap();
+    let caller = provider.symbolic_root(definition).unwrap();
+    let other = provider.symbolic_root(lifted.hir.definition("U").unwrap()).unwrap();
+    let cfg = build_cfg(&lifted.hir, definition).unwrap();
+    let facts = provider.analyze_for_evidence(&cfg, &caller, None).unwrap();
+    assert_eq!(
+        provider.check_warning_execution_scope(&facts, &other),
+        Err(SummaryBlocker::WrongContext)
+    );
+    assert_eq!(
+        provider.check_warning_execution_scope(&facts, &caller),
+        Err(SummaryBlocker::UnsupportedContext)
+    );
+    let site = provider.graph().calls_from(CallOwner::Definition(definition))[0];
+    assert!(provider.refined_function_call_evidence(site.id(), &facts, &caller).is_err());
+}
