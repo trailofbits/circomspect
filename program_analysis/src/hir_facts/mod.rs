@@ -16,7 +16,7 @@ use abstract_interpretation::solver::{
 };
 use parser::hir::{
     AccessPath, AccessStep, ArrayIndex, CallTarget, DefinitionRef, Effect, ExprId, ExprKind,
-    HirProject, SymbolId,
+    HirProject, SymbolId, SymbolKind,
 };
 use parser::new_frontend::{AssignmentOperator, InputAssignmentOperator};
 
@@ -242,18 +242,28 @@ fn resolved_deferred_nodes(
         if *operator != AssignmentOperator::Assign {
             continue;
         }
+        if !deferred_scalar_target(hir, target) {
+            continue;
+        }
         let Some(variables) =
             facts.get(id).and_then(|item| item.input.as_ref()).and_then(ForwardState::variables)
         else {
             continue;
         };
-        if target.steps.is_empty()
-            && forward::eval_expression_with_calls(hir, field, *value, variables, calls).is_some()
-        {
+        if forward::eval_expression_with_calls(hir, field, *value, variables, calls).is_some() {
             resolved.insert(*id);
         }
     }
     resolved
+}
+
+fn deferred_scalar_target(hir: &HirProject, target: &AccessPath) -> bool {
+    if !target.steps.is_empty() {
+        return false;
+    }
+    hir.symbol(target.terminal).is_some_and(|symbol| {
+        symbol.kind == SymbolKind::Variable && symbol.rank == 0 && symbol.shape_checked
+    })
 }
 
 fn forward_pruned_edges(
@@ -692,9 +702,9 @@ impl AnalysisFacts<'_> {
         let mut found = false;
         for id in self.cfg.nodes() {
             let Some(node) = self.cfg.node(*id) else { continue };
-            let target = match &node.kind {
-                CfgNodeKind::DeferredAssignment { target, .. }
-                | CfgNodeKind::Assignment { target, .. } => target,
+            let (target, operator) = match &node.kind {
+                CfgNodeKind::DeferredAssignment { target, operator, .. }
+                | CfgNodeKind::Assignment { target, operator, .. } => (target, operator),
                 _ => continue,
             };
             if target.root != symbol || self.site_state(*id).is_none() {
@@ -704,7 +714,7 @@ impl AnalysisFacts<'_> {
                 CfgNodeKind::DeferredAssignment { value, .. } => {
                     found = true;
                     if !self.resolved_deferred.contains(id)
-                        && !self.certified_deferred_scalar_site(*id, *value)
+                        && !self.certified_deferred_scalar_site(*id, target, *value, *operator)
                     {
                         return false;
                     }
@@ -729,7 +739,16 @@ impl AnalysisFacts<'_> {
         found
     }
 
-    fn certified_deferred_scalar_site(&self, node: NodeId, value: ExprId) -> bool {
+    fn certified_deferred_scalar_site(
+        &self,
+        node: NodeId,
+        target: &AccessPath,
+        value: ExprId,
+        operator: AssignmentOperator,
+    ) -> bool {
+        if operator != AssignmentOperator::Assign || !deferred_scalar_target(self.hir, target) {
+            return false;
+        }
         let Some(variables) = self.site_state(node).and_then(ForwardState::variables) else {
             return false;
         };
@@ -1467,10 +1486,10 @@ mod call_shape_tests {
 
     use abstract_interpretation::graph::FlowGraph;
     use parser::hir::{lift_project, DefinitionRef, Effect, ExprKind, HirProject};
-    use parser::new_frontend::{load_sources, Version, VersionPolicy};
+    use parser::new_frontend::{AssignmentOperator, load_sources, Version, VersionPolicy};
     use program_structure::utils::constants::Curve;
 
-    use crate::hir_cfg::build_cfg;
+    use crate::hir_cfg::{build_cfg, CfgNodeKind};
     use crate::hir_facts::{analyze_with_scalar_parameters, FieldContext, Range};
 
     fn fixture(source: &str) -> HirProject {
@@ -1518,17 +1537,50 @@ mod call_shape_tests {
         let access = hir
             .expressions()
             .iter()
-            .find(|expr| {
-                matches!(&expr.kind, ExprKind::Access(path) if hir.symbol(path.root)
-                    .is_some_and(|symbol| symbol.name == "x"))
+            .find_map(|expr| {
+                let ExprKind::Access(path) = &expr.kind else { return None };
+                hir.symbol(path.root).is_some_and(|symbol| symbol.name == "x").then_some(expr.id)
             })
-            .unwrap()
-            .id;
+            .unwrap();
         let cfg = build_cfg(&hir, DefinitionRef::Function(id)).unwrap();
         let field = FieldContext::for_curve(Curve::Bn254);
         let seven = field.canonical(7.into());
         let seeds = BTreeMap::from([(function.parameters[0], seven.clone())]);
         let facts = analyze_with_scalar_parameters(&hir, &cfg, &field, seeds, None).unwrap();
         assert_eq!(facts.range(access).certified(), Some(&Range::Exact(seven)));
+    }
+
+    #[test]
+    fn indexed_or_compound_deferred_write_cannot_discharge_scalar_shape() {
+        let cases = [
+            ("function F(n){var x[1];x[0]=n;return x[0];}", true),
+            ("function F(n){var x=0;x+=n;return x;}", false),
+        ];
+        for (source, indexed) in cases {
+            let hir = fixture(source);
+            let DefinitionRef::Function(id) = hir.definition("F").unwrap() else { panic!("F") };
+            let function = hir.function(id).unwrap();
+            let cfg = build_cfg(&hir, DefinitionRef::Function(id)).unwrap();
+            let field = FieldContext::for_curve(Curve::Bn254);
+            let seeds = BTreeMap::from([(function.parameters[0], field.canonical(7.into()))]);
+            let facts = analyze_with_scalar_parameters(&hir, &cfg, &field, seeds, None).unwrap();
+            let mut observed = false;
+            for node in cfg.nodes() {
+                let Some(CfgNodeKind::DeferredAssignment { target, value, operator }) =
+                    cfg.node(*node).map(|item| &item.kind)
+                else {
+                    continue;
+                };
+                if indexed != !target.steps.is_empty() {
+                    continue;
+                }
+                if !indexed && *operator != AssignmentOperator::Add {
+                    continue;
+                }
+                observed = true;
+                assert!(!facts.certified_deferred_scalar_site(*node, target, *value, *operator));
+            }
+            assert!(observed, "deferred write must remain in the source CFG: {source}");
+        }
     }
 }

@@ -39,9 +39,12 @@ fn parameter_assertion_retains_typed_condition_and_source() {
     };
     let body = result.hir.function(id).unwrap().body;
     let effects = &result.hir.block(body).unwrap().effects;
-    let Some((condition, span)) = effects.iter().find_map(|effect| match effect {
-        Effect::DeferredAssert { condition, span } => Some((condition, span)),
-        _ => None,
+    let Some((condition, span)) = effects.iter().find_map(|effect| {
+        if let Effect::DeferredAssert { condition, span } = effect {
+            Some((condition, span))
+        } else {
+            None
+        }
     }) else {
         panic!("assertion condition must remain in HIR")
     };

@@ -586,22 +586,42 @@ impl Builder<'_> {
         if symbol.rank != 0 || !symbol.shape_checked {
             return None;
         }
-        if symbol.kind == SymbolKind::Variable && *operator == AssignmentOperator::Assign {
-            return Some(SpecializedAssignment::Variable);
+        Self::specialized_kind(symbol.kind, *operator)
+    }
+
+    fn specialized_kind(
+        kind: SymbolKind,
+        operator: AssignmentOperator,
+    ) -> Option<SpecializedAssignment> {
+        match kind {
+            SymbolKind::Variable => {
+                (operator == AssignmentOperator::Assign).then_some(SpecializedAssignment::Variable)
+            }
+            SymbolKind::Signal => match operator {
+                AssignmentOperator::Witness | AssignmentOperator::ReverseWitness => {
+                    Some(SpecializedAssignment::Witness)
+                }
+                AssignmentOperator::Constraint | AssignmentOperator::ReverseConstraint => {
+                    Some(SpecializedAssignment::Constraint)
+                }
+                AssignmentOperator::Assign
+                | AssignmentOperator::Add
+                | AssignmentOperator::Subtract
+                | AssignmentOperator::Multiply
+                | AssignmentOperator::Divide
+                | AssignmentOperator::IntegerDivide
+                | AssignmentOperator::Modulo
+                | AssignmentOperator::Power
+                | AssignmentOperator::ShiftLeft
+                | AssignmentOperator::ShiftRight
+                | AssignmentOperator::BitAnd
+                | AssignmentOperator::BitOr
+                | AssignmentOperator::BitXor => None,
+            },
+            SymbolKind::Parameter | SymbolKind::Component | SymbolKind::Bus | SymbolKind::Tag => {
+                None
+            }
         }
-        if symbol.kind == SymbolKind::Signal
-            && (*operator == AssignmentOperator::Witness
-                || *operator == AssignmentOperator::ReverseWitness)
-        {
-            return Some(SpecializedAssignment::Witness);
-        }
-        if symbol.kind == SymbolKind::Signal
-            && (*operator == AssignmentOperator::Constraint
-                || *operator == AssignmentOperator::ReverseConstraint)
-        {
-            return Some(SpecializedAssignment::Constraint);
-        }
-        None
     }
 
     fn if_effect(
