@@ -126,6 +126,8 @@ impl AnalysisFacts<'_> {
                 | FactBlocker::AggregateConstraint(_)
                 | FactBlocker::DeferredControl(_)
                 | FactBlocker::OpaqueExpression(_)
+                | FactBlocker::UnsupportedRelation(_)
+                | FactBlocker::WitnessWrite(_, _)
                 | FactBlocker::MissingExit
                 | FactBlocker::ForeignQuery
                 | FactBlocker::ForeignDefinition => true,

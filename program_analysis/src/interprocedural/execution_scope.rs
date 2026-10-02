@@ -20,11 +20,21 @@ impl ProjectSummaries<'_> {
         facts: &AnalysisFacts<'_>,
         evidence: &ContextEvidence,
     ) -> Result<(), SummaryBlocker> {
-        self.check_facts_for_evidence(facts, evidence)?;
-        self.validated_header(facts.definition())?;
+        self.check_call_execution_scope(facts, evidence)?;
         if self.definition_has_hard_source_issue(facts.definition())? {
             return Err(SummaryBlocker::IncompleteDefinition);
         }
+        Ok(())
+    }
+
+    /// Reject known caller failures without discarding independent facts in partial source.
+    pub(super) fn check_call_execution_scope(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        evidence: &ContextEvidence,
+    ) -> Result<(), SummaryBlocker> {
+        self.check_facts_for_evidence(facts, evidence)?;
+        self.validated_header(facts.definition())?;
         match facts.definition() {
             DefinitionRef::Function(_) => {}
             DefinitionRef::Template(id) => {

@@ -3,7 +3,7 @@ use parser::hir::{DefinitionRef, Effect, PortId, Template, TemplateId};
 use parser::new_frontend::AssignmentOperator;
 
 use crate::hir_cfg::{CfgNodeKind, DefinitionCfg, Origin};
-use crate::hir_facts::{AnalysisFacts, FieldValue, Incidence};
+use crate::hir_facts::{AccessHandle, AnalysisFacts, BodyWriteStatus, FieldValue, Incidence};
 
 use super::summary::certified;
 use crate::interprocedural::cache::PortKey;
@@ -118,6 +118,7 @@ impl ProjectSummaries<'_> {
                 let handle = facts
                     .port_handle(port, indices)
                     .map_err(|error| SummaryBlocker::LocalAnalysis(error.to_string()))?;
+                require_no_repeated_body_write(facts, &handle)?;
                 let incidence = facts.incidence_handle(&handle);
                 let fixed = facts.constraint_fixed_handle(&handle);
                 Ok(PortSummary {
@@ -147,6 +148,7 @@ impl ProjectSummaries<'_> {
                 let handle = facts
                     .port_handle(port, &[])
                     .map_err(|error| SummaryBlocker::LocalAnalysis(error.to_string()))?;
+                require_no_repeated_body_write(facts, &handle)?;
                 let read = facts.read_handle(&handle);
                 Ok(*certified(&read)?)
             }))
@@ -166,9 +168,10 @@ impl ProjectSummaries<'_> {
         };
         self.caches.witnesses.get_or_compute(key, || {
             SummaryFact::from_result(self.with_local_template(id, context, |_, cfg, facts| {
-                facts
+                let handle = facts
                     .port_handle(port, &[])
                     .map_err(|error| SummaryBlocker::LocalAnalysis(error.to_string()))?;
+                require_no_repeated_body_write(facts, &handle)?;
                 let symbol = self
                     .hir()
                     .port(port)
@@ -256,5 +259,16 @@ impl ProjectSummaries<'_> {
             }
             work(template, cfg, facts)
         })
+    }
+}
+
+fn require_no_repeated_body_write(
+    facts: &AnalysisFacts<'_>,
+    handle: &AccessHandle,
+) -> Result<(), SummaryBlocker> {
+    let status = facts.body_write_status_handle(handle);
+    match certified(&status)? {
+        BodyWriteStatus::NoRepeat(_) => Ok(()),
+        BodyWriteStatus::DefinitelyRepeated(_) => Err(SummaryBlocker::UnsupportedContext),
     }
 }

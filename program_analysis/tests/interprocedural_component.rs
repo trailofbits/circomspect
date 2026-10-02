@@ -1,5 +1,7 @@
 use circomspect_program_analysis::hir_cfg::build_cfg;
-use circomspect_program_analysis::hir_facts::{analyze, FieldContext, Incidence};
+use circomspect_program_analysis::hir_facts::{
+    analyze, FactBlocker, FieldContext, Incidence, WitnessWriteIssue,
+};
 use circomspect_program_analysis::interprocedural::{
     CallOwner, CallReachability, CallerOutputRead, ProjectSummaries, SummaryBlocker, SummaryFact,
 };
@@ -405,7 +407,7 @@ fn repeated_instances_compose_only_their_own_checked_inputs() {
 #[test]
 fn duplicate_and_missing_input_bindings_cannot_fix_an_output() {
     for (assignments, expected) in [
-        ("c.in<==1;c.in<==2;", SummaryBlocker::DuplicateInputBinding),
+        ("c.in<==1;c.in<==2;", SummaryBlocker::UnsupportedContext),
         ("", SummaryBlocker::MissingInputBinding),
     ] {
         let source = format!(
@@ -430,11 +432,14 @@ fn duplicate_and_missing_input_bindings_cannot_fix_an_output() {
             panic!("component call must be reachable")
         };
         let applied = provider.apply_component_output(&facts, &scope, &call, &handle);
-        assert!(provider
-            .composed_constraint_fixed_output(&facts, applied.certified().unwrap())
-            .unavailable()
-            .unwrap()
-            .contains(&expected));
+        let result = match applied.certified() {
+            Some(applied) => provider.composed_constraint_fixed_output(&facts, applied),
+            None => {
+                assert!(applied.unavailable().unwrap().contains(&expected));
+                continue;
+            }
+        };
+        assert!(result.unavailable().unwrap().contains(&expected));
     }
 }
 
@@ -706,11 +711,18 @@ fn competing_child_output_writes_cannot_borrow_the_first_equality() {
             panic!("component call must be reachable")
         };
         let applied = provider.apply_component_output(&facts, &scope, &call, &handle);
-        assert!(applied.certified().is_some());
-        assert!(provider
-            .composed_constraint_fixed_output(&facts, applied.certified().unwrap())
-            .unavailable()
-            .is_some());
+        if extra == "out===2;" {
+            let applied = applied.certified().expect("equality alone is not a witness write");
+            assert!(provider
+                .composed_constraint_fixed_output(&facts, applied)
+                .unavailable()
+                .is_some());
+        } else {
+            assert!(
+                applied.unavailable().unwrap().contains(&SummaryBlocker::UnsupportedContext),
+                "repeated child write: {extra}"
+            );
+        }
     }
 }
 
@@ -738,15 +750,14 @@ fn repeated_loop_output_effects_cannot_be_counted_as_one_write() {
         panic!("component call must be reachable")
     };
     let applied = provider.apply_component_output(&facts, &scope, &call, &handle);
-    assert!(applied.certified().is_some());
-    assert!(provider
-        .composed_constraint_fixed_output(&facts, applied.certified().unwrap())
-        .unavailable()
-        .is_some());
+    assert!(
+        applied.unavailable().unwrap().contains(&SummaryBlocker::UnsupportedContext),
+        "repeated loop output write"
+    );
 }
 
 #[test]
-fn dynamic_child_loop_has_a_typed_composition_blocker() {
+fn dynamic_child_loop_has_a_typed_write_blocker() {
     let lifted = fixture(concat!(
         "template Child(){signal input in;signal output out;",
         "for(var i=0;i<17;i++){i=16;out<==in;}} ",
@@ -769,10 +780,13 @@ fn dynamic_child_loop_has_a_typed_composition_blocker() {
         panic!("component call must be reachable")
     };
     let applied = provider.apply_component_output(&facts, &scope, &call, &handle);
-    assert!(applied.certified().is_some(), "{:?}", applied.unavailable());
-    assert!(provider
-        .composed_constraint_fixed_output(&facts, applied.certified().unwrap())
-        .unavailable()
-        .unwrap()
-        .contains(&SummaryBlocker::UnsupportedContext));
+    assert!(applied.unavailable().unwrap().iter().any(|blocker| match blocker {
+        SummaryBlocker::LocalFacts(reasons) => reasons.iter().any(|reason| {
+            let FactBlocker::WitnessWrite(_, WitnessWriteIssue::PossibleRepeat) = reason else {
+                return false;
+            };
+            true
+        }),
+        _ => false,
+    }));
 }

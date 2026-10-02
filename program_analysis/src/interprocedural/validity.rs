@@ -48,6 +48,9 @@ impl ProjectSummaries<'_> {
     }
 
     fn has_proven_failure(&self, facts: &AnalysisFacts<'_>, buses: &mut Vec<BusId>) -> bool {
+        if facts.definitely_repeats_any_body_write().certified() == Some(&true) {
+            return true;
+        }
         for id in facts.cfg().nodes() {
             if facts.reachable_node(*id).certified() != Some(&true) {
                 continue;

@@ -5,7 +5,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use parser::hir::{AccessPath, AccessStep, SymbolKind};
 
 use crate::hir_facts::access::key_for_path;
-use crate::hir_facts::{AccessKey, AccessKeyStep, AnalysisFacts, Fact, FactBlocker, IndexKey, Range};
+use crate::hir_facts::{
+    AccessHandle, AccessKey, AccessKeyStep, AnalysisFacts, Fact, FactBlocker, IndexKey, Range,
+};
 
 impl AnalysisFacts<'_> {
     /// Identify one owned scalar storage path with proved dimensions and exact indices.
@@ -14,7 +16,26 @@ impl AnalysisFacts<'_> {
     /// evaluation site. The key identifies storage; it does not prove reachability,
     /// witness assignment, constraint incidence, or successful execution of the definition.
     pub fn exact_access_key(&self, path: &AccessPath) -> Fact<AccessKey> {
-        if let Some(blocker) = self.validate_query_path(path, false) {
+        self.certify_access_key(path, false)
+    }
+
+    pub(crate) fn exact_handle_key(&self, handle: &AccessHandle) -> Fact<AccessKey> {
+        if handle.definition != self.cfg.definition() {
+            return Fact::blocked(BTreeSet::from([FactBlocker::ForeignDefinition]));
+        }
+        if handle.curve != *self.field.curve() {
+            return Fact::blocked(BTreeSet::from([FactBlocker::ForeignQuery]));
+        }
+        if let Some(evidence) = &self.evidence_binding {
+            if !handle.matches_context(evidence.context()) {
+                return Fact::blocked(BTreeSet::from([FactBlocker::ForeignQuery]));
+            }
+        }
+        self.certify_access_key(handle.path(), true)
+    }
+
+    fn certify_access_key(&self, path: &AccessPath, schema_checked: bool) -> Fact<AccessKey> {
+        if let Some(blocker) = self.validate_query_path(path, schema_checked) {
             return Fact::blocked(BTreeSet::from([blocker]));
         }
         if !self.scalar_storage_path(path) {

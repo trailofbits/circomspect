@@ -8,8 +8,10 @@ mod field;
 mod forward;
 mod handles;
 mod liveness;
+mod relations;
 mod use_queries;
 mod walk;
+mod write_validity;
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
@@ -39,6 +41,8 @@ pub use access::{AccessKey, AccessKeyStep, IndexKey};
 pub use domains::{DegreeUpper as Degree, FieldRange as Range};
 pub use field::{FieldContext, FieldValue};
 pub use handles::{AccessHandle, AccessHandleError};
+pub use crate::hir_facts::relations::{GeneratedEquation, NormalizedEquation, QuadraticPolynomial};
+pub use crate::hir_facts::write_validity::{BodyWriteStatus, NoRepeatedBodyWrite, RepeatedBodyWrite};
 pub(crate) use handles::InstanceRelation;
 
 pub(crate) fn exact_compile_time(
@@ -101,9 +105,18 @@ pub enum FactBlocker {
     AggregateConstraint(NodeId),
     DeferredControl(NodeId),
     OpaqueExpression(ExprId),
+    UnsupportedRelation(NodeId),
+    WitnessWrite(NodeId, WitnessWriteIssue),
     MissingExit,
     ForeignQuery,
     ForeignDefinition,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum WitnessWriteIssue {
+    PossibleRepeat,
+    UnresolvedTarget,
+    DefiniteRepeat,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -272,7 +272,7 @@ fn competing_input_writes_and_early_output_reads_abstain() {
              template Parent(){{component c=Child();{body}}} \
              component main=Parent();"
         );
-        assert!(internal_use(&source, 0).certified().is_none());
+        assert_no_internal_use_certificate(&source);
     }
 }
 
@@ -385,7 +385,7 @@ fn a_reachable_assertion_failure_blocks_project_unused() {
         "template Parent(){component c=Child();var t=Fail();} ",
         "component main=Parent();"
     );
-    assert!(internal_use(source, 0).certified().is_none());
+    assert_no_internal_use_certificate(source);
 }
 
 #[test]
@@ -396,12 +396,11 @@ fn parent_assertions_require_a_proven_true_condition() {
              template Parent(){{component c=Child();assert({condition});}} \
              component main=Parent();"
         );
-        let result = internal_use(&source, 0);
+        let result = internal_use_at_option(&source, 0, &[], None);
         assert_eq!(
-            result.certified().map(ProjectOutputUse::status),
+            result.as_ref().and_then(|fact| fact.certified()).map(ProjectOutputUse::status),
             expected,
-            "{:?}",
-            result.unavailable()
+            "{result:?}"
         );
     }
 }
@@ -417,10 +416,10 @@ fn concrete_main_assertions_follow_the_bound_parameter_value() {
         let lifted = fixture(&source);
         assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
         assert!(lifted.incomplete.is_empty(), "{:?}", lifted.incomplete);
-        let result = internal_use(&source, 0);
         if argument == 0 {
-            assert!(result.certified().is_none());
+            assert_no_internal_use_certificate(&source);
         } else {
+            let result = internal_use(&source, 0);
             assert_eq!(result.certified().unwrap().status(), ProjectOutputStatus::Unused);
         }
     }
@@ -433,7 +432,7 @@ fn parent_and_child_traps_block_project_unused() {
             "template Child(){{signal output out;out<==1;}} \
              template Parent(){{component c=Child();{trap}}} component main=Parent();"
         );
-        assert!(internal_use(&parent, 0).certified().is_none(), "parent trap {trap}");
+        assert_no_internal_use_certificate(&parent);
         let child = format!(
             "template Child(){{{trap}signal output out;out<==1;}} \
              template Parent(){{component c=Child();}} component main=Parent();"
@@ -462,7 +461,7 @@ fn invalid_local_declaration_dimensions_block_project_unused() {
              template Parent(){{component c=Child();{declaration}}} component main=Parent();"
         );
         assert_lifted_complete(&parent);
-        assert!(internal_use(&parent, 0).certified().is_none(), "parent {declaration}");
+        assert_no_internal_use_certificate(&parent);
         let child = format!(
             "template Child(){{{declaration}signal output out;out<==1;}} \
              template Parent(){{component c=Child();}} component main=Parent();"
@@ -475,7 +474,7 @@ fn invalid_local_declaration_dimensions_block_project_unused() {
         "template Parent(){component c=Child();B b[-1];} component main=Parent();"
     );
     assert_lifted_complete(bus);
-    assert!(internal_use(bus, 0).certified().is_none());
+    assert_no_internal_use_certificate(bus);
 }
 
 #[test]
@@ -485,7 +484,7 @@ fn context_bound_and_sibling_dimensions_need_valid_sizes() {
         "template Parent(n){component c=Child();var x[n];} component main=Parent(-1);"
     );
     assert_lifted_complete(parameter);
-    assert!(internal_use(parameter, 0).certified().is_none());
+    assert_no_internal_use_certificate(parameter);
     let sibling = concat!(
         "template Child(){signal output out;out<==1;} ",
         "template Sibling(){signal output out;var x[-1];out<==1;} ",
@@ -511,7 +510,7 @@ fn invalid_bus_field_dimensions_cannot_close_project_output_use() {
         "template Parent(){component c=Child();B b;} component main=Parent();"
     );
     assert_lifted_complete(source);
-    assert!(internal_use(source, 0).certified().is_none());
+    assert_no_internal_use_certificate(source);
     let child = concat!(
         "bus B(){signal x[-1];} template Child(){B b;signal output out;out<==1;} ",
         "template Parent(){component c=Child();} component main=Parent();"
@@ -523,7 +522,7 @@ fn invalid_bus_field_dimensions_cannot_close_project_output_use() {
         "template Parent(){B output b;component c=Child();} component main=Parent();"
     );
     assert_lifted_complete(output);
-    assert!(internal_use(output, 0).certified().is_none());
+    assert_no_internal_use_certificate(output);
     let valid = source.replace("x[-1]", "x[1]");
     assert_lifted_complete(&valid);
     assert_eq!(
