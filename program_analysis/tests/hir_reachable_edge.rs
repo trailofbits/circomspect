@@ -4,7 +4,7 @@ use abstract_interpretation::graph::{EdgeId, FlowGraph};
 use circomspect_program_analysis::hir_cfg::{build_cfg, CfgNodeKind, EdgeKind};
 use circomspect_program_analysis::hir_facts::{analyze, FactBlocker, FieldContext};
 use circomspect_program_analysis::interprocedural::{CallOwner, CallReachability, ProjectSummaries};
-use parser::hir::lift_project;
+use parser::hir::{lift_project, ControlGuard};
 use parser::new_frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
 
@@ -167,4 +167,57 @@ fn incomplete_solver_and_opaque_source_never_certify_an_edge() {
             None
         })
         .is_some());
+}
+
+#[test]
+fn dead_nested_symbolic_control_has_certified_dead_edges_but_live_control_blocks() {
+    for (source, dead) in [
+        ("template Check(n){var x=0;if(0){if(n){x=1;}}}", true),
+        ("template Check(n){var x=0;if(n){x=1;}}", false),
+    ] {
+        let (lifted, definition) = fixture(source);
+        let cfg = build_cfg(&lifted.hir, definition).unwrap();
+        let field = FieldContext::for_curve(Curve::Bn254);
+        let facts = analyze(&lifted.hir, &cfg, &field, None).unwrap();
+        let branch = cfg
+            .nodes()
+            .iter()
+            .find(|id| {
+                let Some(node) = cfg.node(**id) else { return false };
+                let CfgNodeKind::Branch { guard: ControlGuard::DeferredScalar, .. } = node.kind
+                else {
+                    return false;
+                };
+                true
+            })
+            .copied()
+            .unwrap();
+        let edges: Vec<_> = cfg
+            .edges()
+            .iter()
+            .filter(|id| cfg.edge(**id).is_some_and(|edge| edge.source == branch))
+            .copied()
+            .collect();
+        assert_eq!(edges.len(), 2);
+        let mut blocked = 0;
+        for edge in &edges {
+            let reachability = facts.reachable_edge(*edge);
+            if dead {
+                assert_eq!(reachability.certified(), Some(&false));
+            } else if reachability.unavailable().is_some_and(|blockers| {
+                blockers.iter().any(|blocker| {
+                    let FactBlocker::DeferredControl(_) = blocker else { return false };
+                    true
+                })
+            }) {
+                blocked += 1;
+            }
+        }
+        if !dead {
+            assert!(blocked > 0, "live symbolic control must retain a blocker");
+        } else {
+            let budget = analyze(&lifted.hir, &cfg, &field, Some(0)).unwrap();
+            assert!(edges.iter().all(|edge| budget.reachable_edge(*edge).certified().is_none()));
+        }
+    }
 }

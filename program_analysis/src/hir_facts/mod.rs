@@ -257,17 +257,21 @@ impl AnalysisFacts<'_> {
         let SolveResult::Complete(facts) = &self.forward else {
             return Fact::blocked(self.forward_completion_blockers());
         };
-        let sites = BTreeSet::from([edge.source, edge.target]);
-        let blockers = self.deferred_control_blockers(&sites);
-        if !blockers.is_empty() {
-            return Fact::blocked(blockers);
-        }
         let Some(source) = facts.get(&edge.source).and_then(|item| item.output.as_ref()) else {
             return Fact::known(false);
         };
         let analysis = ForwardAnalysis::new(self.hir, self.field);
         match edge.payload.apply(&analysis, source) {
-            TransferOutcome::Known(state) => Fact::known(state.variables().is_some()),
+            TransferOutcome::Known(state) if state.variables().is_none() => Fact::known(false),
+            TransferOutcome::Known(_) => {
+                let sites = BTreeSet::from([edge.source, edge.target]);
+                let blockers = self.deferred_control_blockers(&sites);
+                if blockers.is_empty() {
+                    Fact::known(true)
+                } else {
+                    Fact::blocked(blockers)
+                }
+            }
             TransferOutcome::Opaque { reason, .. } => {
                 Fact::blocked(BTreeSet::from([FactBlocker::OpaqueEdge(id, reason)]))
             }
@@ -368,6 +372,9 @@ impl AnalysisFacts<'_> {
     pub(crate) fn reachable_node(&self, node: NodeId) -> Fact<bool> {
         if self.cfg.node(node).is_none() {
             return Fact::blocked(BTreeSet::from([FactBlocker::ForeignQuery]));
+        }
+        if self.certified_dead_node(node) {
+            return Fact::known(false);
         }
         let blockers = self.reachability_blockers(&BTreeSet::from([node]));
         if !blockers.is_empty() {
@@ -936,6 +943,16 @@ impl AnalysisFacts<'_> {
         facts.input.as_ref()
     }
 
+    fn certified_dead_node(&self, id: NodeId) -> bool {
+        // Only a completed fixed point can turn an absent input into a dead-path proof.
+        let SolveResult::Complete(facts) = &self.forward else { return false };
+        facts
+            .get(&id)
+            .and_then(|item| item.input.as_ref())
+            .and_then(ForwardState::variables)
+            .is_none()
+    }
+
     fn site_touches(&self, id: NodeId, query: &AccessKey) -> bool {
         let unknown = ForwardState::boundary();
         let state = self.site_state(id).unwrap_or(&unknown);
@@ -1140,14 +1157,20 @@ impl AnalysisFacts<'_> {
     fn deferred_control_blockers(&self, sites: &BTreeSet<NodeId>) -> BTreeSet<FactBlocker> {
         let mut blockers = BTreeSet::new();
         for site in sites {
+            if self.certified_dead_node(*site) {
+                continue;
+            }
             if let Some(node) = self.cfg.node(*site) {
                 for control in &node.deferred_controls {
-                    if !self.specialized_guard(*control) {
+                    if !self.certified_dead_node(*control) && !self.specialized_guard(*control) {
                         blockers.insert(FactBlocker::DeferredControl(*control));
                     }
                 }
             }
             for branch in self.cfg.nodes() {
+                if self.certified_dead_node(*branch) {
+                    continue;
+                }
                 let Some(CfgNodeKind::Branch {
                     guard: parser::hir::ControlGuard::DeferredScalar,
                     ..
