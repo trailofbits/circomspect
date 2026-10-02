@@ -79,6 +79,14 @@ fn assert_rendered(loaded: &LoadedProject, result: &RuleResult, kind: RuleKind) 
     let item = &sarif["runs"][0]["results"][0];
     assert_eq!(item["ruleId"], kind.code().id());
     assert_eq!(item["level"], "warning");
+    if kind == RuleKind::RedundantWitnessAssignment {
+        let message = concat!(
+            "The normalized equation of this witness assignment is already generated ",
+            "on every reachable path."
+        );
+        assert_eq!(report.message(), message);
+        assert_eq!(item["message"]["text"], message);
+    }
     assert_eq!(
         support::render(&findings, &sources, MessageCategory::Error, &[], &output).unwrap(),
         (0, 0)
@@ -347,4 +355,153 @@ fn independent_internal_claims_stay_scoped_to_valid_root_execution() {
     let (_, result) =
         inspect("template Bad(){var x=Missing();}template T(){signal s;s<--1;}", None);
     assert_eq!(count(&result, RuleKind::UnconstrainedSignal), 1);
+}
+
+#[test]
+fn redundant_witness_writes_require_identical_generated_quadratic_equations() {
+    for body in ["x<--a*b;x===a*b;", "x<--a*b+a*b;x===2*b*a;", "a*b-->x;x===a*b;"] {
+        let source =
+            format!("template T(){{signal input a;signal input b;signal output x;{body}}}");
+        let (loaded, result) = inspect(&source, None);
+        assert_eq!(count(&result, RuleKind::RedundantWitnessAssignment), 1, "{source}");
+        assert_rendered(&loaded, &result, RuleKind::RedundantWitnessAssignment);
+    }
+}
+
+#[test]
+fn redundant_witness_near_misses_preserve_different_or_absent_equations() {
+    for body in ["x<--a*b;", "x<--a*b;x===a+b;", "x<==a*b;", "x<--0;x===1;"] {
+        let source =
+            format!("template T(){{signal input a;signal input b;signal output x;{body}}}");
+        let (_, result) = inspect(&source, None);
+        assert_eq!(count(&result, RuleKind::RedundantWitnessAssignment), 0, "{source}");
+    }
+}
+
+#[test]
+fn redundant_witnesses_keep_exact_array_and_field_boundaries() {
+    for source in [
+        "template T(){signal input a;signal output x[2];x[0]<--a;x[0x0]===a;x[1]<==0;}",
+        concat!(
+            "template T(){signal input a;signal output x;",
+            "x<--a+21888242871839275222246405745257275088548364400416034343698204186575808495617;",
+            "x===a;}"
+        ),
+    ] {
+        let (loaded, result) = inspect(source, None);
+        assert_eq!(count(&result, RuleKind::RedundantWitnessAssignment), 1, "{source}");
+        assert_rendered(&loaded, &result, RuleKind::RedundantWitnessAssignment);
+    }
+    let (_, different) =
+        inspect("template T(){signal input a;signal output x[2];x[0]<--a;x[1]===a;}", None);
+    assert_eq!(count(&different, RuleKind::RedundantWitnessAssignment), 0);
+}
+
+#[test]
+fn redundant_witnesses_abstain_on_opaque_or_invalid_executions() {
+    for source in [
+        "template T(){signal input a;signal output x;x<--a*a*a;x===a*a*a;}",
+        "template T(){signal output x;x<--Missing();x===1;}",
+        "template T(){assert(0);signal output x;x<--1;x===1;}",
+        "template T(){signal output x;x===1;x<--1;}",
+        "template T(){signal y;signal output x;x<--y;y<--1;x===y;}",
+        "template T(){signal output x[1];x[1]<--1;x[1]===1;}",
+        "pragma custom_templates;template custom T(){signal output x;x<--1;x===1;}",
+        "template T(){signal input i;signal output x[2];x[i]<--1;x[i]===1;}",
+    ] {
+        let (_, result) = inspect(source, None);
+        assert_abstention(&result, RuleKind::RedundantWitnessAssignment);
+    }
+    let (_, budget) = inspect("template T(){signal output x;x<--1;x===1;}", Some(0));
+    assert_abstention(&budget, RuleKind::RedundantWitnessAssignment);
+}
+
+#[test]
+fn redundant_witnesses_preserve_nested_call_origins() {
+    for constraint in ["x===1;", "x===F();"] {
+        let source = format!(
+            "function F(){{return 1;}}function G(){{return F();}}\
+             template T(){{signal output x;x<--G();{constraint}}}"
+        );
+        let (loaded, result) = inspect(&source, None);
+        assert_eq!(count(&result, RuleKind::RedundantWitnessAssignment), 1);
+        assert_rendered(&loaded, &result, RuleKind::RedundantWitnessAssignment);
+        let finding = result
+            .findings()
+            .iter()
+            .find(|item| item.kind() == RuleKind::RedundantWitnessAssignment)
+            .unwrap();
+        let sources = SourceMap::from_loaded(&loaded, &[loaded.files[0].id]).unwrap();
+        let report = finding.to_report(&sources).unwrap();
+        assert_eq!(&source[report.primary()[0].range.clone()], "x<--G()");
+        assert_eq!(report.secondary().len(), 1);
+        assert_eq!(&source[report.secondary()[0].range.clone()], constraint);
+    }
+}
+
+#[test]
+fn legacy_redundant_witness_cases_require_the_new_exact_equation_claim() {
+    let (loaded, emit) =
+        inspect(include_str!("../../tests/warnings/cases/redundant_witness_emit.circom"), None);
+    assert_eq!(count(&emit, RuleKind::RedundantWitnessAssignment), 1);
+    assert_rendered(&loaded, &emit, RuleKind::RedundantWitnessAssignment);
+    let (_, different) = inspect(
+        include_str!("../../tests/warnings/cases/redundant_witness_no_finding.circom"),
+        None,
+    );
+    assert_eq!(count(&different, RuleKind::RedundantWitnessAssignment), 0);
+    let (_, missing) =
+        inspect(include_str!("../../tests/warnings/cases/redundant_witness_abstain.circom"), None);
+    assert_abstention(&missing, RuleKind::RedundantWitnessAssignment);
+}
+
+#[test]
+fn redundant_witnesses_abstain_when_generated_source_shape_is_invalid() {
+    for rhs in ["a*b+a*c", "(a*b)*(c-c)", "(a-a)*b*c", "a*b*0*c", "((a-a)+1)*b*c"] {
+        let source = format!(
+            "template T(){{signal input a;signal input b;signal input c;\
+             signal output x;x<--{rhs};x==={rhs};}}"
+        );
+        let (_, result) = inspect(&source, None);
+        assert_abstention(&result, RuleKind::RedundantWitnessAssignment);
+    }
+}
+
+#[test]
+fn redundant_dead_witnesses_do_not_create_findings_or_abstention_noise() {
+    for prefix in ["", "assert(0);"] {
+        let source = format!("template T(){{{prefix}signal output x;if(0){{x<--1;x===1;}}}}");
+        let (_, result) = inspect(&source, None);
+        assert_eq!(count(&result, RuleKind::RedundantWitnessAssignment), 0);
+        assert!(!result
+            .abstentions()
+            .iter()
+            .any(|item| item.kind == RuleKind::RedundantWitnessAssignment));
+    }
+}
+
+#[test]
+fn independent_redundant_witnesses_distinguish_array_elements() {
+    let source =
+        concat!("template T(){signal output x[2];x[0]<--1;x[1]<--2;", "x[0]===1;x[1]===2;}");
+    let (_, result) = inspect(source, None);
+    assert_eq!(count(&result, RuleKind::RedundantWitnessAssignment), 2);
+}
+
+#[test]
+fn independent_redundant_witness_origins_preserve_all_branch_constraints() {
+    let source = concat!("template T(){signal output x;x<--1;", "if(1<<1){x===1;}else{x===1;}}");
+    let (loaded, result) = inspect(source, None);
+    assert_eq!(count(&result, RuleKind::RedundantWitnessAssignment), 1);
+    let finding = result
+        .findings()
+        .iter()
+        .find(|item| item.kind() == RuleKind::RedundantWitnessAssignment)
+        .unwrap();
+    let sources = SourceMap::from_loaded(&loaded, &[loaded.files[0].id]).unwrap();
+    let report = finding.to_report(&sources).unwrap();
+    assert_eq!(report.secondary().len(), 2);
+    for origin in report.secondary() {
+        assert_eq!(&source[origin.range.clone()], "x===1;");
+    }
 }

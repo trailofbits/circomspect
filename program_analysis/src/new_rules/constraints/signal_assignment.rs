@@ -4,14 +4,14 @@ use std::collections::BTreeSet;
 
 use abstract_interpretation::graph::FlowGraph;
 use num_traits::ToPrimitive;
-use parser::hir::{AccessPath, DefinitionRef, Effect, PortId};
-use parser::new_frontend::{AssignmentOperator, PortDirection, Span};
+use parser::hir::{AccessPath, DefinitionRef, PortId};
+use parser::new_frontend::{PortDirection, Span};
 
 use crate::hir_cfg::{CfgNode, CfgNodeKind};
 use crate::hir_facts::{AccessKey, AccessKeyStep, Incidence, IndexKey};
 use crate::interprocedural::{ContextOrigin, SummaryBlocker};
 use crate::new_rules::{AbstentionReason, Rule, RuleContext, RuleKind, RuleResult};
-use crate::new_rules::constraints::abstain;
+use crate::new_rules::constraints::{abstain, opaque_assignment, witness_only};
 
 pub(super) struct SignalAssignment;
 
@@ -68,22 +68,6 @@ fn inspect_node(
         }
     }
     inspect_output(context, target, origin.span, result, emitted);
-}
-
-fn witness_only(effect: Option<&Effect>) -> bool {
-    if let Some(Effect::WitnessAssignment { .. }) = effect {
-        return true;
-    }
-    let Some(Effect::OpaqueAssignment { operator, .. }) = effect else { return false };
-    *operator == AssignmentOperator::Witness || *operator == AssignmentOperator::ReverseWitness
-}
-
-fn opaque_assignment(node: &CfgNode) -> bool {
-    if let CfgNodeKind::Opaque(_) = &node.kind {
-        return true;
-    }
-    let CfgNodeKind::OpaqueAssignment { operator, .. } = &node.kind else { return false };
-    *operator == AssignmentOperator::Witness || *operator == AssignmentOperator::ReverseWitness
 }
 
 fn inspect_output(

@@ -1,7 +1,8 @@
+use abstract_interpretation::graph::NodeId;
 use parser::hir::{DefinitionRef, HirProject, PortId};
 use parser::new_frontend::Span;
 
-use crate::hir_facts::{AccessHandle, AnalysisFacts, AssignmentDemand, Fact};
+use crate::hir_facts::{AccessHandle, AnalysisFacts, AssignmentDemand, Fact, GeneratedEquation};
 use crate::interprocedural::{
     AppliedComponentPort, CallBlocker, CallContext, CallOwner, CallReachability, CallSite,
     CallPathSite, CallSiteId, CallerOutputRead, ComposedConstraintFixedOutput, ContextEvidence,
@@ -201,6 +202,18 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
         path: &parser::hir::AccessPath,
     ) -> SummaryFact<crate::hir_facts::Incidence> {
         self.summaries.template_internal_signal_incidence(self.facts, self.evidence, path)
+    }
+
+    /// Prove an equivalent generated equation for an unavoidable witness assignment.
+    ///
+    /// The node must belong to this context's solved CFG. Incomplete or failed
+    /// scopes and called templates without incoming constraint closure abstain.
+    #[must_use]
+    pub fn template_generated_equation(
+        &self,
+        witness: NodeId,
+    ) -> SummaryFact<Option<GeneratedEquation>> {
+        self.summaries.template_generated_equation(self.facts, self.evidence, witness)
     }
 
     /// Enumerate every checked direct-child output in this exact source scope.

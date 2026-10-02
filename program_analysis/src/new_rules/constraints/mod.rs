@@ -1,12 +1,16 @@
 //! Constraint and signal warning family.
 
 mod internal_signal;
+mod redundant_witness;
 mod signal_assignment;
 
-use parser::new_frontend::Span;
+use parser::hir::Effect;
+use parser::new_frontend::{AssignmentOperator, Span};
 
+use crate::hir_cfg::{CfgNode, CfgNodeKind};
 use crate::new_rules::{AbstentionReason, Rule, RuleContext, RuleKind, RuleResult, ScopedAbstention};
 use crate::new_rules::constraints::internal_signal::UnconstrainedSignal;
+use crate::new_rules::constraints::redundant_witness::RedundantWitness;
 use crate::new_rules::constraints::signal_assignment::SignalAssignment;
 
 pub const KINDS: &[RuleKind] = &[
@@ -18,7 +22,23 @@ pub const KINDS: &[RuleKind] = &[
 
 /// Constraint rules enter the registry in this family's declared order.
 pub fn rules() -> &'static [&'static dyn Rule] {
-    &[&SignalAssignment, &UnconstrainedSignal]
+    &[&SignalAssignment, &RedundantWitness, &UnconstrainedSignal]
+}
+
+fn witness_only(effect: Option<&Effect>) -> bool {
+    if let Some(Effect::WitnessAssignment { .. }) = effect {
+        return true;
+    }
+    let Some(Effect::OpaqueAssignment { operator, .. }) = effect else { return false };
+    *operator == AssignmentOperator::Witness || *operator == AssignmentOperator::ReverseWitness
+}
+
+fn opaque_assignment(node: &CfgNode) -> bool {
+    if let CfgNodeKind::Opaque(_) = &node.kind {
+        return true;
+    }
+    let CfgNodeKind::OpaqueAssignment { operator, .. } = &node.kind else { return false };
+    *operator == AssignmentOperator::Witness || *operator == AssignmentOperator::ReverseWitness
 }
 
 fn abstain(
