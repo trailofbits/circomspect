@@ -79,7 +79,6 @@ pub trait VariableMeta {
 
     /// Get the set of variables read by the IR node. Note that this is simply
     /// the union of all locals, signals, and components read by the node.
-    #[must_use]
     fn variables_read<'a>(&'a self) -> Box<dyn Iterator<Item = &'a VariableUse> + 'a> {
         let locals_read = self.locals_read().iter();
         let signals_read = self.signals_read().iter();
@@ -89,7 +88,6 @@ pub trait VariableMeta {
 
     /// Get the set of variables written by the IR node. Note that this is
     /// simply the union of all locals, signals, and components written.
-    #[must_use]
     fn variables_written<'a>(&'a self) -> Box<dyn Iterator<Item = &'a VariableUse> + 'a> {
         let locals_written = self.locals_written().iter();
         let signals_written = self.signals_written().iter();
@@ -98,7 +96,6 @@ pub trait VariableMeta {
     }
 
     /// Get the set of variables either read or written by the IR node.
-    #[must_use]
     fn variables_used<'a>(&'a self) -> Box<dyn Iterator<Item = &'a VariableUse> + 'a> {
         Box::new(self.variables_read().chain(self.variables_written()))
     }
@@ -190,7 +187,6 @@ impl VariableKnowledge {
             .expect("variable knowledge must be initialized before it is read")
     }
 
-    #[must_use]
     pub fn variables_read<'a>(&'a self) -> Box<dyn Iterator<Item = &'a VariableUse> + 'a> {
         let locals_read = self.locals_read().iter();
         let signals_read = self.signals_read().iter();
@@ -198,7 +194,6 @@ impl VariableKnowledge {
         Box::new(locals_read.chain(signals_read).chain(components_read))
     }
 
-    #[must_use]
     pub fn variables_written<'a>(&'a self) -> Box<dyn Iterator<Item = &'a VariableUse> + 'a> {
         let locals_written = self.locals_written().iter();
         let signals_written = self.signals_written().iter();
@@ -206,7 +201,6 @@ impl VariableKnowledge {
         Box::new(locals_written.chain(signals_written).chain(components_written))
     }
 
-    #[must_use]
     pub fn variables_used<'a>(&'a self) -> Box<dyn Iterator<Item = &'a VariableUse> + 'a> {
         let variables_read = self.variables_read();
         let variables_written = self.variables_written();

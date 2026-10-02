@@ -1434,7 +1434,7 @@ impl AnalysisFacts<'_> {
             let key = key_for_path(self.hir, self.field, path, variables);
             key.steps.len() < query.steps.len() && key.may_alias(query)
         };
-        if target.as_ref().is_some_and(&aggregate) {
+        if target.as_ref().is_some_and(aggregate) {
             return true;
         }
         let mut found = false;
