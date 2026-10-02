@@ -2,10 +2,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use abstract_interpretation::graph::FlowGraph;
 use parser::hir::{
-    DefinitionRef, ExprId, ExprKind, HirProject, LiftedProject, ProjectIdentity, SemanticCode,
-    SemanticDiagnostic, Severity, SymbolId,
+    BlockId, DefinitionRef, ExprId, ExprKind, HirProject, LiftedProject, ProjectIdentity,
+    SemanticCode, SemanticDiagnostic, Severity, SymbolId, SymbolKind,
 };
-use parser::new_frontend::Version;
+use parser::new_frontend::{SourceId, Span, Version};
 use program_structure::utils::constants::Curve;
 
 use crate::hir_cfg::{CfgNodeKind, DefinitionCfg};
@@ -137,6 +137,7 @@ impl ContextEvidence {
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum SummaryBlocker {
     ForeignDefinition,
+    IncompleteDefinition,
     ForeignCall,
     WrongContext,
     WrongArity { expected: usize, actual: usize },
@@ -156,6 +157,98 @@ pub enum SummaryBlocker {
     LocalAnalysis(String),
     RecursiveCycle,
     ContextBudget,
+}
+
+/// A checked function or template header bound to this HIR project.
+/// Callers cannot construct a validation certificate from a parameter count.
+///
+/// ```compile_fail
+/// use circomspect_program_analysis::interprocedural::ValidatedHeader;
+/// fn forge(header: &mut ValidatedHeader) { header.parameter_count = 8; }
+/// ```
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ValidatedHeader {
+    definition: DefinitionRef,
+    name: String,
+    name_span: Span,
+    parameter_count: usize,
+}
+
+impl ValidatedHeader {
+    #[must_use]
+    pub fn definition(&self) -> DefinitionRef {
+        self.definition
+    }
+
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    #[must_use]
+    pub fn name_span(&self) -> Span {
+        self.name_span
+    }
+
+    #[must_use]
+    pub fn parameter_count(&self) -> usize {
+        self.parameter_count
+    }
+}
+
+/// A checked header whose entire definition has no parser, lifting, or semantic errors.
+///
+/// ```compile_fail
+/// use circomspect_program_analysis::interprocedural::{ValidatedDefinition, ValidatedHeader};
+/// fn forge(definition: &mut ValidatedDefinition, header: ValidatedHeader) {
+///     definition.header = header;
+/// }
+/// ```
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ValidatedDefinition {
+    header: ValidatedHeader,
+}
+
+impl ValidatedDefinition {
+    #[must_use]
+    pub fn header(&self) -> &ValidatedHeader {
+        &self.header
+    }
+}
+
+struct DefinitionParts<'a> {
+    name: &'a str,
+    name_span: Span,
+    span: Span,
+    body: BlockId,
+    parameters: &'a [SymbolId],
+}
+
+#[derive(Clone, Copy)]
+struct SourceScope {
+    source: SourceId,
+    start: usize,
+    end: usize,
+}
+
+impl SourceScope {
+    fn from_span(span: Span) -> Self {
+        Self { source: span.source(), start: span.start(), end: span.end() }
+    }
+
+    fn contains(self, span: Span) -> bool {
+        self.source == span.source() && self.start <= span.start() && span.end() <= self.end
+    }
+
+    fn overlaps(self, span: Span) -> bool {
+        if self.source != span.source() {
+            return false;
+        }
+        if span.start() == span.end() {
+            return self.start <= span.start() && span.start() <= self.end;
+        }
+        span.start() < self.end && self.start < span.end()
+    }
 }
 
 /// A failed context analysis, retaining a located semantic error when specialization proves one.
@@ -204,6 +297,107 @@ impl<'a> ProjectSummaries<'a> {
         self.lifted.diagnostics.is_empty()
             && self.lifted.syntax_diagnostics.is_empty()
             && self.lifted.incomplete.is_empty()
+    }
+
+    pub(crate) fn validated_header(
+        &self,
+        definition: DefinitionRef,
+    ) -> Result<ValidatedHeader, SummaryBlocker> {
+        let parts = self.definition_parts(definition)?;
+        let body = self.hir().block(parts.body).ok_or(SummaryBlocker::IncompleteDefinition)?;
+        let definition_scope = SourceScope::from_span(parts.span);
+        if !definition_scope.contains(parts.name_span)
+            || !definition_scope.contains(body.span)
+            || body.span.start() < parts.name_span.end()
+        {
+            return Err(SummaryBlocker::IncompleteDefinition);
+        }
+        let header = SourceScope {
+            source: parts.span.source(),
+            start: parts.span.start(),
+            end: body.span.start(),
+        };
+        if self.scope_has_issue(header) || !self.parameters_valid(parts.parameters, header) {
+            return Err(SummaryBlocker::IncompleteDefinition);
+        }
+        Ok(ValidatedHeader {
+            definition,
+            name: parts.name.to_string(),
+            name_span: parts.name_span,
+            parameter_count: parts.parameters.len(),
+        })
+    }
+
+    pub(crate) fn validated_definition(
+        &self,
+        definition: DefinitionRef,
+    ) -> Result<ValidatedDefinition, SummaryBlocker> {
+        let header = self.validated_header(definition)?;
+        let parts = self.definition_parts(definition)?;
+        if self.scope_has_issue(SourceScope::from_span(parts.span)) {
+            return Err(SummaryBlocker::IncompleteDefinition);
+        }
+        Ok(ValidatedDefinition { header })
+    }
+
+    fn definition_parts(
+        &self,
+        definition: DefinitionRef,
+    ) -> Result<DefinitionParts<'_>, SummaryBlocker> {
+        let parts = match definition {
+            DefinitionRef::Function(id) => {
+                let item = self.hir().function(id).ok_or(SummaryBlocker::ForeignDefinition)?;
+                DefinitionParts {
+                    name: &item.name,
+                    name_span: item.name_span,
+                    span: item.span,
+                    body: item.body,
+                    parameters: &item.parameters,
+                }
+            }
+            DefinitionRef::Template(id) => {
+                let item = self.hir().template(id).ok_or(SummaryBlocker::ForeignDefinition)?;
+                DefinitionParts {
+                    name: &item.name,
+                    name_span: item.name_span,
+                    span: item.span,
+                    body: item.body,
+                    parameters: &item.parameters,
+                }
+            }
+            DefinitionRef::Bus(_) => return Err(SummaryBlocker::UnsupportedContext),
+        };
+        Ok(parts)
+    }
+
+    fn parameters_valid(&self, parameters: &[SymbolId], header: SourceScope) -> bool {
+        let mut names = BTreeSet::new();
+        for id in parameters {
+            let Some(symbol) = self.hir().symbol(*id) else { return false };
+            if symbol.kind != SymbolKind::Parameter
+                || !header.contains(symbol.span)
+                || !names.insert(symbol.name.as_str())
+            {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn scope_has_issue(&self, scope: SourceScope) -> bool {
+        for diagnostic in &self.lifted.syntax_diagnostics {
+            if diagnostic.span().is_some_and(|span| scope.overlaps(span)) {
+                return true;
+            }
+        }
+        for region in &self.lifted.incomplete {
+            if region.span().is_some_and(|span| scope.overlaps(span)) {
+                return true;
+            }
+        }
+        self.lifted.diagnostics.iter().any(|diagnostic| {
+            diagnostic.severity == Severity::Error && scope.overlaps(diagnostic.span)
+        })
     }
 
     #[must_use]
