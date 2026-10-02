@@ -162,6 +162,33 @@ fn symbolic_signal_index_and_constraint_are_may_uses_of_internal_values() {
 }
 
 #[test]
+fn failing_or_custom_template_cannot_certify_an_unused_internal_signal() {
+    for source in [
+        "template Check(){assert(0);signal s;s<--1;}",
+        "pragma custom_templates; template custom Check(){signal s;s<--1;}",
+    ] {
+        run_case(source, "Check", |results, _| {
+            assert_eq!(count(results, RuleKind::UnusedVariableValue), 0, "{source}");
+            assert!(results
+                .abstentions()
+                .iter()
+                .any(|abstention| { abstention.kind == RuleKind::UnusedVariableValue }));
+        });
+    }
+    run_case("template Check(){assert(1);signal s;s<--1;}", "Check", |results, _| {
+        assert_eq!(count(results, RuleKind::UnusedVariableValue), 1);
+    });
+}
+
+#[test]
+fn reading_an_uninitialized_signal_is_not_a_side_effect_free_assignment() {
+    let source = "template Check(){signal output s;var x=s;s<==1;}";
+    run_case(source, "Check", |results, _| {
+        assert_eq!(count(results, RuleKind::SideEffectFreeAssignment), 0);
+    });
+}
+
+#[test]
 fn unread_validated_parameter_emits_cs0007_but_any_reachable_read_suppresses_it() {
     run_case("function Check(p){return 7;}", "Check", |results, _| {
         assert_eq!(count(results, RuleKind::UnusedParameterValue), 1);

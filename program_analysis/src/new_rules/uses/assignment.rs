@@ -5,7 +5,7 @@ use parser::new_frontend::AssignmentOperator;
 use crate::hir_cfg::{CfgNode, CfgNodeKind};
 use crate::hir_facts::Incidence;
 use crate::new_rules::{AbstentionReason, RuleContext, RuleKind, RuleResult};
-use crate::new_rules::uses::{abstain, local_abstain, validated};
+use crate::new_rules::uses::{abstain, local_abstain, summary_abstain, validated};
 
 #[derive(Clone, Copy)]
 enum DeadAssignmentClaim {
@@ -78,7 +78,8 @@ fn pure_local_assignment(
         ExprKind::Number(_) => true,
         ExprKind::Access(path) => {
             let Some(read) = context.hir().symbol(path.root) else { return false };
-            read.rank == 0
+            read.kind == SymbolKind::Variable
+                && read.rank == 0
                 && path.steps.is_empty()
                 && !path.component_input
                 && !path.component_output
@@ -164,22 +165,14 @@ fn unused_internal_signal(
     if symbol.kind != SymbolKind::Signal || exported_port(context, target.root) {
         return;
     }
-    let incidence = context.facts().incidence(target);
+    let incidence = context.template_internal_signal_incidence(target);
     match incidence.certified() {
         Some(Incidence::Zero) => {
             report_dead_assignment(context, DeadAssignmentClaim::UnusedValue, node, target, result)
         }
         Some(Incidence::May | Incidence::Must) => {}
         None => {
-            if let Some(blockers) = incidence.unavailable() {
-                abstain(
-                    result,
-                    context,
-                    RuleKind::UnusedVariableValue,
-                    target.span,
-                    AbstentionReason::LocalFacts(blockers.clone()),
-                );
-            }
+            summary_abstain(context, RuleKind::UnusedVariableValue, target.span, &incidence, result)
         }
     }
 }
