@@ -335,7 +335,7 @@ fn aggregate_argument_in_dead_arm_or_call_argument_is_not_a_scalar_assignment_er
 }
 
 #[test]
-fn raw_branch_bypass_abstains_even_when_concrete_guard_is_true() {
+fn concrete_taken_branch_rejects_a_scalar_assignment_from_an_array() {
     let lifted = fixture(
         "template T(n){var x=1;if(1){x=n;}signal output y;y<==x;} \
          component main=T([1,2]);",
@@ -354,10 +354,13 @@ fn raw_branch_bypass_abstains_even_when_concrete_guard_is_true() {
         panic!("main call must be reachable")
     };
     let evidence = provider.main_evidence(&call).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let error = provider.analyze_for_evidence(&cfg, &evidence, None).err().unwrap();
+    let AnalyzeEvidenceError::InvalidAssignment { diagnostic, .. } = error else {
+        panic!("the taken scalar assignment is invalid")
+    };
+    assert_eq!(diagnostic.code, SemanticCode::InvalidAssignment);
     let output = lifted.hir.template(template).unwrap().ports[0];
-    let handle = facts.port_handle(output, &[]).unwrap();
-    assert!(facts.constraint_fixed_handle(&handle).unavailable().is_some());
+    assert!(provider.template_port(template, evidence.context(), output).certified().is_none());
 }
 
 #[test]
@@ -518,4 +521,79 @@ fn public_cfg_queries_follow_the_specialized_control_flow() {
         assert_eq!(facts.reachable_edge(*id).certified(), Some(&expected));
     }
     assert_eq!(branches, 2);
+}
+
+#[test]
+fn original_bounds_nested_shapes_and_index_values() {
+    for (statement, argument, invalid) in [
+        ("n=[1,2];var x=n[1];", "[2]", true),
+        ("n=[[1,2]];var x=n[0][1];", "[[2]]", true),
+        ("n=[[1,2]];var x=n[0][0];", "[[2]]", false),
+        ("n[0]=[1];", "[[2]]", false),
+        ("n[0]=1;", "[[2]]", true),
+        ("n[0]++;", "[[2]]", true),
+        ("n[0]+=1;", "[[2]]", true),
+        ("n[0][0]+=1;", "[[2]]", false),
+        ("var i=0;i++;n[i]=1;", "[2]", true),
+        ("var i=1;i--;n[i]=1;", "[2]", false),
+        ("var i=0;n[i-1]=1;", "[2]", true),
+        ("if(0){n[0]=1;}", "1", false),
+        ("if(1){n[0]=1;}", "1", true),
+        ("var x=1?n[0]:7;", "1", true),
+        ("var x=0?n[0]:7;", "1", false),
+    ] {
+        let source = format!("template T(n){{{statement}}} component main=T({argument});");
+        assert_eq!(parameter_operation_error(&source).is_some(), invalid, "{source}");
+    }
+}
+
+#[test]
+fn optional_bad_access_cannot_become_a_definite_error_at_low_budget() {
+    for body in ["if(c){n[0]=1;}", "while(c){n[0]=1;}", "var x=c?n[0]:7;"] {
+        let source = format!("template T(n){{signal input c;{body}}} component main=T(1);");
+        let lifted = fixture(&source, Version::new(2, 2, 3));
+        assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
+        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let site = provider.graph().calls_from(CallOwner::Main(0))[0];
+        let CallReachability::Reachable(call) =
+            provider.graph().reachable_main_call(site.id(), provider.hir())
+        else {
+            panic!("main call must be reachable")
+        };
+        let evidence = provider.main_evidence(&call).unwrap();
+        let cfg = build_cfg(provider.hir(), evidence.context().definition()).unwrap();
+        for budget in 0..100 {
+            let result = provider.analyze_for_evidence(&cfg, &evidence, Some(budget));
+            assert!(result.is_ok(), "budget {budget}, {source}: {:?}", result.err());
+        }
+    }
+}
+
+#[test]
+fn fallthrough_value_effects_do_not_prune_unknown_control_or_indices() {
+    for body in [
+        "n=[1,2];if(c){n[1]=1;}",
+        "n=[1,2];while(c){n[1]=1;}",
+        "n=[1,2];var x=c?n[1]:7;",
+        "var i=1;if(c){i=0;}n=[1,2];n[i]=1;",
+        "var i=1;while(c){i=0;}n=[1,2];n[i]=1;",
+        "n=[1,2];if(0){n[1]=1;}",
+    ] {
+        let source = format!("template T(n){{signal input c;{body}}} component main=T([2]);");
+        let lifted = fixture(&source, Version::new(2, 2, 3));
+        assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
+        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let site = provider.graph().calls_from(CallOwner::Main(0))[0];
+        let CallReachability::Reachable(call) =
+            provider.graph().reachable_main_call(site.id(), provider.hir())
+        else {
+            panic!("main call must be reachable")
+        };
+        let evidence = provider.main_evidence(&call).unwrap();
+        let cfg = build_cfg(provider.hir(), evidence.context().definition()).unwrap();
+        for budget in 0..128 {
+            let result = provider.analyze_for_evidence(&cfg, &evidence, Some(budget));
+            assert!(result.is_ok(), "budget {budget}, {source}: {:?}", result.err());
+        }
+    }
 }

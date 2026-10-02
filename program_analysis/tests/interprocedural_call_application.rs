@@ -262,3 +262,33 @@ fn required_parameter_writes_respect_the_original_argument_rank() {
         assert_fixed_output(&output_facts(&source, None, &[]), 1);
     }
 }
+
+#[test]
+fn writes_do_not_enlarge_original_parameter_bounds() {
+    let source = concat!(
+        "function F(n){n=[1,2];var ignored=n[1];return 7;}",
+        "template T(){var unused=F([2]);signal output out;out<==1;}"
+    );
+    let facts = output_facts(source, None, &[]);
+    assert!(facts.port.certified().is_none(), "invalid program certified port: {:?}", facts.port);
+    assert!(facts.read.certified().is_none());
+    assert!(facts.witnesses.certified().is_none());
+}
+
+#[test]
+fn scalar_subarray_target_cannot_receive_array() {
+    for (body, argument) in [("var x[1];x[0]=n;", "[2]"), ("var x=n[0];", "[[2]]")] {
+        let source = format!(
+            "function F(n){{{body}return 7;}} \
+             template T(){{var unused=F({argument});signal output out;out<==1;}}"
+        );
+        let facts = output_facts(&source, None, &[]);
+        assert!(
+            facts.port.certified().is_none(),
+            "invalid program certified port: {source}: {:?}",
+            facts.port
+        );
+        assert!(facts.read.certified().is_none());
+        assert!(facts.witnesses.certified().is_none());
+    }
+}

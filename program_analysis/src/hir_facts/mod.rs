@@ -430,16 +430,6 @@ impl AnalysisFacts<'_> {
         Fact::known(!self.path_bypasses(node, &pruned))
     }
 
-    /// Prove a site unavoidable on raw CFG paths; specialized taken branches may abstain.
-    pub(crate) fn structurally_must_execute(&self, node: NodeId) -> bool {
-        if self.cfg.node(node).is_none()
-            || !self.can_reach_any(self.cfg.entry(), &BTreeSet::from([self.cfg.exit()]))
-        {
-            return false;
-        }
-        !self.path_bypasses(node, &BTreeSet::new())
-    }
-
     fn path_bypasses(&self, node: NodeId, pruned: &BTreeSet<EdgeId>) -> bool {
         let mut visited = BTreeSet::new();
         let mut pending = vec![self.cfg.entry()];
