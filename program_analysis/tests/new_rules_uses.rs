@@ -222,6 +222,17 @@ fn assignment_after_a_failing_assertion_has_no_executed_unused_value() {
 }
 
 #[test]
+fn unresolved_symbolic_value_keeps_unused_value_claim_incomplete() {
+    run_case("template Check(n){var x=~n;}", "Check", |results, _| {
+        assert_eq!(count(results, RuleKind::UnusedVariableValue), 0);
+        assert!(results.abstentions().iter().any(|abstention| {
+            abstention.kind == RuleKind::UnusedVariableValue
+                && abstention.reason == AbstentionReason::IncompleteDefinition
+        }));
+    });
+}
+
+#[test]
 fn unread_validated_parameter_emits_cs0007_but_any_reachable_read_suppresses_it() {
     run_case("function Check(p){return 7;}", "Check", |results, _| {
         assert_eq!(count(results, RuleKind::UnusedParameterValue), 1);
