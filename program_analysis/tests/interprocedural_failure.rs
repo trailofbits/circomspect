@@ -143,3 +143,21 @@ fn required_invalid_parameter_assignment_prevents_template_certificates() {
         false,
     );
 }
+
+#[test]
+fn only_required_ternary_arms_propagate_execution_failure() {
+    for (value, available) in [
+        ("1?Fail():7", false),
+        ("0?Fail():7", true),
+        ("0?7:Fail()", false),
+        ("1?7:Fail()", true),
+        ("1?(0?7:Fail()):9", false),
+        ("n?Fail():7", true),
+    ] {
+        let source = format!(
+            "function Fail(){{assert(0);return 7;}} \
+             template T(n){{var unused={value};signal output out;out<==1;}}"
+        );
+        assert_output_availability(&source, available);
+    }
+}

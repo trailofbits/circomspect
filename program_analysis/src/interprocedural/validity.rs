@@ -226,8 +226,5 @@ impl ProjectSummaries<'_> {
 }
 
 fn required_node(facts: &AnalysisFacts<'_>, node: NodeId) -> bool {
-    if facts.must_execute(node).certified() == Some(&true) {
-        return true;
-    }
-    facts.reachable_node(node).certified() == Some(&true) && facts.structurally_must_execute(node)
+    facts.required_evaluation(node).certified() == Some(&true)
 }
