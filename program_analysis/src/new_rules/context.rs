@@ -6,7 +6,7 @@ use crate::interprocedural::{
     AppliedComponentPort, CallBlocker, CallContext, CallOwner, CallReachability, CallSite,
     CallSiteId, CallerOutputRead, ComposedConstraintFixedOutput, ContextEvidence, FunctionEffects,
     FunctionSummary, PortSummary, ProjectOutputUse, ProjectSummaries, SummaryBlocker, SummaryFact,
-    WitnessSite,
+    ValidatedDefinition, ValidatedHeader, WitnessSite,
 };
 
 use crate::new_rules::{Finding, RuleKind};
@@ -75,6 +75,16 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
     #[must_use]
     pub fn call_context(&self) -> &CallContext {
         self.evidence.context()
+    }
+
+    /// Validate this active function or template's header and parameter list.
+    pub fn validated_header(&self) -> Result<ValidatedHeader, SummaryBlocker> {
+        self.summaries.validated_header(self.call_context().definition())
+    }
+
+    /// Validate source recovery across this active definition's body and header.
+    pub fn validated_definition(&self) -> Result<ValidatedDefinition, SummaryBlocker> {
+        self.summaries.validated_definition(self.call_context().definition())
     }
 
     #[must_use]

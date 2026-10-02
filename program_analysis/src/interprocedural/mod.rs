@@ -13,7 +13,7 @@ mod validity;
 
 pub use context::{
     AnalyzeEvidenceError, ArgumentShape, ArgumentValue, CallContext, ContextEvidence,
-    ContextOrigin, ProjectSummaries, SummaryBlocker,
+    ContextOrigin, ProjectSummaries, SummaryBlocker, ValidatedDefinition, ValidatedHeader,
 };
 
 pub use graph::{
