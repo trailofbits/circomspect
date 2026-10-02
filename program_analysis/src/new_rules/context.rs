@@ -1,7 +1,7 @@
 use parser::hir::{DefinitionRef, HirProject, PortId};
 use parser::new_frontend::Span;
 
-use crate::hir_facts::{AccessHandle, AnalysisFacts};
+use crate::hir_facts::{AccessHandle, AnalysisFacts, AssignmentDemand, Fact};
 use crate::interprocedural::{
     AppliedComponentPort, CallBlocker, CallContext, CallOwner, CallReachability, CallSite,
     CallPathSite, CallSiteId, CallerOutputRead, ComposedConstraintFixedOutput, ContextEvidence,
@@ -93,6 +93,20 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
     /// Passing this check does not prove that the definition completes.
     pub fn check_warning_execution_scope(&self) -> Result<(), SummaryBlocker> {
         self.summaries.check_warning_execution_scope(self.facts, self.evidence)
+    }
+
+    /// Prove observable demand for a source-matched scalar assignment.
+    ///
+    /// Both complete source coverage and the known-failure refusal precede
+    /// local demand certification. The returned fact retains solver blockers.
+    pub fn assignment_demand(
+        &self,
+        node: abstract_interpretation::graph::NodeId,
+        target: &parser::hir::AccessPath,
+    ) -> Result<Fact<AssignmentDemand>, SummaryBlocker> {
+        self.validated_definition()?;
+        self.check_warning_execution_scope()?;
+        Ok(self.facts.assignment_demand(node, target, self.evidence))
     }
 
     #[must_use]

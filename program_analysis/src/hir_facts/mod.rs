@@ -3,6 +3,7 @@
 mod access;
 mod access_query;
 mod domains;
+mod demand;
 mod evaluation;
 mod field;
 mod forward;
@@ -24,19 +25,21 @@ use parser::hir::{
 };
 use parser::new_frontend::{AssignmentOperator, InputAssignmentOperator};
 
-use crate::scalar_evidence::ScalarExpressionEvidence;
 use crate::hir_cfg::{CfgNodeKind, DefinitionCfg};
+use crate::hir_facts::demand::{DemandAnalysis, DemandState};
+use crate::hir_facts::use_queries::ReadScope;
 use crate::interprocedural::ContextEvidence;
+use crate::scalar_evidence::ScalarExpressionEvidence;
 use access::key_for_path;
 use abstract_interpretation::lattice::Lattice;
 use domains::{DegreeUpper, FieldRange};
 use forward::{ForwardAnalysis, ForwardState};
 use liveness::{LiveState, LivenessAnalysis};
-use crate::hir_facts::use_queries::ReadScope;
 pub(crate) use walk::VisitAccesses;
 
 pub use access::{AccessKey, AccessKeyStep, IndexKey};
 pub use domains::{DegreeUpper as Degree, FieldRange as Range};
+pub use crate::hir_facts::demand::{AssignmentDemand, UnobservedAssignment};
 pub use field::{FieldContext, FieldValue};
 pub use handles::{AccessHandle, AccessHandleError};
 pub(crate) use handles::InstanceRelation;
@@ -115,6 +118,7 @@ pub enum Incidence {
 
 type ForwardResult = SolveResult<NodeId, EdgeId, ForwardState, String>;
 type BackwardResult = SolveResult<NodeId, EdgeId, LiveState, String>;
+type DemandResult = SolveResult<NodeId, EdgeId, DemandState, String>;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AnalysisError {
@@ -144,6 +148,7 @@ pub struct AnalysisFacts<'a> {
     calls: Option<Cow<'a, ScalarExpressionEvidence>>,
     forward: ForwardResult,
     backward: BackwardResult,
+    demand: DemandResult,
     specialized_parameters: BTreeSet<SymbolId>,
     resolved_deferred: BTreeSet<NodeId>,
     evidence_binding: Option<ContextEvidence>,
@@ -194,6 +199,7 @@ pub(crate) fn analyze_owned_with_scalar_calls<'a>(
     let AnalysisFacts {
         forward,
         backward,
+        demand,
         specialized_parameters,
         resolved_deferred,
         evidence_binding,
@@ -206,6 +212,7 @@ pub(crate) fn analyze_owned_with_scalar_calls<'a>(
         calls: Some(Cow::Owned(options.calls)),
         forward,
         backward,
+        demand,
         specialized_parameters,
         resolved_deferred,
         evidence_binding,
@@ -246,10 +253,13 @@ fn analyze_seeded<'a>(
     let resolved_deferred = resolved_deferred_nodes(hir, cfg, field, &forward, options.calls);
     let pruned_edges = forward_pruned_edges(hir, cfg, field, &forward, options.calls);
     let liveness = LivenessAnalysis::new(hir, field, cfg.definition())
-        .with_pruned_edges(pruned_edges)
+        .with_pruned_edges(pruned_edges.clone())
         .with_resolved_deferred(resolved_deferred.clone());
     let backward =
         solve::<_, _, Backward>(cfg, &liveness, budget).map_err(AnalysisError::InvalidGraph)?;
+    let demand =
+        solve::<_, _, Backward>(cfg, &DemandAnalysis::new(hir, field, pruned_edges), budget)
+            .map_err(AnalysisError::InvalidGraph)?;
     Ok(AnalysisFacts {
         hir,
         cfg: Cow::Borrowed(cfg),
@@ -257,6 +267,7 @@ fn analyze_seeded<'a>(
         calls: options.calls.map(Cow::Borrowed),
         forward,
         backward,
+        demand,
         specialized_parameters,
         resolved_deferred,
         evidence_binding: None,
