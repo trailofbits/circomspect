@@ -568,3 +568,37 @@ fn dead_chains_in_a_partial_library_keep_exact_findings() {
         assert_eq!(count(results, RuleKind::SideEffectFreeAssignment), 2);
     });
 }
+
+#[test]
+fn dead_known_call_is_quiet_and_independent_assignment_still_warns() {
+    let source =
+        concat!("function F(){return 7;}", "function Check(){if(0){var x=F();}var y=1;return 7;}");
+    run_case(source, "Check", |results, sources| {
+        let findings: Vec<_> = results
+            .findings()
+            .iter()
+            .filter(|item| item.kind() == RuleKind::SideEffectFreeAssignment)
+            .cloned()
+            .collect();
+        assert_eq!(findings.len(), 1);
+        let path = std::env::temp_dir().join(format!(
+            "circomspect-dead-known-call-{}-{:?}.json",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        assert_eq!(
+            support::render(&findings, sources, MessageCategory::Warning, &[], &path).unwrap(),
+            (1, 1)
+        );
+        let sarif: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(
+            sarif["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["region"]
+                ["startColumn"],
+            source.find("y=1").unwrap() + 1
+        );
+        assert!(!results
+            .abstentions()
+            .iter()
+            .any(|item| { item.kind == RuleKind::SideEffectFreeAssignment }));
+    });
+}

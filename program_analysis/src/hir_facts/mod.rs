@@ -1086,7 +1086,7 @@ impl AnalysisFacts<'_> {
         facts.input.as_ref()
     }
 
-    fn certified_dead_node(&self, id: NodeId) -> bool {
+    pub(crate) fn certified_dead_node(&self, id: NodeId) -> bool {
         // Only a completed fixed point can turn an absent input into a dead-path proof.
         let SolveResult::Complete(facts) = &self.forward else { return false };
         facts

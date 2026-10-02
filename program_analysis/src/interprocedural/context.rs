@@ -10,7 +10,7 @@ use parser::hir::{
 use parser::new_frontend::{AssignmentOperator, SourceId, Span, Version};
 use program_structure::utils::constants::Curve;
 
-use crate::hir_cfg::{CfgNodeKind, DefinitionCfg};
+use crate::hir_cfg::{CfgNodeKind, DefinitionCfg, Origin};
 use crate::hir_facts::{
     exact_compile_time, AnalysisFacts, FactBlocker, FieldContext, FieldValue, Range,
 };
@@ -457,6 +457,7 @@ impl<'a> ProjectSummaries<'a> {
             || self.lifted.incomplete.iter().any(|region| {
                 region.span().is_some_and(|span| scope.overlaps(span))
                     && !self.resolved_unknown_region(region, facts)
+                    && !self.dead_unknown_region(region, facts)
             })
     }
 
@@ -502,6 +503,59 @@ impl<'a> ProjectSummaries<'a> {
             }
         }
         false
+    }
+
+    fn dead_unknown_region(&self, region: &IncompleteRegion, facts: &AnalysisFacts<'_>) -> bool {
+        let IncompleteReason::UnknownType = region.reason else { return false };
+        let Some(span) = region.span() else { return false };
+        let Some(effects) = self.unknown_deferred_effects(span, facts) else { return false };
+        Self::effect_nodes_are_dead(&effects, facts)
+    }
+
+    fn unknown_deferred_effects(
+        &self,
+        span: Span,
+        facts: &AnalysisFacts<'_>,
+    ) -> Option<BTreeSet<(BlockId, usize)>> {
+        let mut effects = BTreeSet::new();
+        for id in facts.cfg().nodes() {
+            let node = facts.cfg().node(*id)?;
+            let Some(origin) = node.origin else { continue };
+            if origin.span == span && self.is_deferred_effect_at(origin, span) {
+                effects.insert((origin.block, origin.effect_index));
+            }
+        }
+        if effects.is_empty() {
+            None
+        } else {
+            Some(effects)
+        }
+    }
+
+    fn is_deferred_effect_at(&self, origin: Origin, span: Span) -> bool {
+        let Some(block) = self.hir().block(origin.block) else { return false };
+        let Some(Effect::DeferredVariableAssignment { span: effect_span, .. }) =
+            block.effects.get(origin.effect_index)
+        else {
+            return false;
+        };
+        *effect_span == span
+    }
+
+    fn effect_nodes_are_dead(
+        effects: &BTreeSet<(BlockId, usize)>,
+        facts: &AnalysisFacts<'_>,
+    ) -> bool {
+        for id in facts.cfg().nodes() {
+            let Some(node) = facts.cfg().node(*id) else { return false };
+            let Some(origin) = node.origin else { continue };
+            if effects.contains(&(origin.block, origin.effect_index))
+                && !facts.certified_dead_node(*id)
+            {
+                return false;
+            }
+        }
+        true
     }
 
     fn resolved_access_region(&self, span: Span, facts: &AnalysisFacts<'_>) -> bool {
