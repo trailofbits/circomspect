@@ -12,7 +12,8 @@ use circomspect_program_analysis::hir_facts::{FactBlocker, FieldContext, Range};
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::hir_facts::analyze;
 use circomspect_program_analysis::interprocedural::{
-    ArgumentValue, CallBlocker, CallOwner, CallReachability, ProjectSummaries, SummaryBlocker,
+    ArgumentValue, CallBlocker, CallOwner, CallReachability, ProjectOutputStatus, ProjectSummaries,
+    SummaryBlocker,
 };
 use parser::hir::lift_project;
 use parser::new_frontend::{load_sources, SourceId, Span, Version, VersionPolicy};
@@ -266,6 +267,9 @@ fn exact_caller_output_read_does_not_certify_an_unused_sibling() {
             .component_output_handle(lifted.hir.components()[0].id, &[index], output, &[])
             .unwrap();
         let applied = context.applied_component_port(site.id(), &handle).unwrap().unwrap();
+        let project_use =
+            context.closed_main_component_output_use(applied.certified().unwrap()).unwrap();
+        assert!(project_use.certified().is_none());
         let read = context.caller_output_read(applied.certified().unwrap()).unwrap();
         if index == 0 {
             assert_eq!(read.certified().unwrap().read_origins().len(), 1);
@@ -274,6 +278,65 @@ fn exact_caller_output_read_does_not_certify_an_unused_sibling() {
             assert!(read.unavailable().unwrap().contains(&SummaryBlocker::ExternalSummary));
         }
     }
+}
+
+#[test]
+fn main_rule_context_exposes_exact_project_output_use() {
+    let loaded = load_fixture(
+        "main-output-use",
+        concat!(
+            "template Child(){signal output out;out<==1;} ",
+            "template Parent(){component c[2];c[0]=Child();c[1]=Child();",
+            "signal output y;y<==c[0].out+1;} component main=Parent();"
+        ),
+    );
+    let lifted = lift_project(&loaded);
+    let parent = lifted.hir.definition("Parent").unwrap();
+    let parser::hir::DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap()
+    else {
+        panic!("Child is a template")
+    };
+    let parser::hir::DefinitionRef::Template(parent_template) = parent else {
+        panic!("Parent is a template")
+    };
+    let summaries = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let main = summaries.graph().calls_from(CallOwner::Main(0))[0];
+    let CallReachability::Reachable(main) =
+        summaries.graph().reachable_main_call(main.id(), &lifted.hir)
+    else {
+        panic!("main resolves to Parent")
+    };
+    let evidence = summaries.main_evidence(&main).unwrap();
+    let cfg = build_cfg(&lifted.hir, parent).unwrap();
+    let facts = summaries.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let context = RuleContext::new(&facts, &summaries, &evidence).unwrap();
+    let output = lifted.hir.template(child).unwrap().ports[0];
+    let statuses = [ProjectOutputStatus::Read, ProjectOutputStatus::Unused];
+    let sites = context.call_sites();
+    assert_eq!(sites.len(), statuses.len());
+    for (index, site) in sites.iter().enumerate() {
+        let handle = facts
+            .component_output_handle(lifted.hir.components()[0].id, &[index], output, &[])
+            .unwrap();
+        let applied = context.applied_component_port(site.id(), &handle).unwrap().unwrap();
+        let result =
+            context.closed_main_component_output_use(applied.certified().unwrap()).unwrap();
+        let result = result.certified().unwrap();
+        assert_eq!(result.status(), statuses[index]);
+        assert_eq!(result.handle(), &handle);
+        assert_eq!(result.main_evidence(), &evidence);
+    }
+    let output = lifted.hir.template(parent_template).unwrap().ports[0];
+    let handle = facts.port_handle(output, &[]).unwrap();
+    let exported = context.exported_main_output_use(&handle);
+    assert_eq!(exported.certified().unwrap().status(), ProjectOutputStatus::Read);
+    assert_eq!(exported.certified().unwrap().handle(), &handle);
+
+    let symbolic = summaries.symbolic_root(parent).unwrap();
+    let symbolic_facts = summaries.analyze_for_evidence(&cfg, &symbolic, None).unwrap();
+    let symbolic_context = RuleContext::new(&symbolic_facts, &summaries, &symbolic).unwrap();
+    let symbolic_handle = symbolic_facts.port_handle(output, &[]).unwrap();
+    assert!(symbolic_context.exported_main_output_use(&symbolic_handle).certified().is_none());
 }
 
 #[test]
@@ -319,6 +382,10 @@ fn composed_output_constraint_requires_the_active_caller_scope() {
         Some(SummaryBlocker::WrongContext)
     );
     assert_eq!(other_context.caller_output_read(applied).err(), Some(SummaryBlocker::WrongContext));
+    assert_eq!(
+        other_context.closed_main_component_output_use(applied).err(),
+        Some(SummaryBlocker::WrongContext)
+    );
     let other_handle = other_context
         .facts()
         .component_output_handle(lifted.hir.components()[1].id, &[], output, &[])

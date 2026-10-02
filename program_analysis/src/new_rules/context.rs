@@ -5,7 +5,8 @@ use crate::hir_facts::{AccessHandle, AnalysisFacts};
 use crate::interprocedural::{
     AppliedComponentPort, CallBlocker, CallContext, CallOwner, CallReachability, CallSite,
     CallSiteId, CallerOutputRead, ComposedConstraintFixedOutput, ContextEvidence, FunctionEffects,
-    FunctionSummary, PortSummary, ProjectSummaries, SummaryBlocker, SummaryFact, WitnessSite,
+    FunctionSummary, PortSummary, ProjectOutputUse, ProjectSummaries, SummaryBlocker, SummaryFact,
+    WitnessSite,
 };
 
 use crate::new_rules::{Finding, RuleKind};
@@ -133,6 +134,28 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
             return Err(SummaryBlocker::WrongContext);
         }
         Ok(self.summaries.caller_output_read(self.facts, applied))
+    }
+
+    /// Prove output use for an exact direct child of the active, validated main.
+    ///
+    /// The applied port must belong to this exact source scope. Library roots and
+    /// incomplete project execution produce unavailable evidence, never an unused proof.
+    pub fn closed_main_component_output_use(
+        &self,
+        applied: &AppliedComponentPort,
+    ) -> Result<SummaryFact<ProjectOutputUse>, SummaryBlocker> {
+        if applied.caller_evidence() != self.evidence {
+            return Err(SummaryBlocker::WrongContext);
+        }
+        Ok(self.summaries.closed_main_component_output_use(self.facts, applied))
+    }
+
+    /// Prove that an exact exported output of the active main is read by its environment.
+    ///
+    /// Inputs, foreign handles, and library roots produce unavailable evidence.
+    #[must_use]
+    pub fn exported_main_output_use(&self, handle: &AccessHandle) -> SummaryFact<ProjectOutputUse> {
+        self.summaries.exported_main_output_use(self.facts, self.evidence, handle)
     }
 
     /// Return a summary only for the active function specialization.
