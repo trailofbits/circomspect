@@ -739,6 +739,7 @@ impl<'a> ProjectSummaries<'a> {
         self.check_facts_for_evidence(facts, caller)?;
         let site = self.graph.site(site).ok_or(SummaryBlocker::ForeignCall)?;
         let context = self.exact_site_context(site, facts)?;
+        self.check_warning_execution_scope(facts, caller)?;
         self.extend_call_evidence(site, context, caller)
     }
 

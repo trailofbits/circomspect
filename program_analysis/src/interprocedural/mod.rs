@@ -12,6 +12,7 @@ mod input_relation;
 mod project_use;
 mod output_enumeration;
 mod validity;
+mod execution_scope;
 mod shape_validity;
 mod internal_signal;
 
