@@ -5,8 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use abstract_interpretation::graph::{EdgeId, FlowGraph, NodeId};
 use abstract_interpretation::lattice::Lattice;
 use abstract_interpretation::solver::{
-    solve, Blocker, CertifiedFacts, DataflowAnalysis, Forward, SolveResult, Transfer,
-    TransferOutcome,
+    solve, CertifiedFacts, DataflowAnalysis, Forward, SolveResult, Transfer, TransferOutcome,
 };
 use parser::hir::{AccessPath, ProjectIdentity};
 use parser::new_frontend::AssignmentOperator;
@@ -363,7 +362,9 @@ impl AnalysisFacts<'_> {
                 .map_err(|_| BTreeSet::from([FactBlocker::ForeignQuery]))?;
         match result {
             SolveResult::Complete(facts) => Ok((facts, uncertain)),
-            SolveResult::Incomplete { blockers, .. } => Err(write_solver_blockers(blockers)),
+            SolveResult::Incomplete { blockers, .. } => {
+                Err(blockers.iter().map(FactBlocker::from).collect())
+            }
         }
     }
 
@@ -445,19 +446,6 @@ fn witness_operator(operator: AssignmentOperator) -> bool {
         | AssignmentOperator::BitOr
         | AssignmentOperator::BitXor => false,
     }
-}
-
-fn write_solver_blockers(
-    blockers: BTreeSet<Blocker<NodeId, EdgeId, String>>,
-) -> BTreeSet<FactBlocker> {
-    blockers
-        .into_iter()
-        .map(|blocker| match blocker {
-            Blocker::PendingNode(node) => FactBlocker::Budget(node),
-            Blocker::OpaqueNode { node, reason } => FactBlocker::OpaqueNode(node, reason),
-            Blocker::OpaqueEdge { edge, reason } => FactBlocker::OpaqueEdge(edge, reason),
-        })
-        .collect()
 }
 
 #[cfg(test)]
