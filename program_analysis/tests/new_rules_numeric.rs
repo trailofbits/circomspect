@@ -8,7 +8,7 @@ use circomspect_program_analysis::interprocedural::{
     CallOwner, CallReachability, ProjectSummaries, SummaryBlocker,
 };
 use circomspect_program_analysis::new_rules::{
-    run_registered, AbstentionReason, RuleContext, RuleKind, RuleResult, SourceMap,
+    run_registered, AbstentionReason, Finding, RuleContext, RuleKind, RuleResult, SourceMap,
 };
 use parser::hir::lift_project;
 use parser::new_frontend::{load_sources, LoadedProject, Version, VersionPolicy};
@@ -109,18 +109,23 @@ fn inspect_main(source: &str, curve: Curve) -> RuleResult {
     run_registered(&context).unwrap()
 }
 
+fn numeric_findings(result: &RuleResult) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    for finding in result.findings() {
+        if circomspect_program_analysis::new_rules::numeric::KINDS.contains(&finding.kind()) {
+            findings.push(finding.clone());
+        }
+    }
+    findings
+}
+
 fn kinds(result: &RuleResult) -> Vec<RuleKind> {
-    result
-        .findings()
-        .iter()
-        .map(|finding| finding.kind())
-        .filter(|kind| circomspect_program_analysis::new_rules::numeric::KINDS.contains(kind))
-        .collect()
+    numeric_findings(result).iter().map(Finding::kind).collect()
 }
 
 fn first_message(loaded: &LoadedProject, result: &RuleResult) -> String {
     let sources = SourceMap::from_loaded(loaded, &[loaded.files[0].id]).unwrap();
-    result.findings()[0].to_report(&sources).unwrap().message().clone()
+    numeric_findings(result)[0].to_report(&sources).unwrap().message().clone()
 }
 
 fn assert_rendered(loaded: &LoadedProject, result: &RuleResult, kind: RuleKind) {
@@ -158,7 +163,8 @@ fn complement_reports_only_reachable_resolved_expression_with_selected_curve() {
     let sources = SourceMap::from_loaded(&loaded, &[source.id]).unwrap();
     let output = source.path.with_extension("sarif.json");
     assert_eq!(
-        support::render(result.findings(), &sources, MessageCategory::Info, &[], &output).unwrap(),
+        support::render(&numeric_findings(&result), &sources, MessageCategory::Info, &[], &output)
+            .unwrap(),
         (1, 1)
     );
     let sarif: Value = serde_json::from_str(&fs::read_to_string(output).unwrap()).unwrap();
@@ -262,7 +268,7 @@ fn bn254_literal_only_warns_on_incompatible_selected_curve() {
     let (loaded, called) = inspect_call(&source, Curve::Bls12_381, "Parent", "Child");
     assert_eq!(kinds(&called), [RuleKind::Bn254SpecificCircuit]);
     let sources = SourceMap::from_loaded(&loaded, &[loaded.files[0].id]).unwrap();
-    let report = called.findings()[0].to_report(&sources).unwrap();
+    let report = numeric_findings(&called)[0].to_report(&sources).unwrap();
     assert_eq!(report.secondary().len(), 1);
     let call_start = source.rfind("Child()").unwrap();
     assert_eq!(report.secondary()[0].range, call_start..call_start + "Child()".len());
@@ -402,13 +408,25 @@ fn numeric_findings_obey_level_allow_and_root_filters() {
     let sources = SourceMap::from_loaded(&loaded, &[loaded.files[0].id]).unwrap();
     let output = loaded.files[0].path.with_extension("sarif.json");
     assert_eq!(
-        support::render(result.findings(), &sources, MessageCategory::Warning, &[], &output)
-            .unwrap(),
+        support::render(
+            &numeric_findings(&result),
+            &sources,
+            MessageCategory::Warning,
+            &[],
+            &output
+        )
+        .unwrap(),
         (0, 0)
     );
     assert_eq!(
-        support::render(result.findings(), &sources, MessageCategory::Info, &["CS0004"], &output)
-            .unwrap(),
+        support::render(
+            &numeric_findings(&result),
+            &sources,
+            MessageCategory::Info,
+            &["CS0004"],
+            &output
+        )
+        .unwrap(),
         (0, 0)
     );
 
@@ -435,7 +453,8 @@ fn numeric_findings_obey_level_allow_and_root_filters() {
     assert!(kinds(&result).contains(&RuleKind::BitwiseComplement));
     let sources = SourceMap::from_loaded(&loaded, &[loaded.files[0].id]).unwrap();
     assert_eq!(
-        support::render(result.findings(), &sources, MessageCategory::Info, &[], &output).unwrap(),
+        support::render(&numeric_findings(&result), &sources, MessageCategory::Info, &[], &output)
+            .unwrap(),
         (0, 0)
     );
 }
