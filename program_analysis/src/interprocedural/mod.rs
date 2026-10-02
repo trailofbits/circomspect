@@ -9,6 +9,7 @@ mod context;
 mod component;
 mod input_relation;
 mod project_use;
+mod validity;
 
 pub use context::{
     AnalyzeEvidenceError, ArgumentShape, ArgumentValue, CallContext, ContextEvidence,

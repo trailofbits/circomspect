@@ -251,6 +251,9 @@ impl ProjectSummaries<'_> {
         {
             return Err(SummaryBlocker::InvalidAssignment(expression));
         }
+        if self.template_definitely_fails(&facts) {
+            return Err(SummaryBlocker::UnsupportedContext);
+        }
         work(template, &cfg, &facts)
     }
 }
