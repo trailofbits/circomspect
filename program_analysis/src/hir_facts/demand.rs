@@ -4,9 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use abstract_interpretation::graph::{EdgeId, FlowGraph, NodeId};
 use abstract_interpretation::lattice::Lattice;
-use abstract_interpretation::solver::{
-    Blocker, DataflowAnalysis, SolveResult, Transfer, TransferOutcome,
-};
+use abstract_interpretation::solver::{DataflowAnalysis, SolveResult, Transfer, TransferOutcome};
 use parser::hir::{AccessPath, DefinitionRef, Effect, ExprId, ExprKind, HirProject, SymbolKind};
 use parser::new_frontend::{AssignmentOperator, Span};
 
@@ -374,16 +372,7 @@ impl AnalysisFacts<'_> {
         };
         let mut reasons = BTreeSet::new();
         for blocker in blockers {
-            let reason = match blocker {
-                Blocker::PendingNode(node) => FactBlocker::Budget(*node),
-                Blocker::OpaqueNode { node, reason } => {
-                    FactBlocker::OpaqueNode(*node, reason.clone())
-                }
-                Blocker::OpaqueEdge { edge, reason } => {
-                    FactBlocker::OpaqueEdge(*edge, reason.clone())
-                }
-            };
-            reasons.insert(reason);
+            reasons.insert(FactBlocker::from(blocker));
         }
         if reasons.is_empty() {
             reasons.insert(FactBlocker::MissingExit);

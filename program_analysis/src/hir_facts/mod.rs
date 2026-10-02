@@ -115,6 +115,16 @@ pub enum FactBlocker {
     ForeignDefinition,
 }
 
+impl From<&Blocker<NodeId, EdgeId, String>> for FactBlocker {
+    fn from(blocker: &Blocker<NodeId, EdgeId, String>) -> Self {
+        match blocker {
+            Blocker::PendingNode(node) => Self::Budget(*node),
+            Blocker::OpaqueNode { node, reason } => Self::OpaqueNode(*node, reason.clone()),
+            Blocker::OpaqueEdge { edge, reason } => Self::OpaqueEdge(*edge, reason.clone()),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum WitnessWriteIssue {
     PossibleRepeat,
@@ -412,16 +422,7 @@ impl AnalysisFacts<'_> {
         };
         let mut reasons = BTreeSet::new();
         for blocker in blockers {
-            let reason = match blocker {
-                Blocker::PendingNode(node) => FactBlocker::Budget(*node),
-                Blocker::OpaqueNode { node, reason } => {
-                    FactBlocker::OpaqueNode(*node, reason.clone())
-                }
-                Blocker::OpaqueEdge { edge, reason } => {
-                    FactBlocker::OpaqueEdge(*edge, reason.clone())
-                }
-            };
-            reasons.insert(reason);
+            reasons.insert(FactBlocker::from(blocker));
         }
         if reasons.is_empty() {
             reasons.insert(FactBlocker::MissingExit);

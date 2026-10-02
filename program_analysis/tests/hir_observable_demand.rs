@@ -201,3 +201,41 @@ fn assignment_query_requires_matching_node_and_source_path() {
     assert_eq!(proof.node(), first);
     assert_eq!(proof.span(), first_path.span);
 }
+
+#[test]
+fn independent_shadowed_local_demand_stays_with_the_used_symbol() {
+    let results = assignment_demands("function Check(){var x=1;{var x=2;var y=x;}return x;}", None);
+    assert_eq!(results.len(), 3);
+    let Ok(fact) = &results[0].1 else { panic!("outer x must be certified") };
+    assert_eq!(fact.certified(), Some(&AssignmentDemand::MayBeObserved));
+    assert!(unobserved(&results[1].1));
+    assert!(unobserved(&results[2].1));
+}
+
+#[test]
+fn independent_branch_join_preserves_demand_from_either_successor() {
+    let required =
+        assignment_demands("function Check(){var x=1;var y=2;if(1<<1){y=x;}return y;}", None);
+    assert_eq!(required.len(), 3);
+    for (_, result) in &required {
+        let Ok(fact) = result else { panic!("branch inputs must have certified demand") };
+        assert_eq!(fact.certified(), Some(&AssignmentDemand::MayBeObserved));
+    }
+    let unused =
+        assignment_demands("function Check(){var x=1;var y=2;if(1<<1){y=x;}return 7;}", None);
+    assert_eq!(unused.len(), 3);
+    assert!(unused.iter().all(|(_, result)| unobserved(result)));
+}
+
+#[test]
+fn independent_self_copy_follows_observation_without_creating_demand() {
+    let unused = assignment_demands("function Check(){var x=1;x=x;return 7;}", None);
+    assert_eq!(unused.len(), 2);
+    assert!(unused.iter().all(|(_, result)| unobserved(result)));
+    let required = assignment_demands("function Check(){var x=1;x=x;return x;}", None);
+    assert_eq!(required.len(), 2);
+    for (_, result) in required {
+        let Ok(fact) = result else { panic!("self-copy must retain observed demand") };
+        assert_eq!(fact.certified(), Some(&AssignmentDemand::MayBeObserved));
+    }
+}
