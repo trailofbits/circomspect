@@ -398,15 +398,24 @@ impl AnalysisFacts<'_> {
             Ok(result) => result,
             Err(blockers) => return Fact::blocked(blockers),
         };
+        self.body_write_status_from_result(key, &facts, &uncertain)
+    }
+
+    fn body_write_status_from_result(
+        &self,
+        key: &AccessKey,
+        facts: &WriteFacts,
+        uncertain: &[UncertainWrite],
+    ) -> Fact<BodyWriteStatus> {
         let Some(WriteState::Reached { may_repeat, must_repeat, .. }) =
             facts.get(&self.cfg.exit()).and_then(|item| item.output.as_ref())
         else {
             return Fact::blocked(BTreeSet::from([FactBlocker::MissingExit]));
         };
         if must_repeat.contains(key) {
-            return self.repeated_write_status(key, &facts);
+            return self.repeated_write_status(key, facts);
         }
-        let blockers = self.possible_write_blockers(key, &facts, may_repeat, &uncertain);
+        let blockers = self.possible_write_blockers(key, facts, may_repeat, uncertain);
         if !blockers.is_empty() {
             return Fact::blocked(blockers);
         }
@@ -467,6 +476,38 @@ impl AnalysisFacts<'_> {
             }
         }
         blockers
+    }
+
+    /// Certify that no reachable body witness write can repeat any target.
+    pub(crate) fn no_possible_repeated_body_writes(&self) -> Fact<()> {
+        let (facts, uncertain) = match self.solve_body_writes() {
+            Ok(result) => result,
+            Err(blockers) => return Fact::blocked(blockers),
+        };
+        let Some(WriteState::Reached { may_repeat, must_repeat_any, .. }) =
+            facts.get(&self.cfg.exit()).and_then(|item| item.output.as_ref())
+        else {
+            return Fact::blocked(BTreeSet::from([FactBlocker::MissingExit]));
+        };
+        if *must_repeat_any {
+            return Fact::blocked(BTreeSet::from([FactBlocker::WitnessWrite(
+                self.cfg.exit(),
+                WitnessWriteIssue::DefiniteRepeat,
+            )]));
+        }
+        let mut blockers = BTreeSet::new();
+        for key in may_repeat {
+            blockers.extend(self.possible_write_blockers(key, &facts, may_repeat, &[]));
+        }
+        for write in uncertain {
+            blockers.extend(write.blockers);
+            blockers
+                .insert(FactBlocker::WitnessWrite(write.site, WitnessWriteIssue::UnresolvedTarget));
+        }
+        if !blockers.is_empty() {
+            return Fact::blocked(blockers);
+        }
+        Fact::known(())
     }
 
     fn repeat_sites(&self, facts: &WriteFacts, key: &AccessKey) -> BTreeSet<NodeId> {

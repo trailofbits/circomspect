@@ -207,7 +207,6 @@ pub(crate) enum RelationBlocker {
     UnsupportedPath,
     MissingRight,
     DegreeExceeded(ExprId),
-    DepthExceeded(ExprId),
     GeneratedShape(ExprId),
 }
 
@@ -244,14 +243,50 @@ fn polynomial_for_path(
     Ok(QuadraticPolynomial::access(inputs.field, key))
 }
 
+enum ExpressionFrame {
+    Evaluate(ExprId),
+    Negate(ExprId),
+    Binary { expression: ExprId, operator: BinaryOperator },
+}
+
 fn polynomial_for_expression(
     inputs: &NormalizationInputs<'_>,
     expression: ExprId,
-    depth: usize,
 ) -> Result<ExpressionPolynomial, RelationBlocker> {
-    if depth > 128 {
-        return Err(RelationBlocker::DepthExceeded(expression));
+    let mut frames = vec![ExpressionFrame::Evaluate(expression)];
+    let mut values = Vec::new();
+    while let Some(frame) = frames.pop() {
+        match frame {
+            ExpressionFrame::Evaluate(expression) => {
+                evaluate_expression_frame(inputs, expression, &mut frames, &mut values)?;
+            }
+            ExpressionFrame::Negate(expression) => {
+                let Some(mut operand) = values.pop() else {
+                    return Err(RelationBlocker::MissingExpression(expression));
+                };
+                operand.polynomial.scale(inputs.field, &inputs.field.canonical((-1).into()));
+                values.push(operand);
+            }
+            ExpressionFrame::Binary { expression, operator } => {
+                let Some(right) = values.pop() else {
+                    return Err(RelationBlocker::MissingExpression(expression));
+                };
+                let Some(left) = values.pop() else {
+                    return Err(RelationBlocker::MissingExpression(expression));
+                };
+                values.push(combine_binary(inputs, expression, operator, left, right)?);
+            }
+        }
     }
+    values.pop().ok_or(RelationBlocker::MissingExpression(expression))
+}
+
+fn evaluate_expression_frame(
+    inputs: &NormalizationInputs<'_>,
+    expression: ExprId,
+    frames: &mut Vec<ExpressionFrame>,
+    values: &mut Vec<ExpressionPolynomial>,
+) -> Result<(), RelationBlocker> {
     if let Some(value) = eval_expression_with_calls(
         inputs.hir,
         inputs.field,
@@ -259,24 +294,30 @@ fn polynomial_for_expression(
         inputs.values,
         inputs.calls,
     ) {
-        return Ok(ExpressionPolynomial::new(
+        values.push(ExpressionPolynomial::new(
             QuadraticPolynomial::constant(inputs.field, value),
             SourceForm::Constant,
         ));
+        return Ok(());
     }
     let expr =
         inputs.hir.expression(expression).ok_or(RelationBlocker::MissingExpression(expression))?;
     match &expr.kind {
-        ExprKind::Access(path) => polynomial_for_path(inputs, path)
-            .map(|polynomial| ExpressionPolynomial::new(polynomial, SourceForm::Linear)),
-        ExprKind::Parallel(inner) => polynomial_for_expression(inputs, *inner, depth + 1),
+        ExprKind::Access(path) => {
+            values.push(ExpressionPolynomial::new(
+                polynomial_for_path(inputs, path)?,
+                SourceForm::Linear,
+            ));
+        }
+        ExprKind::Parallel(inner) => frames.push(ExpressionFrame::Evaluate(*inner)),
         ExprKind::Unary { operator: UnaryOperator::Negate, operand } => {
-            let mut polynomial = polynomial_for_expression(inputs, *operand, depth + 1)?;
-            polynomial.polynomial.scale(inputs.field, &inputs.field.canonical((-1).into()));
-            Ok(polynomial)
+            frames.push(ExpressionFrame::Negate(expression));
+            frames.push(ExpressionFrame::Evaluate(*operand));
         }
         ExprKind::Binary { operator, left, right } => {
-            polynomial_for_binary(inputs, expression, *operator, (*left, *right), depth)
+            frames.push(ExpressionFrame::Binary { expression, operator: *operator });
+            frames.push(ExpressionFrame::Evaluate(*right));
+            frames.push(ExpressionFrame::Evaluate(*left));
         }
         ExprKind::Number(_)
         | ExprKind::Unary { .. }
@@ -285,16 +326,17 @@ fn polynomial_for_expression(
         | ExprKind::AnonymousComponent { .. }
         | ExprKind::Array(_)
         | ExprKind::Tuple(_)
-        | ExprKind::Opaque(_) => Err(RelationBlocker::UnsupportedExpression(expression)),
+        | ExprKind::Opaque(_) => return Err(RelationBlocker::UnsupportedExpression(expression)),
     }
+    Ok(())
 }
 
-fn polynomial_for_binary(
+fn combine_binary(
     inputs: &NormalizationInputs<'_>,
     expression: ExprId,
     operator: BinaryOperator,
-    operands: (ExprId, ExprId),
-    depth: usize,
+    mut left: ExpressionPolynomial,
+    mut right: ExpressionPolynomial,
 ) -> Result<ExpressionPolynomial, RelationBlocker> {
     if operator != BinaryOperator::Add
         && operator != BinaryOperator::Subtract
@@ -302,8 +344,6 @@ fn polynomial_for_binary(
     {
         return Err(RelationBlocker::UnsupportedExpression(expression));
     }
-    let mut left = polynomial_for_expression(inputs, operands.0, depth + 1)?;
-    let mut right = polynomial_for_expression(inputs, operands.1, depth + 1)?;
     if operator == BinaryOperator::Multiply {
         let form = left.form.multiply(right.form);
         let polynomial = left.polynomial.multiply(inputs.field, &right.polynomial, expression)?;
@@ -327,13 +367,13 @@ pub(crate) fn constraint_equation(
     let left_side = if let Some(target) = target {
         ExpressionPolynomial::new(polynomial_for_path(inputs, target)?, SourceForm::Linear)
     } else {
-        polynomial_for_expression(inputs, *left, 0)?
+        polynomial_for_expression(inputs, *left)?
     };
     let right_side = if target.is_some() {
-        polynomial_for_expression(inputs, *left, 0)?
+        polynomial_for_expression(inputs, *left)?
     } else {
         let right = right.ok_or(RelationBlocker::MissingRight)?;
-        polynomial_for_expression(inputs, right, 0)?
+        polynomial_for_expression(inputs, right)?
     };
     if left_side.form.add(right_side.form) == SourceForm::Unsupported {
         return Err(RelationBlocker::GeneratedShape(*left));
@@ -347,8 +387,36 @@ pub(super) fn witness_equation(
     value: ExprId,
 ) -> Result<NormalizedEquation, RelationBlocker> {
     let target = polynomial_for_path(inputs, target)?;
-    let value = polynomial_for_expression(inputs, value, 0)?;
+    let value = polynomial_for_expression(inputs, value)?;
     Ok(NormalizedEquation::between(target, value.polynomial, inputs.field))
+}
+
+pub(super) fn boolean_equation(field: &FieldContext, bit: &AccessKey) -> NormalizedEquation {
+    let mut polynomial = QuadraticPolynomial::zero(field);
+    polynomial.add_term(
+        field,
+        Monomial::Quadratic(bit.clone(), bit.clone()),
+        field.canonical(1.into()),
+    );
+    polynomial.add_term(field, Monomial::Linear(bit.clone()), field.canonical((-1).into()));
+    NormalizedEquation::between(polynomial, QuadraticPolynomial::zero(field), field)
+}
+
+pub(super) fn reconstruction_equation(
+    field: &FieldContext,
+    input: &AccessKey,
+    bits: &[AccessKey],
+) -> NormalizedEquation {
+    let input = QuadraticPolynomial::access(field, input.clone());
+    let mut sum = QuadraticPolynomial::zero(field);
+    let mut weight = field.canonical(1.into());
+    for bit in bits {
+        let mut term = QuadraticPolynomial::access(field, bit.clone());
+        term.scale(field, &weight);
+        sum.add(field, term);
+        weight = field.add(&weight, &weight);
+    }
+    NormalizedEquation::between(input, sum, field)
 }
 
 #[cfg(test)]

@@ -1,5 +1,6 @@
 //! Must-equation evidence bound to provider-issued analysis contexts.
 
+mod decomposition;
 mod polynomial;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -15,6 +16,7 @@ use crate::hir_facts::{
 };
 use crate::interprocedural::ContextEvidence;
 
+pub use crate::hir_facts::relations::decomposition::BitDecomposition;
 pub use crate::hir_facts::relations::polynomial::{NormalizedEquation, QuadraticPolynomial};
 pub(crate) use crate::hir_facts::relations::polynomial::{constraint_equation, NormalizationInputs};
 
@@ -229,26 +231,37 @@ impl AnalysisFacts<'_> {
         let Some(witness_origin) = witness else {
             return Fact::blocked(BTreeSet::from([FactBlocker::ForeignQuery]));
         };
-        let mut constraint_origins = Vec::new();
-        for origin in origins {
-            let Some(node) = self.cfg.node(*origin) else {
-                return Fact::blocked(BTreeSet::from([FactBlocker::ForeignQuery]));
-            };
-            let blockers = self.relation_constraint_blockers(&node.kind, *origin);
-            if !blockers.is_empty() {
-                return Fact::blocked(blockers);
-            }
-            let Some(source) = node.origin else {
-                return Fact::blocked(BTreeSet::from([FactBlocker::ForeignQuery]));
-            };
-            constraint_origins.push(source);
-        }
+        let constraint_origins = match self.constraint_origins(origins) {
+            Ok(origins) => origins,
+            Err(blockers) => return Fact::blocked(blockers),
+        };
         Fact::known(Some(GeneratedEquation {
             evidence: evidence.clone(),
             equation,
             witness_origin,
             constraint_origins,
         }))
+    }
+
+    fn constraint_origins(
+        &self,
+        origins: &BTreeSet<NodeId>,
+    ) -> Result<Vec<Origin>, BTreeSet<FactBlocker>> {
+        let mut constraint_origins = Vec::new();
+        for origin in origins {
+            let Some(node) = self.cfg.node(*origin) else {
+                return Err(BTreeSet::from([FactBlocker::ForeignQuery]));
+            };
+            let blockers = self.relation_constraint_blockers(&node.kind, *origin);
+            if !blockers.is_empty() {
+                return Err(blockers);
+            }
+            let Some(source) = node.origin else {
+                return Err(BTreeSet::from([FactBlocker::ForeignQuery]));
+            };
+            constraint_origins.push(source);
+        }
+        Ok(constraint_origins)
     }
 
     fn relation_constraint_blockers(

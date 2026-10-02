@@ -69,6 +69,28 @@ fn nonzero_field_scaling_preserves_the_same_equation() {
 }
 
 #[test]
+fn subtraction_and_unary_negation_keep_operand_order() {
+    let same = "template T(){signal input a;signal input b;signal output x;x<--a-b;x===a+(-b);}";
+    let fact = inspect(same, Curve::Bn254);
+    assert!(fact.certified().unwrap().is_some(), "{fact:?}");
+
+    let different = "template T(){signal input a;signal input b;signal output x;x<--a-b;x===b-a;}";
+    let fact = inspect(different, Curve::Bn254);
+    assert!(fact.certified().unwrap().is_none(), "{fact:?}");
+}
+
+#[test]
+fn left_associated_254_term_linear_relation_has_no_recursion_limit() {
+    let mut sum = String::from("a");
+    for _ in 0..253 {
+        sum.push_str("+1");
+    }
+    let source = format!("template T(){{signal input a;signal output x;x<--{sum};x==={sum};}}");
+    let fact = inspect(&source, Curve::Bn254);
+    assert!(fact.certified().is_some_and(Option::is_some), "{fact:?}");
+}
+
+#[test]
 fn witness_write_alone_never_certifies_an_equation() {
     let source = "template T(){signal input a;signal input b;signal output x;x<--a*b;}";
     let fact = inspect(source, Curve::Bn254);

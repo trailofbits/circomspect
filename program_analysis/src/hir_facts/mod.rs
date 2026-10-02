@@ -44,7 +44,9 @@ pub use domains::{DegreeUpper as Degree, FieldRange as Range};
 pub use crate::hir_facts::demand::{AssignmentDemand, UnobservedAssignment};
 pub use field::{FieldContext, FieldValue};
 pub use handles::{AccessHandle, AccessHandleError};
-pub use crate::hir_facts::relations::{GeneratedEquation, NormalizedEquation, QuadraticPolynomial};
+pub use crate::hir_facts::relations::{
+    BitDecomposition, GeneratedEquation, NormalizedEquation, QuadraticPolynomial,
+};
 pub use crate::hir_facts::write_validity::{BodyWriteStatus, NoRepeatedBodyWrite, RepeatedBodyWrite};
 pub(crate) use handles::InstanceRelation;
 
