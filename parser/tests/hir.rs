@@ -53,6 +53,26 @@ fn parameter_assertion_retains_typed_condition_and_source() {
     assert_eq!(source[span.start()..span.end()].trim(), "assert(n);");
 }
 
+#[test]
+fn parameter_writes_preserve_deferred_shape_and_later_reads() {
+    for statement in ["p=1;", "p+=1;", "p++;"] {
+        let source = format!("function F(p){{{statement}return p;}}");
+        let result = lift(&[("parameter_write.circom", &source)], Version::new(2, 2, 3));
+        assert!(result.diagnostics.is_empty(), "{statement}: {:?}", result.diagnostics);
+        let DefinitionRef::Function(id) = result.hir.definition("F").unwrap() else {
+            panic!("function F")
+        };
+        let function = result.hir.function(id).unwrap();
+        let effects = &result.hir.block(function.body).unwrap().effects;
+        let Some(Effect::Return { value, .. }) = effects.last() else { panic!("return") };
+        let ExprKind::Access(path) = &result.hir.expression(*value).unwrap().kind else {
+            panic!("parameter read must remain typed")
+        };
+        assert_eq!(path.root, function.parameters[0]);
+        assert!(effects.len() >= 2, "the parameter write must remain in the body");
+    }
+}
+
 fn max_port_steps(result: &circomspect_parser::hir::LiftedProject) -> usize {
     result
         .hir

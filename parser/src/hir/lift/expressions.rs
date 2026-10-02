@@ -631,8 +631,7 @@ impl Lifter<'_> {
                 ScalarShape::Deferred
             }
             ExprKind::Access(path)
-                if expression.knownness == Knownness::ParameterDependent
-                    && self.hir.symbols[path.terminal.index].kind == SymbolKind::Parameter =>
+                if self.hir.symbols[path.terminal.index].kind == SymbolKind::Parameter =>
             {
                 ScalarShape::Deferred
             }

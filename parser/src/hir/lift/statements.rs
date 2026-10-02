@@ -251,13 +251,17 @@ impl Lifter<'_> {
                 let Some(path) = self.lift_access(target) else {
                     return vec![self.opaque(span, IncompleteReason::InvalidAssignment)];
                 };
-                if self.hir.symbols[path.root.index].kind != SymbolKind::Variable {
+                let kind = self.hir.symbols[path.root.index].kind;
+                if !Self::local_value_target(kind) {
                     return vec![
                         self.invalid_assignment(span, "postfix update requires a variable")
                     ];
                 }
                 if !Self::symbolic_indices(&path).all(|id| self.expression_is_checked(id)) {
                     return vec![self.opaque(span, IncompleteReason::UnknownType)];
+                }
+                if kind == SymbolKind::Parameter {
+                    self.incomplete(span, IncompleteReason::UnknownType);
                 }
                 let knownness = self.access_knownness(&path);
                 self.hir.symbols[path.terminal.index].knownness = knownness;
@@ -968,10 +972,13 @@ impl Lifter<'_> {
         if !self.expression_is_checked(value)
             || !Self::symbolic_indices(&path).all(|id| self.expression_is_checked(id))
         {
-            if kind == SymbolKind::Variable {
+            if Self::local_value_target(kind) {
                 return self.unknown_shape_assignment(path, kind, operator, value, span);
             }
             return self.opaque(span, IncompleteReason::UnknownType);
+        }
+        if kind == SymbolKind::Parameter {
+            return self.unknown_shape_assignment(path, kind, operator, value, span);
         }
         if matches!(
             kind,
@@ -1054,7 +1061,7 @@ impl Lifter<'_> {
         span: Span,
     ) -> Effect {
         self.incomplete(span, IncompleteReason::UnknownType);
-        if kind == SymbolKind::Variable {
+        if Self::local_value_target(kind) {
             match operator {
                 AssignmentOperator::Witness
                 | AssignmentOperator::Constraint
@@ -1080,7 +1087,7 @@ impl Lifter<'_> {
                 | AssignmentOperator::BitXor => {}
             }
         }
-        if kind == SymbolKind::Variable
+        if Self::local_value_target(kind)
             && self.provisionally_compile_time(value)
             && Self::symbolic_indices(&path).all(|index| self.provisionally_compile_time(index))
         {
@@ -1101,6 +1108,13 @@ impl Lifter<'_> {
             operator,
             reason: IncompleteReason::UnknownType,
             span,
+        }
+    }
+
+    fn local_value_target(kind: SymbolKind) -> bool {
+        match kind {
+            SymbolKind::Variable | SymbolKind::Parameter => true,
+            SymbolKind::Signal | SymbolKind::Component | SymbolKind::Bus | SymbolKind::Tag => false,
         }
     }
 
