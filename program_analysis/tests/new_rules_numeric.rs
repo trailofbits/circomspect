@@ -110,7 +110,12 @@ fn inspect_main(source: &str, curve: Curve) -> RuleResult {
 }
 
 fn kinds(result: &RuleResult) -> Vec<RuleKind> {
-    result.findings().iter().map(|finding| finding.kind()).collect()
+    result
+        .findings()
+        .iter()
+        .map(|finding| finding.kind())
+        .filter(|kind| circomspect_program_analysis::new_rules::numeric::KINDS.contains(kind))
+        .collect()
 }
 
 fn first_message(loaded: &LoadedProject, result: &RuleResult) -> String {
