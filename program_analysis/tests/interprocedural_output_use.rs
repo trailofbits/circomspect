@@ -511,6 +511,12 @@ fn invalid_bus_field_dimensions_cannot_close_project_output_use() {
     );
     assert_lifted_complete(child);
     assert!(internal_use(child, 0).certified().is_none());
+    let output = concat!(
+        "bus B(){signal x[-1];} template Child(){signal output out;out<==1;} ",
+        "template Parent(){B output b;component c=Child();} component main=Parent();"
+    );
+    assert_lifted_complete(output);
+    assert!(internal_use(output, 0).certified().is_none());
     let valid = source.replace("x[-1]", "x[1]");
     assert_lifted_complete(&valid);
     assert_eq!(
