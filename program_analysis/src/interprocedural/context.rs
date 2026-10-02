@@ -997,7 +997,7 @@ impl<'a> ProjectSummaries<'a> {
         let seeds =
             evidence.context.scalar_seeds(parameters).map_err(AnalyzeEvidenceError::Blocked)?;
         let mut facts = self
-            .refined_facts(cfg.definition(), seeds, budget)
+            .refined_facts(evidence.context(), seeds, budget)
             .map_err(AnalyzeEvidenceError::Blocked)?;
         if let Some(failure) = self.invalid_value_use(parameters, evidence.context(), &facts) {
             return Err(failure.into_analysis_error(evidence.context()));

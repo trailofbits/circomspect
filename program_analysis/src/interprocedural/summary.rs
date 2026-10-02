@@ -463,7 +463,7 @@ impl ProjectSummaries<'_> {
         }
         self.check_context(context)?;
         let parameters = context.scalar_seeds(&function.parameters)?;
-        self.with_refined_facts(DefinitionRef::Function(id), parameters, |cfg, facts| {
+        self.with_refined_facts(context, parameters, |cfg, facts| {
             if let Some(failure) = self.invalid_value_use(&function.parameters, context, facts) {
                 return Err(failure.summary_blocker());
             }

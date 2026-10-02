@@ -12,6 +12,7 @@ use crate::hir_cfg::{CfgEdge, CfgNode, CfgNodeKind, DefinitionCfg};
 use crate::hir_facts::access::{key_for_path, AccessKey};
 use crate::hir_facts::{AnalysisFacts, Fact, FactBlocker, FieldContext, VisitAccesses};
 use crate::interprocedural::{CallContext, ContextEvidence};
+use crate::scalar_evidence::ScalarExpressionEvidence;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum DemandState {
@@ -58,7 +59,9 @@ impl Lattice for DemandState {
 pub(crate) struct DemandAnalysis<'a> {
     hir: &'a HirProject,
     field: &'a FieldContext,
+    calls: Option<&'a ScalarExpressionEvidence>,
     pruned_edges: BTreeSet<EdgeId>,
+    resolved_deferred: BTreeSet<NodeId>,
 }
 
 impl<'a> DemandAnalysis<'a> {
@@ -67,17 +70,31 @@ impl<'a> DemandAnalysis<'a> {
         field: &'a FieldContext,
         pruned_edges: BTreeSet<EdgeId>,
     ) -> Self {
-        Self { hir, field, pruned_edges }
+        Self { hir, field, calls: None, pruned_edges, resolved_deferred: BTreeSet::new() }
+    }
+
+    pub(crate) fn with_calls(mut self, calls: Option<&'a ScalarExpressionEvidence>) -> Self {
+        self.calls = calls;
+        self
+    }
+
+    pub(crate) fn with_resolved_deferred(mut self, nodes: BTreeSet<NodeId>) -> Self {
+        self.resolved_deferred = nodes;
+        self
+    }
+
+    fn removable_call(&self, expression: ExprId) -> bool {
+        self.calls.is_some_and(|calls| calls.removable_call(expression))
     }
 
     fn collect(&self, expression: ExprId, keys: &mut BTreeSet<AccessKey>) -> bool {
-        expression.visit_accesses(self.hir, &mut |path| {
+        expression.visit_accesses_with(self.hir, &|id| self.removable_call(id), &mut |path| {
             keys.insert(key_for_path(self.hir, self.field, path, &BTreeMap::new()));
         })
     }
 
     fn collect_path(&self, path: &AccessPath, keys: &mut BTreeSet<AccessKey>) -> bool {
-        path.visit_accesses(self.hir, &mut |read| {
+        path.visit_accesses_with(self.hir, &|id| self.removable_call(id), &mut |read| {
             keys.insert(key_for_path(self.hir, self.field, read, &BTreeMap::new()));
         })
     }
@@ -90,7 +107,7 @@ impl<'a> DemandAnalysis<'a> {
         keys: &mut BTreeSet<AccessKey>,
     ) -> bool {
         if operator != AssignmentOperator::Assign
-            || !pure_scalar_assignment(self.hir, target, value)
+            || !pure_scalar_assignment(self.hir, target, value, self.calls)
         {
             return self.collect_path(target, keys) && self.collect(value, keys);
         }
@@ -111,7 +128,7 @@ impl<'a> DemandAnalysis<'a> {
 
     fn collect_evaluation(&self, expression: ExprId, keys: &mut BTreeSet<AccessKey>) -> bool {
         let Some(expr) = self.hir.expression(expression) else { return false };
-        if pure_scalar_value(self.hir, &expr.kind) {
+        if pure_scalar_value(self.hir, &expr.kind, expression, self.calls) {
             return true;
         }
         self.collect(expression, keys)
@@ -132,6 +149,11 @@ impl<'a> DemandAnalysis<'a> {
         }
         if let CfgNodeKind::Assignment { target, value, operator } = &node.kind {
             return self.transfer_assignment(target, *value, *operator, keys);
+        }
+        if let CfgNodeKind::DeferredAssignment { target, value, operator } = &node.kind {
+            return self.resolved_deferred.contains(&node.id)
+                && pure_scalar_assignment(self.hir, target, *value, self.calls)
+                && self.transfer_assignment(target, *value, *operator, keys);
         }
         if let CfgNodeKind::Declaration { symbol } = &node.kind {
             keys.retain(|key| key.root != *symbol);
@@ -187,6 +209,7 @@ impl Transfer<DemandAnalysis<'_>, DemandState, String> for CfgNode {
         let complete = match &self.kind {
             CfgNodeKind::Evaluate(_)
             | CfgNodeKind::Assignment { .. }
+            | CfgNodeKind::DeferredAssignment { .. }
             | CfgNodeKind::Declaration { .. }
             | CfgNodeKind::Log => analysis.transfer_local(self, keys),
             CfgNodeKind::Constraint { .. }
@@ -198,8 +221,7 @@ impl Transfer<DemandAnalysis<'_>, DemandState, String> for CfgNode {
                 analysis.transfer_effect(self, keys)
             }
             CfgNodeKind::Entry | CfgNodeKind::Exit | CfgNodeKind::LoopHeader => true,
-            CfgNodeKind::DeferredAssignment { .. }
-            | CfgNodeKind::Update { .. }
+            CfgNodeKind::Update { .. }
             | CfgNodeKind::OpaqueAssignment { .. }
             | CfgNodeKind::OpaqueEquality { .. }
             | CfgNodeKind::Opaque(_) => false,
@@ -229,16 +251,26 @@ impl Transfer<DemandAnalysis<'_>, DemandState, String> for CfgEdge {
     }
 }
 
-pub(crate) fn pure_scalar_assignment(hir: &HirProject, target: &AccessPath, value: ExprId) -> bool {
+pub(crate) fn pure_scalar_assignment(
+    hir: &HirProject,
+    target: &AccessPath,
+    value: ExprId,
+    calls: Option<&ScalarExpressionEvidence>,
+) -> bool {
     let Some(symbol) = hir.symbol(target.root) else { return false };
     if symbol.kind != SymbolKind::Variable || symbol.rank != 0 || !target.steps.is_empty() {
         return false;
     }
     let Some(expression) = hir.expression(value) else { return false };
-    pure_scalar_value(hir, &expression.kind)
+    pure_scalar_value(hir, &expression.kind, value, calls)
 }
 
-fn pure_scalar_value(hir: &HirProject, kind: &ExprKind) -> bool {
+fn pure_scalar_value(
+    hir: &HirProject,
+    kind: &ExprKind,
+    expression: ExprId,
+    calls: Option<&ScalarExpressionEvidence>,
+) -> bool {
     match kind {
         ExprKind::Number(_) => true,
         ExprKind::Access(path) => {
@@ -249,11 +281,11 @@ fn pure_scalar_value(hir: &HirProject, kind: &ExprKind) -> bool {
                 && !path.component_input
                 && !path.component_output
         }
+        ExprKind::Call { .. } => calls.is_some_and(|calls| calls.removable_call(expression)),
         ExprKind::Unary { .. }
         | ExprKind::Binary { .. }
         | ExprKind::Array(_)
         | ExprKind::Tuple(_)
-        | ExprKind::Call { .. }
         | ExprKind::AnonymousComponent { .. }
         | ExprKind::Ternary { .. }
         | ExprKind::Parallel(_)
@@ -319,14 +351,22 @@ impl AnalysisFacts<'_> {
         let Some(node) = self.cfg.node(id) else {
             return Fact::blocked(BTreeSet::from([FactBlocker::ForeignQuery]));
         };
-        let CfgNodeKind::Assignment { target: written, value, operator } = &node.kind else {
+        let (CfgNodeKind::Assignment { target: written, value, operator }
+        | CfgNodeKind::DeferredAssignment { target: written, value, operator }) = &node.kind
+        else {
             return Fact::blocked(BTreeSet::from([FactBlocker::ForeignQuery]));
         };
         if written != target {
             return Fact::blocked(BTreeSet::from([FactBlocker::ForeignQuery]));
         }
+        let resolved = if let CfgNodeKind::DeferredAssignment { .. } = &node.kind {
+            self.resolved_deferred_assignment(id)
+        } else {
+            true
+        };
         if *operator != AssignmentOperator::Assign
-            || !pure_scalar_assignment(self.hir, target, *value)
+            || !pure_scalar_assignment(self.hir, target, *value, self.calls.as_deref())
+            || !resolved
         {
             return Fact::blocked(BTreeSet::from([FactBlocker::OpaqueNode(
                 id,
@@ -397,6 +437,7 @@ mod tests {
     use crate::hir_facts::access::key_for_path;
     use crate::hir_facts::demand::{DemandAnalysis, DemandState};
     use crate::hir_facts::FieldContext;
+    use crate::interprocedural::ProjectSummaries;
 
     #[test]
     fn production_assignment_transfer_is_monotone_over_finite_demand_states() {
@@ -460,6 +501,70 @@ mod tests {
                 let TransferOutcome::Known(right_result) = assignment.apply(&analysis, right)
                 else {
                     panic!("scalar transfer must be known")
+                };
+                assert!(left_result.leq(&right_result));
+            }
+        }
+    }
+
+    #[test]
+    fn provider_proven_pure_call_transfer_is_monotone() {
+        let directory = std::env::temp_dir().join(format!(
+            "circomspect-demand-pure-law-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let source = directory.join("case.circom");
+        fs::write(
+            &source,
+            "function Pure(n){return n;}function Check(){var x=1;var y=Pure(x);return 7;}",
+        )
+        .unwrap();
+        let loaded =
+            load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
+        let lifted = lift_project(&loaded);
+        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let definition = lifted.hir.definition("Check").unwrap();
+        let evidence = provider.symbolic_root(definition).unwrap();
+        let cfg = build_cfg(&lifted.hir, definition).unwrap();
+        let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+        let assignment = facts.cfg().nodes().iter().find_map(|id| {
+            let node = facts.cfg().node(*id)?;
+            let (CfgNodeKind::Assignment { target, .. }
+            | CfgNodeKind::DeferredAssignment { target, .. }) = &node.kind
+            else {
+                return None;
+            };
+            (lifted.hir.symbol(target.root)?.name == "y").then_some(node)
+        });
+        let Some(assignment) = assignment else { panic!("pure call assignment must exist") };
+        let (CfgNodeKind::Assignment { target, .. }
+        | CfgNodeKind::DeferredAssignment { target, .. }) = &assignment.kind
+        else {
+            panic!("selected node must remain an assignment")
+        };
+        let field = FieldContext::for_curve(Curve::Bn254);
+        let key = key_for_path(&lifted.hir, &field, target, &BTreeMap::new());
+        let analysis = DemandAnalysis::new(&lifted.hir, &field, BTreeSet::new())
+            .with_calls(facts.calls.as_deref())
+            .with_resolved_deferred(facts.resolved_deferred.clone());
+        let states = [
+            DemandState::Unreachable,
+            DemandState::Reached(BTreeSet::new()),
+            DemandState::Reached(BTreeSet::from([key])),
+        ];
+        for left in &states {
+            for right in &states {
+                if !left.leq(right) {
+                    continue;
+                }
+                let TransferOutcome::Known(left_result) = assignment.apply(&analysis, left) else {
+                    panic!("proven pure call transfer must be known")
+                };
+                let TransferOutcome::Known(right_result) = assignment.apply(&analysis, right)
+                else {
+                    panic!("proven pure call transfer must be known")
                 };
                 assert!(left_result.leq(&right_result));
             }

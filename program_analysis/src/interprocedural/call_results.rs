@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 
 use abstract_interpretation::graph::FlowGraph;
-use parser::hir::{CallTarget, DefinitionRef, ExprId, ExprKind, FunctionId};
+use parser::hir::{AccessPath, CallTarget, DefinitionRef, ExprId, ExprKind, FunctionId, SymbolKind};
 
 use crate::scalar_evidence::ScalarExpressionEvidence;
 use crate::hir_cfg::{build_cfg_with_exact_calls, CfgNodeKind, DefinitionCfg};
@@ -22,23 +22,24 @@ enum Visit {
 impl ProjectSummaries<'_> {
     pub(super) fn with_refined_facts<T>(
         &self,
-        definition: DefinitionRef,
+        context: &CallContext,
         parameters: BTreeMap<SymbolId, FieldValue>,
         work: impl FnOnce(&DefinitionCfg, &AnalysisFacts<'_>) -> Result<T, SummaryBlocker>,
     ) -> Result<T, SummaryBlocker> {
-        let facts = self.refined_facts(definition, parameters, None)?;
+        let facts = self.refined_facts(context, parameters, None)?;
         work(facts.cfg(), &facts)
     }
 
     pub(super) fn refined_facts<'a>(
         &'a self,
-        definition: DefinitionRef,
+        context: &CallContext,
         parameters: BTreeMap<SymbolId, FieldValue>,
         budget: Option<usize>,
     ) -> Result<AnalysisFacts<'a>, SummaryBlocker> {
         const MAX_REFINEMENTS: usize = 64;
-        let mut calls =
-            ScalarExpressionEvidence::empty(self.hir(), definition, self.curve().clone());
+        self.check_context(context)?;
+        let definition = context.definition();
+        let mut calls = ScalarExpressionEvidence::empty(self.hir(), context, self.curve().clone());
         for _ in 0..MAX_REFINEMENTS {
             let cfg = build_cfg_with_exact_calls(self.hir(), definition, &calls)
                 .map_err(|error| SummaryBlocker::LocalAnalysis(format!("{error:?}")))?;
@@ -49,7 +50,7 @@ impl ProjectSummaries<'_> {
                 OwnedAnalysisOptions { values: parameters.clone(), calls: calls.clone(), budget },
             )
             .map_err(|error| SummaryBlocker::LocalAnalysis(format!("{error:?}")))?;
-            let discovered = self.certified_scalar_evidence(definition, &facts);
+            let discovered = self.certified_scalar_evidence(context, &facts);
             let mut next = calls.clone();
             let changed =
                 next.merge(&discovered).map_err(|()| SummaryBlocker::UnsupportedContext)?;
@@ -146,38 +147,68 @@ impl ProjectSummaries<'_> {
 
     fn certified_scalar_evidence(
         &self,
-        definition: DefinitionRef,
+        context: &CallContext,
         facts: &AnalysisFacts<'_>,
     ) -> ScalarExpressionEvidence {
+        let definition = context.definition();
         let mut results =
-            ScalarExpressionEvidence::empty(self.hir(), definition, self.curve().clone());
-        if facts.definition() != definition
-            || self.hir().identity() != facts.hir().identity()
-            || self.curve() != facts.curve()
-        {
+            ScalarExpressionEvidence::empty(self.hir(), context, self.curve().clone());
+        if !self.refined_scope_matches(context, facts) {
             return results;
         }
         let owner = CallOwner::Definition(definition);
         for site in self.graph().calls_from(owner) {
-            let Some((expression, callee, arguments)) = self.checked_call_site(site, facts) else {
-                continue;
-            };
-            let Some((value, dependencies)) = self.complete_exact_value(callee, arguments, facts)
-            else {
-                continue;
-            };
-            results.insert_call(expression, value, dependencies);
+            self.record_certified_call(site, facts, &mut results);
         }
         for expression in self.hir().expressions() {
-            let ExprKind::Access(path) = &expression.kind else { continue };
-            if !path.steps.is_empty() {
-                continue;
-            }
-            let fact = facts.range(expression.id);
-            let Some(Range::Exact(value)) = fact.certified() else { continue };
-            results.insert_access(expression.id, value.clone());
+            self.record_certified_access(expression.id, facts, &mut results);
         }
         results
+    }
+
+    fn refined_scope_matches(&self, context: &CallContext, facts: &AnalysisFacts<'_>) -> bool {
+        facts.definition() == context.definition()
+            && self.hir().identity() == facts.hir().identity()
+            && self.curve() == facts.curve()
+            && facts.refined_context() == Some(context)
+    }
+
+    fn record_certified_call(
+        &self,
+        site: &CallSite,
+        facts: &AnalysisFacts<'_>,
+        results: &mut ScalarExpressionEvidence,
+    ) {
+        let Some((expression, callee, arguments)) = self.checked_call_site(site, facts) else {
+            return;
+        };
+        let Some((value, dependencies, callee_context)) =
+            self.complete_exact_value(callee, arguments, facts)
+        else {
+            return;
+        };
+        results.insert_call(expression, value, dependencies);
+        if self.call_is_removable(callee, &callee_context, arguments, facts) {
+            results.certify_removable_call(expression);
+        }
+    }
+
+    fn record_certified_access(
+        &self,
+        expression: ExprId,
+        facts: &AnalysisFacts<'_>,
+        results: &mut ScalarExpressionEvidence,
+    ) {
+        let Some(ExprKind::Access(path)) = self.hir().expression(expression).map(|item| &item.kind)
+        else {
+            return;
+        };
+        if !path.steps.is_empty() {
+            return;
+        }
+        let fact = facts.range(expression);
+        let Some(Range::Exact(value)) = fact.certified() else { return };
+        results.insert_access(expression, value.clone());
     }
 
     fn checked_call_site<'a>(
@@ -209,13 +240,66 @@ impl ProjectSummaries<'_> {
         callee: FunctionId,
         arguments: &[ExprId],
         facts: &AnalysisFacts<'_>,
-    ) -> Option<(FieldValue, BTreeSet<usize>)> {
+    ) -> Option<(FieldValue, BTreeSet<usize>, CallContext)> {
         let arguments = self.exact_call_arguments(arguments, facts).ok()?;
         let context = self.context_for(DefinitionRef::Function(callee), arguments).ok()?;
         let summary = self.function(callee, &context);
         let item = summary.certified()?;
         let Range::Exact(value) = item.complete_return()? else { return None };
-        Some((value.clone(), item.input_dependencies().clone()))
+        Some((value.clone(), item.input_dependencies().clone(), context))
+    }
+
+    fn call_is_removable(
+        &self,
+        callee: FunctionId,
+        context: &CallContext,
+        arguments: &[ExprId],
+        facts: &AnalysisFacts<'_>,
+    ) -> bool {
+        if self
+            .with_local_function(callee, context, |_, _, facts| {
+                self.validated_definition(facts).map(|_| ())
+            })
+            .is_err()
+        {
+            return false;
+        }
+        let effects = self.function_effects(callee, context);
+        let Some(effects) = effects.certified() else { return false };
+        if !effects.is_empty() {
+            return false;
+        }
+        for argument in arguments {
+            if !self.removable_argument(*argument, facts) {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn removable_argument(&self, id: ExprId, facts: &AnalysisFacts<'_>) -> bool {
+        let Some(expression) = self.hir().expression(id) else { return false };
+        match &expression.kind {
+            ExprKind::Number(_) => true,
+            ExprKind::Access(path) => self.safe_local_scalar_read(path),
+            ExprKind::Call { .. } => facts.removable_call(id),
+            ExprKind::Unary { .. }
+            | ExprKind::Binary { .. }
+            | ExprKind::Array(_)
+            | ExprKind::Tuple(_)
+            | ExprKind::AnonymousComponent { .. }
+            | ExprKind::Ternary { .. }
+            | ExprKind::Parallel(_)
+            | ExprKind::Opaque(_) => false,
+        }
+    }
+
+    fn safe_local_scalar_read(&self, path: &AccessPath) -> bool {
+        if !path.steps.is_empty() || path.component_input || path.component_output {
+            return false;
+        }
+        let Some(symbol) = self.hir().symbol(path.root) else { return false };
+        symbol.kind == SymbolKind::Variable && symbol.rank == 0
     }
 
     fn acyclic_function_calls(&self, start: FunctionId) -> bool {
@@ -273,13 +357,14 @@ mod tests {
     use program_structure::utils::constants::Curve;
 
     use crate::hir_cfg::build_cfg;
-    use crate::interprocedural::{CallOwner, ProjectSummaries, SummaryBlocker};
+    use crate::hir_facts::{FieldContext, Range};
+    use crate::interprocedural::{
+        ArgumentValue, CallOwner, CallReachability, ProjectSummaries, SummaryBlocker,
+    };
 
-    #[test]
-    fn cloned_site_with_mutated_source_span_cannot_authorize_exact_context() {
-        let source = "function F(){return 7;} template T(){var x=F();}";
+    fn fixture(source: &str, name: &str) -> parser::hir::LiftedProject {
         let directory = std::env::temp_dir().join(format!(
-            "circomspect-refined-site-{}-{:?}",
+            "circomspect-refined-site-{}-{name}-{:?}",
             std::process::id(),
             std::thread::current().id()
         ));
@@ -287,7 +372,13 @@ mod tests {
         let path = directory.join("case.circom");
         fs::write(&path, source).unwrap();
         let loaded = load_sources(&[path], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
-        let lifted = lift_project(&loaded);
+        lift_project(&loaded)
+    }
+
+    #[test]
+    fn cloned_site_with_mutated_source_span_cannot_authorize_exact_context() {
+        let source = "function F(){return 7;} template T(){var x=F();}";
+        let lifted = fixture(source, "mutated-span");
         let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
         let parent = lifted.hir.definition("T").unwrap();
         let caller = provider.symbolic_root(parent).unwrap();
@@ -301,5 +392,75 @@ mod tests {
         };
         forged.span = lifted.hir.function(id).unwrap().name_span;
         assert_eq!(provider.exact_site_context(&forged, &facts), Err(SummaryBlocker::ForeignCall));
+    }
+
+    #[test]
+    fn exact_return_without_effect_freedom_keeps_value_but_not_removal_proof() {
+        let lifted = fixture(
+            "function Noisy(){log(1);return 7;}function Check(){var y=Noisy();return 7;}",
+            "impure-return",
+        );
+        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let definition = lifted.hir.definition("Check").unwrap();
+        let evidence = provider.symbolic_root(definition).unwrap();
+        let cfg = build_cfg(&lifted.hir, definition).unwrap();
+        let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+        let site = provider.graph().calls_from(CallOwner::Definition(definition))[0];
+        let expression = site.expression.unwrap();
+        let exact = FieldContext::for_curve(Curve::Bn254).canonical(7.into());
+        assert_eq!(facts.exact_call_value(expression), Some(&exact));
+        assert_eq!(facts.range(expression).certified(), Some(&Range::Exact(exact)));
+        assert!(!facts.removable_call(expression));
+    }
+
+    #[test]
+    fn removal_proof_cannot_cross_context_curve_or_project() {
+        let source = concat!(
+            "function Pure(n){return n;}",
+            "template Check(n){var x=n;var y=Pure(x);}",
+            "component main=Check(1);"
+        );
+        let lifted = fixture(source, "bound-proof");
+        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let definition = lifted.hir.definition("Check").unwrap();
+        let main = provider.graph().calls_from(CallOwner::Main(0))[0];
+        let CallReachability::Reachable(call) =
+            provider.graph().reachable_main_call(main.id(), &lifted.hir)
+        else {
+            panic!("main call must be reachable")
+        };
+        let evidence = provider.main_evidence(&call).unwrap();
+        let cfg = build_cfg(&lifted.hir, definition).unwrap();
+        let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+        let site = provider.graph().calls_from(CallOwner::Definition(definition))[0];
+        let expression = site.expression.unwrap();
+        assert!(facts.removable_call(expression));
+
+        let field = FieldContext::for_curve(Curve::Bn254);
+        let sibling = provider
+            .context_for(definition, vec![ArgumentValue::Scalar(field.canonical(2.into()))])
+            .unwrap();
+        assert!(!provider.certified_scalar_evidence(&sibling, &facts).removable_call(expression));
+        let other_curve = ProjectSummaries::build(&lifted, Curve::Goldilocks).unwrap();
+        let curve_context = other_curve
+            .context_for(
+                definition,
+                vec![ArgumentValue::Scalar(
+                    FieldContext::for_curve(Curve::Goldilocks).canonical(1.into()),
+                )],
+            )
+            .unwrap();
+        assert!(!other_curve
+            .certified_scalar_evidence(&curve_context, &facts)
+            .removable_call(expression));
+        let other_project = fixture(source, "foreign-proof");
+        let foreign = ProjectSummaries::build(&other_project, Curve::Bn254).unwrap();
+        let foreign_definition = other_project.hir.definition("Check").unwrap();
+        let foreign_context = foreign
+            .context_for(foreign_definition, vec![ArgumentValue::Scalar(field.canonical(1.into()))])
+            .unwrap();
+        assert!(!foreign
+            .certified_scalar_evidence(&foreign_context, &facts)
+            .removable_call(expression));
     }
 }

@@ -29,6 +29,12 @@ pub enum FunctionEffect {
 pub struct FunctionEffects(Set<FunctionEffect>);
 
 impl FunctionEffects {
+    /// Whether the complete reachable function context has no observable effects.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.0.iter().next().is_none()
+    }
+
     #[must_use]
     pub fn contains(&self, effect: FunctionEffect) -> bool {
         self.0.iter().any(|item| *item == effect)

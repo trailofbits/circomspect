@@ -6,13 +6,16 @@ use parser::hir::{DefinitionRef, ExprId, HirProject, ProjectIdentity};
 use program_structure::utils::constants::Curve;
 
 use crate::hir_facts::FieldValue;
+use crate::interprocedural::CallContext;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ScalarExpressionEvidence {
     project: ProjectIdentity,
     definition: DefinitionRef,
     curve: Curve,
+    context: CallContext,
     values: BTreeMap<ExprId, ExactScalarResult>,
+    removable_calls: BTreeSet<ExprId>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -28,8 +31,15 @@ enum ScalarOrigin {
 }
 
 impl ScalarExpressionEvidence {
-    pub(crate) fn empty(hir: &HirProject, definition: DefinitionRef, curve: Curve) -> Self {
-        Self { project: hir.identity(), definition, curve, values: BTreeMap::new() }
+    pub(crate) fn empty(hir: &HirProject, context: &CallContext, curve: Curve) -> Self {
+        Self {
+            project: hir.identity(),
+            definition: context.definition(),
+            curve,
+            context: context.clone(),
+            values: BTreeMap::new(),
+            removable_calls: BTreeSet::new(),
+        }
     }
 
     pub(crate) fn belongs_to(
@@ -57,6 +67,20 @@ impl ScalarExpressionEvidence {
         let result = self.values.get(&expression)?;
         let ScalarOrigin::FunctionReturn { .. } = &result.origin else { return None };
         Some(&result.value)
+    }
+
+    pub(crate) fn context(&self) -> &CallContext {
+        &self.context
+    }
+
+    pub(crate) fn removable_call(&self, expression: ExprId) -> bool {
+        self.removable_calls.contains(&expression) && self.call_value(expression).is_some()
+    }
+
+    pub(crate) fn certify_removable_call(&mut self, expression: ExprId) {
+        if self.call_value(expression).is_some() {
+            self.removable_calls.insert(expression);
+        }
     }
 
     pub(crate) fn call_input_dependencies(&self, expression: ExprId) -> Option<&BTreeSet<usize>> {
@@ -102,6 +126,9 @@ impl ScalarExpressionEvidence {
                 }
             }
         }
+        let prior = self.removable_calls.len();
+        self.removable_calls.extend(other.removable_calls.iter().copied());
+        changed |= self.removable_calls.len() != prior;
         Ok(changed)
     }
 
@@ -109,5 +136,6 @@ impl ScalarExpressionEvidence {
         self.project == other.project
             && self.definition == other.definition
             && self.curve == other.curve
+            && self.context == other.context
     }
 }

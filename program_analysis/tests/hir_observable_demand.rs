@@ -31,7 +31,11 @@ fn assignment_demands(source: &str, budget: Option<usize>) -> Vec<(String, Deman
     let mut demands = Vec::new();
     for id in facts.cfg().nodes() {
         let Some(node) = facts.cfg().node(*id) else { continue };
-        let CfgNodeKind::Assignment { target, .. } = &node.kind else { continue };
+        let (CfgNodeKind::Assignment { target, .. }
+        | CfgNodeKind::DeferredAssignment { target, .. }) = &node.kind
+        else {
+            continue;
+        };
         let Some(symbol) = lifted.hir.symbol(target.root) else { continue };
         demands.push((symbol.name.clone(), context.assignment_demand(*id, target)));
     }
@@ -238,4 +242,117 @@ fn independent_self_copy_follows_observation_without_creating_demand() {
         let Ok(fact) = result else { panic!("self-copy must retain observed demand") };
         assert_eq!(fact.certified(), Some(&AssignmentDemand::MayBeObserved));
     }
+}
+
+#[test]
+fn exact_effect_free_function_calls_can_be_removed_when_unused() {
+    for source in [
+        "function Pure(){return 7;}function Check(){var y=Pure();return 7;}",
+        "function Pure(){return 7;}function G(){return Pure();\
+            }function Check(){var y=G();return 7;}",
+        "function Pure(n){return n;}function Check(){var x=1;var y=Pure(x);return 7;}",
+        "function Pure(n){return n;}function G(){return 1;\
+            }function Check(){var y=Pure(G());return 7;}",
+    ] {
+        let results = assignment_demands(source, None);
+        assert!(!results.is_empty(), "{source}");
+        assert!(results.iter().all(|(_, result)| unobserved(result)), "{source}: {results:?}");
+    }
+}
+
+#[test]
+fn required_pure_call_result_retains_all_evaluated_argument_reads() {
+    for suffix in ["return y;", "assert(y);return 7;"] {
+        let source = format!(
+            "function Pure(n){{return 7;}}function Check(){{var x=1;var y=Pure(x);{suffix}}}"
+        );
+        let results = assignment_demands(&source, None);
+        assert_eq!(results.len(), 2);
+        for (_, result) in &results {
+            let Ok(fact) = result else { panic!("observed call must have certified demand") };
+            assert_eq!(fact.certified(), Some(&AssignmentDemand::MayBeObserved));
+        }
+    }
+    let witness = assignment_demands(
+        "function Pure(n){return 7;}template Check(){var x=1;var y=Pure(x);signal output z;z<==y;}",
+        None,
+    );
+    assert_eq!(witness.len(), 2);
+    assert!(witness.iter().all(|(_, result)| !unobserved(result)));
+
+    let nested = assignment_demands(
+        "function Inner(n){return n;}function Outer(n){return 7;}\
+         function Check(){var x=1;var y=Outer(Inner(x));return y;}",
+        None,
+    );
+    assert_eq!(nested.len(), 2);
+    assert!(nested.iter().all(|(_, result)| !unobserved(result)));
+}
+
+#[test]
+fn impure_nested_or_invalid_calls_never_release_a_removal_proof() {
+    for source in [
+        "function Loggy(){log(1);return 2;}function Ignore(n){return 7;\
+            }function Check(){var y=Ignore(Loggy());return 7;}",
+        "function Assertive(){assert(1);return 2;}function Ignore(n){return 7;\
+            }function Check(){var y=Ignore(Assertive());return 7;}",
+        "function Cycle(){return Cycle();}function Check(){var y=Cycle();return 7;}",
+        "function Bad(){var x=1/0;return 7;}function Check(){var y=Bad();return 7;}",
+        "function Bad(){var x=Missing();return 7;}function Check(){var y=Bad();return 7;}",
+        "function Bad(){return 7;var x=Missing();}function Check(){var y=Bad();return 7;}",
+        "function Bad(n,n){return 7;}function Check(){var y=Bad(1,2);return 7;}",
+        "function Pure(n){return 7;}function Check(n){var y=Pure(n);return 7;}",
+        "function Pure(){return 7;}function Check(){var y[1];y[0]=Pure();return 7;}",
+        "function Pure(n){return n;}template Check(){signal input s;var x=s;var y=Pure(x);}",
+    ] {
+        let results = assignment_demands(source, None);
+        assert!(!results.is_empty(), "{source}");
+        assert!(results.iter().all(|(_, result)| !unobserved(result)), "{source}: {results:?}");
+    }
+
+    let budget = assignment_demands(
+        "function Pure(){return 7;}function Check(){var y=Pure();return 7;}",
+        Some(0),
+    );
+    assert_eq!(budget.len(), 1);
+    assert!(!unobserved(&budget[0].1));
+}
+
+#[test]
+fn independent_call_effects_follow_the_exact_callee_context() {
+    for (argument, removable) in [(0, true), (1, false)] {
+        let source = format!(
+            "function Gate(n){{if(n){{log(9);}}return 7;}}\
+             function Check(){{var y=Gate({argument});return 7;}}"
+        );
+        let results = assignment_demands(&source, None);
+        assert_eq!(results.len(), 1);
+        assert_eq!(unobserved(&results[0].1), removable, "{source}: {results:?}");
+    }
+}
+
+#[test]
+fn independent_nested_logging_arguments_never_lose_their_input_chain() {
+    let source = concat!(
+        "function Noisy(n){log(n);return 2;}function Ignore(n){return 7;}",
+        "function Check(){var x=1;var y=Ignore(Noisy(x));return 7;}"
+    );
+    for budget in (0..48).map(Some).chain([None]) {
+        let results = assignment_demands(source, budget);
+        assert_eq!(results.len(), 2);
+        assert!(results.iter().all(|(_, result)| !unobserved(result)), "{budget:?}: {results:?}");
+    }
+}
+
+#[test]
+fn independent_pure_call_chain_retains_transitive_removal() {
+    let mut source = String::from("function F0(){return 7;}");
+    for index in 1..8 {
+        let previous = index - 1;
+        source.push_str(&format!("function F{index}(){{return F{previous}();}}"));
+    }
+    source.push_str("function Check(){var y=F7();return 7;}");
+    let results = assignment_demands(&source, None);
+    assert_eq!(results.len(), 1);
+    assert!(unobserved(&results[0].1), "{results:?}");
 }

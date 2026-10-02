@@ -290,9 +290,11 @@ fn analyze_seeded<'a>(
         .with_resolved_deferred(resolved_deferred.clone());
     let backward =
         solve::<_, _, Backward>(cfg, &liveness, budget).map_err(AnalysisError::InvalidGraph)?;
-    let demand =
-        solve::<_, _, Backward>(cfg, &DemandAnalysis::new(hir, field, pruned_edges), budget)
-            .map_err(AnalysisError::InvalidGraph)?;
+    let demand_analysis = DemandAnalysis::new(hir, field, pruned_edges)
+        .with_calls(options.calls)
+        .with_resolved_deferred(resolved_deferred.clone());
+    let demand = solve::<_, _, Backward>(cfg, &demand_analysis, budget)
+        .map_err(AnalysisError::InvalidGraph)?;
     Ok(AnalysisFacts {
         hir,
         cfg: Cow::Borrowed(cfg),
@@ -373,6 +375,14 @@ fn forward_pruned_edges(
 impl AnalysisFacts<'_> {
     pub(crate) fn exact_call_value(&self, expression: ExprId) -> Option<&FieldValue> {
         self.calls.as_deref().and_then(|calls| calls.call_value(expression))
+    }
+
+    pub(crate) fn removable_call(&self, expression: ExprId) -> bool {
+        self.calls.as_deref().is_some_and(|calls| calls.removable_call(expression))
+    }
+
+    pub(crate) fn refined_context(&self) -> Option<&crate::interprocedural::CallContext> {
+        self.calls.as_deref().map(crate::scalar_evidence::ScalarExpressionEvidence::context)
     }
 
     fn forward_analysis(&self) -> ForwardAnalysis<'_> {
@@ -502,6 +512,7 @@ impl AnalysisFacts<'_> {
 
     pub(crate) fn matches_evidence(&self, evidence: &ContextEvidence) -> bool {
         self.evidence_binding.as_ref() == Some(evidence)
+            && self.calls.as_deref().map_or(true, |calls| calls.context() == evidence.context())
     }
 
     pub(crate) fn reachable_node(&self, node: NodeId) -> Fact<bool> {
