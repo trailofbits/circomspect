@@ -293,7 +293,7 @@ fn resolved_deferred_nodes(
     resolved
 }
 
-fn deferred_scalar_target(hir: &HirProject, target: &AccessPath) -> bool {
+pub(crate) fn deferred_scalar_target(hir: &HirProject, target: &AccessPath) -> bool {
     if !target.steps.is_empty() {
         return false;
     }

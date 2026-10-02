@@ -473,6 +473,8 @@ fn parameter_shape_validation_preserves_valid_and_unexecuted_operations() {
         ("n=1;", "2"),
         ("n=[1];", "[2]"),
         ("n=[1,2];", "[2]"),
+        ("var x[1];x=n;", "[2]"),
+        ("var x[1][1];x[0]=n;", "[2]"),
         ("n[0]=1;", "[2]"),
         ("n[0][0]=1;", "[[2]]"),
         ("if(0){n[1]=1;}", "[2]"),

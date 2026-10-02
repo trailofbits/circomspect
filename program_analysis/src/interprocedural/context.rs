@@ -1030,7 +1030,7 @@ impl<'a> ProjectSummaries<'a> {
             else {
                 continue;
             };
-            if parameters.contains(&target.root) {
+            if !crate::hir_facts::deferred_scalar_target(self.hir(), target) {
                 continue;
             }
             if self.proved_value_shape(*value, &aggregate, facts, 0) == ProvedValueShape::Aggregate
