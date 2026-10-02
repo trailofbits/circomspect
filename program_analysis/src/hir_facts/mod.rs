@@ -1,6 +1,7 @@
 //! Constraint provenance and certified local facts over the checked HIR CFG.
 
 mod access;
+mod access_query;
 mod domains;
 mod evaluation;
 mod field;
