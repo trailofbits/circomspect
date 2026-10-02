@@ -1,11 +1,14 @@
 mod support;
 
+use std::collections::BTreeSet;
 use std::fs;
 
 use circomspect_program_analysis::hir_cfg::build_cfg;
-use circomspect_program_analysis::interprocedural::{CallOwner, CallReachability, ProjectSummaries};
+use circomspect_program_analysis::interprocedural::{
+    CallOwner, CallReachability, ProjectSummaries, SummaryBlocker,
+};
 use circomspect_program_analysis::new_rules::{
-    run_registered, RuleContext, RuleKind, RuleResult, SourceMap,
+    run_registered, AbstentionReason, RuleContext, RuleKind, RuleResult, SourceMap,
 };
 use parser::hir::lift_project;
 use parser::new_frontend::{load_sources, Version, VersionPolicy};
@@ -185,6 +188,36 @@ fn reading_an_uninitialized_signal_is_not_a_side_effect_free_assignment() {
     let source = "template Check(){signal output s;var x=s;s<==1;}";
     run_case(source, "Check", |results, _| {
         assert_eq!(count(results, RuleKind::SideEffectFreeAssignment), 0);
+    });
+}
+
+#[test]
+fn assignment_after_a_failing_assertion_has_no_executed_unused_value() {
+    for source in [
+        "function Check(){assert(0);var x=1;return 7;}",
+        "function Check(){var z=1/0;var x=1;return 7;}",
+        "template Check(){if(1){assert(0);}var x=1;}",
+    ] {
+        run_case(source, "Check", |results, _| {
+            assert_eq!(count(results, RuleKind::UnusedVariableValue), 0, "{source}");
+            assert_eq!(count(results, RuleKind::SideEffectFreeAssignment), 0, "{source}");
+            let reason =
+                AbstentionReason::Summary(BTreeSet::from([SummaryBlocker::UnsupportedContext]));
+            assert!(results.abstentions().iter().any(|abstention| {
+                abstention.kind == RuleKind::UnusedVariableValue && abstention.reason == reason
+            }));
+        });
+    }
+    run_case("function Check(){assert(1);var x=1;return 7;}", "Check", |results, _| {
+        assert_eq!(count(results, RuleKind::UnusedVariableValue), 1);
+        assert_eq!(count(results, RuleKind::SideEffectFreeAssignment), 1);
+    });
+    run_case("function Check(){if(0){assert(0);}var x=1;return 7;}", "Check", |results, _| {
+        assert_eq!(count(results, RuleKind::UnusedVariableValue), 1);
+        assert_eq!(count(results, RuleKind::SideEffectFreeAssignment), 1);
+    });
+    run_case("function Check(p){assert(0);return 7;}", "Check", |results, _| {
+        assert_eq!(count(results, RuleKind::UnusedParameterValue), 0);
     });
 }
 

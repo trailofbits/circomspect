@@ -62,7 +62,7 @@ impl Rule for UseRule {
 }
 
 fn validated(context: &RuleContext<'_, '_, '_>, kind: RuleKind, result: &mut RuleResult) -> bool {
-    let Err(blocker) = context.validated_definition() else { return true };
+    let Err(blocker) = context.check_warning_execution_scope() else { return true };
     if let Some(span) = definition_span(context) {
         abstain(result, context, kind, span, summary_reason(blocker));
     }
