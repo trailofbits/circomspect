@@ -490,6 +490,44 @@ fn parameter_shape_validation_preserves_valid_and_unexecuted_operations() {
 }
 
 #[test]
+fn unrolled_scalar_checks_preserve_a_later_invalid_parameter_use() {
+    let source = concat!(
+        "template T(n){var sum=0;for(var i=0;i<64;i++){sum+=i+1;}",
+        "var bad=n[0];}component main=T(3);"
+    );
+    let error = parameter_operation_error(source).expect("invalid scalar argument index");
+    let diagnostic = error.diagnostic().expect("located parameter error");
+    assert_eq!(diagnostic.code, SemanticCode::InvalidArrayAccess);
+    assert_eq!(&source[diagnostic.span.start()..diagnostic.span.end()], "n[0]");
+}
+
+#[test]
+fn unrolled_scalar_checks_do_not_certify_a_budget_limited_range() {
+    let source = concat!(
+        "template T(n){var sum=0;for(var i=0;i<16;i++){sum+=i+1;}}",
+        "component main=T(3);"
+    );
+    let lifted = fixture(source, Version::new(2, 2, 3));
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let site = provider.graph().calls_from(CallOwner::Main(0))[0];
+    let CallReachability::Reachable(call) =
+        provider.graph().reachable_main_call(site.id(), provider.hir())
+    else {
+        panic!("main must be reachable")
+    };
+    let evidence = provider.main_evidence(&call).unwrap();
+    let cfg = build_cfg(provider.hir(), evidence.context().definition()).unwrap();
+    let facts = provider.analyze_for_evidence(&cfg, &evidence, Some(0)).unwrap();
+    let expression = lifted
+        .hir
+        .expressions()
+        .iter()
+        .find(|expression| &source[expression.span.start()..expression.span.end()] == "i+1")
+        .unwrap();
+    assert!(facts.range(expression.id).unavailable().is_some());
+}
+
+#[test]
 fn public_cfg_queries_follow_the_specialized_control_flow() {
     let source = concat!(
         "function F(){return 7;} ",

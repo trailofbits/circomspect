@@ -1,5 +1,6 @@
 //! Validate access bounds and assignment ranks in one concrete argument context.
 
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 
 use abstract_interpretation::graph::FlowGraph;
@@ -11,7 +12,7 @@ use parser::hir::{
 use parser::new_frontend::{AssignmentOperator, Span};
 
 use crate::hir_cfg::CfgNodeKind;
-use crate::hir_facts::{AnalysisFacts, FieldContext, Range};
+use crate::hir_facts::{AnalysisFacts, Fact, FieldContext, Range};
 use crate::interprocedural::{
     AnalyzeEvidenceError, ArgumentShape, ArgumentValue, CallContext, ProjectSummaries,
     SummaryBlocker,
@@ -96,6 +97,7 @@ struct ShapeValidator<'a, 'hir> {
     arguments: BTreeMap<SymbolId, &'a ArgumentValue>,
     facts: &'a AnalysisFacts<'hir>,
     field: &'a FieldContext,
+    ranges: RefCell<BTreeMap<ExprId, Fact<Range>>>,
 }
 
 impl ProjectSummaries<'_> {
@@ -109,6 +111,7 @@ impl ProjectSummaries<'_> {
             arguments: parameters.iter().copied().zip(context.arguments()).collect(),
             facts,
             field: self.field_context(),
+            ranges: RefCell::new(BTreeMap::new()),
         };
         for id in facts.cfg().nodes() {
             let Some(node) = facts.cfg().node(*id) else { continue };
@@ -123,6 +126,16 @@ impl ProjectSummaries<'_> {
 }
 
 impl ShapeValidator<'_, '_> {
+    fn range(&self, expression: ExprId) -> Fact<Range> {
+        let cached = self.ranges.borrow().get(&expression).cloned();
+        if let Some(cached) = cached {
+            return cached;
+        }
+        let fact = self.facts.range(expression);
+        self.ranges.borrow_mut().insert(expression, fact.clone());
+        fact
+    }
+
     fn node_failure(&self, kind: &CfgNodeKind) -> Option<ShapeFailure> {
         match kind {
             CfgNodeKind::Evaluate(id) => {
@@ -224,7 +237,7 @@ impl ShapeValidator<'_, '_> {
         match index {
             ArrayIndex::Constant(value) => self.field.parse(value),
             ArrayIndex::Symbolic(id) => {
-                let fact = self.facts.range(*id);
+                let fact = self.range(*id);
                 let Range::Exact(value) = fact.certified()? else { return None };
                 Some(value.clone())
             }
@@ -245,7 +258,7 @@ impl ShapeValidator<'_, '_> {
                 self.ternary_rank(*condition, *yes, *no, depth)
             }
             ExprKind::Unary { .. } | ExprKind::Binary { .. } | ExprKind::Call { .. } => {
-                let fact = self.facts.range(id);
+                let fact = self.range(id);
                 let Range::Exact(_) = fact.certified()? else { return None };
                 Some(0)
             }
@@ -270,7 +283,7 @@ impl ShapeValidator<'_, '_> {
         no: ExprId,
         depth: usize,
     ) -> Option<usize> {
-        if let Some(Range::Exact(value)) = self.facts.range(condition).certified() {
+        if let Some(Range::Exact(value)) = self.range(condition).certified() {
             let selected = if self.field.is_zero(value) { no } else { yes };
             return self.expression_rank(selected, depth + 1);
         }
