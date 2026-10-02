@@ -985,3 +985,70 @@ fn cached_queries_reject_foreign_curve_version_and_project_contexts() {
         Some(&std::collections::BTreeSet::from([SummaryBlocker::WrongContext]))
     );
 }
+
+#[test]
+fn complete_call_result_agrees_with_inlined_template_constraint() {
+    let lifted = fixture(
+        "function F(){return 7;} \
+         template Inline(){signal output out;out<==7;} \
+         template Called(){signal output out;out<==F();}",
+    );
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let field = FieldContext::for_curve(Curve::Bn254);
+    for name in ["Inline", "Called"] {
+        let DefinitionRef::Template(template) = lifted.hir.definition(name).unwrap() else {
+            panic!("template")
+        };
+        let port = lifted.hir.template(template).unwrap().ports[0];
+        let context = provider.symbolic_context_for(DefinitionRef::Template(template)).unwrap();
+        let summary = provider.template_port(template, &context, port);
+        assert_eq!(summary.certified().map(|item| item.incidence()), Some(Incidence::Must));
+        assert_eq!(
+            summary.certified().and_then(|item| item.fixed_value()),
+            Some(&field.canonical(7.into()))
+        );
+    }
+}
+
+#[test]
+fn complete_call_result_flows_through_a_local_variable() {
+    let lifted = fixture(
+        "function F(){return 7;} \
+         function Inline(){var t=7;return t;} \
+         function Called(){var t=F();return t;}",
+    );
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let expected = Range::Exact(FieldContext::for_curve(Curve::Bn254).canonical(7.into()));
+    for name in ["Inline", "Called"] {
+        let DefinitionRef::Function(function) = lifted.hir.definition(name).unwrap() else {
+            panic!("function")
+        };
+        let context = provider.symbolic_context_for(DefinitionRef::Function(function)).unwrap();
+        let summary = provider.function(function, &context);
+        assert_eq!(
+            summary.certified().and_then(|item| item.complete_return()),
+            Some(&expected),
+            "{name}: {summary:?}"
+        );
+    }
+}
+
+#[test]
+fn specialized_call_retains_its_return_argument_dependency() {
+    let lifted = fixture("function Id(a){return a;} function G(n){var t=Id(n);return t;}");
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let DefinitionRef::Function(g) = lifted.hir.definition("G").unwrap() else {
+        panic!("function G")
+    };
+    let field = FieldContext::for_curve(Curve::Bn254);
+    let context = provider
+        .context_for(
+            DefinitionRef::Function(g),
+            vec![ArgumentValue::Scalar(field.canonical(5.into()))],
+        )
+        .unwrap();
+    let summary = provider.function(g, &context);
+    let summary = summary.certified().unwrap();
+    assert_eq!(summary.complete_return(), Some(&Range::Exact(field.canonical(5.into()))));
+    assert_eq!(summary.input_dependencies(), &std::collections::BTreeSet::from([0]));
+}

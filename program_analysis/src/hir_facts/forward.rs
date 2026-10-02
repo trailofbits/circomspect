@@ -8,6 +8,7 @@ use parser::hir::{AccessPath, CallTarget, ExprId, ExprKind, HirProject, SymbolId
 use parser::new_frontend::{AssignmentOperator, BinaryOperator, PostfixOperator, UnaryOperator};
 
 use crate::hir_cfg::{CfgEdge, CfgNode, CfgNodeKind, DefinitionCfg, EdgeKind};
+use crate::call_evidence::ExactCallResults;
 
 use super::access::{key_for_path, AccessKey, MayAccessSet};
 use super::domains::DegreeUpper;
@@ -183,11 +184,12 @@ pub struct ForwardAnalysis<'a> {
     pub hir: &'a HirProject,
     pub field: &'a FieldContext,
     initial_values: BTreeMap<SymbolId, FieldValue>,
+    calls: Option<&'a ExactCallResults>,
 }
 
 impl<'a> ForwardAnalysis<'a> {
     pub fn new(hir: &'a HirProject, field: &'a FieldContext) -> Self {
-        Self { hir, field, initial_values: BTreeMap::new() }
+        Self { hir, field, initial_values: BTreeMap::new(), calls: None }
     }
 
     pub fn with_scalar_parameters(
@@ -195,7 +197,32 @@ impl<'a> ForwardAnalysis<'a> {
         field: &'a FieldContext,
         values: BTreeMap<SymbolId, FieldValue>,
     ) -> Self {
-        Self { hir, field, initial_values: values }
+        Self { hir, field, initial_values: values, calls: None }
+    }
+
+    pub(crate) fn with_scalar_parameters_and_calls(
+        hir: &'a HirProject,
+        field: &'a FieldContext,
+        values: BTreeMap<SymbolId, FieldValue>,
+        calls: Option<&'a ExactCallResults>,
+    ) -> Self {
+        Self { hir, field, initial_values: values, calls }
+    }
+
+    pub(crate) fn with_call_values(
+        hir: &'a HirProject,
+        field: &'a FieldContext,
+        calls: Option<&'a ExactCallResults>,
+    ) -> Self {
+        Self { hir, field, initial_values: BTreeMap::new(), calls }
+    }
+
+    pub(crate) fn evaluate(
+        &self,
+        expression: ExprId,
+        variables: &BTreeMap<SymbolId, FieldValue>,
+    ) -> Option<FieldValue> {
+        eval_expression_with_calls(self.hir, self.field, expression, variables, self.calls)
     }
 }
 
@@ -236,7 +263,7 @@ fn fixed_side(
     if !key.exact_alias(&key) {
         return None;
     }
-    let value = eval_expression(analysis.hir, analysis.field, value, variables)?;
+    let value = analysis.evaluate(value, variables)?;
     Some((key, value))
 }
 
@@ -252,7 +279,7 @@ fn fixed_equation(
         if !key.exact_alias(&key) {
             return None;
         }
-        let value = eval_expression(analysis.hir, analysis.field, left, variables)?;
+        let value = analysis.evaluate(left, variables)?;
         return Some((key, value));
     }
     let right = right?;
@@ -318,7 +345,7 @@ impl LinearizeAccesses for ExprId {
         analysis: &ForwardAnalysis<'_>,
         values: &BTreeMap<SymbolId, FieldValue>,
     ) -> Option<LinearForm> {
-        if eval_expression(analysis.hir, analysis.field, *self, values).is_some() {
+        if analysis.evaluate(*self, values).is_some() {
             return Some(LinearForm::default());
         }
         let expression = analysis.hir.expression(*self)?;
@@ -344,19 +371,17 @@ impl LinearizeAccesses for ExprId {
                 Some(form)
             }
             ExprKind::Binary { operator: BinaryOperator::Multiply, left, right } => {
-                let (factor, operand) = if let Some(factor) =
-                    eval_expression(analysis.hir, analysis.field, *left, values)
-                {
+                let (factor, operand) = if let Some(factor) = analysis.evaluate(*left, values) {
                     (factor, right)
                 } else {
-                    (eval_expression(analysis.hir, analysis.field, *right, values)?, left)
+                    (analysis.evaluate(*right, values)?, left)
                 };
                 let mut form = operand.linearize(analysis, values)?;
                 form.scale(analysis.field, &factor);
                 Some(form)
             }
             ExprKind::Ternary { condition, yes, no } => {
-                let condition = eval_expression(analysis.hir, analysis.field, *condition, values)?;
+                let condition = analysis.evaluate(*condition, values)?;
                 let selected = if analysis.field.is_zero(&condition) { no } else { yes };
                 selected.linearize(analysis, values)
             }
@@ -426,9 +451,7 @@ pub fn expression_dependencies(
         }
         ExprKind::Ternary { condition, yes, no } => {
             let mut result = expression_dependencies(analysis, *condition, values, variables)?;
-            let arms = if let Some(value) =
-                eval_expression(analysis.hir, analysis.field, *condition, values)
-            {
+            let arms = if let Some(value) = analysis.evaluate(*condition, values) {
                 if analysis.field.is_zero(&value) {
                     vec![*no]
                 } else {
@@ -444,6 +467,16 @@ pub fn expression_dependencies(
             expression_list_dependencies(analysis, items, values, variables)
         }
         ExprKind::Call { target: CallTarget::Function(_), arguments } => {
+            if let Some(indices) =
+                analysis.calls.and_then(|calls| calls.input_dependencies(expression))
+            {
+                let mut result = BTreeSet::new();
+                for index in indices {
+                    let argument = arguments.get(*index)?;
+                    result.extend(expression_dependencies(analysis, *argument, values, variables)?);
+                }
+                return Some(result);
+            }
             expression_list_dependencies(analysis, arguments, values, variables)
         }
         ExprKind::AnonymousComponent { arguments, inputs, .. } => {
@@ -528,13 +561,18 @@ pub fn expression_degree(
             }
         }
         ExprKind::Ternary { condition, yes, no } => {
-            if let Some(value) = eval_expression(analysis.hir, analysis.field, *condition, values) {
+            if let Some(value) = analysis.evaluate(*condition, values) {
                 let selected = if analysis.field.is_zero(&value) { no } else { yes };
                 expression_degree(analysis, *selected, values, degrees)
             } else {
                 expression_degree(analysis, *yes, values, degrees)
                     .max(expression_degree(analysis, *no, values, degrees))
             }
+        }
+        ExprKind::Call { .. }
+            if analysis.calls.and_then(|calls| calls.value(expression)).is_some() =>
+        {
+            DegreeUpper::Constant
         }
         ExprKind::Call { .. }
         | ExprKind::AnonymousComponent { .. }
@@ -588,11 +626,7 @@ fn assign_value(
     value: ExprId,
     variables: &mut BTreeMap<SymbolId, FieldValue>,
 ) {
-    let value = if target.steps.is_empty() {
-        eval_expression(analysis.hir, analysis.field, value, variables)
-    } else {
-        None
-    };
+    let value = if target.steps.is_empty() { analysis.evaluate(value, variables) } else { None };
     if let Some(value) = value {
         variables.insert(target.root, value);
     } else {
@@ -684,7 +718,7 @@ impl Transfer<ForwardAnalysis<'_>, ForwardState, String> for CfgNode {
                         .hir
                         .symbol(target.root)
                         .is_some_and(|symbol| symbol.kind == SymbolKind::Variable)
-                    && eval_expression(analysis.hir, analysis.field, *value, variables).is_some();
+                    && analysis.evaluate(*value, variables).is_some();
                 if !scalar {
                     return TransferOutcome::Opaque {
                         provisional: output,
@@ -782,8 +816,7 @@ impl Transfer<ForwardAnalysis<'_>, ForwardState, String> for CfgEdge {
         let Some(variables) = input.variables() else {
             return TransferOutcome::Known(ForwardState::Unreachable);
         };
-        let Some(value) = eval_expression(analysis.hir, analysis.field, condition, variables)
-        else {
+        let Some(value) = analysis.evaluate(condition, variables) else {
             return TransferOutcome::Known(input.clone());
         };
         let truth = !analysis.field.is_zero(&value);
@@ -803,12 +836,22 @@ pub fn eval_expression(
     id: ExprId,
     variables: &BTreeMap<SymbolId, FieldValue>,
 ) -> Option<FieldValue> {
+    eval_expression_with_calls(hir, field, id, variables, None)
+}
+
+pub(crate) fn eval_expression_with_calls(
+    hir: &HirProject,
+    field: &FieldContext,
+    id: ExprId,
+    variables: &BTreeMap<SymbolId, FieldValue>,
+    calls: Option<&ExactCallResults>,
+) -> Option<FieldValue> {
     let expression = hir.expression(id)?;
     match &expression.kind {
         ExprKind::Number(text) => field.parse(text),
         ExprKind::Access(path) if path.steps.is_empty() => variables.get(&path.root).cloned(),
         ExprKind::Unary { operator, operand } => {
-            let value = eval_expression(hir, field, *operand, variables)?;
+            let value = eval_expression_with_calls(hir, field, *operand, variables, calls)?;
             match operator {
                 UnaryOperator::Negate => Some(field.negate(&value)),
                 UnaryOperator::BooleanNot => {
@@ -818,8 +861,8 @@ pub fn eval_expression(
             }
         }
         ExprKind::Binary { operator, left, right } => {
-            let left = eval_expression(hir, field, *left, variables)?;
-            let right = eval_expression(hir, field, *right, variables)?;
+            let left = eval_expression_with_calls(hir, field, *left, variables, calls)?;
+            let right = eval_expression_with_calls(hir, field, *right, variables, calls)?;
             match operator {
                 BinaryOperator::Add => Some(field.add(&left, &right)),
                 BinaryOperator::Subtract => Some(field.subtract(&left, &right)),
@@ -842,11 +885,14 @@ pub fn eval_expression(
             }
         }
         ExprKind::Ternary { condition, yes, no } => {
-            let condition = eval_expression(hir, field, *condition, variables)?;
+            let condition = eval_expression_with_calls(hir, field, *condition, variables, calls)?;
             let selected = if field.is_zero(&condition) { no } else { yes };
-            eval_expression(hir, field, *selected, variables)
+            eval_expression_with_calls(hir, field, *selected, variables, calls)
         }
-        ExprKind::Parallel(operand) => eval_expression(hir, field, *operand, variables),
+        ExprKind::Parallel(operand) => {
+            eval_expression_with_calls(hir, field, *operand, variables, calls)
+        }
+        ExprKind::Call { target: CallTarget::Function(_), .. } => calls?.value(id).cloned(),
         ExprKind::Access(_)
         | ExprKind::Call { .. }
         | ExprKind::AnonymousComponent { .. }

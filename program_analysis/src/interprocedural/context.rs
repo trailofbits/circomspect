@@ -449,7 +449,7 @@ impl<'a> ProjectSummaries<'a> {
         Ok(values)
     }
 
-    fn exact_call_arguments(
+    pub(super) fn exact_call_arguments(
         &self,
         arguments: &[ExprId],
         facts: &AnalysisFacts<'_>,

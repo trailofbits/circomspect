@@ -5,9 +5,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use abstract_interpretation::graph::{EdgeId, EdgeRef, FlowGraph, GraphError, IndexedGraph, NodeId};
 use parser::hir::{
     AccessPath, AccessStep, BlockId, ControlGuard, DefinitionRef, Effect, ExprId, ExprKind,
-    HirProject, IncompleteReason, SymbolId,
+    HirProject, IncompleteReason, SymbolId, SymbolKind,
 };
 use parser::new_frontend::{AssignmentOperator, BinaryOperator, PostfixOperator, Span};
+
+use crate::call_evidence::ExactCallResults;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Origin {
@@ -205,6 +207,7 @@ impl FlowGraph for DefinitionCfg {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum BuildError {
     ForeignDefinition,
+    ForeignCallResults,
     MissingBlock(BlockId),
     MissingExpression(ExprId),
     MissingSymbol(SymbolId),
@@ -225,8 +228,15 @@ struct LoopPlan {
     origin: Origin,
 }
 
+enum SpecializedAssignment {
+    Variable,
+    Witness,
+    Constraint,
+}
+
 struct Builder<'a> {
     hir: &'a HirProject,
+    calls: Option<&'a ExactCallResults>,
     nodes: Vec<CfgNode>,
     edges: Vec<(NodeId, NodeId, CfgEdge)>,
     conditions: BTreeMap<NodeId, (ExprId, ControlGuard)>,
@@ -488,20 +498,7 @@ impl Builder<'_> {
                 effect_origin,
             )),
             Effect::ConstraintAssignment { .. } => {
-                let tails = self.append(
-                    tails,
-                    CfgNodeKind::Witness { target: target.clone(), value },
-                    effect_origin,
-                );
-                Ok(self.append(
-                    tails,
-                    CfgNodeKind::Constraint {
-                        target: Some(target.clone()),
-                        left: value,
-                        right: None,
-                    },
-                    effect_origin,
-                ))
+                Ok(self.append_constraint_assignment(tails, target, value, effect_origin))
             }
             Effect::DeferredVariableAssignment { operator, .. } => Ok(self.append(
                 tails,
@@ -512,18 +509,88 @@ impl Builder<'_> {
                 },
                 origin,
             )),
-            Effect::OpaqueAssignment { operator, reason, .. } => Ok(self.append(
-                tails,
-                CfgNodeKind::OpaqueAssignment {
-                    target: target.clone(),
-                    value,
-                    operator: *operator,
-                    reason: reason.clone(),
-                },
-                effect_origin,
-            )),
+            Effect::OpaqueAssignment { operator, reason, .. } => {
+                if let Some(kind) = self.specialized_assignment(effect) {
+                    let tails = match kind {
+                        SpecializedAssignment::Variable => self.append(
+                            tails,
+                            CfgNodeKind::Assignment {
+                                target: target.clone(),
+                                value,
+                                operator: *operator,
+                            },
+                            effect_origin,
+                        ),
+                        SpecializedAssignment::Witness => self.append(
+                            tails,
+                            CfgNodeKind::Witness { target: target.clone(), value },
+                            effect_origin,
+                        ),
+                        SpecializedAssignment::Constraint => {
+                            self.append_constraint_assignment(tails, target, value, effect_origin)
+                        }
+                    };
+                    return Ok(tails);
+                }
+                Ok(self.append(
+                    tails,
+                    CfgNodeKind::OpaqueAssignment {
+                        target: target.clone(),
+                        value,
+                        operator: *operator,
+                        reason: reason.clone(),
+                    },
+                    effect_origin,
+                ))
+            }
             _ => Err(BuildError::UnexpectedEffect),
         }
+    }
+
+    fn append_constraint_assignment(
+        &mut self,
+        tails: Tails,
+        target: &AccessPath,
+        value: ExprId,
+        origin: Origin,
+    ) -> Tails {
+        let tails =
+            self.append(tails, CfgNodeKind::Witness { target: target.clone(), value }, origin);
+        self.append(
+            tails,
+            CfgNodeKind::Constraint { target: Some(target.clone()), left: value, right: None },
+            origin,
+        )
+    }
+
+    fn specialized_assignment(&self, effect: &Effect) -> Option<SpecializedAssignment> {
+        let Effect::OpaqueAssignment { target, value, operator, reason, .. } = effect else {
+            return None;
+        };
+        if *reason != IncompleteReason::UnknownType || !target.steps.is_empty() {
+            return None;
+        }
+        self.calls?.value(*value)?;
+        let symbol = self.hir.symbol(target.terminal)?;
+        if symbol.rank != 0 || !symbol.shape_checked {
+            return None;
+        }
+        if symbol.kind == SymbolKind::Variable && *operator == AssignmentOperator::Assign {
+            return Some(SpecializedAssignment::Variable);
+        }
+        if symbol.kind == SymbolKind::Signal
+            && (*operator == AssignmentOperator::Witness
+                || *operator == AssignmentOperator::ReverseWitness)
+        {
+            return Some(SpecializedAssignment::Witness);
+        }
+        if symbol.kind == SymbolKind::Signal
+            && (*operator == AssignmentOperator::Constraint
+                || *operator == AssignmentOperator::ReverseConstraint)
+        {
+            return Some(SpecializedAssignment::Constraint);
+        }
+        None
     }
 
     fn if_effect(
@@ -795,9 +862,29 @@ fn effect_span(effect: &Effect, block_span: Span) -> Span {
 
 /// Build a CFG from a checked HIR definition without changing the legacy analysis path.
 pub fn build_cfg(hir: &HirProject, definition: DefinitionRef) -> Result<DefinitionCfg, BuildError> {
+    build_cfg_inner(hir, definition, None)
+}
+
+pub(crate) fn build_cfg_with_exact_calls(
+    hir: &HirProject,
+    definition: DefinitionRef,
+    calls: &ExactCallResults,
+) -> Result<DefinitionCfg, BuildError> {
+    if !calls.belongs_to_definition(hir, definition) {
+        return Err(BuildError::ForeignCallResults);
+    }
+    build_cfg_inner(hir, definition, Some(calls))
+}
+
+fn build_cfg_inner<'a>(
+    hir: &'a HirProject,
+    definition: DefinitionRef,
+    calls: Option<&'a ExactCallResults>,
+) -> Result<DefinitionCfg, BuildError> {
     let (body, local_symbols) = definition_symbols(hir, definition)?;
     let mut builder = Builder {
         hir,
+        calls,
         nodes: Vec::new(),
         edges: Vec::new(),
         conditions: BTreeMap::new(),

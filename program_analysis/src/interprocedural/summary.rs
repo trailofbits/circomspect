@@ -9,10 +9,8 @@ use abstract_interpretation::solver::{
 use parser::hir::{CallTarget, DefinitionRef, ExprId, ExprKind, Function, FunctionId};
 use parser::new_frontend::{AssignmentOperator, BinaryOperator};
 
-use crate::hir_cfg::{build_cfg, CfgNodeKind, DefinitionCfg};
-use crate::hir_facts::{
-    analyze_with_scalar_parameters, exact_compile_time, AnalysisFacts, Fact, FieldContext, Range,
-};
+use crate::hir_cfg::{CfgNodeKind, DefinitionCfg};
+use crate::hir_facts::{exact_compile_time, AnalysisFacts, Fact, FieldContext, Range};
 
 use super::{CallContext, CallOwner, CallReachability, ProjectSummaries, SummaryBlocker};
 
@@ -465,17 +463,14 @@ impl ProjectSummaries<'_> {
         }
         self.check_context(context)?;
         let parameters = context.scalar_seeds(&function.parameters)?;
-        let cfg = build_cfg(self.hir(), DefinitionRef::Function(id))
-            .map_err(|error| SummaryBlocker::LocalAnalysis(format!("{error:?}")))?;
-        let field = FieldContext::for_curve(self.curve().clone());
-        let facts = analyze_with_scalar_parameters(self.hir(), &cfg, &field, parameters, None)
-            .map_err(|error| SummaryBlocker::LocalAnalysis(format!("{error:?}")))?;
-        if let Some(expression) =
-            self.invalid_deferred_assignment(&cfg, &function.parameters, context, &facts)
-        {
-            return Err(SummaryBlocker::InvalidAssignment(expression));
-        }
-        work(function, &cfg, &facts)
+        self.with_refined_facts(DefinitionRef::Function(id), parameters, |cfg, facts| {
+            if let Some(expression) =
+                self.invalid_deferred_assignment(cfg, &function.parameters, context, facts)
+            {
+                return Err(SummaryBlocker::InvalidAssignment(expression));
+            }
+            work(function, cfg, facts)
+        })
     }
 
     fn reachable_function_calls(
@@ -488,6 +483,11 @@ impl ProjectSummaries<'_> {
         let mut calls = BTreeMap::new();
         for site in self.graph().calls_from(owner) {
             let Some(DefinitionRef::Function(_)) = site.resolved() else { continue };
+            if site.provenance == super::CallProvenance::Provisional
+                && site.expression.is_some_and(|id| facts.exact_call_value(id).is_some())
+            {
+                continue;
+            }
             let call = match self.graph().reachable_call(site.id(), facts) {
                 CallReachability::Unreachable => continue,
                 CallReachability::Reachable(call) => call,
@@ -561,7 +561,9 @@ impl ProjectSummaries<'_> {
             if let Some(ExprKind::Call { .. }) =
                 self.hir().expression(*expression).map(|expr| &expr.kind)
             {
-                return Err(SummaryBlocker::ExternalSummary);
+                if facts.exact_call_value(*expression).is_none() {
+                    return Err(SummaryBlocker::ExternalSummary);
+                }
             }
             let range = certified(&facts.range(*expression))?.clone();
             let dependencies = facts.dependencies(*expression);
