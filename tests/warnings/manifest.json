@@ -758,11 +758,21 @@
       "expected": "abstain",
       "truth": "undetermined",
       "compiler_class": "no_main",
-      "reason": "closed main leaves b unread; exported library may have unknown consumers",
+      "reason": "Uninstantiated Main contains Child; external callers leave output use unknown",
       "legacy_rule_id": "CS0018",
-      "legacy_observed_count": 0,
-      "legacy_analyzed": false,
-      "legacy_observed_evidence": []
+      "legacy_observed_count": 1,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": [
+        {
+          "message": "The output signal `b` defined by the template `Child` is not constrained in `Main`.",
+          "span": {
+            "endColumn": 26,
+            "endLine": 10,
+            "startColumn": 19,
+            "startLine": 10
+          }
+        }
+      ]
     },
     {
       "id": "complexity_emit",

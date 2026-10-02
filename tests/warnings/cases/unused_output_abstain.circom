@@ -5,3 +5,8 @@ template Child(){
     a <== 1;
     b <== 2;
 }
+template Main() {
+    signal output out;
+    component c = Child();
+    out <== c.a;
+}

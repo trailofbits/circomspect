@@ -954,6 +954,40 @@ fn complete_reads_of_nested_output_elements_do_not_emit_unused_warning() {
 }
 
 #[test]
+fn use_corpus_replays_each_declared_scope_and_outcome() {
+    let root =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().join("tests/warnings");
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.join("manifest.json")).unwrap()).unwrap();
+    let mut checked = 0;
+    for case in manifest["cases"].as_array().unwrap() {
+        let kind = if case["rule"] == "side_effect_free_assignment" {
+            RuleKind::SideEffectFreeAssignment
+        } else if case["rule"] == "unused_output" {
+            RuleKind::UnusedOutputSignal
+        } else {
+            continue;
+        };
+        let source = fs::read_to_string(root.join(case["source"].as_str().unwrap())).unwrap();
+        run_case(&source, case["scope"].as_str().unwrap(), |results, _| {
+            let findings = count(results, kind);
+            let abstained = results.abstentions().iter().any(|item| item.kind == kind);
+            match case["expected"].as_str().unwrap() {
+                "emit" => assert_eq!(findings, 1, "{case}"),
+                "no_finding" => assert_eq!(findings, 0, "{case}"),
+                "abstain" => {
+                    assert_eq!(findings, 0, "{case}");
+                    assert!(abstained, "{case}");
+                }
+                outcome => panic!("unexpected corpus outcome: {outcome}"),
+            }
+        });
+        checked += 1;
+    }
+    assert_eq!(checked, 6);
+}
+
+#[test]
 fn pure_calls_reuse_certified_arithmetic_argument_safety() {
     for (body, expected) in [
         ("function Check(){var y=Pure(1+2);return 7;}", 1),
