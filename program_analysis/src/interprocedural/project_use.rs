@@ -31,6 +31,12 @@ enum OutputTarget {
     Exported(Box<AccessHandle>),
 }
 
+#[derive(Clone, Copy)]
+enum MainSourceScope {
+    WholeProject,
+    ModelDefinitions,
+}
+
 /// A project-wide output-use result for one bounded main-rooted instance chain.
 ///
 /// Only the provider can construct this after validating main, project
@@ -445,8 +451,29 @@ impl ProjectSummaries<'_> {
         facts: &AnalysisFacts<'_>,
         main: &ContextEvidence,
     ) -> Result<(), SummaryBlocker> {
+        self.check_main_identity(facts, main, MainSourceScope::WholeProject)
+    }
+
+    pub(super) fn check_model_main_root(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        main: &ContextEvidence,
+    ) -> Result<(), SummaryBlocker> {
+        self.check_main_identity(facts, main, MainSourceScope::ModelDefinitions)
+    }
+
+    fn check_main_identity(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        main: &ContextEvidence,
+        source: MainSourceScope,
+    ) -> Result<(), SummaryBlocker> {
         self.check_facts_for_evidence(facts, main)?;
-        if !self.source_complete() || self.hir().mains().len() != 1 {
+        let complete = match source {
+            MainSourceScope::WholeProject => self.source_complete(),
+            MainSourceScope::ModelDefinitions => self.model_source_complete(facts.definition()),
+        };
+        if !complete || self.hir().mains().len() != 1 {
             return Err(SummaryBlocker::ExternalSummary);
         }
         let ContextOrigin::Main(id) = main.origin() else {

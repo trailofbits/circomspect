@@ -158,7 +158,7 @@ impl ProjectSummaries<'_> {
         requested: RequestedBits<'_>,
         budget: &mut ProofBudget,
     ) -> Result<ComponentBitAmbiguityOutcome, SummaryBlocker> {
-        self.check_main_root(facts, applied.caller_evidence())?;
+        self.check_model_main_root(facts, applied.caller_evidence())?;
         self.validated_definition(facts)?;
         self.check_warning_execution_scope(facts, applied.caller_evidence())?;
         self.check_parent_components_complete(facts)?;

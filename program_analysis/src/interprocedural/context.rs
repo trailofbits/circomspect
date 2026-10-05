@@ -354,6 +354,79 @@ impl<'a> ProjectSummaries<'a> {
             && self.lifted.incomplete.is_empty()
     }
 
+    pub(super) fn model_source_complete(&self, active: DefinitionRef) -> bool {
+        if !self.lifted.syntax_diagnostics.is_empty() {
+            return false;
+        }
+        let connected = self.connected_definitions(active);
+        for diagnostic in &self.lifted.diagnostics {
+            if !self.other_definition_body_contains(diagnostic.span, &connected) {
+                return false;
+            }
+        }
+        for region in &self.lifted.incomplete {
+            let scoped = match &region.reason {
+                IncompleteReason::Syntax | IncompleteReason::Include => false,
+                IncompleteReason::MissingReference(_)
+                | IncompleteReason::AmbiguousReference(_)
+                | IncompleteReason::WrongKind(_)
+                | IncompleteReason::UnknownType
+                | IncompleteReason::UnknownSymbol(_)
+                | IncompleteReason::NonCompileTime
+                | IncompleteReason::InvalidAssignment
+                | IncompleteReason::Unsupported(_) => region
+                    .span()
+                    .is_some_and(|span| self.other_definition_body_contains(span, &connected)),
+            };
+            if !scoped {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn connected_definitions(&self, active: DefinitionRef) -> BTreeSet<DefinitionRef> {
+        let mut connected = BTreeSet::new();
+        let mut pending = vec![active];
+        while let Some(definition) = pending.pop() {
+            if !connected.insert(definition) {
+                continue;
+            }
+            for site in self.graph().calls_from(CallOwner::Definition(definition)) {
+                if let Some(callee) = site.resolved() {
+                    pending.push(callee);
+                }
+            }
+        }
+        connected
+    }
+
+    fn other_definition_body_contains(
+        &self,
+        span: Span,
+        connected: &BTreeSet<DefinitionRef>,
+    ) -> bool {
+        for function in self.hir().functions() {
+            if connected.contains(&DefinitionRef::Function(function.id)) {
+                continue;
+            }
+            let Some(body) = self.hir().block(function.body) else { continue };
+            if SourceScope::from_span(body.span).contains(span) {
+                return true;
+            }
+        }
+        for template in self.hir().templates() {
+            if connected.contains(&DefinitionRef::Template(template.id)) {
+                continue;
+            }
+            let Some(body) = self.hir().block(template.body) else { continue };
+            if SourceScope::from_span(body.span).contains(span) {
+                return true;
+            }
+        }
+        false
+    }
+
     pub(crate) fn validated_header(
         &self,
         definition: DefinitionRef,

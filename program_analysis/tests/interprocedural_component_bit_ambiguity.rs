@@ -277,6 +277,42 @@ fn checked_handles_support_parameterized_canonical_loop_children() {
 }
 
 #[test]
+fn unrelated_semantic_error_does_not_hide_a_complete_main_child_query() {
+    let base = source_width(1, "component c=Convert(1);c.in<==0;", "in*(in-1)===0;");
+    for body in ["function Broken(){return Missing();}", "template Broken(){var unused=Missing();}"]
+    {
+        let unrelated =
+            base.replace("component main=Parent();", &format!("{body}component main=Parent();"));
+        assert_eq!(
+            inspect_with(&unrelated, None, Curve::Goldilocks, 1, QueryForm::Handles),
+            Some(ComponentBitAmbiguityOutcome::NoCertificate(
+                NoBitAmbiguityCertificate::WidthBelowFieldModulus
+            )),
+            "{body}"
+        );
+    }
+
+    let child = source_width(1, "component c=Convert(1);c.in<==0;", "var bad=Missing();");
+    assert!(inspect_with(&child, None, Curve::Goldilocks, 1, QueryForm::Handles).is_none());
+    let include = format!("include \"missing-model-scope.circom\";{base}");
+    assert!(inspect_with(&include, None, Curve::Goldilocks, 1, QueryForm::Handles).is_none());
+    let header = base.replace(
+        "component main=Parent();",
+        "function Broken(x,x){return x;}component main=Parent();",
+    );
+    assert!(inspect_with(&header, None, Curve::Goldilocks, 1, QueryForm::Handles).is_none());
+    let main = base.replace("component main=Parent();", "component main=Missing();");
+    assert!(inspect_with(&main, None, Curve::Goldilocks, 1, QueryForm::Handles).is_none());
+    let connected = base.replace(
+        "component main=Parent();",
+        "function Broken(){return Missing();}component main=Parent();",
+    );
+    let connected = connected
+        .replace("component c=Convert(1);", "var ignored=Broken();component c=Convert(1);");
+    assert!(inspect_with(&connected, None, Curve::Goldilocks, 1, QueryForm::Handles).is_none());
+}
+
+#[test]
 fn generated_input_seeds_and_witness_values_have_distinct_provenance() {
     for (parent, child, expected) in [
         ("signal input x;x===7;component c=Convert(64);c.in<==x;", "", 7),
