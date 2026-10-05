@@ -223,6 +223,16 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
         self.summaries.template_bit_ambiguity(self.facts, self.evidence, input, bits)
     }
 
+    /// Prove two complete bit models for checked ports in this root template.
+    #[must_use]
+    pub fn template_bit_ambiguity_handles(
+        &self,
+        input: &AccessHandle,
+        bits: &[AccessHandle],
+    ) -> SummaryFact<BitAmbiguityOutcome> {
+        self.summaries.template_bit_ambiguity_handles(self.facts, self.evidence, input, bits)
+    }
+
     /// Request a source-valid bit relation in this validated root template scope.
     #[must_use]
     pub fn template_bit_decomposition(

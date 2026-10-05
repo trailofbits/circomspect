@@ -7,9 +7,11 @@ use parser::new_frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
 
 use crate::hir_cfg::build_cfg;
-use crate::hir_facts::relations::ambiguity::{validate_models, CandidateModel};
+use crate::hir_facts::relations::ambiguity::{
+    generated_models_satisfy, validate_models, CandidateModel,
+};
 use crate::hir_facts::relations::complete::ProofBudget;
-use crate::hir_facts::{AnalysisFacts, BitAmbiguityOutcome};
+use crate::hir_facts::{AnalysisFacts, BitAmbiguityOutcome, FieldContext};
 use crate::interprocedural::ProjectSummaries;
 
 fn path(hir: &HirProject, name: &str, index: Option<usize>) -> AccessPath {
@@ -118,5 +120,60 @@ fn partial_assignment_cannot_be_validated_even_after_another_pair_succeeded() {
             &mut ProofBudget::default(),
         );
         assert!(result.is_err());
+    });
+}
+
+#[test]
+fn one_checked_model_requires_every_equation_and_a_complete_assignment() {
+    with_facts(|facts, input, bits| {
+        let result = facts.local_bit_ambiguity(input, bits, &mut ProofBudget::default());
+        let Some(BitAmbiguityOutcome::Proved(certificate)) = result.certified() else {
+            panic!("complete model pair required: {result:?}");
+        };
+        let generated = facts.generated_equation_sites(&mut ProofBudget::default());
+        let generated = generated.certified().unwrap();
+        let first = &certificate.assignments()[0];
+        assert!(generated_models_satisfy(
+            facts.field,
+            generated,
+            &[first],
+            &mut ProofBudget::default()
+        )
+        .unwrap());
+
+        let mut changed = first.clone();
+        changed
+            .insert(certificate.decomposition().bits()[0].clone(), facts.field.canonical(1.into()));
+        assert!(!generated_models_satisfy(
+            facts.field,
+            generated,
+            &[&changed],
+            &mut ProofBudget::default(),
+        )
+        .unwrap());
+
+        changed.remove(certificate.decomposition().input());
+        assert!(generated_models_satisfy(
+            facts.field,
+            generated,
+            &[&changed],
+            &mut ProofBudget::default(),
+        )
+        .is_err());
+        assert!(generated_models_satisfy(
+            facts.field,
+            generated,
+            &[first],
+            &mut ProofBudget::limited(4096, 262_144, 4096, 0),
+        )
+        .is_err());
+        let foreign = FieldContext::for_curve(Curve::Bn254);
+        assert!(generated_models_satisfy(
+            &foreign,
+            generated,
+            &[first],
+            &mut ProofBudget::default(),
+        )
+        .is_err());
     });
 }

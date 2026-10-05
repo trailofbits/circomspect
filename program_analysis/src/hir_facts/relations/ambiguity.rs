@@ -5,14 +5,16 @@ mod control;
 use std::collections::{BTreeMap, BTreeSet};
 
 use num_bigint::BigUint;
-use parser::hir::{AccessPath, AccessStep, SymbolKind};
+use parser::hir::{AccessPath, SymbolKind};
 use parser::new_frontend::PortDirection;
 
 use crate::hir_cfg::Origin;
-use crate::hir_facts::relations::complete::{GeneratedEquationSites, ProofBudget};
+use crate::hir_facts::relations::complete::{
+    GeneratedConstraintSite, GeneratedEquationSites, ProofBudget,
+};
 use crate::hir_facts::{
-    AccessKey, AccessKeyStep, AnalysisFacts, BitDecomposition, Fact, FactBlocker, FieldContext,
-    FieldValue,
+    AccessHandle, AccessKey, AccessKeyStep, AnalysisFacts, BitDecomposition, Fact, FactBlocker,
+    FieldContext, FieldValue,
 };
 
 /// Outcome of the bounded search for two satisfying bit representations.
@@ -51,7 +53,7 @@ impl BitRepresentation {
         &self.bits
     }
 
-    fn new(integer: BigUint, width: usize) -> Option<Self> {
+    pub(crate) fn new(integer: BigUint, width: usize) -> Option<Self> {
         if integer >= BigUint::from(1_u8) << width {
             return None;
         }
@@ -118,7 +120,24 @@ impl AnalysisFacts<'_> {
         bits: &[AccessPath],
         budget: &mut ProofBudget,
     ) -> Fact<BitAmbiguityOutcome> {
-        match self.bit_ambiguity_result(input, bits, budget) {
+        self.local_bit_ambiguity_from_relation(self.bit_decomposition(input, bits), budget)
+    }
+
+    pub(crate) fn local_bit_ambiguity_handles(
+        &self,
+        input: &AccessHandle,
+        bits: &[AccessHandle],
+        budget: &mut ProofBudget,
+    ) -> Fact<BitAmbiguityOutcome> {
+        self.local_bit_ambiguity_from_relation(self.bit_decomposition_handles(input, bits), budget)
+    }
+
+    fn local_bit_ambiguity_from_relation(
+        &self,
+        relation: Fact<Option<BitDecomposition>>,
+        budget: &mut ProofBudget,
+    ) -> Fact<BitAmbiguityOutcome> {
+        match self.bit_ambiguity_result(relation, budget) {
             Ok(result) => Fact::known(result),
             Err(blockers) => Fact::blocked(blockers),
         }
@@ -126,13 +145,10 @@ impl AnalysisFacts<'_> {
 
     fn bit_ambiguity_result(
         &self,
-        input: &AccessPath,
-        bits: &[AccessPath],
+        relation: Fact<Option<BitDecomposition>>,
         budget: &mut ProofBudget,
     ) -> Result<BitAmbiguityOutcome, BTreeSet<FactBlocker>> {
-        self.check_model_paths(input, bits)?;
         let path = self.unique_generation_path(budget)?;
-        let relation = self.bit_decomposition(input, bits);
         let Some(relation) = relation.certified() else {
             return Err(relation
                 .unavailable()
@@ -142,6 +158,7 @@ impl AnalysisFacts<'_> {
         let Some(relation) = relation else {
             return Ok(no_certificate(NoBitAmbiguityCertificate::NoMatchingDecomposition));
         };
+        self.check_requested_model_keys(relation)?;
         let generated = self.generated_equation_sites(budget);
         let Some(generated) = generated.certified() else {
             return Err(generated
@@ -182,22 +199,14 @@ impl AnalysisFacts<'_> {
         Ok(())
     }
 
-    fn check_model_paths(
+    fn check_requested_model_keys(
         &self,
-        input: &AccessPath,
-        bits: &[AccessPath],
+        relation: &BitDecomposition,
     ) -> Result<(), BTreeSet<FactBlocker>> {
-        for path in std::iter::once(input).chain(bits) {
-            for step in &path.steps {
-                match step {
-                    AccessStep::Index { .. } => {}
-                    AccessStep::Port { .. } | AccessStep::Tag { .. } => {
-                        return Err(BTreeSet::from([FactBlocker::AggregateAccess]));
-                    }
-                }
-            }
-        }
-        for bit in bits {
+        let mut keys = BTreeSet::from([relation.input().clone()]);
+        keys.extend(relation.bits().iter().cloned());
+        self.check_model_keys(&keys)?;
+        for bit in relation.bits() {
             if self
                 .hir
                 .ports()
@@ -261,7 +270,7 @@ fn prove_candidates(
     })))
 }
 
-fn generated_seeds(
+pub(crate) fn generated_seeds(
     field: &FieldContext,
     generated: &GeneratedEquationSites<'_>,
     budget: &mut ProofBudget,
@@ -314,21 +323,50 @@ fn validate_models(
     models: [CandidateModel; 2],
     budget: &mut ProofBudget,
 ) -> Result<Option<ValidatedModelPair>, BTreeSet<FactBlocker>> {
+    let assignments = [&models[0].0, &models[1].0];
+    if !generated_models_satisfy(field, generated, &assignments, budget)? {
+        return Ok(None);
+    }
+    Ok(Some(ValidatedModelPair(models)))
+}
+
+/// Evaluate every generated equation against complete checked assignments.
+///
+/// Missing keys, curve mismatch, unsupported equations, and exhausted budget
+/// remain typed refusals. A false result means at least one equation is not zero.
+pub(crate) fn generated_models_satisfy(
+    field: &FieldContext,
+    generated: &GeneratedEquationSites<'_>,
+    assignments: &[&BTreeMap<AccessKey, FieldValue>],
+    budget: &mut ProofBudget,
+) -> Result<bool, BTreeSet<FactBlocker>> {
+    if assignments.is_empty() {
+        return Err(BTreeSet::from([FactBlocker::ForeignQuery]));
+    }
     for site in generated.sites() {
-        for model in &models {
-            if !budget.reserve_evaluation(site.equation()) {
-                return Err(BTreeSet::from([FactBlocker::Budget(site.site())]));
-            }
-            let value = site
-                .equation()
-                .evaluate(field, &model.0)
-                .map_err(|_| BTreeSet::from([FactBlocker::UnsupportedRelation(site.site())]))?;
-            if !field.is_zero(&value) {
-                return Ok(None);
+        for assignment in assignments {
+            if !generated_site_holds(field, site, assignment, budget)? {
+                return Ok(false);
             }
         }
     }
-    Ok(Some(ValidatedModelPair(models)))
+    Ok(true)
+}
+
+fn generated_site_holds(
+    field: &FieldContext,
+    site: &GeneratedConstraintSite<'_>,
+    assignment: &BTreeMap<AccessKey, FieldValue>,
+    budget: &mut ProofBudget,
+) -> Result<bool, BTreeSet<FactBlocker>> {
+    if !budget.reserve_evaluation(site.equation()) {
+        return Err(BTreeSet::from([FactBlocker::Budget(site.site())]));
+    }
+    let value = site
+        .equation()
+        .evaluate(field, assignment)
+        .map_err(|_| BTreeSet::from([FactBlocker::UnsupportedRelation(site.site())]))?;
+    Ok(field.is_zero(&value))
 }
 
 #[cfg(test)]

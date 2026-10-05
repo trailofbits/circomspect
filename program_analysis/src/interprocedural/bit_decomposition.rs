@@ -22,16 +22,43 @@ impl ProjectSummaries<'_> {
         input: &AccessPath,
         bits: &[AccessPath],
     ) -> SummaryFact<BitAmbiguityOutcome> {
-        let result = self.check_template_constraint_scope(facts, evidence).and_then(|()| {
-            if evidence.origin() == ContextOrigin::SymbolicRoot
-                && !evidence.context().arguments().is_empty()
-            {
-                return Err(SummaryBlocker::UnsupportedContext);
-            }
+        let result = self.check_bit_ambiguity_scope(facts, evidence).and_then(|()| {
             let fact = facts.local_bit_ambiguity(input, bits, &mut ProofBudget::default());
             certified(&fact).cloned()
         });
         SummaryFact::from_result(result)
+    }
+
+    /// Prove two complete models using exact, context-bound local ports.
+    ///
+    /// This checks the same generated equations and caller scope as the path
+    /// query while allowing concrete array elements in a specialized loop.
+    pub fn template_bit_ambiguity_handles(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        evidence: &ContextEvidence,
+        input: &AccessHandle,
+        bits: &[AccessHandle],
+    ) -> SummaryFact<BitAmbiguityOutcome> {
+        let result = self.check_bit_ambiguity_scope(facts, evidence).and_then(|()| {
+            let fact = facts.local_bit_ambiguity_handles(input, bits, &mut ProofBudget::default());
+            certified(&fact).cloned()
+        });
+        SummaryFact::from_result(result)
+    }
+
+    fn check_bit_ambiguity_scope(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        evidence: &ContextEvidence,
+    ) -> Result<(), SummaryBlocker> {
+        self.check_template_constraint_scope(facts, evidence)?;
+        if evidence.origin() == ContextOrigin::SymbolicRoot
+            && !evidence.context().arguments().is_empty()
+        {
+            return Err(SummaryBlocker::UnsupportedContext);
+        }
+        Ok(())
     }
 
     /// Certify a local bit relation in a validated root template scope.
