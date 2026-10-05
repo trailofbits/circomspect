@@ -1,3 +1,13 @@
+// Tests intentionally fail by panicking; fixture assembly favors readable assertions.
+// Rust 1.74 requires `allow` here because `expect` lint attributes are not yet stable.
+#![allow(
+    clippy::allow_attributes,
+    clippy::assert_is_empty,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::panic_in_result_fn,
+    clippy::unwrap_used
+)]
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -36,7 +46,24 @@ fn source(case: &Value) -> PathBuf {
     source
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ScopeKind {
+    Definition,
+    SourceRecovery,
+}
+
+impl ScopeKind {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Definition => "definition",
+            Self::SourceRecovery => "source_recovery",
+        }
+    }
+}
+
 struct ObservedEvidence {
+    scope_kind: ScopeKind,
+    syntax_error: bool,
     findings: Vec<Value>,
     analyzed: bool,
     incomplete: bool,
@@ -50,7 +77,7 @@ fn observed_evidence(case: &Value) -> ObservedEvidence {
     let source = source(case);
     let canonical_source = source.canonicalize().expect("failed to canonicalize warning fixture");
     let expected_uri = url::Url::from_file_path(&canonical_source).unwrap().to_string();
-    let (scope_start, scope_end) = scope_lines(case, &source);
+    let (scope_start, scope_end, scope_kind) = scope_lines(case, &source);
     let sarif = std::env::temp_dir().join(format!(
         "circomspect-warning-{}-{}.sarif",
         std::process::id(),
@@ -76,6 +103,7 @@ fn observed_evidence(case: &Value) -> ObservedEvidence {
     let sarif: Value = serde_json::from_str(&text).expect("invalid CLI SARIF");
     let results = sarif["runs"][0]["results"].as_array().expect("missing SARIF results");
     let mut evidence = Vec::new();
+    let mut syntax_error = false;
     let mut incomplete = false;
     let mut incomplete_scopes = Vec::new();
     let mut target_code_incomplete_scopes = 0;
@@ -87,6 +115,9 @@ fn observed_evidence(case: &Value) -> ObservedEvidence {
             || line > scope_end
         {
             continue;
+        }
+        if result["ruleId"] == "P1000" && result["level"] == "error" {
+            syntax_error = true;
         }
         if result["ruleId"] == "CS0020" {
             incomplete = true;
@@ -119,6 +150,8 @@ fn observed_evidence(case: &Value) -> ObservedEvidence {
     }
     evidence.sort_by_key(Value::to_string);
     ObservedEvidence {
+        scope_kind,
+        syntax_error,
         findings: evidence,
         analyzed,
         incomplete,
@@ -138,21 +171,33 @@ fn incomplete_names_code(result: &Value, code: &str) -> bool {
     })
 }
 
-fn scope_lines(case: &Value, path: &Path) -> (u64, u64) {
-    use parser::hir::{lift_project, DefinitionRef};
+fn scope_lines(case: &Value, path: &Path) -> (u64, u64, ScopeKind) {
+    use parser::hir::{lift_project, DefinitionRef, IncompleteReason};
     use parser::new_frontend::{load_sources, Version, VersionPolicy};
     let loaded = load_sources(&[path.to_owned()], &[], VersionPolicy::new(Version::new(2, 2, 3)));
     let lifted = lift_project(&loaded);
-    let definition = lifted.hir.definition(field(case, "scope")).expect("declared corpus scope");
-    let span = match definition {
-        DefinitionRef::Function(id) => lifted.hir.function(id).unwrap().span,
-        DefinitionRef::Template(id) => lifted.hir.template(id).unwrap().span,
-        DefinitionRef::Bus(id) => lifted.hir.bus(id).unwrap().span,
+    let (span, kind) = if let Some(definition) = lifted.hir.definition(field(case, "scope")) {
+        let span = match definition {
+            DefinitionRef::Function(id) => lifted.hir.function(id).unwrap().span,
+            DefinitionRef::Template(id) => lifted.hir.template(id).unwrap().span,
+            DefinitionRef::Bus(id) => lifted.hir.bus(id).unwrap().span,
+        };
+        (span, ScopeKind::Definition)
+    } else {
+        assert_eq!(field(case, "expected"), "abstain", "missing declared corpus scope");
+        assert_eq!(field(case, "compiler_class"), "syntax_error");
+        let regions: Vec<_> = lifted
+            .incomplete
+            .iter()
+            .filter(|region| region.reason == IncompleteReason::Syntax)
+            .collect();
+        assert_eq!(regions.len(), 1, "a malformed corpus scope needs one exact syntax region");
+        (regions[0].span().expect("source-located syntax recovery"), ScopeKind::SourceRecovery)
     };
     let source = loaded.files.iter().find(|file| file.id == span.source()).unwrap();
     let line =
         |offset| source.text[..offset].bytes().filter(|byte| *byte == b'\n').count() as u64 + 1;
-    (line(span.start()), line(span.end()))
+    (line(span.start()), line(span.end()), kind)
 }
 
 fn compiler_class(binary: &Path, case: &Value) -> String {
@@ -255,11 +300,26 @@ fn warning_labels_and_recorded_legacy_results_are_frozen() {
 
 #[test]
 fn cli_warning_corpus_preserves_adjudicated_findings() {
+    run_corpus(manifest());
+}
+
+#[test]
+#[ignore = "focused evidence run; the full warning corpus also covers these fixtures"]
+fn original_conversion_triplet_preserves_cli_evidence() {
+    let cases = manifest()
+        .into_iter()
+        .filter(|case| field(case, "id").starts_with("nonstrict_conversion_"))
+        .collect::<Vec<_>>();
+    assert_eq!(cases.len(), 3);
+    run_corpus(cases);
+}
+
+fn run_corpus(cases: Vec<Value>) {
     let mut failures = Vec::new();
     let mut totals = BTreeMap::new();
     let mut observations = Vec::new();
     write_corpus_report(&observations, &totals, &failures, false);
-    for case in manifest() {
+    for case in cases {
         let observed = observed_evidence(&case);
         let expected = field(&case, "expected");
         let label = match (expected, observed.findings.is_empty()) {
@@ -272,7 +332,11 @@ fn cli_warning_corpus_preserves_adjudicated_findings() {
             (other, _) => panic!("invalid expectation {other}"),
         };
         *totals.entry(label).or_insert(0) += 1;
-        if !observed.analyzed
+        let scope_checked = match observed.scope_kind {
+            ScopeKind::Definition => observed.analyzed,
+            ScopeKind::SourceRecovery => !observed.analyzed && observed.syntax_error,
+        };
+        if !scope_checked
             || (expected == "abstain" && !observed.incomplete)
             || label == "FN"
             || label == "FP"
@@ -289,6 +353,7 @@ fn cli_warning_corpus_preserves_adjudicated_findings() {
             "id": field(&case, "id"), "rule": field(&case, "rule"),
             "rule_id": field(&case, "rule_id"), "scope": field(&case, "scope"),
             "expected": expected, "classification": label, "analyzed": observed.analyzed,
+            "scope_kind": observed.scope_kind.name(), "syntax_error": observed.syntax_error,
             "incomplete": observed.incomplete, "exit_code": observed.exit_code,
             "incomplete_scope_count": observed.incomplete_scopes.len(),
             "target_code_incomplete_scope_count": observed.target_code_incomplete_scopes,
@@ -362,4 +427,19 @@ fn diagnostic_contracts_are_active() {
     }
     assert!(ids.iter().any(|id| id.starts_with("incomplete_library")));
     assert!(ids.iter().any(|id| id.starts_with("redundant_witness")));
+}
+
+#[test]
+fn malformed_corpus_scopes_preserve_source_error_and_incomplete_reports() {
+    for case in manifest() {
+        if field(&case, "compiler_class") != "syntax_error" {
+            continue;
+        }
+        let observed = observed_evidence(&case);
+        assert!(!observed.analyzed);
+        assert_eq!(observed.scope_kind, ScopeKind::SourceRecovery);
+        assert!(observed.syntax_error);
+        assert!(observed.incomplete);
+        assert!(observed.findings.is_empty());
+    }
 }
