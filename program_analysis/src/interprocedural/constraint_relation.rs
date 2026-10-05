@@ -6,28 +6,43 @@ use crate::hir_facts::{AnalysisFacts, GeneratedEquation};
 use crate::interprocedural::{ContextEvidence, ProjectSummaries, SummaryBlocker, SummaryFact};
 use crate::interprocedural::summary::certified;
 
-impl ProjectSummaries<'_> {
-    /// Certify a generated equation equivalent to an exact witness write.
-    ///
-    /// The certificate requires a validated root template scope, complete
-    /// analysis, and no known execution failure. Called templates abstain
-    /// until incoming constraint closure is known.
-    pub fn template_generated_equation(
-        &self,
-        facts: &AnalysisFacts<'_>,
-        evidence: &ContextEvidence,
-        witness: NodeId,
-    ) -> SummaryFact<Option<GeneratedEquation>> {
-        SummaryFact::from_result(self.generated_equation(facts, evidence, witness))
-    }
+/// Equation queries tied to one immutable fact snapshot and its checked scope.
+///
+/// The provider validates the shared scope once. Every query still checks its
+/// own witness node, generated equation, and dependency closure. Failed scope
+/// validation is retained for every query and cannot expose provisional facts.
+pub struct GeneratedEquationQueries<'facts, 'project> {
+    facts: &'facts AnalysisFacts<'project>,
+    scope: Result<(), SummaryBlocker>,
+}
 
-    fn generated_equation(
+impl GeneratedEquationQueries<'_, '_> {
+    /// Certify an equivalent generated equation for this snapshot's witness node.
+    #[must_use]
+    pub fn for_witness(&self, witness: NodeId) -> SummaryFact<Option<GeneratedEquation>> {
+        let result = self
+            .scope
+            .clone()
+            .and_then(|()| Ok(certified(&self.facts.must_equation_for_witness(witness))?.clone()));
+        SummaryFact::from_result(result)
+    }
+}
+
+impl ProjectSummaries<'_> {
+    /// Validate a root template scope for a batch of generated equation queries.
+    ///
+    /// Each batch borrows one exact fact snapshot. Complete solving and no known
+    /// execution failure are required; called templates without incoming
+    /// constraint closure retain an unavailable result for every query.
+    #[must_use]
+    pub fn template_generated_equations<'facts, 'project>(
         &self,
-        facts: &AnalysisFacts<'_>,
+        facts: &'facts AnalysisFacts<'project>,
         evidence: &ContextEvidence,
-        witness: NodeId,
-    ) -> Result<Option<GeneratedEquation>, SummaryBlocker> {
-        self.check_template_constraint_scope(facts, evidence)?;
-        Ok(certified(&facts.must_equation_for_witness(witness))?.clone())
+    ) -> GeneratedEquationQueries<'facts, 'project> {
+        GeneratedEquationQueries {
+            facts,
+            scope: self.check_template_constraint_scope(facts, evidence),
+        }
     }
 }

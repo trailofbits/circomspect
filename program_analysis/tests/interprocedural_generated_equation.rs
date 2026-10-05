@@ -55,8 +55,9 @@ fn provider_certifies_generated_equation_in_valid_template_scope() {
     let evidence = provider.symbolic_root(definition).unwrap();
     let cfg = circomspect_program_analysis::hir_cfg::build_cfg(&lifted.hir, definition).unwrap();
     let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
-    let result =
-        provider.template_generated_equation(&facts, &evidence, first_witness(facts.cfg()));
+    let result = provider
+        .template_generated_equations(&facts, &evidence)
+        .for_witness(first_witness(facts.cfg()));
     let certificate = result.certified().unwrap().as_ref().unwrap();
     assert_eq!(certificate.context(), &evidence);
     assert_eq!(certificate.context().origin(), ContextOrigin::SymbolicRoot);
@@ -75,7 +76,8 @@ fn provider_rejects_a_foreign_evidence_context() {
     let foreign = provider.symbolic_root(other).unwrap();
     let cfg = circomspect_program_analysis::hir_cfg::build_cfg(&lifted.hir, definition).unwrap();
     let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
-    let result = provider.template_generated_equation(&facts, &foreign, first_witness(&cfg));
+    let result =
+        provider.template_generated_equations(&facts, &foreign).for_witness(first_witness(&cfg));
     assert!(result.unavailable().unwrap().contains(&SummaryBlocker::WrongContext));
 }
 
@@ -100,11 +102,11 @@ fn nested_equation(constraint_rhs: &str) -> SummaryFact<Option<GeneratedEquation
     )
     .unwrap();
     let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
-    provider.template_generated_equation(
-        &facts,
-        &evidence,
-        witness_for(facts.cfg(), &lifted.hir, "x"),
-    )
+    provider.template_generated_equations(&facts, &evidence).for_witness(witness_for(
+        facts.cfg(),
+        &lifted.hir,
+        "x",
+    ))
 }
 
 fn symbolic_equation(source: &str) -> SummaryFact<Option<GeneratedEquation>> {
@@ -114,11 +116,11 @@ fn symbolic_equation(source: &str) -> SummaryFact<Option<GeneratedEquation>> {
     let evidence = provider.symbolic_root(definition).unwrap();
     let cfg = circomspect_program_analysis::hir_cfg::build_cfg(&lifted.hir, definition).unwrap();
     let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
-    provider.template_generated_equation(
-        &facts,
-        &evidence,
-        witness_for(facts.cfg(), &lifted.hir, "x"),
-    )
+    provider.template_generated_equations(&facts, &evidence).for_witness(witness_for(
+        facts.cfg(),
+        &lifted.hir,
+        "x",
+    ))
 }
 
 #[test]
@@ -316,8 +318,9 @@ fn provider_refuses_a_template_with_repeated_body_writes() {
     let evidence = provider.symbolic_root(definition).unwrap();
     let cfg = circomspect_program_analysis::hir_cfg::build_cfg(&lifted.hir, definition).unwrap();
     let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
-    let result =
-        provider.template_generated_equation(&facts, &evidence, first_witness(facts.cfg()));
+    let result = provider
+        .template_generated_equations(&facts, &evidence)
+        .for_witness(first_witness(facts.cfg()));
     assert!(result.unavailable().unwrap().contains(&SummaryBlocker::UnsupportedContext));
 }
 
@@ -329,8 +332,9 @@ fn incomplete_solver_cannot_release_a_provider_equation() {
     let evidence = provider.symbolic_root(definition).unwrap();
     let cfg = circomspect_program_analysis::hir_cfg::build_cfg(&lifted.hir, definition).unwrap();
     let facts = provider.analyze_for_evidence(&cfg, &evidence, Some(0)).unwrap();
-    let result =
-        provider.template_generated_equation(&facts, &evidence, first_witness(facts.cfg()));
+    let result = provider
+        .template_generated_equations(&facts, &evidence)
+        .for_witness(first_witness(facts.cfg()));
     let unavailable = result.unavailable().expect("budget must block the provider certificate");
     assert!(unavailable.iter().any(|reason| {
         let SummaryBlocker::LocalFacts(blockers) = reason else { return false };
@@ -372,11 +376,9 @@ fn provider_refuses_called_context_until_incoming_constraints_are_known() {
         circomspect_program_analysis::hir_cfg::build_cfg(&lifted.hir, child.context().definition())
             .unwrap();
     let child_facts = provider.analyze_for_evidence(&child_cfg, &child, None).unwrap();
-    let result = provider.template_generated_equation(
-        &child_facts,
-        &child,
-        first_witness(child_facts.cfg()),
-    );
+    let result = provider
+        .template_generated_equations(&child_facts, &child)
+        .for_witness(first_witness(child_facts.cfg()));
     assert!(result.unavailable().unwrap().contains(&SummaryBlocker::ExternalSummary));
 }
 
@@ -395,7 +397,7 @@ fn independent_equation(
         let CfgNodeKind::Witness { target, .. } = &node.kind else { return false };
         facts.hir().symbol(target.root).is_some_and(|symbol| symbol.name == "x")
     })?;
-    let result = provider.template_generated_equation(&facts, &evidence, query);
+    let result = provider.template_generated_equations(&facts, &evidence).for_witness(query);
     result.certified().cloned().flatten()
 }
 
@@ -491,14 +493,27 @@ fn independent_equation_certificates_reject_provider_curve_and_evidence_mismatch
     };
     let main = provider.main_evidence(&call).unwrap();
     let query = first_witness(facts.cfg());
-    assert!(provider.template_generated_equation(&facts, &main, query).certified().is_none());
+    assert!(provider
+        .template_generated_equations(&facts, &main)
+        .for_witness(query)
+        .certified()
+        .is_none());
     let other_curve = ProjectSummaries::build(&lifted, Curve::Bls12_381).unwrap();
-    assert!(other_curve.template_generated_equation(&facts, &root, query).certified().is_none());
+    assert!(other_curve
+        .template_generated_equations(&facts, &root)
+        .for_witness(query)
+        .certified()
+        .is_none());
     let other_lifted = fixture(source);
     let other = ProjectSummaries::build(&other_lifted, Curve::Bn254).unwrap();
-    assert!(other.template_generated_equation(&facts, &root, query).certified().is_none());
+    assert!(other
+        .template_generated_equations(&facts, &root)
+        .for_witness(query)
+        .certified()
+        .is_none());
     assert!(provider
-        .template_generated_equation(&facts, &root, facts.cfg().entry())
+        .template_generated_equations(&facts, &root)
+        .for_witness(facts.cfg().entry())
         .certified()
         .is_none());
 }
@@ -669,4 +684,28 @@ fn independent_source_shape_cannot_use_polynomial_cancellation_as_degree_evidenc
         }
     }
     assert!(unsound.is_empty(), "{unsound:#?}");
+}
+
+#[test]
+fn equation_batch_keeps_each_witness_and_solver_scope_separate() {
+    let lifted = fixture(
+        "template T(){signal input a;signal output x;signal output y;\
+         x<--a;x===a;y<--a+1;y===a+2;}",
+    );
+    let definition = lifted.hir.definition("T").unwrap();
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let evidence = provider.symbolic_root(definition).unwrap();
+    let cfg = circomspect_program_analysis::hir_cfg::build_cfg(&lifted.hir, definition).unwrap();
+    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let batch = provider.template_generated_equations(&facts, &evidence);
+    let x = witness_for(facts.cfg(), &lifted.hir, "x");
+    let y = witness_for(facts.cfg(), &lifted.hir, "y");
+    assert!(batch.for_witness(x).certified().unwrap().is_some());
+    assert!(batch.for_witness(y).certified().unwrap().is_none());
+    assert!(batch.for_witness(cfg.entry()).certified().is_none());
+    assert!(batch.for_witness(x).certified().unwrap().is_some());
+    let incomplete = provider.analyze_for_evidence(&cfg, &evidence, Some(0)).unwrap();
+    let blocked = provider.template_generated_equations(&incomplete, &evidence);
+    assert!(blocked.for_witness(x).certified().is_none());
+    assert!(blocked.for_witness(y).certified().is_none());
 }

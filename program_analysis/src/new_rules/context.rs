@@ -1,17 +1,15 @@
-use abstract_interpretation::graph::NodeId;
 use parser::hir::{AccessPath, DefinitionRef, HirProject, PortId};
 use parser::new_frontend::Span;
 
 use crate::hir_facts::{
     AccessHandle, AnalysisFacts, AssignmentDemand, BitAmbiguityOutcome, BitDecomposition, Fact,
-    GeneratedEquation,
 };
 use crate::interprocedural::{
     AppliedComponentPort, CallBlocker, CallContext, CallOwner, CallReachability, CallSite,
     CallPathSite, CallSiteId, CallerOutputRead, ComposedConstraintFixedOutput, ContextEvidence,
     ComponentBitAmbiguityOutcome, EnumeratedComponentOutput, FunctionEffects, FunctionSummary,
-    PortSummary, ProjectOutputUse, ProjectSummaries, SummaryBlocker, SummaryFact,
-    ValidatedDefinition, ValidatedHeader, WitnessSite,
+    GeneratedEquationQueries, PortSummary, ProjectOutputUse, ProjectSummaries, SummaryBlocker,
+    SummaryFact, ValidatedDefinition, ValidatedHeader, WitnessSite,
 };
 
 use crate::new_rules::{Finding, RuleKind};
@@ -226,16 +224,10 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
         self.summaries.template_internal_signal_incidence(self.facts, self.evidence, path)
     }
 
-    /// Prove an equivalent generated equation for an unavoidable witness assignment.
-    ///
-    /// The node must belong to this context's solved CFG. Incomplete or failed
-    /// scopes and called templates without incoming constraint closure abstain.
+    /// Validate this fact snapshot once for a batch of generated equation queries.
     #[must_use]
-    pub fn template_generated_equation(
-        &self,
-        witness: NodeId,
-    ) -> SummaryFact<Option<GeneratedEquation>> {
-        self.summaries.template_generated_equation(self.facts, self.evidence, witness)
+    pub fn template_generated_equations(&self) -> GeneratedEquationQueries<'a, 'facts> {
+        self.summaries.template_generated_equations(self.facts, self.evidence)
     }
 
     /// Request two complete satisfying bit models in a validated leaf root scope.

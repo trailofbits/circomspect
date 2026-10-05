@@ -40,6 +40,7 @@ pub use template::{PortSummary, WitnessProvenance, WitnessSite};
 pub use component::{AppliedComponentPort, CallerOutputRead, ComposedConstraintFixedOutput};
 pub use project_use::{ProjectInstanceStep, ProjectOutputStatus, ProjectOutputUse};
 pub use output_enumeration::EnumeratedComponentOutput;
+pub use crate::interprocedural::constraint_relation::GeneratedEquationQueries;
 
 pub(crate) use crate::interprocedural::component_models::ValidatedComponentPorts;
 pub use crate::interprocedural::component_models::{
