@@ -8,15 +8,14 @@ that the whole circuit is safe. `abstain` contains unknown or damaged evidence.
 The detailed phase plan is local and ignored; the `reason` field and source
 files remain available in a clean checkout.
 
-The active test reruns the current CLI and checks `legacy_observed_count` for
-each case. It also checks each finding's exact message and primary source span,
-or the named scope in its message for a locationless finding. Its baseline is
-8 true positives, 3 false positives, 7 false
-negatives, 12 true negatives, and 15 cases where the future rule must abstain.
-These counts concern the claimed property of the individual rule, using the
-rule ID in `legacy_rule_id`. They are not a measure of whole-program safety.
-`CS0021` is a planned replacement for the broader current `CS0013` claim;
-the corpus records that mapping explicitly. `CS0004` currently covers both
+The CLI replay checks each target rule within the declared source scope.
+An `emit` case must have a finding, a `no_finding` case must not, and an
+`abstain` case must have scoped `CS0020` with no target finding. The separate
+metadata test preserves historical counts and evidence: 8 true positives,
+2 false positives, 7 false negatives, 13 true negatives, and 15 cases requiring
+abstention. These counts concern the claimed property of the individual rule,
+not whole-program safety. `CS0021` replaces the broader former `CS0013` claim;
+the corpus records that mapping explicitly. `CS0004` covers both
 bitwise complement and field arithmetic, so the separate `rule` keys keep
 their precision cases distinct.
 
@@ -29,4 +28,11 @@ The compiler run is explicit in CI.
 To preserve adjudications, add new cases rather than silently changing a
 source or its label. If a case is found to be mislabeled, record the reason in
 the change review and update the expected counts deliberately. `tests/contracts`
-holds separate pending CLI/SARIF checks for diagnostics implemented later.
+holds active CLI/SARIF checks for incomplete analysis and redundant witnesses.
+
+To retain per-case messages, source spans, classifications, incomplete scopes,
+exit codes, and elapsed CLI time, set `CIRCOMSPECT_CORPUS_REPORT` to an output
+path when running `cli_warning_corpus_preserves_adjudicated_findings`. The JSON
+report is updated after each case; `complete: true` means all cases ran, while
+an empty `failures` list means the replay met its expectations. Evidence reports
+belong in the ignored `codex/` directory.

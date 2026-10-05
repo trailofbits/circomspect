@@ -1,6 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Instant;
 
 use program_analysis::new_rules::RuleKind;
 use serde_json::{json, Value};
@@ -35,7 +36,15 @@ fn source(case: &Value) -> PathBuf {
     source
 }
 
-fn observed_evidence(case: &Value) -> (Vec<Value>, bool, bool) {
+struct ObservedEvidence {
+    findings: Vec<Value>,
+    analyzed: bool,
+    incomplete: bool,
+    seconds: f64,
+    exit_code: Option<i32>,
+}
+
+fn observed_evidence(case: &Value) -> ObservedEvidence {
     let source = source(case);
     let canonical_source = source.canonicalize().expect("failed to canonicalize warning fixture");
     let expected_uri = url::Url::from_file_path(&canonical_source).unwrap().to_string();
@@ -46,6 +55,7 @@ fn observed_evidence(case: &Value) -> (Vec<Value>, bool, bool) {
         field(case, "id")
     ));
     let curve = if field(case, "curve") == "bls12381" { "BLS12_381" } else { "BN254" };
+    let start = Instant::now();
     let output = Command::new(env!("CARGO_BIN_EXE_circomspect"))
         .arg(&source)
         .arg("--curve")
@@ -55,6 +65,7 @@ fn observed_evidence(case: &Value) -> (Vec<Value>, bool, bool) {
         .arg(&sarif)
         .output()
         .expect("failed to run Circomspect");
+    let seconds = start.elapsed().as_secs_f64();
     assert!(sarif.is_file(), "{}: CLI wrote no SARIF: {:?}", field(case, "id"), output);
     let stdout = String::from_utf8(output.stdout).expect("CLI stdout is not UTF-8");
     let analyzed = stdout.contains(&format!("analyzing template '{}'", field(case, "scope")));
@@ -99,7 +110,13 @@ fn observed_evidence(case: &Value) -> (Vec<Value>, bool, bool) {
         evidence.push(json!({ "message": message, "span": span }));
     }
     evidence.sort_by_key(Value::to_string);
-    (evidence, analyzed, incomplete)
+    ObservedEvidence {
+        findings: evidence,
+        analyzed,
+        incomplete,
+        seconds,
+        exit_code: output.status.code(),
+    }
 }
 
 fn scope_lines(case: &Value, path: &Path) -> (u64, u64) {
@@ -220,11 +237,13 @@ fn warning_labels_and_recorded_legacy_results_are_frozen() {
 #[test]
 fn cli_warning_corpus_preserves_adjudicated_findings() {
     let mut failures = Vec::new();
-    let mut totals = HashMap::new();
+    let mut totals = BTreeMap::new();
+    let mut observations = Vec::new();
+    write_corpus_report(&observations, &totals, &failures, false);
     for case in manifest() {
-        let (findings, analyzed, incomplete) = observed_evidence(&case);
+        let observed = observed_evidence(&case);
         let expected = field(&case, "expected");
-        let label = match (expected, findings.is_empty()) {
+        let label = match (expected, observed.findings.is_empty()) {
             ("emit", false) => "TP",
             ("emit", true) => "FN",
             ("no_finding", false) => "FP",
@@ -234,19 +253,45 @@ fn cli_warning_corpus_preserves_adjudicated_findings() {
             (other, _) => panic!("invalid expectation {other}"),
         };
         *totals.entry(label).or_insert(0) += 1;
-        if !analyzed
-            || (expected == "abstain" && !incomplete)
+        if !observed.analyzed
+            || (expected == "abstain" && !observed.incomplete)
             || label == "FN"
             || label == "FP"
             || label == "unexpected finding"
         {
             failures.push(format!(
                 "{}: {label}, scope analyzed={analyzed}, incomplete={incomplete}",
-                field(&case, "id")
+                field(&case, "id"),
+                analyzed = observed.analyzed,
+                incomplete = observed.incomplete,
             ));
         }
+        observations.push(json!({
+            "id": field(&case, "id"), "rule": field(&case, "rule"),
+            "rule_id": field(&case, "rule_id"), "scope": field(&case, "scope"),
+            "expected": expected, "classification": label, "analyzed": observed.analyzed,
+            "incomplete": observed.incomplete, "exit_code": observed.exit_code,
+            "seconds": observed.seconds, "findings": observed.findings,
+        }));
+        write_corpus_report(&observations, &totals, &failures, false);
     }
+    write_corpus_report(&observations, &totals, &failures, true);
     assert!(failures.is_empty(), "{totals:?}\n{}", failures.join("\n"));
+}
+
+fn write_corpus_report(
+    observations: &[Value],
+    totals: &BTreeMap<&str, usize>,
+    failures: &[String],
+    complete: bool,
+) {
+    let Some(path) = std::env::var_os("CIRCOMSPECT_CORPUS_REPORT") else { return };
+    let report = json!({
+        "schema": 1, "complete": complete, "cases": observations,
+        "totals": totals, "failures": failures,
+    });
+    std::fs::write(path, serde_json::to_vec_pretty(&report).unwrap())
+        .expect("failed to write warning corpus evidence");
 }
 
 #[test]
@@ -269,17 +314,17 @@ fn warning_cases_have_recorded_compiler_classes() {
 fn diagnostic_contracts_are_active() {
     let contract_root = root().join("../contracts");
     let text = std::fs::read_to_string(contract_root.join("active.json"))
-        .expect("failed to read pending diagnostic contracts");
-    let contract: Value = serde_json::from_str(&text).expect("invalid pending contract JSON");
+        .expect("failed to read active diagnostic contracts");
+    let contract: Value = serde_json::from_str(&text).expect("invalid active contract JSON");
     assert_eq!(contract["status"], "active");
-    let cases = contract["cases"].as_array().expect("pending contract cases missing");
+    let cases = contract["cases"].as_array().expect("active contract cases missing");
     assert_eq!(cases.len(), 7);
     let mut ids = HashSet::new();
     for case in cases {
         let id = field(case, "id");
-        assert!(ids.insert(id), "duplicate pending contract: {id}");
+        assert!(ids.insert(id), "duplicate active contract: {id}");
         let source = contract_root.join(field(case, "source"));
-        assert!(source.is_file(), "pending source does not exist: {id}");
+        assert!(source.is_file(), "active source does not exist: {id}");
         assert!(!field(case, "source_scope").is_empty());
         assert!(case["args"].is_array(), "missing arguments: {id}");
         let exit = case["expected_exit_code"].as_u64().expect("missing exit code");
