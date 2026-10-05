@@ -446,3 +446,18 @@ fn typed_ast_distinguishes_definition_and_direction_kinds() {
     assert_eq!(before.span.start(), 15);
     assert_eq!(after.span.start(), 39);
 }
+
+#[test]
+fn unsupported_major_and_future_pragma_versions_have_source_locations() {
+    for pragma in ["1.0.0", "2.3.0"] {
+        let source = format!("pragma circom {pragma}; template Valid(){{}}");
+        let outcome = parse(&source);
+        let diagnostic = outcome
+            .diagnostics
+            .iter()
+            .find(|item| item.kind == DiagnosticKind::UnsupportedVersion)
+            .unwrap();
+        assert_eq!(diagnostic.span().unwrap().start(), 0);
+        assert!(has_definition(&outcome, "Valid"));
+    }
+}

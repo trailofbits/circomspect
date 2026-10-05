@@ -187,6 +187,18 @@ impl SarifWriter {
             .collect()
     }
 
+    /// Filter and write reports, preserving serialization and filesystem failures.
+    pub fn try_write_reports(
+        &mut self,
+        reports: &[Report],
+        file_library: &FileLibrary,
+    ) -> anyhow::Result<usize> {
+        let reports = self.filter(reports);
+        self.serialize_reports(&reports, file_library)?;
+        self.written += reports.len();
+        Ok(reports.len())
+    }
+
     fn serialize_reports(
         &self,
         reports: &ReportCollection,

@@ -1,10 +1,13 @@
-# Pending diagnostic presentation contracts
+# Diagnostic presentation contracts
 
-`pending.json` records the future CLI and SARIF behavior for incomplete
-analysis (`CS0020`) and exact redundant witness assignment (`CS0021`). These
-diagnostics are not emitted by the current runtime. The active test validates
-the metadata and source paths; it does not claim the future output already
-works. Phase 7 must activate the cases as executable CLI/SARIF assertions
-when the new rule pipeline is connected. The table covers default output,
-`--level error`, and `--allow` for each diagnostic, with expected exit codes,
-rule IDs, SARIF levels, and source scopes.
+`active.json` is executed by `cli/tests/cutover.rs` against the application CLI.
+It fixes the IDs, SARIF severity, locations, filters, and exit status for
+incomplete analysis (`CS0020`) and redundant witness assignments (`CS0021`).
+
+The redundant-witness fixture also has incomplete field arithmetic and
+zero-incidence analysis: its input value is unknown and its witness target
+occurs in a generated equation. A proof of one rule does not close the other
+analyses. Its expected output therefore includes one scoped `CS0020` beside
+`CS0021`. Suppressing `CS0021` alone retains the warning and failure exit;
+suppressing both IDs produces a successful empty result. This explicitly
+replaces the earlier pending expectation that only `CS0021` would be visible.

@@ -1,4 +1,4 @@
-//! Owned Circom source frontend. The legacy runtime remains separate until cutover.
+//! Owned Circom source frontend with recovery at definition and statement boundaries.
 
 mod ast;
 mod lexer;
@@ -129,6 +129,16 @@ fn parse_error_location(
     }
 }
 
+fn syntax_error_message(error: &ParseError<usize, TokenKind, ()>) -> &'static str {
+    match error {
+        ParseError::InvalidToken { .. } => "invalid token in Circom source",
+        ParseError::UnrecognizedEof { .. } => "unexpected end of Circom source",
+        ParseError::UnrecognizedToken { .. } => "unexpected token in Circom source",
+        ParseError::ExtraToken { .. } => "unexpected trailing token in Circom source",
+        ParseError::User { .. } => "invalid Circom syntax",
+    }
+}
+
 fn parse_segment(source: SourceId, segment: &[Token]) -> Result<SyntaxNode, SyntaxDiagnostic> {
     let Some(first) = segment.first() else {
         return Err(SyntaxDiagnostic::new(
@@ -145,7 +155,7 @@ fn parse_segment(source: SourceId, segment: &[Token]) -> Result<SyntaxNode, Synt
         SyntaxDiagnostic::new(
             DiagnosticKind::Syntax,
             Span::from_lexer(source, start, finish),
-            format!("invalid Circom syntax: {error:?}"),
+            syntax_error_message(&error),
         )
     })
 }
@@ -267,12 +277,20 @@ fn validate_version(
         }
     }
     if let Some(version) = declared {
-        if version > policy.supported {
+        if version.major != policy.supported.major || version > policy.supported {
             if let Some(pragma) = items.iter().find(|item| declared_version(item).is_some()) {
                 diagnostics.push(SyntaxDiagnostic::new(
                     DiagnosticKind::UnsupportedVersion,
                     pragma.span,
-                    "source requires a newer compiler than the selected target",
+                    format!(
+                        "source requires Circom {}.{}.{}, but the supported target is {}.{}.{}",
+                        version.major,
+                        version.minor,
+                        version.patch,
+                        policy.supported.major,
+                        policy.supported.minor,
+                        policy.supported.patch
+                    ),
                 ));
             }
         }

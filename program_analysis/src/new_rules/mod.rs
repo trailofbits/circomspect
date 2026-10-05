@@ -1,4 +1,4 @@
-//! Certified HIR rules. The legacy analysis registry remains separate until cutover.
+//! Certified HIR rules and their presentation contract.
 
 pub mod constraints;
 mod context;

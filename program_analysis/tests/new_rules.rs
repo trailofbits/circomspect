@@ -411,13 +411,15 @@ fn new_ids_and_shared_legacy_family_are_stable() {
     assert_eq!(redundant.code().id(), "CS0021");
     assert_eq!(redundant.code().name(), "redundant-witness-assignment");
     assert_eq!(redundant.category(), MessageCategory::Warning);
-    assert_ne!(ReportCode::UnnecessarySignalAssignment.id(), "CS0021");
     assert_eq!(RuleKind::BitwiseComplement.code().id(), "CS0004");
     assert_eq!(RuleKind::BitwiseComplement.category(), MessageCategory::Info);
     assert_eq!(RuleKind::BitwiseComplement.code().id(), RuleKind::FieldArithmetic.code().id());
     assert_eq!(RuleKind::BitwiseComplement.code().name(), "field-element-arithmetic");
     assert_eq!(RuleKind::UnconstrainedSignal.code().id(), "CA01");
-    assert_eq!(ReportCode::UnderConstrainedSignal.id(), "CS0017");
+    let ids: Vec<_> = circomspect_program_analysis::new_rules::registered_rules()
+        .map(|rule| rule.kind().code().id())
+        .collect();
+    assert!(!ids.iter().any(|id| id == "CS0013" || id == "CS0017"));
 }
 
 #[test]

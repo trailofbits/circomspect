@@ -4,7 +4,9 @@ use std::process::ExitCode;
 use clap::{CommandFactory, Parser};
 
 use program_analysis::config;
-use program_analysis::analysis_runner::AnalysisRunner;
+use program_analysis::application::analyze_files;
+use program_structure::file_definition::FileLibrary;
+use program_structure::report_code::ReportCode;
 
 use program_structure::constants::Curve;
 use program_structure::file_definition::FileID;
@@ -86,34 +88,51 @@ fn main() -> ExitCode {
         }
     }
 
-    // Set up analysis runner.
-    let (mut runner, reports) = AnalysisRunner::new(options.curve)
-        .with_libraries(&options.libraries)
-        .with_files(&options.input_files);
+    let output = match analyze_files(&options.input_files, &options.libraries, options.curve) {
+        Ok(output) => output,
+        Err(error) => {
+            let report =
+                Report::error(format!("Analysis failed: {error}"), ReportCode::RuntimeError);
+            CachedStdoutWriter::new(options.verbose).write_reports(&[report], &FileLibrary::new());
+            return ExitCode::FAILURE;
+        }
+    };
 
     // Set up writer and write reports to `stdout`.
     let allow_list = options.allow_list.clone();
-    let user_inputs = runner.file_library().user_inputs().clone();
+    let user_inputs = output.files.user_inputs().clone();
     let mut stdout_writer = CachedStdoutWriter::new(options.verbose)
         .add_filter(move |report: &Report| filter_by_level(report, &options.output_level))
         .add_filter(move |report: &Report| filter_by_file(report, &user_inputs))
         .add_filter(move |report: &Report| filter_by_id(report, &allow_list));
-    stdout_writer.write_reports(&reports, runner.file_library());
+    stdout_writer.write_reports(&output.diagnostics, &output.files);
 
     // Analyze functions and templates in user provided input files.
-    runner.analyze_functions(&mut stdout_writer, true);
-    runner.analyze_templates(&mut stdout_writer, true);
+    for scope in &output.scopes {
+        stdout_writer.write_message(format!("analyzing {}", scope.description));
+        stdout_writer.write_reports(&scope.reports, &output.files);
+    }
 
     // If a Sarif file is passed to the program we write the reports to it.
     if let Some(sarif_file) = options.sarif_file {
         let allow_list = options.allow_list.clone();
-        let user_inputs = runner.file_library().user_inputs().clone();
+        let user_inputs = output.files.user_inputs().clone();
         let mut sarif_writer = SarifWriter::new(&sarif_file)
             .add_filter(move |report: &Report| filter_by_level(report, &options.output_level))
             .add_filter(move |report: &Report| filter_by_file(report, &user_inputs))
             .add_filter(move |report: &Report| filter_by_id(report, &allow_list));
-        if sarif_writer.write_reports(stdout_writer.reports(), runner.file_library()) > 0 {
-            stdout_writer.write_message(format!("Result written to `{}`.", sarif_file.display()));
+        match sarif_writer.try_write_reports(stdout_writer.reports(), &output.files) {
+            Ok(count) if count > 0 => stdout_writer
+                .write_message(format!("Result written to `{}`.", sarif_file.display())),
+            Ok(_) => {}
+            Err(error) => {
+                let report = Report::error(
+                    format!("Cannot write SARIF to {}: {error:#}", sarif_file.display()),
+                    ReportCode::RuntimeError,
+                );
+                CachedStdoutWriter::new(options.verbose).write_reports(&[report], &output.files);
+                return ExitCode::FAILURE;
+            }
         }
     }
 

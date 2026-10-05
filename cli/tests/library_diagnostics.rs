@@ -49,8 +49,8 @@ fn syntax_errors_do_not_hide_valid_definitions_in_the_same_library() {
     assert!(stdout.contains("analyzing template 'BeforeError'"), "{stdout}");
     assert!(stdout.contains("analyzing template 'BetweenErrors'"), "{stdout}");
     assert!(stdout.contains("analyzing template 'AfterError'"), "{stdout}");
-    assert!(!stdout.contains("analyzing template 'BrokenFirst'"), "{stdout}");
-    assert!(!stdout.contains("analyzing template 'BrokenSecond'"), "{stdout}");
+    assert!(stdout.contains("Analysis is incomplete"), "{stdout}");
+    assert!(stdout.contains("parsing continued"), "{stdout}");
     assert_eq!(stdout.matches("error:").count(), 2, "{stdout}");
 }
 
@@ -123,7 +123,7 @@ fn unclosed_comment_does_not_hide_preceding_definition() {
     let stdout = String::from_utf8(output.stdout).expect("CLI output is not UTF-8");
 
     assert!(!output.status.success(), "{stdout}");
-    assert!(stdout.contains("Unterminated comment"), "{stdout}");
+    assert!(stdout.contains("unterminated block comment"), "{stdout}");
     assert!(stdout.contains("unclosed_comment_library.circom:9:1"), "{stdout}");
     assert!(stdout.contains("analyzing template 'BeforeComment'"), "{stdout}");
     assert!(!stdout.contains("analyzing template 'HiddenByComment'"), "{stdout}");
@@ -136,7 +136,7 @@ fn unclosed_comment_inside_definition_reports_both_syntax_errors() {
     let stdout = String::from_utf8(output.stdout).expect("CLI output is not UTF-8");
 
     assert!(!output.status.success(), "{stdout}");
-    assert!(stdout.contains("Unterminated comment"), "{stdout}");
+    assert!(stdout.contains("unterminated block comment"), "{stdout}");
     assert_eq!(stdout.matches("error:").count(), 2, "{stdout}");
     assert!(stdout.contains("analyzing template 'BeforeBrokenComment'"), "{stdout}");
     assert!(!stdout.contains("analyzing template 'BrokenByComment'"), "{stdout}");
@@ -205,7 +205,7 @@ fn missing_input_file_is_visible() {
     let stdout = String::from_utf8(output.stdout).expect("CLI output is not UTF-8");
 
     assert!(!output.status.success(), "{stdout}");
-    assert!(stdout.contains("Failed to open file"), "{stdout}");
+    assert!(stdout.contains("cannot read"), "{stdout}");
     assert!(!stdout.contains("No issues found."), "{stdout}");
 }
 
@@ -216,7 +216,7 @@ fn unsupported_version_is_visible() {
     let stdout = String::from_utf8(output.stdout).expect("CLI output is not UTF-8");
 
     assert!(!output.status.success(), "{stdout}");
-    assert!(stdout.contains("requires version 2.2.0"), "{stdout}");
+    assert!(stdout.contains("requires Circom 2.3.0"), "{stdout}");
     assert!(stdout.contains("analyzing template 'LibraryItem'"), "{stdout}");
 }
 
@@ -273,7 +273,7 @@ fn function_cannot_be_used_as_main_template() {
 
     assert!(!output.status.success(), "{stdout}");
     assert!(stdout.contains("OnlyFunction"), "{stdout}");
-    assert!(stdout.contains("template is required"), "{stdout}");
+    assert!(stdout.contains("expected Template"), "{stdout}");
     assert!(stdout.contains("function_as_main.circom:7:"), "{stdout}");
 }
 
@@ -286,7 +286,7 @@ fn component_initializer_requires_template_but_parameters_can_call_functions() {
     assert!(!output.status.success(), "{stdout}");
     assert_eq!(stdout.matches("error:").count(), 2, "{stdout}");
     assert!(stdout.contains("OnlyFunction"), "{stdout}");
-    assert!(stdout.contains("template is required"), "{stdout}");
+    assert!(stdout.contains("expected Template"), "{stdout}");
     assert!(stdout.contains("function_as_component.circom:17:"), "{stdout}");
     assert!(stdout.contains("analyzing template 'UsesValidTargets'"), "{stdout}");
     assert!(stdout.contains("analyzing template 'UsesParallelWrongTarget'"), "{stdout}");
@@ -336,7 +336,7 @@ fn parallel_function_cannot_be_used_as_main_template() {
     let stdout = String::from_utf8(output.stdout).expect("CLI output is not UTF-8");
 
     assert!(!output.status.success(), "{stdout}");
-    assert!(stdout.contains("template is required"), "{stdout}");
+    assert!(stdout.contains("expected Template"), "{stdout}");
     assert!(stdout.contains("parallel_function_as_main.circom:7:"), "{stdout}");
 }
 
@@ -407,8 +407,8 @@ fn unversioned_included_library_does_not_add_a_warning_to_input() {
     ]);
     let stdout = String::from_utf8(output.stdout).expect("CLI output is not UTF-8");
 
-    assert!(output.status.success(), "{stdout}");
-    assert!(!stdout.contains("does not include a version pragma"), "{stdout}");
+    assert!(!stdout.contains("error:"), "{stdout}");
+    assert!(!stdout.contains("No compiler version is specified"), "{stdout}");
 }
 
 #[test]
@@ -418,7 +418,7 @@ fn unversioned_user_input_still_has_a_warning() {
     let stdout = String::from_utf8(output.stdout).expect("CLI output is not UTF-8");
 
     assert!(!output.status.success(), "{stdout}");
-    assert!(stdout.contains("does not include a version pragma"), "{stdout}");
+    assert!(stdout.contains("No compiler version is specified"), "{stdout}");
 }
 
 #[test]

@@ -72,7 +72,10 @@ impl<'a> SourceMap<'a> {
         Ok(report)
     }
 
-    fn location(&self, span: Span) -> Result<(FileID, std::ops::Range<usize>), RenderError> {
+    pub(crate) fn location(
+        &self,
+        span: Span,
+    ) -> Result<(FileID, std::ops::Range<usize>), RenderError> {
         let (file, text) =
             self.sources.get(&span.source()).ok_or(RenderError::UnknownSource(span.source()))?;
         let range = span.start()..span.end();

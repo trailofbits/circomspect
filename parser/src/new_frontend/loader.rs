@@ -49,6 +49,15 @@ impl Loader<'_> {
             return Some(local);
         }
         for directory in self.include_dirs {
+            if directory.is_file()
+                && Path::new(name).components().count() == 1
+                && directory.file_name() == Path::new(name).file_name()
+            {
+                return Some(directory.clone());
+            }
+            if name.starts_with('.') {
+                continue;
+            }
             let candidate = directory.join(name);
             if candidate.is_file() {
                 return Some(candidate);

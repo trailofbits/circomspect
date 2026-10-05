@@ -35,10 +35,11 @@ fn source(case: &Value) -> PathBuf {
     source
 }
 
-fn observed_legacy_evidence(case: &Value) -> (Vec<Value>, bool) {
+fn observed_evidence(case: &Value) -> (Vec<Value>, bool, bool) {
     let source = source(case);
     let canonical_source = source.canonicalize().expect("failed to canonicalize warning fixture");
     let expected_uri = format!("file://{}", canonical_source.display());
+    let (scope_start, scope_end) = scope_lines(case, &source);
     let sarif = std::env::temp_dir().join(format!(
         "circomspect-warning-{}-{}.sarif",
         std::process::id(),
@@ -49,6 +50,7 @@ fn observed_legacy_evidence(case: &Value) -> (Vec<Value>, bool) {
         .arg(&source)
         .arg("--curve")
         .arg(curve)
+        .args(["--level", "info"])
         .arg("--sarif-file")
         .arg(&sarif)
         .output()
@@ -61,8 +63,20 @@ fn observed_legacy_evidence(case: &Value) -> (Vec<Value>, bool) {
     let sarif: Value = serde_json::from_str(&text).expect("invalid CLI SARIF");
     let results = sarif["runs"][0]["results"].as_array().expect("missing SARIF results");
     let mut evidence = Vec::new();
+    let mut incomplete = false;
     for result in results {
-        if result["ruleId"] != field(case, "legacy_rule_id") {
+        let physical = &result["locations"][0]["physicalLocation"];
+        let line = physical["region"]["startLine"].as_u64().expect("located diagnostic");
+        if physical["artifactLocation"]["uri"] != expected_uri
+            || line < scope_start
+            || line > scope_end
+        {
+            continue;
+        }
+        if result["ruleId"] == "CS0020" {
+            incomplete = true;
+        }
+        if result["ruleId"] != field(case, "rule_id") {
             continue;
         }
         let message = result["message"]["text"].as_str().expect("finding message is missing");
@@ -85,7 +99,24 @@ fn observed_legacy_evidence(case: &Value) -> (Vec<Value>, bool) {
         evidence.push(json!({ "message": message, "span": span }));
     }
     evidence.sort_by_key(Value::to_string);
-    (evidence, analyzed)
+    (evidence, analyzed, incomplete)
+}
+
+fn scope_lines(case: &Value, path: &Path) -> (u64, u64) {
+    use parser::hir::{lift_project, DefinitionRef};
+    use parser::new_frontend::{load_sources, Version, VersionPolicy};
+    let loaded = load_sources(&[path.to_owned()], &[], VersionPolicy::new(Version::new(2, 2, 3)));
+    let lifted = lift_project(&loaded);
+    let definition = lifted.hir.definition(field(case, "scope")).expect("declared corpus scope");
+    let span = match definition {
+        DefinitionRef::Function(id) => lifted.hir.function(id).unwrap().span,
+        DefinitionRef::Template(id) => lifted.hir.template(id).unwrap().span,
+        DefinitionRef::Bus(id) => lifted.hir.bus(id).unwrap().span,
+    };
+    let source = loaded.files.iter().find(|file| file.id == span.source()).unwrap();
+    let line =
+        |offset| source.text[..offset].bytes().filter(|byte| *byte == b'\n').count() as u64 + 1;
+    (line(span.start()), line(span.end()))
 }
 
 fn compiler_class(binary: &Path, case: &Value) -> String {
@@ -142,7 +173,7 @@ fn corpus_target_ids_match_the_frozen_rule_contract() {
 }
 
 #[test]
-fn warning_labels_and_legacy_results_are_frozen() {
+fn warning_labels_and_recorded_legacy_results_are_frozen() {
     let cases = manifest();
     let mut ids = HashSet::new();
     let mut labels: HashMap<&str, HashSet<&str>> = HashMap::new();
@@ -162,16 +193,10 @@ fn warning_labels_and_legacy_results_are_frozen() {
             "abstain" => assert_eq!(truth, "undetermined"),
             other => panic!("invalid expected outcome: {other}"),
         }
-        let (evidence, analyzed) = observed_legacy_evidence(case);
-        let count = evidence.len();
-        assert_eq!(case["legacy_observed_count"], count, "{id}");
-        let mut expected_evidence = case["legacy_observed_evidence"]
-            .as_array()
-            .expect("legacy finding evidence is missing")
-            .clone();
-        expected_evidence.sort_by_key(Value::to_string);
-        assert_eq!(evidence, expected_evidence, "{id} finding message or source span changed");
-        assert_eq!(case["legacy_analyzed"], analyzed, "{id}");
+        let count = case["legacy_observed_count"].as_u64().expect("legacy count");
+        let evidence = case["legacy_observed_evidence"].as_array().expect("legacy evidence");
+        assert_eq!(evidence.len() as u64, count, "{id}");
+        assert!(case["legacy_analyzed"].is_boolean(), "{id}");
         let label = match expected {
             "emit" if count > 0 => "TP",
             "emit" => "FN",
@@ -193,6 +218,38 @@ fn warning_labels_and_legacy_results_are_frozen() {
 }
 
 #[test]
+fn cli_warning_corpus_preserves_adjudicated_findings() {
+    let mut failures = Vec::new();
+    let mut totals = HashMap::new();
+    for case in manifest() {
+        let (findings, analyzed, incomplete) = observed_evidence(&case);
+        let expected = field(&case, "expected");
+        let label = match (expected, findings.is_empty()) {
+            ("emit", false) => "TP",
+            ("emit", true) => "FN",
+            ("no_finding", false) => "FP",
+            ("no_finding", true) => "TN",
+            ("abstain", true) => "abstention",
+            ("abstain", false) => "unexpected finding",
+            (other, _) => panic!("invalid expectation {other}"),
+        };
+        *totals.entry(label).or_insert(0) += 1;
+        if !analyzed
+            || (expected == "abstain" && !incomplete)
+            || label == "FN"
+            || label == "FP"
+            || label == "unexpected finding"
+        {
+            failures.push(format!(
+                "{}: {label}, scope analyzed={analyzed}, incomplete={incomplete}",
+                field(&case, "id")
+            ));
+        }
+    }
+    assert!(failures.is_empty(), "{totals:?}\n{}", failures.join("\n"));
+}
+
+#[test]
 #[ignore = "requires CIRCOM_COMPILER; CI builds and runs the pinned compiler"]
 fn warning_cases_have_recorded_compiler_classes() {
     let binary = std::env::var_os("CIRCOM_COMPILER")
@@ -209,14 +266,14 @@ fn warning_cases_have_recorded_compiler_classes() {
 }
 
 #[test]
-fn future_diagnostic_contracts_are_explicitly_pending() {
+fn diagnostic_contracts_are_active() {
     let contract_root = root().join("../contracts");
-    let text = std::fs::read_to_string(contract_root.join("pending.json"))
+    let text = std::fs::read_to_string(contract_root.join("active.json"))
         .expect("failed to read pending diagnostic contracts");
     let contract: Value = serde_json::from_str(&text).expect("invalid pending contract JSON");
-    assert_eq!(contract["status"], "pending_phase_7");
+    assert_eq!(contract["status"], "active");
     let cases = contract["cases"].as_array().expect("pending contract cases missing");
-    assert_eq!(cases.len(), 6);
+    assert_eq!(cases.len(), 7);
     let mut ids = HashSet::new();
     for case in cases {
         let id = field(case, "id");

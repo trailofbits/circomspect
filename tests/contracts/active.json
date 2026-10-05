@@ -1,0 +1,109 @@
+{
+  "status": "active",
+  "cases": [
+    {
+      "id": "incomplete_library_default",
+      "source": "cases/incomplete_library.circom",
+      "args": [],
+      "source_scope": "Partial",
+      "expected_exit_code": 1,
+      "expected_rule_ids": [
+        "CS0019",
+        "CS0020"
+      ],
+      "expected_sarif_levels": {
+        "CS0019": "error",
+        "CS0020": "warning"
+      }
+    },
+    {
+      "id": "incomplete_library_level_filter",
+      "source": "cases/incomplete_library.circom",
+      "args": [
+        "--level",
+        "error"
+      ],
+      "source_scope": "Partial",
+      "expected_exit_code": 1,
+      "expected_rule_ids": [
+        "CS0019"
+      ],
+      "expected_sarif_levels": {
+        "CS0019": "error"
+      }
+    },
+    {
+      "id": "incomplete_library_allow_filter",
+      "source": "cases/incomplete_library.circom",
+      "args": [
+        "--allow",
+        "CS0020"
+      ],
+      "source_scope": "Partial",
+      "expected_exit_code": 1,
+      "expected_rule_ids": [
+        "CS0019"
+      ],
+      "expected_sarif_levels": {
+        "CS0019": "error"
+      }
+    },
+    {
+      "id": "redundant_witness_default",
+      "source": "cases/redundant_witness.circom",
+      "args": [],
+      "source_scope": "Main",
+      "expected_exit_code": 1,
+      "expected_rule_ids": [
+        "CS0020",
+        "CS0021"
+      ],
+      "expected_sarif_levels": {
+        "CS0021": "warning",
+        "CS0020": "warning"
+      }
+    },
+    {
+      "id": "redundant_witness_level_filter",
+      "source": "cases/redundant_witness.circom",
+      "args": [
+        "--level",
+        "error"
+      ],
+      "source_scope": "Main",
+      "expected_exit_code": 0,
+      "expected_rule_ids": [],
+      "expected_sarif_levels": {}
+    },
+    {
+      "id": "redundant_witness_allow_filter",
+      "source": "cases/redundant_witness.circom",
+      "args": [
+        "--allow",
+        "CS0021"
+      ],
+      "source_scope": "Main",
+      "expected_exit_code": 1,
+      "expected_rule_ids": [
+        "CS0020"
+      ],
+      "expected_sarif_levels": {
+        "CS0020": "warning"
+      }
+    },
+    {
+      "id": "redundant_witness_allow_all",
+      "source": "cases/redundant_witness.circom",
+      "args": [
+        "--allow",
+        "CS0021",
+        "--allow",
+        "CS0020"
+      ],
+      "source_scope": "Main",
+      "expected_exit_code": 0,
+      "expected_rule_ids": [],
+      "expected_sarif_levels": {}
+    }
+  ]
+}

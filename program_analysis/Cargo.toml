@@ -10,8 +10,6 @@ repository = "https://github.com/trailofbits/circomspect"
 
 [dependencies]
 abstract_interpretation = { package = "circomspect-abstract-interpretation", version = "0.1.0", path = "../abstract_interpretation" }
-anyhow = "1.0"
-log = "0.4"
 num-bigint-dig = "0.8"
 num-traits = "0.2"
 thiserror = "1.0"

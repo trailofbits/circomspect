@@ -1,4 +1,4 @@
-pragma circom 2.2.0;
+pragma circom 2.3.0;
 
 template LibraryItem() {
     signal input in;
