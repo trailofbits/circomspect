@@ -37,7 +37,6 @@ fn inspect_loaded(
 ) -> Result<RuleResult, SummaryBlocker> {
     let lifted = lift_project(loaded);
     assert!(lifted.syntax_diagnostics.is_empty(), "{:?}", lifted.syntax_diagnostics);
-    assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
     let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Main").unwrap();
     let sites = provider.graph().calls_from(CallOwner::Main(0));
@@ -198,4 +197,17 @@ fn internal_witness_aliases_and_unclosed_child_dependencies_abstain() {
             .iter()
             .any(|item| item.kind == RuleKind::UnconstrainedDivision));
     }
+}
+
+#[test]
+fn unrelated_incomplete_function_preserves_the_closed_division_scope() {
+    let source = source("child.divisor<--x;", "", "").replace(
+        "component main=Main();",
+        "function Broken(){return Missing();}component main=Main();",
+    );
+    let loaded = fixture(&source);
+    let lifted = lift_project(&loaded);
+    assert!(!lifted.diagnostics.is_empty());
+    let result = inspect_loaded(&loaded, None).unwrap();
+    assert_eq!(division_count(&result), 1, "{:?}", result.abstentions());
 }

@@ -36,7 +36,7 @@ impl ProjectSummaries<'_> {
         let facts = self
             .analyze_for_evidence(&cfg, &parent, None)
             .map_err(|error| SummaryBlocker::LocalAnalysis(format!("caller facts: {error:?}")))?;
-        self.check_main_root(&facts, &parent)?;
+        self.check_model_main_root(&facts, &parent)?;
         let instance = self.sole_child_instance(&facts, &parent, evidence)?;
         let ready = ready_witness_instance(&facts, &parent, &instance)?;
         let completed = self.completed_project_template(child, evidence, &[])?;
