@@ -55,7 +55,10 @@ pub use crate::hir_facts::relations::{
 };
 pub use crate::hir_facts::write_validity::{BodyWriteStatus, NoRepeatedBodyWrite, RepeatedBodyWrite};
 pub(crate) use handles::InstanceRelation;
-pub(crate) use crate::hir_facts::relations::ProofBudget;
+pub(crate) use crate::hir_facts::relations::{
+    generated_models_satisfy, generated_seeds, GeneratedAssignments, GeneratedEquationSites,
+    ProofBudget,
+};
 
 pub(crate) fn exact_compile_time(
     hir: &HirProject,

@@ -9,7 +9,7 @@ use crate::hir_cfg::{CfgNodeKind, Origin};
 use crate::hir_facts::forward::ForwardState;
 use crate::hir_facts::relations::NormalizedEquation;
 use crate::hir_facts::{AccessKey, AnalysisFacts, Fact, FactBlocker};
-use crate::interprocedural::ContextEvidence;
+use crate::interprocedural::{ContextEvidence, ValidatedComponentPorts};
 
 #[derive(Debug)]
 pub(crate) struct GeneratedConstraintSite<'a> {
@@ -112,7 +112,23 @@ impl AnalysisFacts<'_> {
         &self,
         budget: &mut ProofBudget,
     ) -> Fact<GeneratedEquationSites<'_>> {
-        match self.collect_generated_sites(budget) {
+        self.generated_sites_for(budget, None)
+    }
+
+    pub(crate) fn generated_component_equation_sites(
+        &self,
+        budget: &mut ProofBudget,
+        ports: &ValidatedComponentPorts,
+    ) -> Fact<GeneratedEquationSites<'_>> {
+        self.generated_sites_for(budget, Some(ports))
+    }
+
+    fn generated_sites_for(
+        &self,
+        budget: &mut ProofBudget,
+        ports: Option<&ValidatedComponentPorts>,
+    ) -> Fact<GeneratedEquationSites<'_>> {
+        match self.collect_generated_sites(budget, ports) {
             Ok(sites) => Fact::known(sites),
             Err(blockers) => Fact::blocked(blockers),
         }
@@ -121,11 +137,12 @@ impl AnalysisFacts<'_> {
     fn collect_generated_sites(
         &self,
         budget: &mut ProofBudget,
+        ports: Option<&ValidatedComponentPorts>,
     ) -> Result<GeneratedEquationSites<'_>, BTreeSet<FactBlocker>> {
         let Some(evidence) = &self.evidence_binding else {
             return Err(BTreeSet::from([FactBlocker::ForeignQuery]));
         };
-        let facts = self.source_valid_forward()?;
+        let facts = self.source_valid_forward(ports)?;
         let Some(exit) = facts.get(&self.cfg.exit()).and_then(|item| item.output.as_ref()) else {
             return Err(BTreeSet::from([FactBlocker::MissingExit]));
         };
@@ -151,11 +168,15 @@ impl AnalysisFacts<'_> {
 
     fn source_valid_forward(
         &self,
+        ports: Option<&ValidatedComponentPorts>,
     ) -> Result<&CertifiedFacts<NodeId, ForwardState>, BTreeSet<FactBlocker>> {
         let SolveResult::Complete(facts) = &self.forward else {
             return Err(self.forward_completion_blockers());
         };
-        let validity = self.generated_constraints_valid();
+        let validity = match ports {
+            Some(ports) => self.generated_constraints_valid_with(ports),
+            None => self.generated_constraints_valid(),
+        };
         if let Some(blockers) = validity.unavailable() {
             return Err(blockers.clone());
         }

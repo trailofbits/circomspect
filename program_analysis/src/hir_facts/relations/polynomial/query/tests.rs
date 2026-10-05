@@ -221,3 +221,49 @@ fn selected_modulus_defines_the_canonical_integer_boundary() {
         assert_eq!(field.canonical((-1).into()).as_bigint(), &(field.modulus() - 1));
     }
 }
+
+#[test]
+fn linear_target_completion_reuses_all_other_candidate_values() {
+    let keys = keys();
+    for curve in [Curve::Bn254, Curve::Bls12_381, Curve::Goldilocks] {
+        let field = FieldContext::for_curve(curve);
+        let relation = equation(
+            &field,
+            &[
+                (Monomial::Linear(keys[0].clone()), 2),
+                (Monomial::Quadratic(keys[1].clone(), keys[2].clone()), -2),
+                (Monomial::Constant, -6),
+            ],
+        );
+        let values = assignment(&field, &keys[1..], &[4, 5]);
+        assert_eq!(
+            relation.solve_linear_target(&field, &values, &keys[0]),
+            Ok(Some(field.canonical(23.into())))
+        );
+        assert_eq!(relation.solve_linear_target(&field, &values, &keys[1]), Ok(None));
+        let incomplete = assignment(&field, &keys[1..2], &[0]);
+        assert_eq!(
+            relation.solve_linear_target(&field, &incomplete, &keys[0]),
+            Err(EquationEvaluationError::MissingValue(keys[2].clone()))
+        );
+    }
+}
+
+#[test]
+fn target_completion_rejects_missing_or_quadratic_targets_and_wrong_fields() {
+    let keys = keys();
+    let field = FieldContext::for_curve(Curve::Goldilocks);
+    let values = assignment(&field, &keys, &[0, 0, 0]);
+    for monomial in [
+        Monomial::Constant,
+        Monomial::Quadratic(keys[0].clone(), keys[0].clone()),
+        Monomial::Quadratic(keys[0].clone(), keys[1].clone()),
+    ] {
+        let relation = equation(&field, &[(monomial, 1)]);
+        assert_eq!(relation.solve_linear_target(&field, &values, &keys[0]), Ok(None));
+        assert_eq!(
+            relation.solve_linear_target(&FieldContext::for_curve(Curve::Bn254), &values, &keys[0]),
+            Err(EquationEvaluationError::WrongCurve)
+        );
+    }
+}

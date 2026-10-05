@@ -266,8 +266,13 @@ impl ProjectSummaries<'_> {
         let equality = self.child_output_equality(child, applied)?;
         let ready = ready_instance_at_use(facts, applied, child)?;
         let binding = ready.binding(equality.input).ok_or(SummaryBlocker::MissingInputBinding)?;
+        let crate::interprocedural::input_relation::GeneratedInputValue::Constant(value) =
+            &binding.value
+        else {
+            return Err(SummaryBlocker::UnsupportedContext);
+        };
         Ok(ComposedConstraintFixedOutput {
-            value: binding.value.clone(),
+            value: value.clone(),
             child_equality: equality.origin,
             caller_inputs: binding.origins.clone(),
             applied: applied.clone(),

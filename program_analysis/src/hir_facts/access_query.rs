@@ -4,7 +4,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use abstract_interpretation::graph::{FlowGraph, NodeId};
 use abstract_interpretation::solver::SolveResult;
-use parser::hir::{AccessPath, AccessStep, SymbolKind};
+use parser::hir::{AccessPath, AccessStep, PortId, SymbolKind};
+use num_traits::ToPrimitive;
 
 use crate::hir_cfg::CfgNodeKind;
 use crate::hir_facts::access::key_for_path;
@@ -14,6 +15,81 @@ use crate::hir_facts::{
 };
 
 impl AnalysisFacts<'_> {
+    /// Read exact source indices without claiming that either port schema accepts them.
+    /// The provider must subsequently check the caller instance and callee port bounds.
+    pub(crate) fn source_component_port_indices(
+        &self,
+        path: &AccessPath,
+    ) -> Result<(PortId, Vec<usize>), FactBlocker> {
+        if let Some(blocker) = self.validate_query_path(path, false) {
+            return Err(blocker);
+        }
+        let mut port = None;
+        let mut indices = Vec::new();
+        for step in &path.steps {
+            match step {
+                AccessStep::Port { port: selected, .. } => {
+                    if port.replace(*selected).is_some() {
+                        return Err(FactBlocker::AggregateAccess);
+                    }
+                }
+                AccessStep::Index { index, .. } if port.is_some() => {
+                    let index =
+                        self.access_index_value(index).map_err(|_| FactBlocker::AggregateAccess)?;
+                    indices.push(index.to_usize().ok_or(FactBlocker::AggregateAccess)?);
+                }
+                AccessStep::Index { .. } => {}
+                AccessStep::Tag { .. } => return Err(FactBlocker::AggregateAccess),
+            }
+        }
+        Ok((port.ok_or(FactBlocker::AggregateAccess)?, indices))
+    }
+
+    pub(crate) fn applied_component_key(
+        &self,
+        applied: &crate::interprocedural::AppliedComponentPort,
+    ) -> Fact<AccessKey> {
+        if self.evidence_binding.as_ref() != Some(applied.caller_evidence())
+            || !applied.handle().matches_context(applied.caller_evidence().context())
+        {
+            return Fact::blocked(BTreeSet::from([FactBlocker::ForeignQuery]));
+        }
+        let key = key_for_path(self.hir, self.field, applied.handle().path(), &BTreeMap::new());
+        if !key.exact_alias(&key) {
+            return Fact::blocked(BTreeSet::from([FactBlocker::AggregateAccess]));
+        }
+        Fact::known(key)
+    }
+
+    pub(crate) fn exact_closed_component_key(
+        &self,
+        path: &AccessPath,
+        site: NodeId,
+        ports: &crate::interprocedural::ValidatedComponentPorts,
+    ) -> Fact<AccessKey> {
+        if self.evidence_binding.as_ref() != Some(ports.evidence()) {
+            return Fact::blocked(BTreeSet::from([FactBlocker::ForeignQuery]));
+        }
+        if let Some(blocker) = self.validate_query_path(path, false) {
+            return Fact::blocked(BTreeSet::from([blocker]));
+        }
+        if !self.source_path_at_site(path, site) {
+            return Fact::blocked(BTreeSet::from([FactBlocker::ForeignQuery]));
+        }
+        let SolveResult::Complete(_) = &self.forward else {
+            return Fact::blocked(self.forward_completion_blockers());
+        };
+        let Some(values) = self.site_state(site).and_then(|state| state.variables()) else {
+            return Fact::blocked(BTreeSet::from([FactBlocker::MissingExit]));
+        };
+        let key = key_for_path(self.hir, self.field, path, values);
+        if ports.contains_output(&key) {
+            Fact::known(key)
+        } else {
+            self.exact_access_key_at(path, site)
+        }
+    }
+
     /// Identify one owned scalar storage path with proved dimensions and exact indices.
     ///
     /// Symbolic index syntax is accepted only when its value is certified across every

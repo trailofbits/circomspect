@@ -1,7 +1,9 @@
 //! Must-equation evidence bound to provider-issued analysis contexts.
 
 mod ambiguity;
+mod assignment;
 mod complete;
+mod completion;
 mod decomposition;
 mod polynomial;
 
@@ -16,13 +18,15 @@ use crate::hir_facts::relations::polynomial::witness_equation;
 use crate::hir_facts::{
     AnalysisFacts, BodyWriteStatus, Fact, FactBlocker, VisitAccesses, WitnessWriteIssue,
 };
-use crate::interprocedural::ContextEvidence;
+use crate::interprocedural::{ContextEvidence, ValidatedComponentPorts};
 
 pub use crate::hir_facts::relations::ambiguity::{
     BitAmbiguity, BitAmbiguityOutcome, BitRepresentation, NoBitAmbiguityCertificate,
 };
 pub use crate::hir_facts::relations::decomposition::BitDecomposition;
-pub(crate) use crate::hir_facts::relations::complete::ProofBudget;
+pub(crate) use crate::hir_facts::relations::completion::GeneratedAssignments;
+pub(crate) use crate::hir_facts::relations::complete::{GeneratedEquationSites, ProofBudget};
+pub(crate) use crate::hir_facts::relations::ambiguity::{generated_models_satisfy, generated_seeds};
 pub use crate::hir_facts::relations::polynomial::{NormalizedEquation, QuadraticPolynomial};
 pub(crate) use crate::hir_facts::relations::polynomial::{
     constraint_equation, variable_polynomial, ExpressionPolynomial, MustSymbolicVariables,
@@ -228,13 +232,27 @@ impl AnalysisFacts<'_> {
     /// Check source form and exact operands of every reachable generated constraint.
     /// This establishes neither witness readiness nor satisfiability.
     pub(crate) fn generated_constraints_valid(&self) -> Fact<()> {
+        self.generated_constraints_valid_for(None)
+    }
+
+    pub(crate) fn generated_constraints_valid_with(
+        &self,
+        ports: &ValidatedComponentPorts,
+    ) -> Fact<()> {
+        if self.evidence_binding.as_ref() != Some(ports.evidence()) {
+            return Fact::blocked(BTreeSet::from([FactBlocker::ForeignQuery]));
+        }
+        self.generated_constraints_valid_for(Some(ports))
+    }
+
+    fn generated_constraints_valid_for(&self, ports: Option<&ValidatedComponentPorts>) -> Fact<()> {
         let SolveResult::Complete(facts) = &self.forward else {
             return Fact::blocked(self.forward_completion_blockers());
         };
         let Some(exit) = facts.get(&self.cfg.exit()).and_then(|item| item.output.as_ref()) else {
             return Fact::blocked(BTreeSet::from([FactBlocker::MissingExit]));
         };
-        let mut blockers = self.reachable_relation_blockers(facts);
+        let mut blockers = self.reachable_relation_blockers(facts, ports);
         blockers.extend(exit.must_equations().blockers());
         if blockers.is_empty() {
             Fact::known(())
@@ -291,16 +309,25 @@ impl AnalysisFacts<'_> {
         kind: &CfgNodeKind,
         site: NodeId,
     ) -> BTreeSet<FactBlocker> {
+        self.relation_constraint_blockers_for(kind, site, None)
+    }
+
+    fn relation_constraint_blockers_for(
+        &self,
+        kind: &CfgNodeKind,
+        site: NodeId,
+        ports: Option<&ValidatedComponentPorts>,
+    ) -> BTreeSet<FactBlocker> {
         let CfgNodeKind::Constraint { target, left, right } = kind else {
             return BTreeSet::from([FactBlocker::UnsupportedRelation(site)]);
         };
         let mut blockers = BTreeSet::new();
         if let Some(target) = target {
-            blockers.extend(self.relation_access_blockers(target, site));
+            blockers.extend(self.relation_access_blockers_for(target, site, ports));
         }
-        blockers.extend(self.relation_access_blockers(left, site));
+        blockers.extend(self.relation_access_blockers_for(left, site, ports));
         if let Some(right) = right {
-            blockers.extend(self.relation_access_blockers(right, site));
+            blockers.extend(self.relation_access_blockers_for(right, site, ports));
         }
         blockers
     }
@@ -308,6 +335,7 @@ impl AnalysisFacts<'_> {
     fn reachable_relation_blockers(
         &self,
         facts: &CertifiedFacts<NodeId, ForwardState>,
+        ports: Option<&ValidatedComponentPorts>,
     ) -> BTreeSet<FactBlocker> {
         let mut blockers = BTreeSet::new();
         for site in self.cfg.nodes() {
@@ -319,7 +347,7 @@ impl AnalysisFacts<'_> {
             }
             let Some(node) = self.cfg.node(*site) else { continue };
             if let CfgNodeKind::Constraint { .. } = &node.kind {
-                blockers.extend(self.relation_constraint_blockers(&node.kind, *site));
+                blockers.extend(self.relation_constraint_blockers_for(&node.kind, *site, ports));
             }
         }
         blockers
@@ -330,12 +358,24 @@ impl AnalysisFacts<'_> {
         source: &impl VisitAccesses,
         site: NodeId,
     ) -> BTreeSet<FactBlocker> {
+        self.relation_access_blockers_for(source, site, None)
+    }
+
+    fn relation_access_blockers_for(
+        &self,
+        source: &impl VisitAccesses,
+        site: NodeId,
+        ports: Option<&ValidatedComponentPorts>,
+    ) -> BTreeSet<FactBlocker> {
         let mut blockers = BTreeSet::new();
         let complete = source.visit_accesses_with(
             self.hir,
             &|expression| self.exact_call_value(expression).is_some(),
             &mut |path| {
-                let fact = self.exact_access_key_at(path, site);
+                let fact = match ports {
+                    Some(ports) => self.exact_closed_component_key(path, site, ports),
+                    None => self.exact_access_key_at(path, site),
+                };
                 if let Some(unavailable) = fact.unavailable() {
                     blockers.extend(unavailable.iter().cloned());
                 }

@@ -181,7 +181,10 @@ impl AnalysisFacts<'_> {
         Ok(())
     }
 
-    fn access_index_value(&self, index: &ArrayIndex) -> Result<BigInt, AccessHandleError> {
+    pub(super) fn access_index_value(
+        &self,
+        index: &ArrayIndex,
+    ) -> Result<BigInt, AccessHandleError> {
         match index {
             ArrayIndex::Constant(text) => {
                 let (digits, radix) =

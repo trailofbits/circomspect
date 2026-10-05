@@ -9,6 +9,7 @@ mod template;
 mod context;
 mod component;
 mod component_port;
+mod component_models;
 mod input_relation;
 mod project_use;
 mod project_output_closure;
@@ -38,3 +39,8 @@ pub use template::{PortSummary, WitnessProvenance, WitnessSite};
 pub use component::{AppliedComponentPort, CallerOutputRead, ComposedConstraintFixedOutput};
 pub use project_use::{ProjectInstanceStep, ProjectOutputStatus, ProjectOutputUse};
 pub use output_enumeration::EnumeratedComponentOutput;
+
+pub(crate) use crate::interprocedural::component_models::ValidatedComponentPorts;
+pub use crate::interprocedural::component_models::{
+    ComponentBitAmbiguity, ComponentBitAmbiguityOutcome, ComponentModelAssignment,
+};

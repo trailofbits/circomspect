@@ -9,11 +9,36 @@ use crate::hir_cfg::CfgNodeKind;
 use crate::hir_facts::forward::eval_expression_with_calls;
 use crate::hir_facts::relations::complete::ProofBudget;
 use crate::hir_facts::{AnalysisFacts, FactBlocker, FieldValue, VisitAccesses};
+use crate::interprocedural::ValidatedConstructorReads;
+
+enum GenerationScope<'a> {
+    Leaf,
+    CompletedChildren(&'a ValidatedConstructorReads),
+}
 
 impl AnalysisFacts<'_> {
     pub(crate) fn unique_generation_path(
         &self,
         budget: &mut ProofBudget,
+    ) -> Result<BTreeSet<NodeId>, BTreeSet<FactBlocker>> {
+        self.generation_path(budget, GenerationScope::Leaf)
+    }
+
+    pub(crate) fn unique_generation_path_with(
+        &self,
+        budget: &mut ProofBudget,
+        constructors: &ValidatedConstructorReads,
+    ) -> Result<BTreeSet<NodeId>, BTreeSet<FactBlocker>> {
+        if self.evidence_binding.as_ref() != Some(constructors.evidence()) {
+            return Err(BTreeSet::from([FactBlocker::ForeignQuery]));
+        }
+        self.generation_path(budget, GenerationScope::CompletedChildren(constructors))
+    }
+
+    fn generation_path(
+        &self,
+        budget: &mut ProofBudget,
+        scope: GenerationScope<'_>,
     ) -> Result<BTreeSet<NodeId>, BTreeSet<FactBlocker>> {
         let successors = self.model_successors(budget)?;
         let mut visited = BTreeSet::new();
@@ -22,7 +47,7 @@ impl AnalysisFacts<'_> {
             if !visited.insert(current) {
                 return Err(BTreeSet::from([FactBlocker::UnsupportedRelation(current)]));
             }
-            self.validate_model_control(current)?;
+            self.validate_model_control(current, &scope)?;
             if current == self.cfg.exit() {
                 break;
             }
@@ -65,7 +90,11 @@ impl AnalysisFacts<'_> {
         Ok(successors)
     }
 
-    fn validate_model_control(&self, site: NodeId) -> Result<(), BTreeSet<FactBlocker>> {
+    fn validate_model_control(
+        &self,
+        site: NodeId,
+        scope: &GenerationScope<'_>,
+    ) -> Result<(), BTreeSet<FactBlocker>> {
         let Some(node) = self.cfg.node(site) else {
             return Err(BTreeSet::from([FactBlocker::ForeignQuery]));
         };
@@ -79,8 +108,14 @@ impl AnalysisFacts<'_> {
                     return Err(BTreeSet::from([FactBlocker::UnsupportedRelation(site)]));
                 }
             }
+            CfgNodeKind::Instantiate { value, .. } => match scope {
+                GenerationScope::CompletedChildren(constructors)
+                    if constructors.contains(*value) => {}
+                GenerationScope::Leaf | GenerationScope::CompletedChildren(_) => {
+                    return Err(BTreeSet::from([FactBlocker::UnsupportedRelation(site)]));
+                }
+            },
             CfgNodeKind::LoopHeader
-            | CfgNodeKind::Instantiate { .. }
             | CfgNodeKind::DeferredAssignment { .. }
             | CfgNodeKind::OpaqueAssignment { .. }
             | CfgNodeKind::OpaqueEquality { .. }

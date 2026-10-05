@@ -9,9 +9,9 @@ use crate::hir_facts::{
 use crate::interprocedural::{
     AppliedComponentPort, CallBlocker, CallContext, CallOwner, CallReachability, CallSite,
     CallPathSite, CallSiteId, CallerOutputRead, ComposedConstraintFixedOutput, ContextEvidence,
-    EnumeratedComponentOutput, FunctionEffects, FunctionSummary, PortSummary, ProjectOutputUse,
-    ProjectSummaries, SummaryBlocker, SummaryFact, ValidatedDefinition, ValidatedHeader,
-    WitnessSite,
+    ComponentBitAmbiguityOutcome, EnumeratedComponentOutput, FunctionEffects, FunctionSummary,
+    PortSummary, ProjectOutputUse, ProjectSummaries, SummaryBlocker, SummaryFact,
+    ValidatedDefinition, ValidatedHeader, WitnessSite,
 };
 
 use crate::new_rules::{Finding, RuleKind};
@@ -231,6 +231,17 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
         bits: &[AccessHandle],
     ) -> SummaryFact<BitAmbiguityOutcome> {
         self.summaries.template_bit_ambiguity_handles(self.facts, self.evidence, input, bits)
+    }
+
+    /// Prove complete caller/child models for the sole component under this main scope.
+    #[must_use]
+    pub fn component_bit_ambiguity_handles(
+        &self,
+        applied: &AppliedComponentPort,
+        input: &AccessHandle,
+        bits: &[AccessHandle],
+    ) -> SummaryFact<ComponentBitAmbiguityOutcome> {
+        self.summaries.component_bit_ambiguity_handles(self.facts, applied, input, bits)
     }
 
     /// Request a source-valid bit relation in this validated root template scope.

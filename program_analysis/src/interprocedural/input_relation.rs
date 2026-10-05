@@ -9,20 +9,33 @@ use abstract_interpretation::solver::{
 };
 use parser::hir::{
     AccessPath, AccessStep, ArrayIndex, ControlGuard, Effect, ExprKind, PortId, PortSchema,
+    SymbolKind,
 };
 use parser::new_frontend::PortDirection;
 
 use crate::hir_cfg::{CfgEdge, CfgNode, CfgNodeKind, Origin};
-use crate::hir_facts::{AnalysisFacts, FieldValue, InstanceRelation, Range, VisitAccesses};
+use crate::hir_facts::{AccessKey, AnalysisFacts, FieldValue, InstanceRelation, Range, VisitAccesses};
 use crate::interprocedural::component::AppliedComponentPort;
 use crate::interprocedural::output_enumeration::EnumeratedComponentInstance;
 use crate::interprocedural::summary::certified;
 use crate::interprocedural::SummaryBlocker;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) enum GeneratedInputValue {
+    Constant(FieldValue),
+    ParentSignal(AccessKey),
+}
+
+#[derive(Clone, Copy)]
+enum BindingPolicy {
+    FixedOutput,
+    CompleteModels,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 enum InputState {
     Absent,
-    Bound { value: FieldValue, sites: BTreeSet<NodeId> },
+    Bound { value: GeneratedInputValue, sites: BTreeSet<NodeId> },
 }
 
 enum BindingJoin {
@@ -153,7 +166,8 @@ impl Lattice for RelationState {
 
 #[derive(Clone, Debug)]
 pub(super) struct ConstrainedInputBinding {
-    pub(super) value: FieldValue,
+    pub(super) target: AccessKey,
+    pub(super) value: GeneratedInputValue,
     pub(super) origins: Vec<Origin>,
 }
 
@@ -162,6 +176,10 @@ pub(super) struct ReadyInstanceAtUse {
 }
 
 impl ReadyInstanceAtUse {
+    pub(super) fn bindings(&self) -> &BTreeMap<PortId, ConstrainedInputBinding> {
+        &self.bindings
+    }
+
     pub(super) fn binding(&self, port: PortId) -> Option<&ConstrainedInputBinding> {
         self.bindings.get(&port)
     }
@@ -172,6 +190,7 @@ struct RelationAnalysis<'a> {
     instance: &'a AccessPath,
     instantiation: NodeId,
     inputs: Vec<PortId>,
+    policy: BindingPolicy,
 }
 
 impl DataflowAnalysis<crate::hir_cfg::DefinitionCfg> for RelationAnalysis<'_> {
@@ -341,7 +360,7 @@ impl RelationAnalysis<'_> {
         &self,
         node: &CfgNode,
         value: parser::hir::ExprId,
-    ) -> Result<FieldValue, SummaryBlocker> {
+    ) -> Result<GeneratedInputValue, SummaryBlocker> {
         let origin = node.origin.ok_or(SummaryBlocker::ExternalSummary)?;
         let effect = self
             .facts
@@ -354,11 +373,27 @@ impl RelationAnalysis<'_> {
             Effect::WitnessAssignment { .. } => return Err(SummaryBlocker::WitnessOnlyInput),
             _ => return Err(SummaryBlocker::ExternalSummary),
         }
+        if let BindingPolicy::CompleteModels = self.policy {
+            if let Some(ExprKind::Access(path)) =
+                self.facts.hir().expression(value).map(|expression| &expression.kind)
+            {
+                let symbol =
+                    self.facts.hir().symbol(path.root).ok_or(SummaryBlocker::ForeignDefinition)?;
+                if symbol.kind == SymbolKind::Signal && path.root == path.terminal {
+                    let key = certified(&self.facts.exact_access_key(path))?.clone();
+                    return Ok(GeneratedInputValue::ParentSignal(key));
+                }
+            }
+        }
         let range = self.facts.range(value);
         let Range::Exact(value) = certified(&range)? else {
             return Err(SummaryBlocker::UnsupportedContext);
         };
-        Ok(value.clone())
+        let fixed = self.facts.generated_assignment_constant(node.id);
+        if certified(&fixed)?.as_ref() != Some(value) {
+            return Err(SummaryBlocker::UnsupportedContext);
+        }
+        Ok(GeneratedInputValue::Constant(value.clone()))
     }
 
     fn check_read(
@@ -389,6 +424,9 @@ impl RelationAnalysis<'_> {
         right: Option<parser::hir::ExprId>,
         state: &mut RelationState,
     ) -> Result<(), SummaryBlocker> {
+        if let BindingPolicy::CompleteModels = self.policy {
+            return Ok(());
+        }
         for expression in [Some(left), right].into_iter().flatten() {
             let mut touches = false;
             if !expression.visit_accesses(self.facts.hir(), &mut |path| {
@@ -426,12 +464,33 @@ pub(super) fn ready_instance_at_use(
     if facts.instance_relation(applied.handle(), target) != InstanceRelation::Exact {
         return Err(SummaryBlocker::WrongInstance);
     }
-    ready_inputs(facts, applied.handle().path(), applied.instantiation(), child)
+    ready_inputs(
+        facts,
+        applied.handle().path(),
+        applied.instantiation(),
+        child,
+        BindingPolicy::FixedOutput,
+    )
 }
 
 pub(super) fn ready_enumerated_instance(
     facts: &AnalysisFacts<'_>,
     instance: &EnumeratedComponentInstance,
+) -> Result<ReadyInstanceAtUse, SummaryBlocker> {
+    ready_enumerated_inputs(facts, instance, BindingPolicy::FixedOutput)
+}
+
+pub(super) fn ready_model_instance(
+    facts: &AnalysisFacts<'_>,
+    instance: &EnumeratedComponentInstance,
+) -> Result<ReadyInstanceAtUse, SummaryBlocker> {
+    ready_enumerated_inputs(facts, instance, BindingPolicy::CompleteModels)
+}
+
+fn ready_enumerated_inputs(
+    facts: &AnalysisFacts<'_>,
+    instance: &EnumeratedComponentInstance,
+    policy: BindingPolicy,
 ) -> Result<ReadyInstanceAtUse, SummaryBlocker> {
     let parser::hir::DefinitionRef::Template(child) = instance.callee.context().definition() else {
         return Err(SummaryBlocker::WrongInstance);
@@ -453,7 +512,7 @@ pub(super) fn ready_enumerated_instance(
         })
         .collect();
     let exact = AccessPath { steps, ..target.clone() };
-    ready_inputs(facts, &exact, instance.instantiation, child)
+    ready_inputs(facts, &exact, instance.instantiation, child, policy)
 }
 
 fn ready_inputs(
@@ -461,9 +520,10 @@ fn ready_inputs(
     instance: &AccessPath,
     instantiation: NodeId,
     child: parser::hir::TemplateId,
+    policy: BindingPolicy,
 ) -> Result<ReadyInstanceAtUse, SummaryBlocker> {
     let inputs = input_ports(facts, child)?;
-    let analysis = RelationAnalysis { facts, instance, instantiation, inputs };
+    let analysis = RelationAnalysis { facts, instance, instantiation, inputs, policy };
     let result = solve::<_, _, Forward>(facts.cfg(), &analysis, Some(100_000))
         .map_err(|error| SummaryBlocker::LocalAnalysis(format!("{error:?}")))?;
     let states = match result {
@@ -520,7 +580,18 @@ fn constrained_binding(
         return Err(SummaryBlocker::MissingInputBinding);
     };
     let mut origins = Vec::new();
+    let mut target_key = None;
     for id in sites {
+        let Some(CfgNodeKind::Witness { target, .. }) =
+            facts.cfg().node(*id).map(|node| &node.kind)
+        else {
+            return Err(SummaryBlocker::ExternalSummary);
+        };
+        let key = certified(&facts.exact_access_key(target))?.clone();
+        if target_key.as_ref().is_some_and(|previous| previous != &key) {
+            return Err(SummaryBlocker::WrongInstance);
+        }
+        target_key = Some(key);
         let origin = facts
             .cfg()
             .node(*id)
@@ -533,7 +604,11 @@ fn constrained_binding(
     if origins.is_empty() {
         return Err(SummaryBlocker::ExternalSummary);
     }
-    Ok(ConstrainedInputBinding { value: value.clone(), origins })
+    Ok(ConstrainedInputBinding {
+        target: target_key.ok_or(SummaryBlocker::MissingInputBinding)?,
+        value: value.clone(),
+        origins,
+    })
 }
 
 #[cfg(test)]
@@ -550,7 +625,8 @@ mod tests {
     use crate::interprocedural::{CallOwner, CallReachability, ProjectSummaries};
 
     use crate::interprocedural::input_relation::{
-        InputState, RelationAnalysis, RelationState, SummaryBlocker,
+        BindingPolicy, GeneratedInputValue, InputState, RelationAnalysis, RelationState,
+        SummaryBlocker,
     };
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -564,9 +640,12 @@ mod tests {
         let both = BTreeSet::from([NodeId::new(3), NodeId::new(5)]);
         let inputs = [
             InputState::Absent,
-            InputState::Bound { value: seven.clone(), sites: first },
-            InputState::Bound { value: seven, sites: both },
-            InputState::Bound { value: eight, sites: BTreeSet::from([NodeId::new(4)]) },
+            InputState::Bound { value: GeneratedInputValue::Constant(seven.clone()), sites: first },
+            InputState::Bound { value: GeneratedInputValue::Constant(seven), sites: both },
+            InputState::Bound {
+                value: GeneratedInputValue::Constant(eight),
+                sites: BTreeSet::from([NodeId::new(4)]),
+            },
         ];
         let mut states = vec![RelationState::Unreachable, RelationState::Invalid];
         for input in inputs {
@@ -639,6 +718,7 @@ mod tests {
             instance: target,
             instantiation: applied.instantiation(),
             inputs: vec![ports[0]],
+            policy: BindingPolicy::FixedOutput,
         };
         let field = FieldContext::for_curve(Curve::Bn254);
         let states =

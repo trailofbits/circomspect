@@ -36,6 +36,10 @@ pub(super) struct EnumeratedComponentInstance {
 }
 
 impl EnumeratedComponentOutput {
+    pub(super) fn from_call(call: &ReachableCall<'_>, applied: AppliedComponentPort) -> Self {
+        Self { site: call.site().id(), source_span: call.site().span, applied }
+    }
+
     #[must_use]
     pub fn site(&self) -> CallSiteId {
         self.site

@@ -8,7 +8,9 @@ use parser::new_frontend::PortDirection;
 
 use crate::hir_cfg::{build_cfg, CfgNodeKind};
 use crate::hir_facts::{AnalysisFacts, InstanceRelation};
-use crate::interprocedural::input_relation::ready_enumerated_instance;
+use crate::interprocedural::input_relation::{
+    ready_enumerated_instance, ready_model_instance, ReadyInstanceAtUse,
+};
 use crate::interprocedural::{
     AppliedComponentPort, CallOwner, CallReachability, CallSiteId, ContextEvidence,
     ProjectSummaries, SummaryBlocker,
@@ -54,6 +56,11 @@ pub(super) struct CompletedTemplate {
     evidence: ContextEvidence,
 }
 
+enum ChildCompletion {
+    ProjectOutput(CompletedTemplate),
+    CompleteModels(CompletedTemplate),
+}
+
 pub(super) struct CompletedChild {
     caller: ContextEvidence,
     site: CallSiteId,
@@ -88,7 +95,36 @@ impl ProjectSummaries<'_> {
         instance: &EnumeratedComponentInstance,
         completed: CompletedTemplate,
     ) -> Result<CompletedChild, SummaryBlocker> {
+        self.complete_child(facts, caller, instance, ChildCompletion::ProjectOutput(completed))
+            .map(|(child, _)| child)
+    }
+
+    pub(super) fn completed_model_child(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        caller: &ContextEvidence,
+        instance: &EnumeratedComponentInstance,
+        completed: CompletedTemplate,
+    ) -> Result<(CompletedChild, ReadyInstanceAtUse), SummaryBlocker> {
+        self.complete_child(facts, caller, instance, ChildCompletion::CompleteModels(completed))
+    }
+
+    fn complete_child(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        caller: &ContextEvidence,
+        instance: &EnumeratedComponentInstance,
+        completion: ChildCompletion,
+    ) -> Result<(CompletedChild, ReadyInstanceAtUse), SummaryBlocker> {
         self.check_facts_for_evidence(facts, caller)?;
+        let (completed, ready) = match completion {
+            ChildCompletion::ProjectOutput(completed) => {
+                (completed, ready_enumerated_instance(facts, instance)?)
+            }
+            ChildCompletion::CompleteModels(completed) => {
+                (completed, ready_model_instance(facts, instance)?)
+            }
+        };
         if completed.evidence != instance.callee {
             return Err(SummaryBlocker::WrongContext);
         }
@@ -106,18 +142,20 @@ impl ProjectSummaries<'_> {
         let DefinitionRef::Template(_) = completed.evidence.context().definition() else {
             return Err(SummaryBlocker::WrongContext);
         };
-        ready_enumerated_instance(facts, instance)?;
         let mut outputs = Vec::new();
         for output in &instance.outputs {
             outputs.extend(self.checked_output_read_sites(facts, output.applied_port())?);
         }
-        Ok(CompletedChild {
-            caller: caller.clone(),
-            site: instance.site,
-            indices: instance.indices.clone(),
-            completed,
-            outputs,
-        })
+        Ok((
+            CompletedChild {
+                caller: caller.clone(),
+                site: instance.site,
+                indices: instance.indices.clone(),
+                completed,
+                outputs,
+            },
+            ready,
+        ))
     }
 
     fn checked_output_read_sites(
@@ -171,7 +209,7 @@ impl ProjectSummaries<'_> {
         Ok(CompletedTemplate { evidence: evidence.clone() })
     }
 
-    fn completed_constructor_reads(
+    pub(super) fn completed_constructor_reads(
         &self,
         facts: &AnalysisFacts<'_>,
         evidence: &ContextEvidence,

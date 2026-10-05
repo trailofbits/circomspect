@@ -57,6 +57,14 @@ impl NormalizedEquation {
         field: &FieldContext,
         assignment: &BTreeMap<AccessKey, FieldValue>,
     ) -> Result<FieldValue, EquationEvaluationError> {
+        self.evaluate_values(field, assignment)
+    }
+
+    fn evaluate_values(
+        &self,
+        field: &FieldContext,
+        assignment: &impl EquationValues,
+    ) -> Result<FieldValue, EquationEvaluationError> {
         self.check_field(field)?;
         let mut value = field.canonical(0.into());
         for (monomial, coefficient) in &self.0.terms {
@@ -75,6 +83,44 @@ impl NormalizedEquation {
             value = field.add(&value, &term);
         }
         Ok(value)
+    }
+
+    /// Complete one linear target while keeping every other candidate value fixed.
+    ///
+    /// Returns no candidate when the target is absent or occurs quadratically.
+    /// This supplies a candidate only; source ownership and all generated equations
+    /// remain separate obligations of the caller.
+    ///
+    /// # Errors
+    /// Returns a field mismatch, missing operand, or noncanonical operand value.
+    pub(crate) fn solve_linear_target(
+        &self,
+        field: &FieldContext,
+        assignment: &BTreeMap<AccessKey, FieldValue>,
+        target: &AccessKey,
+    ) -> Result<Option<FieldValue>, EquationEvaluationError> {
+        self.check_field(field)?;
+        let mut coefficient = None;
+        for (monomial, value) in &self.0.terms {
+            match monomial {
+                Monomial::Constant => {}
+                Monomial::Linear(key) => {
+                    if key == target {
+                        coefficient = Some(value);
+                    }
+                }
+                Monomial::Quadratic(left, right) => {
+                    if left == target || right == target {
+                        return Ok(None);
+                    }
+                }
+            }
+        }
+        let Some(coefficient) = coefficient else { return Ok(None) };
+        let Some(inverse) = field.inverse(coefficient) else { return Ok(None) };
+        let values = ZeroTargetValues { assignment, target, zero: field.canonical(0.into()) };
+        let remainder = self.evaluate_values(field, &values)?;
+        Ok(Some(field.multiply(&field.negate(&remainder), &inverse)))
     }
 
     /// Solve an equation containing exactly one linear signal and a constant.
@@ -116,9 +162,35 @@ impl NormalizedEquation {
     }
 }
 
+trait EquationValues {
+    fn get(&self, key: &AccessKey) -> Option<&FieldValue>;
+}
+
+impl EquationValues for BTreeMap<AccessKey, FieldValue> {
+    fn get(&self, key: &AccessKey) -> Option<&FieldValue> {
+        BTreeMap::get(self, key)
+    }
+}
+
+struct ZeroTargetValues<'a> {
+    assignment: &'a BTreeMap<AccessKey, FieldValue>,
+    target: &'a AccessKey,
+    zero: FieldValue,
+}
+
+impl EquationValues for ZeroTargetValues<'_> {
+    fn get(&self, key: &AccessKey) -> Option<&FieldValue> {
+        if key == self.target {
+            Some(&self.zero)
+        } else {
+            self.assignment.get(key)
+        }
+    }
+}
+
 fn assigned_value<'a>(
     field: &FieldContext,
-    assignment: &'a BTreeMap<AccessKey, FieldValue>,
+    assignment: &'a impl EquationValues,
     key: &AccessKey,
 ) -> Result<&'a FieldValue, EquationEvaluationError> {
     let value =

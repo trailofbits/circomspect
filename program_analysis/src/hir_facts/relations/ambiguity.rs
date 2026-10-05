@@ -178,7 +178,10 @@ impl AnalysisFacts<'_> {
         prove_candidates(self.field, relation, generated, budget)
     }
 
-    fn check_model_keys(&self, keys: &BTreeSet<AccessKey>) -> Result<(), BTreeSet<FactBlocker>> {
+    pub(crate) fn check_model_keys(
+        &self,
+        keys: &BTreeSet<AccessKey>,
+    ) -> Result<(), BTreeSet<FactBlocker>> {
         for key in keys {
             let Some(symbol) = self.hir.symbol(key.root) else {
                 return Err(BTreeSet::from([FactBlocker::ForeignQuery]));
@@ -199,7 +202,7 @@ impl AnalysisFacts<'_> {
         Ok(())
     }
 
-    fn check_requested_model_keys(
+    pub(crate) fn check_requested_model_keys(
         &self,
         relation: &BitDecomposition,
     ) -> Result<(), BTreeSet<FactBlocker>> {
