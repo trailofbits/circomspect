@@ -5,8 +5,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use abstract_interpretation::graph::{EdgeId, EdgeRef, FlowGraph, GraphError, IndexedGraph, NodeId};
 use num_traits::ToPrimitive;
 use parser::hir::{
-    AccessPath, AccessStep, BlockId, ControlGuard, DefinitionRef, Effect, ExprId, ExprKind,
-    HirProject, IncompleteReason, SymbolId, SymbolKind,
+    AccessPath, AccessStep, ArrayIndex, BlockId, ControlGuard, DefinitionRef, Effect, ExprId,
+    ExprKind, HirProject, IncompleteReason, PortSchema, SymbolId, SymbolKind, ValueEvidence,
 };
 use parser::new_frontend::{AssignmentOperator, BinaryOperator, PostfixOperator, Span};
 
@@ -283,6 +283,12 @@ struct Builder<'a> {
     exit: NodeId,
 }
 
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum ScalarShapeProof {
+    Checked,
+    Seeded,
+}
+
 impl Builder<'_> {
     fn node(&mut self, kind: CfgNodeKind, origin: Option<Origin>) -> NodeId {
         let id = NodeId::new(self.nodes.len());
@@ -327,7 +333,7 @@ impl Builder<'_> {
                     tails = self.emit_expression(tails, expression, origin)?;
                 }
                 EvaluationFrame::Branch(ternary) => {
-                    tails = self.begin_expression_branch(tails, ternary, &mut frames, origin)?;
+                    tails = self.begin_expression_branch(tails, &ternary, &mut frames, origin)?;
                 }
                 EvaluationFrame::Else { expression, branch, no, control } => {
                     frames.push(EvaluationFrame::Join { expression, yes_tails: tails, control });
@@ -390,7 +396,7 @@ impl Builder<'_> {
             ExprKind::Number(_) | ExprKind::Opaque(_) => {}
             ExprKind::Access(path) => {
                 self.checked_paths.push(path.clone());
-                self.schedule_access_indices(path, frames);
+                Self::schedule_access_indices(path, frames);
             }
             ExprKind::Call { arguments, .. } => {
                 push_expressions(frames, arguments.iter().copied());
@@ -414,7 +420,7 @@ impl Builder<'_> {
         Ok(())
     }
 
-    fn schedule_access_indices(&self, path: &AccessPath, frames: &mut Vec<EvaluationFrame>) {
+    fn schedule_access_indices(path: &AccessPath, frames: &mut Vec<EvaluationFrame>) {
         for step in path.steps.iter().rev() {
             if let AccessStep::Index { index: parser::hir::ArrayIndex::Symbolic(index), .. } = step
             {
@@ -426,7 +432,7 @@ impl Builder<'_> {
     fn begin_expression_branch(
         &mut self,
         tails: Tails,
-        ternary: TernaryExpression,
+        ternary: &TernaryExpression,
         frames: &mut Vec<EvaluationFrame>,
         origin: Origin,
     ) -> Result<Tails, BuildError> {
@@ -684,15 +690,135 @@ impl Builder<'_> {
         let Effect::OpaqueAssignment { target, value, operator, reason, .. } = effect else {
             return None;
         };
-        if *reason != IncompleteReason::UnknownType || !target.steps.is_empty() {
+        if *reason != IncompleteReason::UnknownType {
             return None;
         }
-        self.calls?.value(*value)?;
+        let exact_call =
+            target.steps.is_empty() && self.calls.and_then(|calls| calls.value(*value)).is_some();
+        let target_shape = self.scalar_access_proof(target);
+        let value_shape = self.scalar_source_shape(*value);
+        let seeded_scalar = match (target_shape, value_shape) {
+            (Some(ScalarShapeProof::Seeded), Some(_))
+            | (Some(_), Some(ScalarShapeProof::Seeded)) => true,
+            (Some(ScalarShapeProof::Checked), Some(ScalarShapeProof::Checked))
+            | (None, _)
+            | (_, None) => false,
+        };
+        if !exact_call && !seeded_scalar {
+            return None;
+        }
         let symbol = self.hir.symbol(target.terminal)?;
         if symbol.rank != 0 || !symbol.shape_checked {
             return None;
         }
         Self::specialized_kind(symbol.kind, *operator)
+    }
+
+    fn scalar_source_shape(&self, expression: ExprId) -> Option<ScalarShapeProof> {
+        let mut pending = vec![expression];
+        let mut proof = ScalarShapeProof::Checked;
+        while let Some(id) = pending.pop() {
+            let expression = self.hir.expression(id)?;
+            match &expression.kind {
+                ExprKind::Number(_) => {}
+                ExprKind::Access(path) => {
+                    if self.scalar_access_shape(path, &mut pending)? == ScalarShapeProof::Seeded {
+                        proof = ScalarShapeProof::Seeded;
+                    }
+                }
+                ExprKind::Unary { operand, .. } => pending.push(*operand),
+                ExprKind::Binary { left, right, .. } => pending.extend([*left, *right]),
+                ExprKind::Call { .. } if self.calls.and_then(|calls| calls.value(id)).is_some() => {
+                }
+                ExprKind::Call { .. }
+                | ExprKind::Array(_)
+                | ExprKind::Tuple(_)
+                | ExprKind::Ternary { .. }
+                | ExprKind::AnonymousComponent { .. }
+                | ExprKind::Parallel(_)
+                | ExprKind::Opaque(_) => return None,
+            }
+        }
+        Some(proof)
+    }
+
+    fn scalar_access_proof(&self, path: &AccessPath) -> Option<ScalarShapeProof> {
+        let mut indices = Vec::new();
+        let mut proof = self.scalar_access_shape(path, &mut indices)?;
+        for index in indices {
+            if self.scalar_source_shape(index)? == ScalarShapeProof::Seeded {
+                proof = ScalarShapeProof::Seeded;
+            }
+        }
+        Some(proof)
+    }
+
+    fn scalar_access_shape(
+        &self,
+        path: &AccessPath,
+        pending: &mut Vec<ExprId>,
+    ) -> Option<ScalarShapeProof> {
+        let symbol = self.hir.symbol(path.terminal)?;
+        if !symbol.shape_checked || symbol.bus_type.is_some() {
+            return None;
+        }
+        if symbol.kind == SymbolKind::Parameter {
+            return self.scalar_parameter_shape(path);
+        }
+        let indices = self.checked_scalar_path_indices(path, pending)?;
+        match symbol.kind {
+            SymbolKind::Signal if indices == symbol.rank => Some(ScalarShapeProof::Checked),
+            SymbolKind::Variable
+                if indices == symbol.rank && symbol.value_evidence == ValueEvidence::Checked =>
+            {
+                Some(ScalarShapeProof::Checked)
+            }
+            SymbolKind::Parameter
+            | SymbolKind::Component
+            | SymbolKind::Bus
+            | SymbolKind::Tag
+            | SymbolKind::Signal
+            | SymbolKind::Variable => None,
+        }
+    }
+
+    fn scalar_parameter_shape(&self, path: &AccessPath) -> Option<ScalarShapeProof> {
+        let symbol = self.hir.symbol(path.root)?;
+        if path.root != path.terminal
+            || !path.steps.is_empty()
+            || symbol.rank != 0
+            || !self.parameter_is_stable(path.root)
+        {
+            return None;
+        }
+        self.scalar_seeds?.get(&path.root)?;
+        Some(ScalarShapeProof::Seeded)
+    }
+
+    fn checked_scalar_path_indices(
+        &self,
+        path: &AccessPath,
+        pending: &mut Vec<ExprId>,
+    ) -> Option<usize> {
+        let mut indices = 0;
+        for step in &path.steps {
+            match step {
+                AccessStep::Index { index: ArrayIndex::Constant(_), .. } => indices += 1,
+                AccessStep::Index { index: ArrayIndex::Symbolic(id), .. } => {
+                    indices += 1;
+                    pending.push(*id);
+                }
+                AccessStep::Port { port, .. } => {
+                    let port = self.hir.port(*port)?;
+                    if port.schema != PortSchema::Signal || port.symbol != path.terminal {
+                        return None;
+                    }
+                    indices = 0;
+                }
+                AccessStep::Tag { .. } => return None,
+            }
+        }
+        Some(indices)
     }
 
     fn specialized_equality(&self, left: ExprId, right: ExprId, reason: &IncompleteReason) -> bool {
@@ -1161,6 +1287,10 @@ fn effect_span(effect: &Effect, block_span: Span) -> Span {
 }
 
 /// Build a CFG from a checked HIR definition without changing the legacy analysis path.
+///
+/// # Errors
+///
+/// Returns a build error for a missing definition, malformed checked HIR, or invalid graph.
 pub fn build_cfg(hir: &HirProject, definition: DefinitionRef) -> Result<DefinitionCfg, BuildError> {
     build_cfg_inner(hir, definition, None, None)
 }

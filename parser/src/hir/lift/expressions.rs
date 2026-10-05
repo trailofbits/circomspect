@@ -114,6 +114,9 @@ impl Lifter<'_> {
             }
             (ValueType::Plain | ValueType::Component(_) | ValueType::Unknown, None)
             | (ValueType::Unknown, Some(_)) => {
+                if self.scalar_shape(id) == ScalarShape::Deferred {
+                    return true;
+                }
                 self.incomplete(span, IncompleteReason::UnknownType);
                 false
             }

@@ -96,6 +96,34 @@ fn parameter_indices_remain_deferred_without_assuming_a_scalar_argument() {
     }
 }
 
+#[test]
+fn parameter_index_on_resolved_child_port_keeps_its_source_path() {
+    let source = concat!(
+        "template Child(m){signal input value;signal output bits[m];}",
+        "template Compare(n){signal input operands[2];signal output answer;",
+        "component d=Child(n+1);d.value<==operands[0]+(1<<n)-operands[1];",
+        "answer<==1-d.bits[n];}"
+    );
+    let result = lift(&[("parameter_child_port.circom", source)], Version::new(2, 2, 3));
+    assert!(result.diagnostics.is_empty(), "{:?}", result.diagnostics);
+    let effects = effect_for(&result, "Compare");
+    let Some(Effect::OpaqueAssignment { value, .. }) = effects.last() else {
+        panic!("unbound parameter must retain an assignment awaiting shape proof")
+    };
+    let Some(ExprKind::Binary { right, .. }) =
+        result.hir.expression(*value).map(|expression| &expression.kind)
+    else {
+        panic!("subtraction source must remain typed")
+    };
+    let Some(ExprKind::Access(path)) =
+        result.hir.expression(*right).map(|expression| &expression.kind)
+    else {
+        panic!("deferred child bit index must retain its source path")
+    };
+    assert_eq!(&source[path.span.start()..path.span.end()], "d.bits[n]");
+    assert_eq!(path.steps.len(), 2);
+}
+
 fn max_port_steps(result: &circomspect_parser::hir::LiftedProject) -> usize {
     result
         .hir
