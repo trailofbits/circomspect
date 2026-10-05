@@ -22,6 +22,10 @@ jobs:
           persist-credentials: false
       - name: Install Rust 1.99.0
         run: rustup toolchain install 1.99.0 --profile minimal --component clippy,rustfmt
+      - name: Install dependency checker
+        run: cargo install cargo-deny --version 0.20.2 --locked
+      - name: Check dependency advisories, licenses, bans, and sources
+        run: cargo deny --workspace --all-features --locked check --deny warnings
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Run Clippy
