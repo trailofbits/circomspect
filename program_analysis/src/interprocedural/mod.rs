@@ -21,6 +21,7 @@ mod internal_signal;
 mod constraint_relation;
 mod bit_decomposition;
 mod constructor_readiness;
+mod called_port;
 
 pub(crate) use crate::interprocedural::constructor_readiness::ValidatedConstructorReads;
 

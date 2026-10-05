@@ -122,13 +122,14 @@ impl ProjectSummaries<'_> {
         })
     }
 
-    /// Certify port constraints in this provider-issued, source-valid root template scope.
+    /// Certify port constraints in a provider-issued, source-valid template scope.
     ///
     /// Every reachable signal read must have proven initialization, and generated
     /// constraints must have supported source form. Constructors require validated
     /// leaf children without input ports; deeper or unbound execution abstains.
-    /// The supplied facts retain their original analysis budget and specialization;
-    /// called contexts and foreign evidence cannot authorize this root-scope claim.
+    /// Called input ports additionally require a complete single-child main scope
+    /// with witness-only input bindings and no related parent constraints. The
+    /// supplied facts retain their original analysis budget and specialization.
     pub fn template_port_for_evidence(
         &self,
         facts: &AnalysisFacts<'_>,
@@ -136,6 +137,11 @@ impl ProjectSummaries<'_> {
         port: PortId,
         indices: &[usize],
     ) -> SummaryFact<PortSummary> {
+        if let crate::interprocedural::ContextOrigin::Call(_) = evidence.origin() {
+            return SummaryFact::from_result(
+                self.called_input_port(facts, evidence, port, indices),
+            );
+        }
         let result = self
             .check_template_incidence_scope(facts, evidence)
             .and_then(|()| port_summary(facts, evidence.context(), port, indices));

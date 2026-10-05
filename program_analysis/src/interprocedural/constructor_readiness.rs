@@ -9,7 +9,7 @@ use parser::new_frontend::PortDirection;
 use crate::hir_cfg::{build_cfg, CfgNodeKind};
 use crate::hir_facts::{AnalysisFacts, InstanceRelation};
 use crate::interprocedural::input_relation::{
-    ready_enumerated_instance, ready_model_instance, ReadyInstanceAtUse,
+    ready_enumerated_instance, ready_model_instance, ReadyInstanceAtUse, ReadyWitnessInputs,
 };
 use crate::interprocedural::{
     AppliedComponentPort, CallOwner, CallReachability, CallSiteId, ContextEvidence,
@@ -125,6 +125,31 @@ impl ProjectSummaries<'_> {
                 (completed, ready_model_instance(facts, instance)?)
             }
         };
+        let child = self.checked_completed_child(facts, caller, instance, completed)?;
+        Ok((child, ready))
+    }
+
+    pub(super) fn completed_witness_child(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        instance: &EnumeratedComponentInstance,
+        completed: CompletedTemplate,
+        ready: &ReadyWitnessInputs,
+    ) -> Result<CompletedChild, SummaryBlocker> {
+        if !ready.matches(facts, instance) {
+            return Err(SummaryBlocker::WrongContext);
+        }
+        self.checked_completed_child(facts, ready.caller(), instance, completed)
+    }
+
+    fn checked_completed_child(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        caller: &ContextEvidence,
+        instance: &EnumeratedComponentInstance,
+        completed: CompletedTemplate,
+    ) -> Result<CompletedChild, SummaryBlocker> {
+        self.check_facts_for_evidence(facts, caller)?;
         if completed.evidence != instance.callee {
             return Err(SummaryBlocker::WrongContext);
         }
@@ -146,16 +171,13 @@ impl ProjectSummaries<'_> {
         for output in &instance.outputs {
             outputs.extend(self.checked_output_read_sites(facts, output.applied_port())?);
         }
-        Ok((
-            CompletedChild {
-                caller: caller.clone(),
-                site: instance.site,
-                indices: instance.indices.clone(),
-                completed,
-                outputs,
-            },
-            ready,
-        ))
+        Ok(CompletedChild {
+            caller: caller.clone(),
+            site: instance.site,
+            indices: instance.indices.clone(),
+            completed,
+            outputs,
+        })
     }
 
     fn checked_output_read_sites(

@@ -18,7 +18,7 @@ use crate::hir_facts::{AccessKey, AnalysisFacts, FieldValue, InstanceRelation, R
 use crate::interprocedural::component::AppliedComponentPort;
 use crate::interprocedural::output_enumeration::EnumeratedComponentInstance;
 use crate::interprocedural::summary::certified;
-use crate::interprocedural::SummaryBlocker;
+use crate::interprocedural::{ContextEvidence, SummaryBlocker};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum GeneratedInputValue {
@@ -30,12 +30,52 @@ pub(super) enum GeneratedInputValue {
 enum BindingPolicy {
     FixedOutput,
     CompleteModels,
+    WitnessInputs,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) enum WitnessInputValue {
+    Constant(FieldValue),
+    ParentSignal(AccessKey),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum BindingValue {
+    Generated(GeneratedInputValue),
+    Witness(WitnessInputValue),
+}
+
+enum BindingSource {
+    Generated,
+    Witness,
+}
+
+impl TryFrom<BindingValue> for GeneratedInputValue {
+    type Error = SummaryBlocker;
+
+    fn try_from(value: BindingValue) -> Result<Self, Self::Error> {
+        match value {
+            BindingValue::Generated(value) => Ok(value),
+            BindingValue::Witness(_) => Err(SummaryBlocker::WitnessOnlyInput),
+        }
+    }
+}
+
+impl TryFrom<BindingValue> for WitnessInputValue {
+    type Error = SummaryBlocker;
+
+    fn try_from(value: BindingValue) -> Result<Self, Self::Error> {
+        match value {
+            BindingValue::Witness(value) => Ok(value),
+            BindingValue::Generated(_) => Err(SummaryBlocker::UnsupportedContext),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum InputState {
     Absent,
-    Bound { value: GeneratedInputValue, sites: BTreeSet<NodeId> },
+    Bound { value: BindingValue, sites: BTreeSet<NodeId> },
 }
 
 enum BindingJoin {
@@ -165,14 +205,78 @@ impl Lattice for RelationState {
 }
 
 #[derive(Clone, Debug)]
-pub(super) struct ConstrainedInputBinding {
+pub(super) struct CheckedInputBinding<Value> {
     pub(super) target: AccessKey,
-    pub(super) value: GeneratedInputValue,
+    pub(super) value: Value,
     pub(super) origins: Vec<Origin>,
+}
+
+type ConstrainedInputBinding = CheckedInputBinding<GeneratedInputValue>;
+type WitnessInputBinding = CheckedInputBinding<WitnessInputValue>;
+
+struct ReadyInputs {
+    bindings: BTreeMap<PortId, CheckedInputBinding<BindingValue>>,
+}
+
+impl ReadyInputs {
+    fn into_bindings<Value>(
+        self,
+    ) -> Result<BTreeMap<PortId, CheckedInputBinding<Value>>, SummaryBlocker>
+    where
+        Value: TryFrom<BindingValue, Error = SummaryBlocker>,
+    {
+        let mut bindings = BTreeMap::new();
+        for (port, binding) in self.bindings {
+            bindings.insert(
+                port,
+                CheckedInputBinding {
+                    target: binding.target,
+                    value: Value::try_from(binding.value)?,
+                    origins: binding.origins,
+                },
+            );
+        }
+        Ok(bindings)
+    }
+}
+
+/// Initialization evidence only. No field equality follows from these bindings.
+pub(super) struct ReadyWitnessInputs {
+    caller: ContextEvidence,
+    instance: EnumeratedComponentInstance,
+    bindings: BTreeMap<PortId, WitnessInputBinding>,
+}
+
+impl ReadyWitnessInputs {
+    pub(super) fn caller(&self) -> &ContextEvidence {
+        &self.caller
+    }
+
+    pub(super) fn binding(&self, port: PortId) -> Option<&WitnessInputBinding> {
+        self.bindings.get(&port)
+    }
+
+    pub(super) fn matches(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        instance: &EnumeratedComponentInstance,
+    ) -> bool {
+        self.instance == *instance
+            && facts.matches_evidence(&self.caller)
+            && facts.reachable_node(facts.cfg().exit()).certified() == Some(&true)
+    }
 }
 
 pub(super) struct ReadyInstanceAtUse {
     bindings: BTreeMap<PortId, ConstrainedInputBinding>,
+}
+
+impl TryFrom<ReadyInputs> for ReadyInstanceAtUse {
+    type Error = SummaryBlocker;
+
+    fn try_from(ready: ReadyInputs) -> Result<Self, Self::Error> {
+        Ok(Self { bindings: ready.into_bindings()? })
+    }
 }
 
 impl ReadyInstanceAtUse {
@@ -360,29 +464,28 @@ impl RelationAnalysis<'_> {
         &self,
         node: &CfgNode,
         value: parser::hir::ExprId,
-    ) -> Result<GeneratedInputValue, SummaryBlocker> {
-        let origin = node.origin.ok_or(SummaryBlocker::ExternalSummary)?;
-        let effect = self
-            .facts
-            .hir()
-            .block(origin.block)
-            .and_then(|block| block.effects.get(origin.effect_index))
-            .ok_or(SummaryBlocker::ExternalSummary)?;
-        match effect {
-            Effect::ConstraintAssignment { .. } => {}
-            Effect::WitnessAssignment { .. } => return Err(SummaryBlocker::WitnessOnlyInput),
-            _ => return Err(SummaryBlocker::ExternalSummary),
+    ) -> Result<BindingValue, SummaryBlocker> {
+        match (self.policy, self.binding_source(node, value)?) {
+            (BindingPolicy::WitnessInputs, BindingSource::Witness) => {
+                return self.checked_witness_value(value).map(BindingValue::Witness);
+            }
+            (BindingPolicy::WitnessInputs, BindingSource::Generated) => {
+                return Err(SummaryBlocker::UnsupportedContext);
+            }
+            (
+                BindingPolicy::FixedOutput | BindingPolicy::CompleteModels,
+                BindingSource::Witness,
+            ) => {
+                return Err(SummaryBlocker::WitnessOnlyInput);
+            }
+            (
+                BindingPolicy::FixedOutput | BindingPolicy::CompleteModels,
+                BindingSource::Generated,
+            ) => {}
         }
         if let BindingPolicy::CompleteModels = self.policy {
-            if let Some(ExprKind::Access(path)) =
-                self.facts.hir().expression(value).map(|expression| &expression.kind)
-            {
-                let symbol =
-                    self.facts.hir().symbol(path.root).ok_or(SummaryBlocker::ForeignDefinition)?;
-                if symbol.kind == SymbolKind::Signal && path.root == path.terminal {
-                    let key = certified(&self.facts.exact_access_key(path))?.clone();
-                    return Ok(GeneratedInputValue::ParentSignal(key));
-                }
+            if let Some(key) = self.parent_signal(value)? {
+                return Ok(BindingValue::Generated(GeneratedInputValue::ParentSignal(key)));
             }
         }
         let range = self.facts.range(value);
@@ -393,7 +496,86 @@ impl RelationAnalysis<'_> {
         if certified(&fixed)?.as_ref() != Some(value) {
             return Err(SummaryBlocker::UnsupportedContext);
         }
-        Ok(GeneratedInputValue::Constant(value.clone()))
+        Ok(BindingValue::Generated(GeneratedInputValue::Constant(value.clone())))
+    }
+
+    fn binding_source(
+        &self,
+        node: &CfgNode,
+        expression: parser::hir::ExprId,
+    ) -> Result<BindingSource, SummaryBlocker> {
+        let origin = node.origin.ok_or(SummaryBlocker::ExternalSummary)?;
+        let effect = self
+            .facts
+            .hir()
+            .block(origin.block)
+            .and_then(|block| block.effects.get(origin.effect_index))
+            .ok_or(SummaryBlocker::ExternalSummary)?;
+        let (source, value, provenance) = match effect {
+            Effect::ConstraintAssignment { target, value, .. } => {
+                (target, value, BindingSource::Generated)
+            }
+            Effect::WitnessAssignment { target, value, .. } => {
+                (target, value, BindingSource::Witness)
+            }
+            Effect::Declaration { .. }
+            | Effect::VariableAssignment { .. }
+            | Effect::DeferredVariableAssignment { .. }
+            | Effect::ComponentInstantiation { .. }
+            | Effect::OpaqueAssignment { .. }
+            | Effect::EqualityConstraint { .. }
+            | Effect::OpaqueEquality { .. }
+            | Effect::Update { .. }
+            | Effect::If { .. }
+            | Effect::While { .. }
+            | Effect::For { .. }
+            | Effect::Return { .. }
+            | Effect::Assert { .. }
+            | Effect::DeferredAssert { .. }
+            | Effect::Log { .. }
+            | Effect::AnonymousComponent { .. }
+            | Effect::Block(_)
+            | Effect::Opaque { .. } => {
+                return Err(SummaryBlocker::ExternalSummary);
+            }
+        };
+        let CfgNodeKind::Witness { target, value: node_value } = &node.kind else {
+            return Err(SummaryBlocker::ExternalSummary);
+        };
+        if source != target || value != node_value || *value != expression {
+            return Err(SummaryBlocker::ExternalSummary);
+        }
+        Ok(provenance)
+    }
+
+    fn checked_witness_value(
+        &self,
+        value: parser::hir::ExprId,
+    ) -> Result<WitnessInputValue, SummaryBlocker> {
+        if let Some(key) = self.parent_signal(value)? {
+            return Ok(WitnessInputValue::ParentSignal(key));
+        }
+        let range = self.facts.range(value);
+        let Range::Exact(value) = certified(&range)? else {
+            return Err(SummaryBlocker::UnsupportedContext);
+        };
+        Ok(WitnessInputValue::Constant(value.clone()))
+    }
+
+    fn parent_signal(
+        &self,
+        value: parser::hir::ExprId,
+    ) -> Result<Option<AccessKey>, SummaryBlocker> {
+        let Some(ExprKind::Access(path)) =
+            self.facts.hir().expression(value).map(|expression| &expression.kind)
+        else {
+            return Ok(None);
+        };
+        let symbol = self.facts.hir().symbol(path.root).ok_or(SummaryBlocker::ForeignDefinition)?;
+        if symbol.kind == SymbolKind::Signal && path.root == path.terminal {
+            return Ok(Some(certified(&self.facts.exact_access_key(path))?.clone()));
+        }
+        Ok(None)
     }
 
     fn check_read(
@@ -471,6 +653,7 @@ pub(super) fn ready_instance_at_use(
         child,
         BindingPolicy::FixedOutput,
     )
+    .and_then(ReadyInstanceAtUse::try_from)
 }
 
 pub(super) fn ready_enumerated_instance(
@@ -478,6 +661,7 @@ pub(super) fn ready_enumerated_instance(
     instance: &EnumeratedComponentInstance,
 ) -> Result<ReadyInstanceAtUse, SummaryBlocker> {
     ready_enumerated_inputs(facts, instance, BindingPolicy::FixedOutput)
+        .and_then(ReadyInstanceAtUse::try_from)
 }
 
 pub(super) fn ready_model_instance(
@@ -485,13 +669,32 @@ pub(super) fn ready_model_instance(
     instance: &EnumeratedComponentInstance,
 ) -> Result<ReadyInstanceAtUse, SummaryBlocker> {
     ready_enumerated_inputs(facts, instance, BindingPolicy::CompleteModels)
+        .and_then(ReadyInstanceAtUse::try_from)
+}
+
+pub(super) fn ready_witness_instance(
+    facts: &AnalysisFacts<'_>,
+    caller: &ContextEvidence,
+    instance: &EnumeratedComponentInstance,
+) -> Result<ReadyWitnessInputs, SummaryBlocker> {
+    if !facts.matches_evidence(caller)
+        || facts.reachable_node(facts.cfg().exit()).certified() != Some(&true)
+    {
+        return Err(SummaryBlocker::WrongContext);
+    }
+    let ready = ready_enumerated_inputs(facts, instance, BindingPolicy::WitnessInputs)?;
+    Ok(ReadyWitnessInputs {
+        caller: caller.clone(),
+        instance: instance.clone(),
+        bindings: ready.into_bindings()?,
+    })
 }
 
 fn ready_enumerated_inputs(
     facts: &AnalysisFacts<'_>,
     instance: &EnumeratedComponentInstance,
     policy: BindingPolicy,
-) -> Result<ReadyInstanceAtUse, SummaryBlocker> {
+) -> Result<ReadyInputs, SummaryBlocker> {
     let parser::hir::DefinitionRef::Template(child) = instance.callee.context().definition() else {
         return Err(SummaryBlocker::WrongInstance);
     };
@@ -521,7 +724,7 @@ fn ready_inputs(
     instantiation: NodeId,
     child: parser::hir::TemplateId,
     policy: BindingPolicy,
-) -> Result<ReadyInstanceAtUse, SummaryBlocker> {
+) -> Result<ReadyInputs, SummaryBlocker> {
     let inputs = input_ports(facts, child)?;
     let analysis = RelationAnalysis { facts, instance, instantiation, inputs, policy };
     let result = solve::<_, _, Forward>(facts.cfg(), &analysis, Some(100_000))
@@ -547,9 +750,9 @@ fn ready_inputs(
     };
     let mut bindings = BTreeMap::new();
     for (port, binding) in inputs {
-        bindings.insert(*port, constrained_binding(facts, binding)?);
+        bindings.insert(*port, checked_binding(facts, binding)?);
     }
-    Ok(ReadyInstanceAtUse { bindings })
+    Ok(ReadyInputs { bindings })
 }
 
 fn input_ports(
@@ -572,10 +775,10 @@ fn input_ports(
     Ok(inputs)
 }
 
-fn constrained_binding(
+fn checked_binding(
     facts: &AnalysisFacts<'_>,
     binding: &InputState,
-) -> Result<ConstrainedInputBinding, SummaryBlocker> {
+) -> Result<CheckedInputBinding<BindingValue>, SummaryBlocker> {
     let InputState::Bound { value, sites } = binding else {
         return Err(SummaryBlocker::MissingInputBinding);
     };
@@ -604,7 +807,7 @@ fn constrained_binding(
     if origins.is_empty() {
         return Err(SummaryBlocker::ExternalSummary);
     }
-    Ok(ConstrainedInputBinding {
+    Ok(CheckedInputBinding {
         target: target_key.ok_or(SummaryBlocker::MissingInputBinding)?,
         value: value.clone(),
         origins,
@@ -625,8 +828,8 @@ mod tests {
     use crate::interprocedural::{CallOwner, CallReachability, ProjectSummaries};
 
     use crate::interprocedural::input_relation::{
-        BindingPolicy, GeneratedInputValue, InputState, RelationAnalysis, RelationState,
-        SummaryBlocker,
+        BindingPolicy, BindingValue, GeneratedInputValue, InputState, RelationAnalysis,
+        RelationState, SummaryBlocker,
     };
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -640,10 +843,16 @@ mod tests {
         let both = BTreeSet::from([NodeId::new(3), NodeId::new(5)]);
         let inputs = [
             InputState::Absent,
-            InputState::Bound { value: GeneratedInputValue::Constant(seven.clone()), sites: first },
-            InputState::Bound { value: GeneratedInputValue::Constant(seven), sites: both },
             InputState::Bound {
-                value: GeneratedInputValue::Constant(eight),
+                value: BindingValue::Generated(GeneratedInputValue::Constant(seven.clone())),
+                sites: first,
+            },
+            InputState::Bound {
+                value: BindingValue::Generated(GeneratedInputValue::Constant(seven)),
+                sites: both,
+            },
+            InputState::Bound {
+                value: BindingValue::Generated(GeneratedInputValue::Constant(eight)),
                 sites: BTreeSet::from([NodeId::new(4)]),
             },
         ];
@@ -778,3 +987,6 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod witness_tests;
