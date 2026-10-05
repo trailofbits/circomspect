@@ -6,6 +6,7 @@ use std::fmt;
 use std::ops::Range;
 use std::path::PathBuf;
 use thiserror::Error;
+use url::Url;
 
 use crate::report::{Report, ReportCollection, ReportLabel};
 use crate::file_definition::{FileID, FileLibrary};
@@ -58,7 +59,11 @@ impl ToSarif for ReportCollection {
         trace!("building run");
         let results =
             self.iter().map(|report| report.to_sarif(files)).collect::<SarifResult<Vec<_>>>()?;
-        let run = sarif::RunBuilder::default().tool(tool).results(results).build()?;
+        let run = sarif::RunBuilder::default()
+            .tool(tool)
+            .results(results)
+            .column_kind(serde_json::Value::String("unicodeCodePoints".into()))
+            .build()?;
         // Build main object.
         trace!("building main Sarif object");
         let sarif = sarif::SarifBuilder::default().runs(vec![run]).version(SARIF_VERSION).build();
@@ -78,16 +83,19 @@ impl ToSarif for Report {
         let message = sarif::MessageBuilder::default().text(self.message()).build()?;
         // Build primary and secondary locations.
         trace!("building locations");
-        let locations = self
+        let mut locations = self
             .primary()
             .iter()
             .map(|label| label.to_sarif(files))
             .collect::<SarifResult<Vec<_>>>()?;
-        let related_locations = self
+        let mut related_locations = self
             .secondary()
             .iter()
             .map(|label| label.to_sarif(files))
             .collect::<SarifResult<Vec<_>>>()?;
+        for (id, location) in (0_i64..).zip(locations.iter_mut().chain(&mut related_locations)) {
+            location.id = Some(id);
+        }
         // Build reporting descriptor reference.
         let rule = sarif::ReportingDescriptorReferenceBuilder::default()
             .id(&rule_id)
@@ -146,7 +154,6 @@ impl ToSarif for ReportLabel {
         trace!("building location");
         sarif::LocationBuilder::default()
             .physical_location(physical_location)
-            .id(0)
             .message(message)
             .build()
             .map_err(SarifError::from)
@@ -167,10 +174,8 @@ impl ToUri for FileID {
             .get(*self)
             .map_err(|_| SarifError::UnknownFile(*self))?
             .name()
-            .replace('"', "")
             .into();
-        // This path already comes from an UTF-8 string so it is ok to unwrap here.
-        Ok(format!("file://{}", path.to_str().unwrap()))
+        Url::from_file_path(&path).map(String::from).map_err(|()| SarifError::InvalidFilePath(path))
     }
 }
 
@@ -191,12 +196,20 @@ pub enum SarifError {
     InvalidFix(#[from] sarif::FixBuilderError),
     UnknownLocation(FileID, Range<usize>),
     UnknownFile(FileID),
+    InvalidFilePath(PathBuf),
 }
 
 type SarifResult<T> = Result<T, SarifError>;
 
 impl fmt::Display for SarifError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if let Self::InvalidFilePath(path) = self {
+            return write!(
+                f,
+                "cannot encode source path {} as an absolute file URI",
+                path.display()
+            );
+        }
         write!(f, "failed to convert analysis results to Sarif format")
     }
 }

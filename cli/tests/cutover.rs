@@ -230,6 +230,35 @@ fn multiple_main_files_report_both_source_locations() {
     let report = &sarif["runs"][0]["results"][0];
     assert_eq!(report["locations"].as_array().unwrap().len(), 1);
     assert_eq!(report["relatedLocations"].as_array().unwrap().len(), 1);
+    assert_ne!(report["locations"][0]["id"], report["relatedLocations"][0]["id"]);
+}
+
+#[test]
+#[cfg(unix)]
+fn sarif_file_uris_preserve_reserved_and_unicode_file_names() {
+    let path = fixture("file-uri", "pragma circom 2.2.3;template Main(){Missing();}");
+    let renamed = path.with_file_name("space # % \" å.circom");
+    fs::rename(path, &renamed).unwrap();
+    let (status, stdout, sarif) = run(&renamed, &["--level", "error"], "file-uri");
+    assert_eq!(status, 1, "{stdout}");
+    assert!(stdout.contains("space # % \" å.circom"));
+    let location = &sarif["runs"][0]["results"][0]["locations"][0]["physicalLocation"];
+    let uri = location["artifactLocation"]["uri"].as_str().unwrap();
+    assert!(uri.starts_with("file:///"), "{uri}");
+    assert!(uri.ends_with("/space%20%23%20%25%20%22%20%C3%A5.circom"), "{uri}");
+    assert_eq!(location["region"]["startLine"], 1);
+}
+
+#[test]
+fn sarif_columns_use_declared_unicode_code_points() {
+    let source = "pragma circom 2.2.3;\n/* 🦀 */ template Main(){component c=Missing();}\n";
+    let path = fixture("unicode-column", source);
+    let (_, _, sarif) = run(&path, &["--level", "error"], "unicode-column");
+    assert_eq!(sarif["runs"][0]["columnKind"], "unicodeCodePoints");
+    let region = &sarif["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["region"];
+    assert_eq!(region["startLine"], 2);
+    assert_eq!(region["startColumn"], 37);
+    assert_eq!(region["endColumn"], 44);
 }
 
 #[test]
