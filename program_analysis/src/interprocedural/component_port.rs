@@ -42,6 +42,33 @@ impl ProjectSummaries<'_> {
         SummaryFact::from_result(result)
     }
 
+    /// Bind the first output element using callee-checked port dimensions.
+    ///
+    /// This issues the same applied-port certificate as a local output handle,
+    /// while keeping parameterized child dimensions in the child's context.
+    pub fn apply_component_first_output(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        caller: &ContextEvidence,
+        call: &ReachableCall<'_>,
+        output: PortId,
+    ) -> SummaryFact<AppliedComponentPort> {
+        let result = self.call_evidence(call, facts, caller).and_then(|callee| {
+            self.with_component_port_facts(&callee, |child| {
+                let handle = child
+                    .port_handle(output, &[0])
+                    .map_err(|_| SummaryBlocker::UnsupportedContext)?;
+                self.apply_local_port(
+                    facts,
+                    caller,
+                    call,
+                    LocalOutputPort { facts: child, handle: &handle },
+                )
+            })
+        });
+        SummaryFact::from_result(result)
+    }
+
     pub(super) fn with_component_port_facts<T>(
         &self,
         callee: &ContextEvidence,

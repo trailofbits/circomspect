@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 
 use parser::hir::{lift_project, DefinitionRef};
@@ -5,9 +6,60 @@ use parser::new_frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
 
 use crate::hir_cfg::build_cfg;
-use crate::hir_facts::ProofBudget;
-use crate::interprocedural::component_models::RequestedBits;
-use crate::interprocedural::{CallOwner, CallReachability, ProjectSummaries};
+use crate::hir_facts::{analyze_with_scalar_parameters, FieldContext, ProofBudget};
+use crate::interprocedural::component_models::{checked_bit_port_handles, RequestedBits};
+use crate::interprocedural::{CallOwner, CallReachability, ProjectSummaries, SummaryBlocker};
+
+#[test]
+fn checked_port_candidates_use_the_selected_child_parameter_shape_and_roles() {
+    let directory =
+        std::env::temp_dir().join(format!("component-model-ports-{}", std::process::id()));
+    fs::create_dir_all(&directory).unwrap();
+    let path = directory.join("case.circom");
+    fs::write(
+        &path,
+        "template Child(n){signal input in;signal output bits[n];signal output scalar;}\
+         component main=Child(2);",
+    )
+    .unwrap();
+    let project = lift_project(&load_sources(
+        &[path],
+        &[directory],
+        VersionPolicy::new(Version::new(2, 2, 3)),
+    ));
+    let provider = ProjectSummaries::build(&project, Curve::Goldilocks).unwrap();
+    let site = provider.graph().calls_from(CallOwner::Main(0))[0];
+    let CallReachability::Reachable(call) =
+        provider.graph().reachable_main_call(site.id(), &project.hir)
+    else {
+        panic!("main call");
+    };
+    let evidence = provider.main_evidence(&call).unwrap();
+    let definition = project.hir.definition("Child").unwrap();
+    let cfg = build_cfg(&project.hir, definition).unwrap();
+    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let DefinitionRef::Template(id) = definition else { panic!("child template") };
+    let ports = &project.hir.template(id).unwrap().ports;
+    let (input, bits) = checked_bit_port_handles(&facts, ports[0], ports[1]).unwrap();
+    assert_eq!(bits.len(), 2);
+    assert_eq!(input.span(), project.hir.port(ports[0]).unwrap().span);
+    assert!(checked_bit_port_handles(&facts, ports[1], ports[0]).is_err());
+    assert!(checked_bit_port_handles(&facts, ports[0], ports[2]).is_err());
+
+    let symbolic = provider.symbolic_root(definition).unwrap();
+    let unknown = provider.analyze_for_evidence(&cfg, &symbolic, None).unwrap();
+    assert!(checked_bit_port_handles(&unknown, ports[0], ports[1]).is_err());
+
+    let parameter = project.hir.symbols().iter().find(|symbol| symbol.name == "n").unwrap().id;
+    let field = FieldContext::for_curve(Curve::Goldilocks);
+    let seeds = BTreeMap::from([(parameter, field.canonical(513.into()))]);
+    let oversized =
+        analyze_with_scalar_parameters(&project.hir, &cfg, &field, seeds, None).unwrap();
+    assert_eq!(
+        checked_bit_port_handles(&oversized, ports[0], ports[1]).unwrap_err(),
+        SummaryBlocker::ContextBudget
+    );
+}
 
 #[test]
 fn closure_collection_charges_shared_site_term_key_and_operation_budgets() {

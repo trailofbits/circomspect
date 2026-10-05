@@ -6,7 +6,8 @@ mod source;
 
 use std::collections::BTreeMap;
 
-use parser::hir::AccessPath;
+use parser::hir::{AccessPath, PortId, PortSchema};
+use parser::new_frontend::PortDirection;
 
 use crate::hir_cfg::Origin;
 use crate::hir_facts::{
@@ -108,6 +109,7 @@ impl ComponentBitAmbiguity {
 enum RequestedBits<'a> {
     Paths { input: &'a AccessPath, bits: &'a [AccessPath] },
     Handles { input: &'a AccessHandle, bits: &'a [AccessHandle] },
+    Ports { input: PortId, bits: PortId },
 }
 
 impl ProjectSummaries<'_> {
@@ -151,6 +153,26 @@ impl ProjectSummaries<'_> {
         ))
     }
 
+    /// Prove two complete caller and child models using checked child port schemas.
+    ///
+    /// The scalar input and rank-one bit output are resolved in the callee's
+    /// exact parameter context. The provider creates every element handle and
+    /// refuses zero, unproved, or over-budget widths before model validation.
+    pub fn component_bit_ambiguity_ports(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        applied: &AppliedComponentPort,
+        input: PortId,
+        bits: PortId,
+    ) -> SummaryFact<ComponentBitAmbiguityOutcome> {
+        SummaryFact::from_result(self.component_ambiguity_result(
+            facts,
+            applied,
+            RequestedBits::Ports { input, bits },
+            &mut ProofBudget::default(),
+        ))
+    }
+
     fn component_ambiguity_result(
         &self,
         facts: &AnalysisFacts<'_>,
@@ -158,6 +180,13 @@ impl ProjectSummaries<'_> {
         requested: RequestedBits<'_>,
         budget: &mut ProofBudget,
     ) -> Result<ComponentBitAmbiguityOutcome, SummaryBlocker> {
+        if let RequestedBits::Ports { bits, .. } = &requested {
+            let (port, indices) =
+                applied.handle().output_port().ok_or(SummaryBlocker::WrongInstance)?;
+            if port != *bits || indices.as_slice() != [0] {
+                return Err(SummaryBlocker::WrongInstance);
+            }
+        }
         self.check_model_main_root(facts, applied.caller_evidence())?;
         self.validated_definition(facts)?;
         self.check_warning_execution_scope(facts, applied.caller_evidence())?;
@@ -176,6 +205,10 @@ impl ProjectSummaries<'_> {
                 RequestedBits::Paths { input, bits } => child.bit_decomposition(input, bits),
                 RequestedBits::Handles { input, bits } => {
                     child.bit_decomposition_handles(input, bits)
+                }
+                RequestedBits::Ports { input, bits } => {
+                    let (input, bits) = checked_bit_port_handles(child, input, bits)?;
+                    child.bit_decomposition_handles(&input, &bits)
                 }
             };
             let Some(relation) = certified(&relation)? else {
@@ -206,6 +239,38 @@ impl ProjectSummaries<'_> {
             prove_closure_models(self.field_context(), applied, &equations, budget)
         })
     }
+}
+
+fn checked_bit_port_handles(
+    child: &AnalysisFacts<'_>,
+    input: PortId,
+    bits: PortId,
+) -> Result<(AccessHandle, Vec<AccessHandle>), SummaryBlocker> {
+    let input_port = child.hir().port(input).ok_or(SummaryBlocker::WrongInstance)?;
+    let bit_port = child.hir().port(bits).ok_or(SummaryBlocker::WrongInstance)?;
+    if input_port.schema != PortSchema::Signal
+        || input_port.direction != Some(PortDirection::Input)
+        || bit_port.schema != PortSchema::Signal
+        || bit_port.direction != Some(PortDirection::Output)
+    {
+        return Err(SummaryBlocker::UnsupportedContext);
+    }
+    let input_handle =
+        child.port_handle(input, &[]).map_err(|_| SummaryBlocker::UnsupportedContext)?;
+    let bounds = child
+        .checked_symbol_dimensions(bit_port.symbol)
+        .map_err(|_| SummaryBlocker::UnsupportedContext)?;
+    let [width] = bounds.as_slice() else { return Err(SummaryBlocker::UnsupportedContext) };
+    if *width == 0 || *width > 512 {
+        return Err(SummaryBlocker::ContextBudget);
+    }
+    let mut bit_handles = Vec::with_capacity(*width);
+    for index in 0..*width {
+        let handle =
+            child.port_handle(bits, &[index]).map_err(|_| SummaryBlocker::UnsupportedContext)?;
+        bit_handles.push(handle);
+    }
+    Ok((input_handle, bit_handles))
 }
 
 #[cfg(test)]

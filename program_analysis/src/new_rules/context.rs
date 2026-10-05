@@ -156,6 +156,30 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
         }
     }
 
+    /// Bind a reachable child array output through its own checked first element.
+    ///
+    /// The child port dimension is proved under the callee's exact parameters.
+    /// A source call that is unreachable returns `None`; unresolved reachability
+    /// retains its typed blocker.
+    pub fn applied_component_first_output(
+        &self,
+        site: CallSiteId,
+        output: PortId,
+    ) -> Result<Option<SummaryFact<AppliedComponentPort>>, CallBlocker> {
+        match self.summaries.graph().reachable_call(site, self.facts) {
+            CallReachability::Reachable(call) => {
+                Ok(Some(self.summaries.apply_component_first_output(
+                    self.facts,
+                    self.evidence,
+                    &call,
+                    output,
+                )))
+            }
+            CallReachability::Unreachable => Ok(None),
+            CallReachability::Unavailable(blocker) => Err(blocker),
+        }
+    }
+
     /// Prove a caller-side fixed output from a child equality and checked input binding.
     ///
     /// The applied port must belong to this exact source scope. The result proves a
@@ -242,6 +266,17 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
         bits: &[AccessHandle],
     ) -> SummaryFact<ComponentBitAmbiguityOutcome> {
         self.summaries.component_bit_ambiguity_handles(self.facts, applied, input, bits)
+    }
+
+    /// Prove complete caller and child models for checked child port schemas.
+    #[must_use]
+    pub fn component_bit_ambiguity_ports(
+        &self,
+        applied: &AppliedComponentPort,
+        input: PortId,
+        bits: PortId,
+    ) -> SummaryFact<ComponentBitAmbiguityOutcome> {
+        self.summaries.component_bit_ambiguity_ports(self.facts, applied, input, bits)
     }
 
     /// Request a source-valid bit relation in this validated root template scope.
