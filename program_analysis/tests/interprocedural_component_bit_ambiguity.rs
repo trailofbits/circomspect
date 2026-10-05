@@ -399,6 +399,16 @@ fn checked_requests_reject_foreign_context_curve_project_and_input_bits() {
             NoBitAmbiguityCertificate::WidthBelowFieldModulus
         ))
     );
+    assert_eq!(
+        provider
+            .component_bit_ambiguity_ports(&facts, applied, input_port, output_port)
+            .certified(),
+        valid.certified()
+    );
+    assert!(provider
+        .component_bit_ambiguity_ports(&facts, applied, output_port, input_port)
+        .unavailable()
+        .is_some());
     assert!(provider
         .component_bit_ambiguity_handles(&facts, applied, &bit, std::slice::from_ref(&input))
         .unavailable()
@@ -410,6 +420,10 @@ fn checked_requests_reject_foreign_context_curve_project_and_input_bits() {
         .component_bit_ambiguity_handles(&wrong, applied, &input, std::slice::from_ref(&bit))
         .unavailable()
         .is_some());
+    assert!(provider
+        .component_bit_ambiguity_ports(&wrong, applied, input_port, output_port)
+        .unavailable()
+        .is_some());
     for curve in [Curve::Bn254, Curve::Goldilocks] {
         let foreign = fixture(&text);
         let other = ProjectSummaries::build(&foreign, curve).unwrap();
@@ -417,6 +431,10 @@ fn checked_requests_reject_foreign_context_curve_project_and_input_bits() {
         let evidence = other.symbolic_root(definition).unwrap();
         let cfg = build_cfg(&foreign.hir, definition).unwrap();
         let foreign_facts = other.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+        assert!(provider
+            .component_bit_ambiguity_ports(&foreign_facts, applied, input_port, output_port)
+            .unavailable()
+            .is_some());
         let scalar = foreign_facts.port_handle(foreign.hir.ports()[0].id, &[]).unwrap();
         assert!(provider
             .component_bit_ambiguity_handles(&facts, applied, &scalar, std::slice::from_ref(&bit))
@@ -424,6 +442,10 @@ fn checked_requests_reject_foreign_context_curve_project_and_input_bits() {
             .is_some());
     }
     let other = ProjectSummaries::build(&project, Curve::Bn254).unwrap();
+    assert!(other
+        .component_bit_ambiguity_ports(&facts, applied, input_port, output_port)
+        .unavailable()
+        .is_some());
     assert!(other
         .component_bit_ambiguity_handles(&facts, applied, &input, &[bit])
         .unavailable()

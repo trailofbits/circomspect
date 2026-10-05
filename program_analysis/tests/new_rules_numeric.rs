@@ -10,6 +10,7 @@ use circomspect_program_analysis::interprocedural::{
 use circomspect_program_analysis::new_rules::{
     run_registered, AbstentionReason, Finding, RuleContext, RuleKind, RuleResult, SourceMap,
 };
+use num_bigint_dig::BigInt;
 use parser::hir::lift_project;
 use parser::new_frontend::{load_sources, LoadedProject, Version, VersionPolicy};
 use program_structure::report::MessageCategory;
@@ -559,5 +560,52 @@ fn warning_corpus_distinguishes_the_field_prime_from_the_old_nearby_literal() {
         let source = fs::read_to_string(root.join(format!("{name}_boundary_emit.circom"))).unwrap();
         let result = inspect_main(&source, curve);
         assert!(kinds(&result).contains(&kind), "actual field boundary: {name}");
+    }
+}
+
+#[test]
+fn all_supported_curves_preserve_canonical_arithmetic_boundaries() {
+    for curve in [Curve::Bn254, Curve::Bls12_381, Curve::Goldilocks] {
+        let prime = UsefulConstants::new(&curve).prime().clone();
+        let last = &prime - 1;
+        let half: BigInt = &prime / 2;
+        for (expression, expected) in [
+            (format!("{last}+0"), 0),
+            (format!("{last}+1"), 1),
+            (format!("{half}*2"), 0),
+            (format!("{}*2", &half + 1), 1),
+            (format!("{prime}+1"), 0),
+            ("0-1".into(), 1),
+        ] {
+            let source = format!("template Check(){{var x={expression};}}");
+            let (_, result) = inspect(&source, curve.clone(), "Check");
+            assert_eq!(
+                kinds(&result).iter().filter(|kind| **kind == RuleKind::FieldArithmetic).count(),
+                expected,
+                "{curve}: {source}"
+            );
+        }
+    }
+}
+
+#[test]
+fn every_relational_operator_obeys_the_signed_half_field_boundary() {
+    for curve in [Curve::Bn254, Curve::Bls12_381, Curve::Goldilocks] {
+        let prime = UsefulConstants::new(&curve).prime().clone();
+        let half: BigInt = &prime / 2;
+        for operator in ["<", "<=", ">", ">="] {
+            for (operand, expected) in [(&half, 0), (&(&half + 1), 1)] {
+                let source = format!("template Check(){{var x={operand}{operator}0;}}");
+                let (_, result) = inspect(&source, curve.clone(), "Check");
+                assert_eq!(
+                    kinds(&result)
+                        .iter()
+                        .filter(|kind| **kind == RuleKind::FieldComparison)
+                        .count(),
+                    expected,
+                    "{curve}: {source}"
+                );
+            }
+        }
     }
 }
