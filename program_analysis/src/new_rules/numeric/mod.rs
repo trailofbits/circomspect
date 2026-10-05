@@ -1,6 +1,7 @@
 //! Numeric and expression warning family over certified HIR facts.
 
 mod control;
+mod conversion;
 mod division;
 mod expression;
 
@@ -51,19 +52,7 @@ impl Rule for NumericRule {
             RuleKind::FieldArithmetic => expression::field_arithmetic(context),
             RuleKind::FieldComparison => expression::field_comparison(context),
             RuleKind::UnconstrainedDivision => division::unconstrained_division(context),
-            RuleKind::NonstrictBinaryConversion => {
-                let mut result = RuleResult::default();
-                if let Some(span) = definition_span(context) {
-                    abstain(
-                        context,
-                        &mut result,
-                        RuleKind::NonstrictBinaryConversion,
-                        span,
-                        AbstentionReason::UnsupportedConstruct,
-                    );
-                }
-                result
-            }
+            RuleKind::NonstrictBinaryConversion => conversion::nonstrict_binary_conversion(context),
             RuleKind::SignalAssignment
             | RuleKind::RedundantWitnessAssignment
             | RuleKind::UnconstrainedSignal
