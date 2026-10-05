@@ -276,7 +276,7 @@ fn missing_or_partial_scalar_input_cannot_prove_output_use() {
 #[test]
 fn competing_input_writes_and_early_output_reads_abstain() {
     for body in [
-        "if(1<<1){c.in<==1;}else{c.in<==2;}",
+        "if(1<<513){c.in<==1;}else{c.in<==2;}",
         "c.in<==1;c.in<==1;",
         "var t=Missing();c.in<==1;",
         "signal output y;y<==c.out;c.in<==1;",

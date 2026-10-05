@@ -219,14 +219,14 @@ fn independent_shadowed_local_demand_stays_with_the_used_symbol() {
 #[test]
 fn independent_branch_join_preserves_demand_from_either_successor() {
     let required =
-        assignment_demands("function Check(){var x=1;var y=2;if(1<<1){y=x;}return y;}", None);
+        assignment_demands("function Check(){var x=1;var y=2;if(1<<513){y=x;}return y;}", None);
     assert_eq!(required.len(), 3);
     for (_, result) in &required {
         let Ok(fact) = result else { panic!("branch inputs must have certified demand") };
         assert_eq!(fact.certified(), Some(&AssignmentDemand::MayBeObserved));
     }
     let unused =
-        assignment_demands("function Check(){var x=1;var y=2;if(1<<1){y=x;}return 7;}", None);
+        assignment_demands("function Check(){var x=1;var y=2;if(1<<513){y=x;}return 7;}", None);
     assert_eq!(unused.len(), 3);
     assert!(unused.iter().all(|(_, result)| unobserved(result)));
 }

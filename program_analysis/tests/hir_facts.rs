@@ -213,7 +213,7 @@ fn exhausted_budget_never_certifies_a_provisional_zero() {
 #[test]
 fn pending_alternative_branch_never_certifies_provisional_must() {
     let (hir, definition) =
-        fixture("template Check(){signal output x; if(0 << 1){x <== 1;}else{x <-- 1;}}");
+        fixture("template Check(){signal output x; if(0 << 513){x <== 1;}else{x <-- 1;}}");
     let cfg = build_cfg(&hir, definition).unwrap();
     let field = FieldContext::for_curve(Curve::Bn254);
     let DefinitionRef::Template(id) = definition else { panic!("template fixture") };
@@ -269,7 +269,7 @@ fn different_sites_on_every_arm_prove_incidence_independent_of_fixed_value() {
     let field = FieldContext::for_curve(Curve::Bn254);
     for (otherwise, fixed) in [("1", Some(field.canonical(1.into()))), ("2", None)] {
         let source = format!(
-            "template Check(){{signal input x; if(0 << 1){{x===1;}}else{{x==={otherwise};}}}}"
+            "template Check(){{signal input x; if(0 << 513){{x===1;}}else{{x==={otherwise};}}}}"
         );
         let (hir, definition) = fixture(&source);
         let cfg = build_cfg(&hir, definition).unwrap();
@@ -283,7 +283,7 @@ fn different_sites_on_every_arm_prove_incidence_independent_of_fixed_value() {
 #[test]
 fn arithmetic_access_on_each_branch_proves_must_incidence() {
     let (hir, definition) =
-        fixture("template Check(){signal input x; if(0 << 1){x+1===0;}else{x+2===0;}}");
+        fixture("template Check(){signal input x; if(0 << 513){x+1===0;}else{x+2===0;}}");
     let cfg = build_cfg(&hir, definition).unwrap();
     let field = FieldContext::for_curve(Curve::Bn254);
     let facts = analyze(&hir, &cfg, &field, None).unwrap();
@@ -585,7 +585,7 @@ fn signed_field_comparison_selects_the_negative_branch() {
 fn two_exact_array_dependencies_do_not_mention_a_third_element() {
     let (hir, definition) = fixture(
         "template Check(){signal input a[3]; var t=a[0]; \
-         if(0 << 1){t=a[0];}else{t=a[1];} \
+         if(0 << 513){t=a[0];}else{t=a[1];} \
          signal output y; y<==t; signal output z; z<--a[2];}",
     );
     let cfg = build_cfg(&hir, definition).unwrap();

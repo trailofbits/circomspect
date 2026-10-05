@@ -20,6 +20,21 @@ pub struct FieldContext {
     modulus: BigInt,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum ShiftDirection {
+    Left,
+    Right,
+}
+
+impl ShiftDirection {
+    fn reversed(self) -> Self {
+        match self {
+            Self::Left => Self::Right,
+            Self::Right => Self::Left,
+        }
+    }
+}
+
 impl FieldContext {
     /// Select the same field as the compiler configuration.
     #[must_use]
@@ -91,6 +106,33 @@ impl FieldContext {
             return None;
         }
         Some(FieldValue(base.0.modpow(&BigInt::from(exponent), &self.modulus)))
+    }
+
+    /// Apply Circom's field-width mask before reduction, reversing negative shifts.
+    pub(crate) fn bounded_shift(
+        &self,
+        value: &FieldValue,
+        count: &FieldValue,
+        direction: ShiftDirection,
+    ) -> Option<FieldValue> {
+        let (count, direction) = if count.0 > &self.modulus / 2 {
+            (&self.modulus - &count.0, direction.reversed())
+        } else {
+            (count.0.clone(), direction)
+        };
+        let count = count.to_usize()?;
+        if count > 512 {
+            return None;
+        }
+        let value = match direction {
+            ShiftDirection::Left => {
+                let width = self.modulus.bits();
+                let mask = (BigInt::from(1) << width) - 1;
+                (&value.0 << count) & mask
+            }
+            ShiftDirection::Right => &value.0 >> count,
+        };
+        Some(self.canonical(value))
     }
 
     /// Invert a nonzero canonical value in the selected prime field.

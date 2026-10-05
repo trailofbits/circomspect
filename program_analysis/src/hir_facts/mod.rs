@@ -1659,7 +1659,7 @@ mod call_shape_tests {
     #[test]
     fn pending_alternative_or_backedge_cannot_certify_a_provisional_deferred_value() {
         for source in [
-            "function F(n){var x=n;if(1<<1){x=2;}else{x=3;}return x;}",
+            "function F(n){var x=n;if(1<<513){x=2;}else{x=3;}return x;}",
             "function F(n){var x=n;for(var i=0;i<17;i++){x=2;}return x;}",
         ] {
             let hir = fixture(source);

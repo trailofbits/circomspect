@@ -447,7 +447,7 @@ fn duplicate_and_missing_input_bindings_cannot_fix_an_output() {
 fn a_may_reachable_branch_instantiation_does_not_fix_an_output() {
     let lifted = fixture(concat!(
         "template Child(){signal input in;signal output out;out<==in;} ",
-        "template Parent(){component c;if(1 << 1){c=Child();c.in<==7;}}"
+        "template Parent(){component c;if(1 << 513){c=Child();c.in<==7;}}"
     ));
     let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
@@ -477,7 +477,7 @@ fn disagreeing_branch_input_bindings_cannot_fix_an_output() {
     let lifted = fixture(concat!(
         "template Child(){signal input in;signal output out;out<==in;} ",
         "template Parent(){component c=Child();",
-        "if(1 << 1){c.in<==7;}else{c.in<==8;}}"
+        "if(1 << 513){c.in<==7;}else{c.in<==8;}}"
     ));
     let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
@@ -506,7 +506,7 @@ fn disagreeing_branch_input_bindings_cannot_fix_an_output() {
 fn unrelated_branch_preserves_the_later_checked_input_value() {
     let lifted = fixture(concat!(
         "template Child(){signal input in;signal output out;out<==in;} ",
-        "template Parent(){component c=Child();if(1 << 1){log(1);}",
+        "template Parent(){component c=Child();if(1 << 513){log(1);}",
         "c.in<==7;}"
     ));
     let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();

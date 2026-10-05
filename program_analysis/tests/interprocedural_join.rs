@@ -69,7 +69,7 @@ fn agreeing_branch_bindings_certify_one_output_value_with_both_origins() {
         concat!(
             "template Child(){signal input in;signal output out;out<==in;} ",
             "template Parent(){component c=Child();",
-            "if(1 << 1){c.in<==7;}else{c.in<==7;}",
+            "if(1 << 513){c.in<==7;}else{c.in<==7;}",
             "signal output y;y<==c.out;}"
         ),
         None,
@@ -83,7 +83,7 @@ fn agreeing_branch_bindings_certify_one_output_value_with_both_origins() {
 
 #[test]
 fn differing_or_one_sided_branch_bindings_cannot_fix_output() {
-    for branch in ["if(1 << 1){c.in<==7;}else{c.in<==8;}", "if(1 << 1){c.in<==7;}"] {
+    for branch in ["if(1 << 513){c.in<==7;}else{c.in<==8;}", "if(1 << 513){c.in<==7;}"] {
         let source = format!(
             "template Child(){{signal input in;signal output out;out<==in;}} \
              template Parent(){{component c=Child();{branch}signal output y;y<==c.out;}}"

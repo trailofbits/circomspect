@@ -490,7 +490,7 @@ fn independent_redundant_witnesses_distinguish_array_elements() {
 
 #[test]
 fn independent_redundant_witness_origins_preserve_all_branch_constraints() {
-    let source = concat!("template T(){signal output x;x<--1;", "if(1<<1){x===1;}else{x===1;}}");
+    let source = concat!("template T(){signal output x;x<--1;", "if(1<<513){x===1;}else{x===1;}}");
     let (loaded, result) = inspect(source, None);
     assert_eq!(count(&result, RuleKind::RedundantWitnessAssignment), 1);
     let finding = result

@@ -12,7 +12,7 @@ use crate::scalar_evidence::ScalarExpressionEvidence;
 
 use crate::hir_facts::access::{key_for_path, AccessKey, MayAccessSet};
 use crate::hir_facts::domains::DegreeUpper;
-use crate::hir_facts::field::{FieldContext, FieldValue};
+use crate::hir_facts::field::{FieldContext, FieldValue, ShiftDirection};
 use crate::hir_facts::relations::{
     constraint_equation, variable_polynomial, ExpressionPolynomial, MustEquations,
     MustSymbolicVariables, NormalizationInputs,
@@ -1105,6 +1105,12 @@ pub(crate) fn eval_expression_with_calls(
                 BinaryOperator::Subtract => Some(field.subtract(&left, &right)),
                 BinaryOperator::Multiply => Some(field.multiply(&left, &right)),
                 BinaryOperator::Power => field.bounded_power(&left, &right),
+                BinaryOperator::ShiftLeft => {
+                    field.bounded_shift(&left, &right, ShiftDirection::Left)
+                }
+                BinaryOperator::ShiftRight => {
+                    field.bounded_shift(&left, &right, ShiftDirection::Right)
+                }
                 BinaryOperator::Equal => Some(field.canonical(i32::from(left == right).into())),
                 BinaryOperator::NotEqual => Some(field.canonical(i32::from(left != right).into())),
                 BinaryOperator::Less => Some(field.canonical(
@@ -1124,8 +1130,6 @@ pub(crate) fn eval_expression_with_calls(
                 | BinaryOperator::BitOr
                 | BinaryOperator::BitXor
                 | BinaryOperator::BitAnd
-                | BinaryOperator::ShiftLeft
-                | BinaryOperator::ShiftRight
                 | BinaryOperator::Divide
                 | BinaryOperator::IntegerDivide
                 | BinaryOperator::Modulo => None,
@@ -1805,7 +1809,7 @@ mod tests {
         let source = directory.join("case.circom");
         fs::write(
             &source,
-            "template T(){signal input x; var t=x; t++; signal output y; \
+            "template T(){signal input x; var t=x; t++; t=1<<t; t=t>>1; signal output y; \
              y<==t; if(1){y===1;}else{y===2;}}",
         )
         .unwrap();
