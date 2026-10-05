@@ -221,6 +221,13 @@ impl UncertainWrite {
 
 type WriteFacts = CertifiedFacts<NodeId, WriteState>;
 
+pub(super) struct BodyWriteSolve {
+    facts: WriteFacts,
+    uncertain: Vec<UncertainWrite>,
+}
+
+pub(super) type BodyWriteResult = Result<BodyWriteSolve, BTreeSet<FactBlocker>>;
+
 struct ReadCheck<'a> {
     site: NodeId,
     may: &'a BTreeSet<AccessKey>,
@@ -256,14 +263,14 @@ impl AnalysisFacts<'_> {
         constructor: &dyn Fn(ExprId) -> bool,
         output: &dyn Fn(&AccessPath) -> bool,
     ) -> Fact<()> {
-        let (facts, uncertain) = match self.solve_body_writes() {
+        let solved = match self.solve_body_writes() {
             Ok(result) => result,
-            Err(blockers) => return Fact::blocked(blockers),
+            Err(blockers) => return Fact::blocked(blockers.clone()),
         };
         let mut blockers = BTreeSet::new();
         for site in self.cfg.nodes() {
             let Some(WriteState::Reached { may_written, must_written, .. }) =
-                facts.get(site).and_then(|item| item.input.as_ref())
+                solved.facts.get(site).and_then(|item| item.input.as_ref())
             else {
                 continue;
             };
@@ -272,7 +279,7 @@ impl AnalysisFacts<'_> {
                 site: *site,
                 may: may_written,
                 must: must_written,
-                uncertain: &uncertain,
+                uncertain: &solved.uncertain,
                 blockers: &mut blockers,
                 constructor,
                 output,
@@ -405,11 +412,11 @@ impl AnalysisFacts<'_> {
     }
 
     fn body_write_status_key(&self, key: &AccessKey) -> Fact<BodyWriteStatus> {
-        let (facts, uncertain) = match self.solve_body_writes() {
+        let solved = match self.solve_body_writes() {
             Ok(result) => result,
-            Err(blockers) => return Fact::blocked(blockers),
+            Err(blockers) => return Fact::blocked(blockers.clone()),
         };
-        self.body_write_status_from_result(key, &facts, &uncertain)
+        self.body_write_status_from_result(key, &solved.facts, &solved.uncertain)
     }
 
     fn body_write_status_from_result(
@@ -491,12 +498,12 @@ impl AnalysisFacts<'_> {
 
     /// Certify that no reachable body witness write can repeat any target.
     pub(crate) fn no_possible_repeated_body_writes(&self) -> Fact<()> {
-        let (facts, uncertain) = match self.solve_body_writes() {
+        let solved = match self.solve_body_writes() {
             Ok(result) => result,
-            Err(blockers) => return Fact::blocked(blockers),
+            Err(blockers) => return Fact::blocked(blockers.clone()),
         };
         let Some(WriteState::Reached { may_repeat, must_repeat_any, .. }) =
-            facts.get(&self.cfg.exit()).and_then(|item| item.output.as_ref())
+            solved.facts.get(&self.cfg.exit()).and_then(|item| item.output.as_ref())
         else {
             return Fact::blocked(BTreeSet::from([FactBlocker::MissingExit]));
         };
@@ -508,10 +515,10 @@ impl AnalysisFacts<'_> {
         }
         let mut blockers = BTreeSet::new();
         for key in may_repeat {
-            blockers.extend(self.possible_write_blockers(key, &facts, may_repeat, &[]));
+            blockers.extend(self.possible_write_blockers(key, &solved.facts, may_repeat, &[]));
         }
-        for write in uncertain {
-            blockers.extend(write.blockers);
+        for write in &solved.uncertain {
+            blockers.extend(write.blockers.iter().cloned());
             blockers
                 .insert(FactBlocker::WitnessWrite(write.site, WitnessWriteIssue::UnresolvedTarget));
         }
@@ -543,21 +550,23 @@ impl AnalysisFacts<'_> {
 
     /// A duplicate on every reachable path invalidates the whole template body.
     pub(crate) fn definitely_repeats_any_body_write(&self) -> Fact<bool> {
-        let (facts, _) = match self.solve_body_writes() {
+        let solved = match self.solve_body_writes() {
             Ok(result) => result,
-            Err(blockers) => return Fact::blocked(blockers),
+            Err(blockers) => return Fact::blocked(blockers.clone()),
         };
         let Some(WriteState::Reached { must_repeat_any, .. }) =
-            facts.get(&self.cfg.exit()).and_then(|item| item.output.as_ref())
+            solved.facts.get(&self.cfg.exit()).and_then(|item| item.output.as_ref())
         else {
             return Fact::blocked(BTreeSet::from([FactBlocker::MissingExit]));
         };
         Fact::known(*must_repeat_any)
     }
 
-    fn solve_body_writes(
-        &self,
-    ) -> Result<(WriteFacts, Vec<UncertainWrite>), BTreeSet<FactBlocker>> {
+    fn solve_body_writes(&self) -> Result<&BodyWriteSolve, &BTreeSet<FactBlocker>> {
+        self.body_writes.get_or_init(|| self.compute_body_writes()).as_ref()
+    }
+
+    fn compute_body_writes(&self) -> BodyWriteResult {
         const WRITE_UPDATE_BUDGET: usize = 100_000;
         let mut exact_writes = BTreeMap::new();
         let mut uncertain = Vec::new();
@@ -567,6 +576,17 @@ impl AnalysisFacts<'_> {
             }
             let Some(node) = self.cfg.node(*site) else { continue };
             self.classify_write(*site, &node.kind, &mut exact_writes, &mut uncertain);
+        }
+        if let SolveResult::Incomplete { .. } = &self.forward {
+            let mut blockers = self.forward_completion_blockers();
+            for write in uncertain {
+                blockers.extend(write.blockers);
+                blockers.insert(FactBlocker::WitnessWrite(
+                    write.site,
+                    WitnessWriteIssue::UnresolvedTarget,
+                ));
+            }
+            return Err(blockers);
         }
         let analysis = WriteAnalysis {
             exact_writes,
@@ -582,7 +602,7 @@ impl AnalysisFacts<'_> {
             solve::<_, _, Forward>(self.cfg.as_ref(), &analysis, Some(WRITE_UPDATE_BUDGET))
                 .map_err(|_| BTreeSet::from([FactBlocker::ForeignQuery]))?;
         match result {
-            SolveResult::Complete(facts) => Ok((facts, uncertain)),
+            SolveResult::Complete(facts) => Ok(BodyWriteSolve { facts, uncertain }),
             SolveResult::Incomplete { blockers, .. } => {
                 Err(blockers.iter().map(FactBlocker::from).collect())
             }
@@ -671,14 +691,153 @@ fn witness_operator(operator: AssignmentOperator) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::fs;
 
+    use abstract_interpretation::graph::FlowGraph;
     use abstract_interpretation::lattice::Lattice;
-    use parser::hir::lift_project;
+    use parser::hir::{lift_project, LiftedProject};
     use parser::new_frontend::{load_sources, Version, VersionPolicy};
+    use program_structure::utils::constants::Curve;
 
-    use crate::hir_facts::AccessKey;
+    use crate::hir_cfg::{build_cfg, CfgNodeKind, DefinitionCfg};
     use crate::hir_facts::write_validity::WriteState;
+    use crate::hir_facts::{analyze_with_scalar_parameters, AccessKey, BodyWriteStatus, FieldContext};
+    use crate::interprocedural::ProjectSummaries;
+
+    fn with_fixture(
+        source: &str,
+        work: impl FnOnce(&LiftedProject, &DefinitionCfg, &FieldContext),
+    ) {
+        let directory = std::env::temp_dir().join(format!(
+            "circomspect-write-cache-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("case.circom");
+        fs::write(&path, source).unwrap();
+        let loaded = load_sources(&[path], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
+        let lifted = lift_project(&loaded);
+        assert!(lifted.syntax_diagnostics.is_empty(), "{:?}", lifted.syntax_diagnostics);
+        assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
+        let cfg = build_cfg(&lifted.hir, lifted.hir.definition("T").unwrap()).unwrap();
+        let field = FieldContext::for_curve(Curve::Goldilocks);
+        work(&lifted, &cfg, &field);
+    }
+
+    #[test]
+    fn repeat_facts_stay_scoped_to_exact_parameters_and_solver_budget() {
+        let source = "template T(n){signal output x;if(n){x<--1;}x<--2;}";
+        with_fixture(source, |lifted, cfg, field| {
+            let hir = &lifted.hir;
+            let parameter = hir.symbols().iter().find(|symbol| symbol.name == "n").unwrap().id;
+            let seed = |value: u32| BTreeMap::from([(parameter, field.canonical(value.into()))]);
+            let no_repeat = analyze_with_scalar_parameters(hir, cfg, field, seed(0), None).unwrap();
+            let repeated = analyze_with_scalar_parameters(hir, cfg, field, seed(1), None).unwrap();
+            let incomplete =
+                analyze_with_scalar_parameters(hir, cfg, field, seed(1), Some(0)).unwrap();
+            let target = cfg
+                .nodes()
+                .iter()
+                .find_map(|site| {
+                    let CfgNodeKind::Witness { target, .. } = &cfg.node(*site)?.kind else {
+                        return None;
+                    };
+                    Some(target)
+                })
+                .unwrap();
+            for _ in 0..2 {
+                let no = no_repeat.body_write_status(target);
+                let Some(BodyWriteStatus::NoRepeat(_)) = no.certified() else {
+                    panic!("n=0 must have one write: {no:?}");
+                };
+                let yes = repeated.body_write_status(target);
+                let Some(BodyWriteStatus::DefinitelyRepeated(_)) = yes.certified() else {
+                    panic!("n=1 must repeat: {yes:?}");
+                };
+                assert_eq!(no_repeat.definitely_repeats_any_body_write().certified(), Some(&false));
+                assert_eq!(repeated.definitely_repeats_any_body_write().certified(), Some(&true));
+                assert!(incomplete.body_write_status(target).unavailable().is_some());
+                assert!(incomplete.definitely_repeats_any_body_write().unavailable().is_some());
+            }
+        });
+    }
+
+    #[test]
+    fn write_solve_respects_selected_field_curve() {
+        let source = "template T(){signal output x;\
+                      if(18446744069414584321==0){x<--1;}x<--2;}";
+        with_fixture(source, |lifted, cfg, goldilocks| {
+            let hir = &lifted.hir;
+            let bn254 = FieldContext::for_curve(Curve::Bn254);
+            let gold = analyze_with_scalar_parameters(hir, cfg, goldilocks, BTreeMap::new(), None)
+                .unwrap();
+            let bn =
+                analyze_with_scalar_parameters(hir, cfg, &bn254, BTreeMap::new(), None).unwrap();
+            assert_eq!(gold.definitely_repeats_any_body_write().certified(), Some(&true));
+            assert_eq!(bn.definitely_repeats_any_body_write().certified(), Some(&false));
+        });
+    }
+
+    #[test]
+    fn unresolved_write_blockers_survive_other_queries_and_repetition() {
+        let source = "template T(){signal input i;signal output x[2];x[0]<--1;x[i]<--2;}";
+        with_fixture(source, |lifted, cfg, field| {
+            let hir = &lifted.hir;
+            let facts =
+                analyze_with_scalar_parameters(hir, cfg, field, BTreeMap::new(), None).unwrap();
+            let target = cfg
+                .nodes()
+                .iter()
+                .find_map(|site| {
+                    let CfgNodeKind::Witness { target, .. } = &cfg.node(*site)?.kind else {
+                        return None;
+                    };
+                    Some(target)
+                })
+                .unwrap();
+            let first = facts.body_write_status(target);
+            assert!(first.unavailable().is_some());
+            let whole = facts.no_possible_repeated_body_writes();
+            assert!(whole.unavailable().is_some());
+            assert_eq!(facts.body_write_status(target), first);
+            assert_eq!(facts.no_possible_repeated_body_writes(), whole);
+        });
+    }
+
+    #[test]
+    fn binding_provider_evidence_does_not_reuse_an_unbound_certificate() {
+        let source = "template T(){signal output x;x<--1;}";
+        with_fixture(source, |lifted, cfg, field| {
+            let mut facts =
+                analyze_with_scalar_parameters(&lifted.hir, cfg, field, BTreeMap::new(), None)
+                    .unwrap();
+            let target = cfg
+                .nodes()
+                .iter()
+                .find_map(|site| {
+                    let CfgNodeKind::Witness { target, .. } = &cfg.node(*site)?.kind else {
+                        return None;
+                    };
+                    Some(target)
+                })
+                .unwrap();
+            let before = facts.body_write_status(target);
+            let Some(BodyWriteStatus::NoRepeat(before)) = before.certified() else {
+                panic!("unbound no-repeat expected: {before:?}");
+            };
+            assert!(before.evidence.is_none());
+            let provider = ProjectSummaries::build(lifted, Curve::Goldilocks).unwrap();
+            let evidence = provider.symbolic_root(cfg.definition()).unwrap();
+            facts.bind_evidence(evidence.clone());
+            let after = facts.body_write_status(target);
+            let Some(BodyWriteStatus::NoRepeat(after)) = after.certified() else {
+                panic!("bound no-repeat expected: {after:?}");
+            };
+            assert_eq!(after.evidence.as_ref(), Some(&evidence));
+        });
+    }
 
     fn keys() -> (AccessKey, AccessKey) {
         let source = "template T(){signal output x;signal output y;}";

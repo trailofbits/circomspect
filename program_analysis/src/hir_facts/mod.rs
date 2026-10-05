@@ -19,7 +19,7 @@ mod range_tests;
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Mutex, OnceLock, PoisonError};
 
 use abstract_interpretation::graph::{EdgeId, FlowGraph, GraphError, NodeId};
 use abstract_interpretation::solver::{
@@ -197,6 +197,7 @@ pub struct AnalysisFacts<'a> {
     resolved_deferred: BTreeSet<NodeId>,
     evidence_binding: Option<ContextEvidence>,
     ranges: Mutex<BTreeMap<ExprId, Fact<FieldRange>>>,
+    body_writes: OnceLock<write_validity::BodyWriteResult>,
 }
 
 /// Compute local facts. External summaries are unavailable until Phase 5.
@@ -265,6 +266,7 @@ pub(crate) fn analyze_owned_with_scalar_calls<'a>(
         resolved_deferred,
         evidence_binding,
         ranges,
+        body_writes: OnceLock::new(),
     })
 }
 
@@ -331,6 +333,7 @@ fn analyze_seeded<'a>(
         resolved_deferred,
         evidence_binding: None,
         ranges: Mutex::new(BTreeMap::new()),
+        body_writes: OnceLock::new(),
     })
 }
 
@@ -533,6 +536,7 @@ impl AnalysisFacts<'_> {
 
     pub(crate) fn bind_evidence(&mut self, evidence: ContextEvidence) {
         self.ranges.get_mut().unwrap_or_else(PoisonError::into_inner).clear();
+        self.body_writes = OnceLock::new();
         self.evidence_binding = Some(evidence);
     }
 
