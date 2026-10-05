@@ -182,13 +182,13 @@ fn warning_labels_and_legacy_results_are_frozen() {
         };
         *totals.entry(label).or_default() += 1;
     }
-    assert_eq!(cases.len(), 45);
+    assert_eq!(cases.len(), 48);
     assert_eq!(labels.len(), 15);
     assert!(labels.values().all(|set| set.len() == 3));
     assert_eq!(totals.get("TP"), Some(&8));
     assert_eq!(totals.get("FP"), Some(&2));
     assert_eq!(totals.get("FN"), Some(&7));
-    assert_eq!(totals.get("TN"), Some(&13));
+    assert_eq!(totals.get("TN"), Some(&16));
     assert_eq!(totals.get("abstention"), Some(&15));
 }
 

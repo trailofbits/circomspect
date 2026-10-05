@@ -56,14 +56,20 @@
       "source": "cases/bn254_specific_emit.circom",
       "scope": "Main",
       "curve": "bls12381",
-      "expected": "emit",
-      "truth": "confirmed_property",
+      "expected": "no_finding",
+      "truth": "property_absent",
       "compiler_class": "success",
-      "reason": "the same literal is curve-specific only on another field",
+      "reason": "Adjudicated 2026-10-05: this literal is not the BN254 field prime; preserve the original source as a negative case.",
       "legacy_rule_id": "CS0016",
       "legacy_observed_count": 0,
       "legacy_analyzed": true,
-      "legacy_observed_evidence": []
+      "legacy_observed_evidence": [],
+      "adjudication": {
+        "date": "2026-10-05",
+        "previous_expected": "emit",
+        "previous_truth": "confirmed_property",
+        "replacement_positive": "bn254_specific_boundary_emit"
+      }
     },
     {
       "id": "bn254_specific_no_finding",
@@ -152,14 +158,20 @@
       "source": "cases/field_arithmetic_emit.circom",
       "scope": "Main",
       "curve": "bn128",
-      "expected": "emit",
-      "truth": "confirmed_property",
+      "expected": "no_finding",
+      "truth": "property_absent",
       "compiler_class": "success",
-      "reason": "proven modular wrap versus in-range or unknown arithmetic",
+      "reason": "Adjudicated 2026-10-05: the literal reduces to 147946756881789318990833708069417712965, so adding 2 does not wrap.",
       "legacy_rule_id": "CS0004",
       "legacy_observed_count": 0,
       "legacy_analyzed": true,
-      "legacy_observed_evidence": []
+      "legacy_observed_evidence": [],
+      "adjudication": {
+        "date": "2026-10-05",
+        "previous_expected": "emit",
+        "previous_truth": "confirmed_property",
+        "replacement_positive": "field_arithmetic_boundary_emit"
+      }
     },
     {
       "id": "field_arithmetic_no_finding",
@@ -200,14 +212,20 @@
       "source": "cases/field_comparison_emit.circom",
       "scope": "Main",
       "curve": "bn128",
-      "expected": "emit",
-      "truth": "confirmed_property",
+      "expected": "no_finding",
+      "truth": "property_absent",
       "compiler_class": "success",
-      "reason": "signed and unsigned order diverge only in the first case",
+      "reason": "Adjudicated 2026-10-05: the literal reduces below half the BN254 field, so signed and unsigned comparison with 1 agree.",
       "legacy_rule_id": "CS0003",
       "legacy_observed_count": 0,
       "legacy_analyzed": true,
-      "legacy_observed_evidence": []
+      "legacy_observed_evidence": [],
+      "adjudication": {
+        "date": "2026-10-05",
+        "previous_expected": "emit",
+        "previous_truth": "confirmed_property",
+        "replacement_positive": "field_comparison_boundary_emit"
+      }
     },
     {
       "id": "field_comparison_no_finding",
@@ -883,6 +901,54 @@
       "legacy_rule_id": "CS0012",
       "legacy_observed_count": 0,
       "legacy_analyzed": false,
+      "legacy_observed_evidence": []
+    },
+    {
+      "id": "bn254_specific_boundary_emit",
+      "rule": "bn254_specific",
+      "rule_id": "CS0016",
+      "source": "cases/bn254_specific_boundary_emit.circom",
+      "scope": "Main",
+      "curve": "bls12381",
+      "expected": "emit",
+      "truth": "confirmed_property",
+      "compiler_class": "success",
+      "reason": "The exact BN254 field prime is a reachable literal under BLS12-381.",
+      "legacy_rule_id": "CS0016",
+      "legacy_observed_count": 0,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
+    },
+    {
+      "id": "field_arithmetic_boundary_emit",
+      "rule": "field_arithmetic",
+      "rule_id": "CS0004",
+      "source": "cases/field_arithmetic_boundary_emit.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "emit",
+      "truth": "confirmed_property",
+      "compiler_class": "success",
+      "reason": "The exact BN254 field prime minus 1, plus 2, wraps to 1.",
+      "legacy_rule_id": "CS0004",
+      "legacy_observed_count": 0,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
+    },
+    {
+      "id": "field_comparison_boundary_emit",
+      "rule": "field_comparison",
+      "rule_id": "CS0003",
+      "source": "cases/field_comparison_boundary_emit.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "emit",
+      "truth": "confirmed_property",
+      "compiler_class": "success",
+      "reason": "The exact BN254 field prime minus 1 is signed -1; its comparison with 1 differs from unsigned ordering.",
+      "legacy_rule_id": "CS0003",
+      "legacy_observed_count": 0,
+      "legacy_analyzed": true,
       "legacy_observed_evidence": []
     }
   ]

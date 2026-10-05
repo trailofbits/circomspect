@@ -543,3 +543,21 @@ fn independent_division_array_element_requires_bounded_ready_source() {
     assert!(!kinds(&invalid).contains(&RuleKind::UnconstrainedDivision));
     assert!(invalid.abstentions().iter().any(|item| item.kind == RuleKind::UnconstrainedDivision));
 }
+
+#[test]
+fn warning_corpus_distinguishes_the_field_prime_from_the_old_nearby_literal() {
+    let cases = [
+        ("bn254_specific", Curve::Bls12_381, RuleKind::Bn254SpecificCircuit),
+        ("field_arithmetic", Curve::Bn254, RuleKind::FieldArithmetic),
+        ("field_comparison", Curve::Bn254, RuleKind::FieldComparison),
+    ];
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/warnings/cases");
+    for (name, curve, kind) in cases {
+        let source = fs::read_to_string(root.join(format!("{name}_emit.circom"))).unwrap();
+        let result = inspect_main(&source, curve.clone());
+        assert!(!kinds(&result).contains(&kind), "old literal: {name}");
+        let source = fs::read_to_string(root.join(format!("{name}_boundary_emit.circom"))).unwrap();
+        let result = inspect_main(&source, curve);
+        assert!(kinds(&result).contains(&kind), "actual field boundary: {name}");
+    }
+}
