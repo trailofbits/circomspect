@@ -49,8 +49,9 @@ pub fn render_reports(
         allow: allow.iter().map(|id| (*id).to_string()).collect(),
     };
     let mut terminal = StdoutWriter::new(true).add_filter(filter.clone());
-    let terminal_count = terminal.write_reports(reports, sources.files());
+    let terminal_count =
+        terminal.write_reports(reports, sources.files()).expect("terminal diagnostics");
     let mut sarif = SarifWriter::new(sarif_path).add_filter(filter);
-    let sarif_count = sarif.write_reports(reports, sources.files());
+    let sarif_count = sarif.write_reports(reports, sources.files()).expect("SARIF diagnostics");
     (terminal_count, sarif_count)
 }

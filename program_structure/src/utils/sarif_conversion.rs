@@ -23,6 +23,10 @@ pub trait ToSarif {
     type Error;
 
     /// Converts the object to the corresponding Sarif artifact.
+    ///
+    /// # Errors
+    /// Returns an error for an unknown file, invalid source span, non-absolute
+    /// source path, or invalid SARIF object.
     fn to_sarif(&self, files: &FileLibrary) -> Result<Self::Sarif, Self::Error>;
 }
 
@@ -126,7 +130,9 @@ impl ToSarif for ReportLabel {
         let artifact_location = sarif::ArtifactLocationBuilder::default().uri(file_uri).build()?;
         // Build region.
         trace!("building region");
-        assert!(self.range.start <= self.range.end);
+        if self.range.start > self.range.end {
+            return Err(SarifError::UnknownLocation(self.file_id, self.range.clone()));
+        }
         let start = files
             .to_storage()
             .location(self.file_id, self.range.start)
@@ -136,10 +142,22 @@ impl ToSarif for ReportLabel {
             .location(self.file_id, self.range.end)
             .map_err(|_| SarifError::UnknownLocation(self.file_id, self.range.clone()))?;
         let region = sarif::RegionBuilder::default()
-            .start_line(start.line_number as i64)
-            .start_column(start.column_number as i64)
-            .end_line(end.line_number as i64)
-            .end_column(end.column_number as i64)
+            .start_line(
+                i64::try_from(start.line_number)
+                    .map_err(|_| SarifError::UnknownLocation(self.file_id, self.range.clone()))?,
+            )
+            .start_column(
+                i64::try_from(start.column_number)
+                    .map_err(|_| SarifError::UnknownLocation(self.file_id, self.range.clone()))?,
+            )
+            .end_line(
+                i64::try_from(end.line_number)
+                    .map_err(|_| SarifError::UnknownLocation(self.file_id, self.range.clone()))?,
+            )
+            .end_column(
+                i64::try_from(end.column_number)
+                    .map_err(|_| SarifError::UnknownLocation(self.file_id, self.range.clone()))?,
+            )
             .build()?;
         // Build physical location.
         trace!("building physical location");
@@ -209,6 +227,9 @@ impl fmt::Display for SarifError {
                 "cannot encode source path {} as an absolute file URI",
                 path.display()
             );
+        }
+        if let Self::UnknownLocation(file, range) = self {
+            return write!(f, "invalid source range {range:?} in file {file}");
         }
         write!(f, "failed to convert analysis results to Sarif format")
     }

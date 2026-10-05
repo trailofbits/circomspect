@@ -12,7 +12,9 @@ use program_structure::constants::Curve;
 use program_structure::file_definition::FileID;
 use program_structure::report::Report;
 use program_structure::report::MessageCategory;
-use program_structure::writers::{LogWriter, ReportWriter, SarifWriter, CachedStdoutWriter};
+use program_structure::writers::{
+    LogWriter, ReportWriter, ReportWriteError, SarifWriter, CachedStdoutWriter,
+};
 
 #[derive(Parser, Debug)]
 #[command(styles=cli_styles())]
@@ -42,14 +44,15 @@ struct Cli {
     #[clap(short = 'v', long = "verbose")]
     verbose: bool,
 
-    /// Set curve (BN254, BLS12_381, or GOLDILOCKS)
-    #[clap(short = 'c', long = "curve", name = "NAME", default_value = config::DEFAULT_CURVE)]
+    /// Set the curve used for field arithmetic.
+    #[clap(short = 'c', long = "curve", name = "NAME", default_value = config::DEFAULT_CURVE,
+        help = "Set curve (BN254, BLS12_381, or GOLDILOCKS)")]
     curve: Curve,
 }
 
 /// Styles the help output for the [`Cli`].
 fn cli_styles() -> clap::builder::Styles {
-    use clap::builder::styling::*;
+    use clap::builder::styling::{AnsiColor, Styles};
 
     Styles::styled()
         .header(AnsiColor::Yellow.on_default())
@@ -68,8 +71,8 @@ fn filter_by_file(report: &Report, user_inputs: &HashSet<FileID>) -> bool {
 
 /// Returns true if the report level is greater than or equal to the given
 /// level.
-fn filter_by_level(report: &Report, output_level: &MessageCategory) -> bool {
-    report.category() >= output_level
+fn filter_by_level(report: &Report, output_level: MessageCategory) -> bool {
+    *report.category() >= output_level
 }
 
 /// Returns true if the report ID is not in the given list.
@@ -77,24 +80,29 @@ fn filter_by_id(report: &Report, allow_list: &[String]) -> bool {
     !allow_list.contains(&report.id())
 }
 
-fn main() -> ExitCode {
+fn main() -> Result<ExitCode, String> {
     // Initialize logger and options.
     pretty_env_logger::init();
     let options = Cli::parse();
     if options.input_files.is_empty() {
-        match Cli::command().print_help() {
-            Ok(()) => return ExitCode::SUCCESS,
-            Err(_) => return ExitCode::FAILURE,
-        }
+        Cli::command()
+            .print_help()
+            .map_err(|error| format!("Cannot write help to stdout: {error}"))?;
+        return Ok(ExitCode::SUCCESS);
     }
 
+    run(options).map_err(|error| error.to_string())
+}
+
+fn run(options: Cli) -> Result<ExitCode, ReportWriteError> {
     let output = match analyze_files(&options.input_files, &options.libraries, options.curve) {
         Ok(output) => output,
         Err(error) => {
             let report =
                 Report::error(format!("Analysis failed: {error}"), ReportCode::RuntimeError);
-            CachedStdoutWriter::new(options.verbose).write_reports(&[report], &FileLibrary::new());
-            return ExitCode::FAILURE;
+            CachedStdoutWriter::new(options.verbose)
+                .write_reports(&[report], &FileLibrary::new())?;
+            return Ok(ExitCode::FAILURE);
         }
     };
 
@@ -102,15 +110,15 @@ fn main() -> ExitCode {
     let allow_list = options.allow_list.clone();
     let user_inputs = output.files.user_inputs().clone();
     let mut stdout_writer = CachedStdoutWriter::new(options.verbose)
-        .add_filter(move |report: &Report| filter_by_level(report, &options.output_level))
+        .add_filter(move |report: &Report| filter_by_level(report, options.output_level))
         .add_filter(move |report: &Report| filter_by_file(report, &user_inputs))
         .add_filter(move |report: &Report| filter_by_id(report, &allow_list));
-    stdout_writer.write_reports(&output.diagnostics, &output.files);
+    stdout_writer.write_reports(&output.diagnostics, &output.files)?;
 
     // Analyze functions and templates in user provided input files.
     for scope in &output.scopes {
-        stdout_writer.write_message(format!("analyzing {}", scope.description));
-        stdout_writer.write_reports(&scope.reports, &output.files);
+        stdout_writer.write_message(format!("analyzing {}", scope.description))?;
+        stdout_writer.write_reports(&scope.reports, &output.files)?;
     }
 
     // If a Sarif file is passed to the program we write the reports to it.
@@ -118,37 +126,37 @@ fn main() -> ExitCode {
         let allow_list = options.allow_list.clone();
         let user_inputs = output.files.user_inputs().clone();
         let mut sarif_writer = SarifWriter::new(&sarif_file)
-            .add_filter(move |report: &Report| filter_by_level(report, &options.output_level))
+            .add_filter(move |report: &Report| filter_by_level(report, options.output_level))
             .add_filter(move |report: &Report| filter_by_file(report, &user_inputs))
             .add_filter(move |report: &Report| filter_by_id(report, &allow_list));
-        match sarif_writer.try_write_reports(stdout_writer.reports(), &output.files) {
+        match sarif_writer.write_reports(stdout_writer.reports(), &output.files) {
             Ok(count) if count > 0 => stdout_writer
-                .write_message(format!("Result written to `{}`.", sarif_file.display())),
+                .write_message(format!("Result written to `{}`.", sarif_file.display()))?,
             Ok(_) => {}
             Err(error) => {
                 let report = Report::error(
                     format!("Cannot write SARIF to {}: {error:#}", sarif_file.display()),
                     ReportCode::RuntimeError,
                 );
-                CachedStdoutWriter::new(options.verbose).write_reports(&[report], &output.files);
-                return ExitCode::FAILURE;
+                CachedStdoutWriter::new(options.verbose).write_reports(&[report], &output.files)?;
+                return Ok(ExitCode::FAILURE);
             }
         }
     }
 
     // Use the exit code to indicate if any issues were found.
-    match stdout_writer.reports_written() {
+    Ok(match stdout_writer.reports_written() {
         0 => {
-            stdout_writer.write_message("No issues found.");
+            stdout_writer.write_message("No issues found.")?;
             ExitCode::SUCCESS
         }
         1 => {
-            stdout_writer.write_message("1 issue found.");
+            stdout_writer.write_message("1 issue found.")?;
             ExitCode::FAILURE
         }
         n => {
-            stdout_writer.write_message(format!("{n} issues found."));
+            stdout_writer.write_message(format!("{n} issues found."))?;
             ExitCode::FAILURE
         }
-    }
+    })
 }

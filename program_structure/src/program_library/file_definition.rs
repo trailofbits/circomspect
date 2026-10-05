@@ -20,6 +20,7 @@ impl Default for FileLibrary {
 }
 
 impl FileLibrary {
+    #[must_use]
     pub fn new() -> FileLibrary {
         FileLibrary::default()
     }
@@ -36,18 +37,22 @@ impl FileLibrary {
         file_id
     }
 
+    #[must_use]
     pub fn get_line(&self, start: usize, file_id: FileID) -> Option<usize> {
         self.files.line_index(file_id, start).map(|lines| lines + 1).ok()
     }
 
+    #[must_use]
     pub fn to_storage(&self) -> &FileStorage {
         self.get_files()
     }
 
+    #[must_use]
     pub fn user_inputs(&self) -> &HashSet<FileID> {
         &self.user_inputs
     }
 
+    #[must_use]
     pub fn is_user_input(&self, file_id: FileID) -> bool {
         self.user_inputs.contains(&file_id)
     }
@@ -61,6 +66,7 @@ impl FileLibrary {
     }
 }
 
+#[must_use]
 pub fn generate_file_location(start: usize, end: usize) -> FileLocation {
     start..end
 }

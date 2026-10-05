@@ -5,8 +5,8 @@ use std::str::FromStr;
 
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 
-use super::report_code::ReportCode;
-use super::file_definition::{FileID, FileLocation};
+use crate::program_library::report_code::ReportCode;
+use crate::program_library::file_definition::{FileID, FileLocation};
 
 pub type ReportCollection = Vec<Report>;
 pub type DiagnosticCode = String;
@@ -29,25 +29,18 @@ impl PartialOrd for MessageCategory {
 
 impl Ord for MessageCategory {
     fn cmp(&self, other: &Self) -> Ordering {
-        use MessageCategory::*;
+        use MessageCategory::{Info, Warning, Error};
         match (self, other) {
-            // `Info <= _`
-            (Info, Info) => Ordering::Equal,
-            (Info, Warning) | (Info, Error) => Ordering::Less,
-            // `Warning <= _`
-            (Warning, Warning) => Ordering::Equal,
-            (Warning, Error) => Ordering::Less,
-            // `Error <= _`
-            (Error, Error) => Ordering::Equal,
-            // All other cases are on the form `_ >= _`.
-            _ => Ordering::Greater,
+            (Info, Info) | (Warning, Warning) | (Error, Error) => Ordering::Equal,
+            (Info, Warning | Error) | (Warning, Error) => Ordering::Less,
+            (Warning, Info) | (Error, Info | Warning) => Ordering::Greater,
         }
     }
 }
 
 impl Display for MessageCategory {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use MessageCategory::*;
+        use MessageCategory::{Error, Warning, Info};
         match self {
             Error => write!(f, "error"),
             Warning => write!(f, "warning"),
@@ -71,8 +64,9 @@ impl FromStr for MessageCategory {
 
 impl MessageCategory {
     /// Convert message category to Sarif level.
+    #[must_use]
     pub fn to_level(&self) -> String {
-        use MessageCategory::*;
+        use MessageCategory::{Error, Warning, Info};
         match self {
             Error => "error",
             Warning => "warning",
@@ -106,14 +100,17 @@ impl Report {
         }
     }
 
+    #[must_use]
     pub fn error(message: String, code: ReportCode) -> Report {
         Report::new(MessageCategory::Error, message, code)
     }
 
+    #[must_use]
     pub fn warning(message: String, code: ReportCode) -> Report {
         Report::new(MessageCategory::Warning, message, code)
     }
 
+    #[must_use]
     pub fn info(message: String, code: ReportCode) -> Report {
         Report::new(MessageCategory::Info, message, code)
     }
@@ -155,6 +152,7 @@ impl Report {
         self
     }
 
+    #[must_use]
     pub fn to_diagnostic(&self, verbose: bool) -> Diagnostic<FileID> {
         let mut labels = self.primary().clone();
         let mut secondary = self.secondary().clone();
@@ -182,6 +180,7 @@ impl Report {
         }
     }
 
+    #[must_use]
     pub fn primary_file_ids(&self) -> &Vec<FileID> {
         &self.primary_file_ids
     }
@@ -190,14 +189,17 @@ impl Report {
         &mut self.primary_file_ids
     }
 
+    #[must_use]
     pub fn category(&self) -> &MessageCategory {
         &self.category
     }
 
+    #[must_use]
     pub fn message(&self) -> &String {
         &self.message
     }
 
+    #[must_use]
     pub fn primary(&self) -> &Vec<ReportLabel> {
         &self.primary
     }
@@ -206,6 +208,7 @@ impl Report {
         &mut self.primary
     }
 
+    #[must_use]
     pub fn secondary(&self) -> &Vec<ReportLabel> {
         &self.secondary
     }
@@ -214,6 +217,7 @@ impl Report {
         &mut self.secondary
     }
 
+    #[must_use]
     pub fn notes(&self) -> &Vec<ReportNote> {
         &self.notes
     }
@@ -222,14 +226,17 @@ impl Report {
         &mut self.notes
     }
 
+    #[must_use]
     pub fn code(&self) -> &ReportCode {
         &self.code
     }
 
+    #[must_use]
     pub fn id(&self) -> String {
         self.code.id()
     }
 
+    #[must_use]
     pub fn name(&self) -> String {
         self.code.name()
     }

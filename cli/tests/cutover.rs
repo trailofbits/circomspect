@@ -1,3 +1,13 @@
+// Tests intentionally fail by panicking; fixture assembly favors readable assertions.
+// Rust 1.74 requires `allow` here because `expect` lint attributes are not yet stable.
+#![allow(
+    clippy::allow_attributes,
+    clippy::assert_is_empty,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::panic_in_result_fn,
+    clippy::unwrap_used
+)]
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -56,7 +66,11 @@ fn new_diagnostic_contracts_preserve_filtering_levels_and_exit_status() {
             case["args"].as_array().unwrap().iter().map(|value| value.as_str().unwrap()).collect();
         let (status, stdout, sarif) =
             run(&root.join(case["source"].as_str().unwrap()), &args, case["id"].as_str().unwrap());
-        assert_eq!(status, case["expected_exit_code"].as_i64().unwrap() as i32, "{stdout}");
+        assert_eq!(
+            status,
+            i32::try_from(case["expected_exit_code"].as_i64().unwrap()).unwrap(),
+            "{stdout}"
+        );
         let expected: BTreeSet<_> = case["expected_rule_ids"]
             .as_array()
             .unwrap()
@@ -360,4 +374,26 @@ fn a_missing_explicit_library_file_is_reported_even_without_an_include() {
     assert_eq!(status, 1, "{stdout}");
     assert!(ids(&sarif).contains("P1000"));
     assert!(stdout.contains("missing.circom"));
+}
+
+#[test]
+#[cfg(unix)]
+fn closed_stdout_reports_an_io_error_without_panicking() {
+    use std::process::Stdio;
+
+    let path = fixture("closed-stdout", "pragma circom 2.2.3; template Main(){}");
+    let missing = path.with_file_name("missing.circom");
+    for input in [Some(path), Some(missing), None] {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_circomspect"));
+        if let Some(path) = input {
+            command.arg(path);
+        }
+        let mut child = command.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+        drop(child.stdout.take());
+        let output = child.wait_with_output().unwrap();
+        assert_eq!(output.status.code(), Some(1));
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(stderr.contains("stdout"), "{stderr}");
+        assert!(!stderr.contains("panicked"), "{stderr}");
+    }
 }
