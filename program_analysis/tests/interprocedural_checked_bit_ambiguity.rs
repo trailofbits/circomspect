@@ -112,6 +112,20 @@ fn checked_canonical_goldilocks_loop_proves_two_complete_models() {
 }
 
 #[test]
+fn checked_canonical_bn254_loop_preserves_every_bit_and_constraint_origin() {
+    let result = inspect(&source(254, ""), Curve::Bn254, 254, None);
+    let Some(BitAmbiguityOutcome::Proved(proof)) = result.certified() else {
+        panic!("expected a verified BN254 pair: {result:?}");
+    };
+    assert_eq!(proof.decomposition().bits().len(), 254);
+    assert_eq!(proof.constraint_origins().len(), 255);
+    assert_ne!(proof.representations()[0].bits(), proof.representations()[1].bits());
+    for assignment in proof.assignments() {
+        assert_eq!(assignment.get(proof.decomposition().input()), Some(proof.input_value()));
+    }
+}
+
+#[test]
 fn checked_models_keep_other_external_inputs_equal() {
     let result = inspect(&source(64, "signal input other;other===7;"), Curve::Goldilocks, 64, None);
     let Some(BitAmbiguityOutcome::Proved(proof)) = result.certified() else {

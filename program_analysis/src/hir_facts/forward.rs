@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::cmp::Ordering;
+use std::sync::Arc;
 
 use abstract_interpretation::graph::NodeId;
 use abstract_interpretation::lattice::Lattice;
@@ -23,14 +24,14 @@ pub enum ForwardState {
     Unreachable,
     Reached {
         variables: BTreeMap<SymbolId, FieldValue>,
-        symbolic: Box<MustSymbolicVariables>,
+        symbolic: Arc<MustSymbolicVariables>,
         dependencies: BTreeMap<SymbolId, MayAccessSet>,
         degrees: BTreeMap<SymbolId, DegreeUpper>,
         may_constraints: BTreeSet<NodeId>,
         must_constraints: BTreeSet<NodeId>,
         must_touches: BTreeSet<AccessKey>,
         must_fixed: BTreeSet<(AccessKey, FieldValue)>,
-        must_equations: Box<MustEquations>,
+        must_equations: Arc<MustEquations>,
     },
 }
 
@@ -43,14 +44,14 @@ impl ForwardState {
     pub fn boundary() -> Self {
         Self::Reached {
             variables: BTreeMap::new(),
-            symbolic: Box::new(MustSymbolicVariables::reachable_empty()),
+            symbolic: Arc::new(MustSymbolicVariables::reachable_empty()),
             dependencies: BTreeMap::new(),
             degrees: BTreeMap::new(),
             may_constraints: BTreeSet::new(),
             must_constraints: BTreeSet::new(),
             must_touches: BTreeSet::new(),
             must_fixed: BTreeSet::new(),
-            must_equations: Box::new(MustEquations::reachable_empty()),
+            must_equations: Arc::new(MustEquations::reachable_empty()),
         }
     }
 
@@ -671,7 +672,7 @@ fn replace_symbolic(
     target: &AccessPath,
     value: ExprId,
     variables: &BTreeMap<SymbolId, FieldValue>,
-    symbolic: &mut MustSymbolicVariables,
+    symbolic: &mut Arc<MustSymbolicVariables>,
 ) {
     let scalar = target.steps.is_empty()
         && analysis.hir.symbol(target.root).is_some_and(|symbol| {
@@ -690,9 +691,9 @@ fn replace_symbolic(
         None
     };
     if let Some(value) = value {
-        symbolic.insert(target.root, value);
+        Arc::make_mut(symbolic).insert(target.root, value);
     } else {
-        symbolic.remove(target.root);
+        Arc::make_mut(symbolic).remove(target.root);
     }
 }
 
@@ -701,7 +702,7 @@ fn accumulate_symbolic(
     target: &AccessPath,
     value: ExprId,
     variables: &BTreeMap<SymbolId, FieldValue>,
-    symbolic: &mut MustSymbolicVariables,
+    symbolic: &mut Arc<MustSymbolicVariables>,
 ) {
     let previous = symbolic.get(target.root).cloned();
     let inputs =
@@ -709,9 +710,9 @@ fn accumulate_symbolic(
     let value = variable_polynomial(&inputs, value).ok();
     if let (Some(mut previous), Some(value)) = (previous, value) {
         previous.add(analysis.field, value);
-        symbolic.insert(target.root, previous);
+        Arc::make_mut(symbolic).insert(target.root, previous);
     } else {
-        symbolic.remove(target.root);
+        Arc::make_mut(symbolic).remove(target.root);
     }
 }
 
@@ -787,7 +788,7 @@ impl ForwardState {
             && (operator != AssignmentOperator::Add || !scalar_variable)
         {
             variables.remove(&target.root);
-            symbolic.remove(target.root);
+            Arc::make_mut(symbolic).remove(target.root);
             dependencies.remove(&target.root);
             degrees.remove(&target.root);
             return Err(format!("unsupported compound assignment {operator:?}"));
@@ -820,7 +821,7 @@ impl ForwardState {
         let Self::Reached { variables, symbolic, dependencies, degrees, .. } = self else {
             return Ok(());
         };
-        symbolic.remove(target.root);
+        Arc::make_mut(symbolic).remove(target.root);
         if operator != AssignmentOperator::Assign {
             variables.remove(&target.root);
             dependencies.remove(&target.root);
@@ -857,12 +858,12 @@ impl ForwardState {
             dependencies.insert(symbol, MayAccessSet::default());
             if declared.rank == 0 && declared.shape_checked {
                 let zero = analysis.field.canonical(0.into());
-                symbolic
+                Arc::make_mut(symbolic)
                     .insert(symbol, ExpressionPolynomial::constant(analysis.field, zero.clone()));
                 variables.insert(symbol, zero);
                 degrees.insert(symbol, DegreeUpper::Constant);
             } else {
-                symbolic.remove(symbol);
+                Arc::make_mut(symbolic).remove(symbol);
                 variables.remove(&symbol);
                 degrees.remove(&symbol);
             }
@@ -879,7 +880,7 @@ impl ForwardState {
         let Self::Reached { variables, symbolic, degrees, .. } = self else { return Ok(()) };
         let previous = symbolic.get(target.root).cloned();
         if let Err(reason) = apply_update(analysis, target, operator, variables) {
-            symbolic.remove(target.root);
+            Arc::make_mut(symbolic).remove(target.root);
             return Err(reason.into());
         }
         if let Some(mut previous) = previous {
@@ -889,9 +890,9 @@ impl ForwardState {
                 PostfixOperator::Decrement => analysis.field.negate(&one),
             };
             previous.add(analysis.field, ExpressionPolynomial::constant(analysis.field, delta));
-            symbolic.insert(target.root, previous);
+            Arc::make_mut(symbolic).insert(target.root, previous);
         } else {
-            symbolic.remove(target.root);
+            Arc::make_mut(symbolic).remove(target.root);
         }
         degrees.insert(target.root, DegreeUpper::Constant);
         Ok(())
@@ -934,8 +935,8 @@ impl ForwardState {
             symbolic,
         );
         match constraint_equation(&inputs, &node.kind) {
-            Ok(equation) => must_equations.insert(equation, node.id),
-            Err(_) => must_equations.block(node.id),
+            Ok(equation) => Arc::make_mut(must_equations).insert(equation, node.id),
+            Err(_) => Arc::make_mut(must_equations).block(node.id),
         }
         Ok(())
     }
@@ -949,7 +950,7 @@ impl ForwardState {
         let Self::Reached { variables, symbolic, dependencies, degrees, .. } = self else {
             return;
         };
-        symbolic.remove(target.root);
+        Arc::make_mut(symbolic).remove(target.root);
         if analysis
             .hir
             .symbol(target.root)
@@ -1228,7 +1229,7 @@ mod tests {
             panic!("reached boundary")
         };
         variables.insert(i, zero.clone());
-        symbolic.insert(i, ExpressionPolynomial::constant(&field, zero.clone()));
+        Arc::make_mut(symbolic).insert(i, ExpressionPolynomial::constant(&field, zero.clone()));
         let mut broad = ForwardState::boundary();
         let ForwardState::Reached { variables, .. } = &mut broad else {
             panic!("reached boundary")
@@ -1451,7 +1452,7 @@ mod tests {
             panic!("reached boundary")
         };
         variables.insert(x, field.canonical(1.into()));
-        symbolic.insert(x, x_polynomial);
+        Arc::make_mut(symbolic).insert(x, x_polynomial);
         let mut broad = ForwardState::boundary();
         let ForwardState::Reached { variables, .. } = &mut broad else {
             panic!("reached boundary")
@@ -1609,14 +1610,14 @@ mod tests {
                     (0..2).filter(|bit| must_bits & (1 << bit) != 0).map(NodeId::new).collect();
                 values.push(ForwardState::Reached {
                     variables: BTreeMap::new(),
-                    symbolic: Box::new(MustSymbolicVariables::reachable_empty()),
+                    symbolic: Arc::new(MustSymbolicVariables::reachable_empty()),
                     dependencies: BTreeMap::new(),
                     degrees: BTreeMap::new(),
                     may_constraints,
                     must_constraints,
                     must_touches: BTreeSet::new(),
                     must_fixed: BTreeSet::new(),
-                    must_equations: Box::new(MustEquations::reachable_empty()),
+                    must_equations: Arc::new(MustEquations::reachable_empty()),
                 });
             }
         }

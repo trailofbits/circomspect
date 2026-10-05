@@ -1,6 +1,7 @@
 //! Small reusable abstract domains. Analyses own their domain interpretation.
 
 use std::collections::BTreeSet;
+use std::sync::Arc;
 
 /// A join-semilattice with a least element.
 ///
@@ -10,6 +11,31 @@ pub trait Lattice: Clone + Eq {
     fn bottom() -> Self;
     fn leq(&self, other: &Self) -> bool;
     fn join_assign(&mut self, other: &Self) -> bool;
+}
+
+/// Share immutable domain snapshots, copying only when incomparable states join.
+///
+/// The underlying lattice owns the order and join. Comparable states reuse the
+/// existing upper bound; mutation through `Arc::make_mut` preserves prior snapshots.
+impl<T: Lattice> Lattice for Arc<T> {
+    fn bottom() -> Self {
+        Self::new(T::bottom())
+    }
+
+    fn leq(&self, other: &Self) -> bool {
+        self.as_ref().leq(other.as_ref())
+    }
+
+    fn join_assign(&mut self, other: &Self) -> bool {
+        if other.leq(self) {
+            return false;
+        }
+        if self.leq(other) {
+            *self = other.clone();
+            return true;
+        }
+        Self::make_mut(self).join_assign(other.as_ref())
+    }
 }
 
 /// Facts ordered by subset inclusion.

@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use circomspect_abstract_interpretation::graph::{IndexedGraph, NodeId};
 use circomspect_abstract_interpretation::lattice::{Constant, Lattice, Reachability, Set};
@@ -44,6 +45,26 @@ fn constant(code: u8) -> Constant<u8> {
         2 => Constant::Value(1),
         _ => Constant::Top,
     }
+}
+
+#[test]
+fn shared_lattices_preserve_join_laws_and_prior_snapshots() {
+    for a in 0..4 {
+        for b in 0..4 {
+            for c in 0..4 {
+                laws(Arc::new(constant(a)), Arc::new(constant(b)), Arc::new(constant(c)));
+                laws(Arc::new(set(a)), Arc::new(set(b)), Arc::new(set(c)));
+            }
+        }
+    }
+    let original = Arc::new(set(1));
+    let mut branch = original.clone();
+    assert!(branch.join_assign(&Arc::new(set(2))));
+    assert_eq!(*original, set(1));
+    assert_eq!(*branch, set(3));
+    Arc::make_mut(&mut branch).insert(3);
+    assert_eq!(*original, set(1));
+    assert_eq!(*branch, set(11));
 }
 
 #[derive(Clone)]
