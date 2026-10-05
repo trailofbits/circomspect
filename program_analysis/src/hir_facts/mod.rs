@@ -14,9 +14,12 @@ mod relations;
 mod use_queries;
 mod walk;
 mod write_validity;
+#[cfg(test)]
+mod range_tests;
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::{Mutex, PoisonError};
 
 use abstract_interpretation::graph::{EdgeId, FlowGraph, GraphError, NodeId};
 use abstract_interpretation::solver::{
@@ -193,6 +196,7 @@ pub struct AnalysisFacts<'a> {
     specialized_parameters: BTreeSet<SymbolId>,
     resolved_deferred: BTreeSet<NodeId>,
     evidence_binding: Option<ContextEvidence>,
+    ranges: Mutex<BTreeMap<ExprId, Fact<FieldRange>>>,
 }
 
 /// Compute local facts. External summaries are unavailable until Phase 5.
@@ -245,6 +249,7 @@ pub(crate) fn analyze_owned_with_scalar_calls<'a>(
         specialized_parameters,
         resolved_deferred,
         evidence_binding,
+        ranges,
         ..
     } = borrowed;
     Ok(AnalysisFacts {
@@ -259,6 +264,7 @@ pub(crate) fn analyze_owned_with_scalar_calls<'a>(
         specialized_parameters,
         resolved_deferred,
         evidence_binding,
+        ranges,
     })
 }
 
@@ -324,6 +330,7 @@ fn analyze_seeded<'a>(
         specialized_parameters,
         resolved_deferred,
         evidence_binding: None,
+        ranges: Mutex::new(BTreeMap::new()),
     })
 }
 
@@ -525,6 +532,7 @@ impl AnalysisFacts<'_> {
     }
 
     pub(crate) fn bind_evidence(&mut self, evidence: ContextEvidence) {
+        self.ranges.get_mut().unwrap_or_else(PoisonError::into_inner).clear();
         self.evidence_binding = Some(evidence);
     }
 
@@ -627,7 +635,25 @@ impl AnalysisFacts<'_> {
     }
 
     /// A compile-time exact value or the full canonical field range.
+    ///
+    /// Complete query results, including blockers, are memoized only within this
+    /// immutable solved snapshot. Reaching the cache limit changes reuse, not evidence.
     pub fn range(&self, expression: ExprId) -> Fact<FieldRange> {
+        const MAX_CACHED_RANGES: usize = 4096;
+        let cached =
+            self.ranges.lock().unwrap_or_else(PoisonError::into_inner).get(&expression).cloned();
+        if let Some(cached) = cached {
+            return cached;
+        }
+        let fact = self.compute_range(expression);
+        let mut ranges = self.ranges.lock().unwrap_or_else(PoisonError::into_inner);
+        if ranges.len() < MAX_CACHED_RANGES {
+            ranges.insert(expression, fact.clone());
+        }
+        fact
+    }
+
+    fn compute_range(&self, expression: ExprId) -> Fact<FieldRange> {
         let scalar_blockers = self.scalar_blockers(expression);
         if !scalar_blockers.is_empty() {
             return Fact::blocked(scalar_blockers);
