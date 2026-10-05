@@ -13,7 +13,6 @@ authors = [
 
 [dependencies]
 anyhow = "1.0"
-atty = "0.2"
 circom_algebra = { package = "circomspect-circom-algebra", version = "2.0.2", path = "../circom_algebra" }
 codespan = "0.11"
 codespan-reporting = "0.11"

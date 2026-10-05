@@ -3,7 +3,7 @@ use anyhow::Context;
 use log::{info, warn};
 use std::fmt::Display;
 use std::fs::File;
-use std::io::Write;
+use std::io::{IsTerminal, Write};
 use std::path::{PathBuf, Path};
 use codespan_reporting::term;
 use termcolor::{StandardStream, ColorChoice, WriteColor, ColorSpec, Color};
@@ -56,7 +56,7 @@ pub struct StdoutWriter {
 
 impl StdoutWriter {
     pub fn new(verbose: bool) -> StdoutWriter {
-        let writer = if atty::is(atty::Stream::Stdout) {
+        let writer = if std::io::stdout().is_terminal() {
             StandardStream::stdout(ColorChoice::Always)
         } else {
             StandardStream::stdout(ColorChoice::Never)
