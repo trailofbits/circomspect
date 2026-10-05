@@ -6,7 +6,7 @@ use program_structure::report::Report;
 use program_structure::report_code::ReportCode;
 
 use crate::interprocedural::{ContextEvidence, SummaryBlocker};
-use crate::new_rules::{AbstentionReason, RenderError, SourceMap};
+use crate::new_rules::{AbstentionReason, RenderError, RuleKind, SourceMap};
 
 pub(super) struct Diagnostics<'a, 'b> {
     sources: &'a SourceMap<'b>,
@@ -163,12 +163,14 @@ impl<'a, 'b> Diagnostics<'a, 'b> {
                 scope.primary,
                 "Some properties could not be certified.".into(),
             )?;
-            for (key, span) in &scope.details {
-                let (file, range) = self.sources.location(*span)?;
-                let message = if key.rule.is_empty() {
+            for (key, label) in &scope.details {
+                let (file, range) = self.sources.location(label.span)?;
+                let rules: BTreeSet<_> = label.rules.iter().map(|kind| kind.code().id()).collect();
+                let message = if rules.is_empty() {
                     key.reason.message().to_owned()
                 } else {
-                    format!("{}: {}", key.rule, key.reason.message())
+                    let rules = rules.into_iter().collect::<Vec<_>>().join(", ");
+                    format!("{rules}: {}", key.reason.message())
                 };
                 report.add_secondary(range, file, Some(message));
             }
@@ -193,7 +195,7 @@ enum ScopeKey {
 pub(super) struct IncompleteDetail {
     pub span: Span,
     pub reason: IncompleteCause,
-    pub rule: Option<String>,
+    pub rule: Option<RuleKind>,
 }
 
 #[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
@@ -218,13 +220,17 @@ struct DetailKey {
     source: usize,
     start: usize,
     end: usize,
-    rule: String,
     reason: IncompleteCause,
+}
+
+struct IncompleteLabel {
+    span: Span,
+    rules: BTreeSet<RuleKind>,
 }
 
 struct IncompleteScope {
     primary: Span,
-    details: BTreeMap<DetailKey, Span>,
+    details: BTreeMap<DetailKey, IncompleteLabel>,
 }
 
 impl IncompleteScope {
@@ -232,15 +238,20 @@ impl IncompleteScope {
         Self { primary, details: BTreeMap::new() }
     }
 
-    fn add(&mut self, span: Span, reason: IncompleteCause, rule: Option<String>) {
+    fn add(&mut self, span: Span, reason: IncompleteCause, rule: Option<RuleKind>) {
         let key = DetailKey {
             source: span.source().index(),
             start: span.start(),
             end: span.end(),
-            rule: rule.unwrap_or_default(),
             reason,
         };
-        self.details.insert(key, span);
+        let label = self
+            .details
+            .entry(key)
+            .or_insert_with(|| IncompleteLabel { span, rules: BTreeSet::new() });
+        if let Some(rule) = rule {
+            label.rules.insert(rule);
+        }
     }
 }
 

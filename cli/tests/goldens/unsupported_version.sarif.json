@@ -1,0 +1,105 @@
+{
+  "runs": [
+    {
+      "columnKind": "unicodeCodePoints",
+      "results": [
+        {
+          "level": "error",
+          "locations": [
+            {
+              "id": 0,
+              "message": {
+                "text": "source requires Circom 2.3.0, but the supported target is 2.2.3"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixtures/unsupported_version.circom"
+                },
+                "region": {
+                  "endColumn": 21,
+                  "endLine": 1,
+                  "startColumn": 1,
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "source requires Circom 2.3.0, but the supported target is 2.2.3"
+          },
+          "relatedLocations": [],
+          "rule": {
+            "id": "P1003"
+          },
+          "ruleId": "P1003"
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "id": 0,
+              "message": {
+                "text": "Some properties could not be certified."
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixtures/unsupported_version.circom"
+                },
+                "region": {
+                  "endColumn": 21,
+                  "endLine": 1,
+                  "startColumn": 1,
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Analysis is incomplete for this source scope."
+          },
+          "relatedLocations": [
+            {
+              "id": 1,
+              "message": {
+                "text": "source contains invalid syntax"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixtures/unsupported_version.circom"
+                },
+                "region": {
+                  "endColumn": 21,
+                  "endLine": 1,
+                  "startColumn": 1,
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "rule": {
+            "id": "CS0020"
+          },
+          "ruleId": "CS0020"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "downloadUri": "https://github.com/trailofbits/circomspect",
+          "name": "Circomspect",
+          "organization": "Trail of Bits",
+          "rules": [
+            {
+              "id": "P1003",
+              "name": "compiler-version-error"
+            },
+            {
+              "id": "CS0020",
+              "name": "incomplete-analysis"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

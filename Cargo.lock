@@ -143,6 +143,7 @@ dependencies = [
  "clap",
  "pretty_env_logger",
  "serde_json",
+ "url",
 ]
 
 [[package]]

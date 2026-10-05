@@ -38,7 +38,7 @@ fn source(case: &Value) -> PathBuf {
 fn observed_evidence(case: &Value) -> (Vec<Value>, bool, bool) {
     let source = source(case);
     let canonical_source = source.canonicalize().expect("failed to canonicalize warning fixture");
-    let expected_uri = format!("file://{}", canonical_source.display());
+    let expected_uri = url::Url::from_file_path(&canonical_source).unwrap().to_string();
     let (scope_start, scope_end) = scope_lines(case, &source);
     let sarif = std::env::temp_dir().join(format!(
         "circomspect-warning-{}-{}.sarif",

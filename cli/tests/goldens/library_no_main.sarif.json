@@ -1,6 +1,7 @@
 {
   "runs": [
     {
+      "columnKind": "unicodeCodePoints",
       "results": [],
       "tool": {
         "driver": {

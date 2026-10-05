@@ -1,6 +1,7 @@
 {
   "runs": [
     {
+      "columnKind": "unicodeCodePoints",
       "results": [
         {
           "level": "error",
@@ -8,7 +9,7 @@
             {
               "id": 0,
               "message": {
-                "text": "This token is invalid or unexpected here."
+                "text": "invalid statement; parsing continued at the next statement or block boundary"
               },
               "physicalLocation": {
                 "artifactLocation": {
@@ -17,14 +18,14 @@
                 "region": {
                   "endColumn": 18,
                   "endLine": 10,
-                  "startColumn": 17,
+                  "startColumn": 5,
                   "startLine": 10
                 }
               }
             }
           ],
           "message": {
-            "text": "Unrecognized token `;` found. Expected one of `!`, `(`, `-`, `[`, `_`, `parallel`, `~`, r#`0x[0-9A-Fa-f]+`#, r#`[$_]*[a-zA-Z][a-zA-Z$_0-9]*`# or r#`[0-9]+`#."
+            "text": "invalid statement; parsing continued at the next statement or block boundary"
           },
           "relatedLocations": [],
           "rule": {
@@ -38,7 +39,7 @@
             {
               "id": 0,
               "message": {
-                "text": "This token is invalid or unexpected here."
+                "text": "invalid statement; parsing continued at the next statement or block boundary"
               },
               "physicalLocation": {
                 "artifactLocation": {
@@ -47,20 +48,252 @@
                 "region": {
                   "endColumn": 18,
                   "endLine": 20,
-                  "startColumn": 17,
+                  "startColumn": 5,
                   "startLine": 20
                 }
               }
             }
           ],
           "message": {
-            "text": "Unrecognized token `;` found. Expected one of `!`, `(`, `-`, `[`, `_`, `parallel`, `~`, r#`0x[0-9A-Fa-f]+`#, r#`[$_]*[a-zA-Z][a-zA-Z$_0-9]*`# or r#`[0-9]+`#."
+            "text": "invalid statement; parsing continued at the next statement or block boundary"
           },
           "relatedLocations": [],
           "rule": {
             "id": "P1000"
           },
           "ruleId": "P1000"
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "id": 0,
+              "message": {
+                "text": "Some properties could not be certified."
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixtures/recoverable_library.circom"
+                },
+                "region": {
+                  "endColumn": 21,
+                  "endLine": 9,
+                  "startColumn": 10,
+                  "startLine": 9
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Analysis is incomplete for this source scope."
+          },
+          "relatedLocations": [
+            {
+              "id": 1,
+              "message": {
+                "text": "CS0003, CS0004, CS0009, CS0010, CS0015, CS0016: the definition contains unresolved source errors"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixtures/recoverable_library.circom"
+                },
+                "region": {
+                  "endColumn": 2,
+                  "endLine": 11,
+                  "startColumn": 1,
+                  "startLine": 9
+                }
+              }
+            },
+            {
+              "id": 2,
+              "message": {
+                "text": "CS0011, CS0018: the definition contains unresolved source errors"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixtures/recoverable_library.circom"
+                },
+                "region": {
+                  "endColumn": 21,
+                  "endLine": 9,
+                  "startColumn": 10,
+                  "startLine": 9
+                }
+              }
+            },
+            {
+              "id": 3,
+              "message": {
+                "text": "CS0006, CS0007, CS0008: the definition contains unresolved source errors"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixtures/recoverable_library.circom"
+                },
+                "region": {
+                  "endColumn": 21,
+                  "endLine": 9,
+                  "startColumn": 10,
+                  "startLine": 9
+                }
+              }
+            },
+            {
+              "id": 4,
+              "message": {
+                "text": "source contains invalid syntax"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixtures/recoverable_library.circom"
+                },
+                "region": {
+                  "endColumn": 18,
+                  "endLine": 10,
+                  "startColumn": 5,
+                  "startLine": 10
+                }
+              }
+            },
+            {
+              "id": 5,
+              "message": {
+                "text": "CS0005, CS0021: the required property is outside supported analysis"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixtures/recoverable_library.circom"
+                },
+                "region": {
+                  "endColumn": 18,
+                  "endLine": 10,
+                  "startColumn": 5,
+                  "startLine": 10
+                }
+              }
+            }
+          ],
+          "rule": {
+            "id": "CS0020"
+          },
+          "ruleId": "CS0020"
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "id": 0,
+              "message": {
+                "text": "Some properties could not be certified."
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixtures/recoverable_library.circom"
+                },
+                "region": {
+                  "endColumn": 22,
+                  "endLine": 19,
+                  "startColumn": 10,
+                  "startLine": 19
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Analysis is incomplete for this source scope."
+          },
+          "relatedLocations": [
+            {
+              "id": 1,
+              "message": {
+                "text": "CS0003, CS0004, CS0009, CS0010, CS0015, CS0016: the definition contains unresolved source errors"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixtures/recoverable_library.circom"
+                },
+                "region": {
+                  "endColumn": 2,
+                  "endLine": 21,
+                  "startColumn": 1,
+                  "startLine": 19
+                }
+              }
+            },
+            {
+              "id": 2,
+              "message": {
+                "text": "CS0011, CS0018: the definition contains unresolved source errors"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixtures/recoverable_library.circom"
+                },
+                "region": {
+                  "endColumn": 22,
+                  "endLine": 19,
+                  "startColumn": 10,
+                  "startLine": 19
+                }
+              }
+            },
+            {
+              "id": 3,
+              "message": {
+                "text": "CS0006, CS0007, CS0008: the definition contains unresolved source errors"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixtures/recoverable_library.circom"
+                },
+                "region": {
+                  "endColumn": 22,
+                  "endLine": 19,
+                  "startColumn": 10,
+                  "startLine": 19
+                }
+              }
+            },
+            {
+              "id": 4,
+              "message": {
+                "text": "source contains invalid syntax"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixtures/recoverable_library.circom"
+                },
+                "region": {
+                  "endColumn": 18,
+                  "endLine": 20,
+                  "startColumn": 5,
+                  "startLine": 20
+                }
+              }
+            },
+            {
+              "id": 5,
+              "message": {
+                "text": "CS0005, CS0021: the required property is outside supported analysis"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixtures/recoverable_library.circom"
+                },
+                "region": {
+                  "endColumn": 18,
+                  "endLine": 20,
+                  "startColumn": 5,
+                  "startLine": 20
+                }
+              }
+            }
+          ],
+          "rule": {
+            "id": "CS0020"
+          },
+          "ruleId": "CS0020"
         }
       ],
       "tool": {
@@ -69,6 +302,10 @@
           "name": "Circomspect",
           "organization": "Trail of Bits",
           "rules": [
+            {
+              "id": "CS0020",
+              "name": "incomplete-analysis"
+            },
             {
               "id": "P1000",
               "name": "parse-fail"

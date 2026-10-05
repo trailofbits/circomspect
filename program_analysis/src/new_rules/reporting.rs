@@ -11,7 +11,7 @@ use crate::interprocedural::CallContext;
 
 use crate::new_rules::RuleKind;
 
-/// Source files and their legacy renderer IDs, created in parser source order.
+/// Source files and their renderer IDs, created in parser source order.
 pub struct SourceMap<'a> {
     files: FileLibrary,
     sources: BTreeMap<SourceId, (FileID, &'a str)>,

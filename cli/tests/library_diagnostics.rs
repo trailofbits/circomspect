@@ -107,11 +107,12 @@ fn syntax_error_keeps_includes_available_to_later_definitions() {
 #[test]
 fn unclosed_definition_does_not_hide_the_next_definition() {
     let path = fixture("unclosed_definition.circom");
-    let output = run(&[path.to_str().expect("fixture path is not UTF-8")]);
+    let output = run(&[path.to_str().expect("fixture path is not UTF-8"), "--level", "error"]);
     let stdout = String::from_utf8(output.stdout).expect("CLI output is not UTF-8");
 
     assert!(!output.status.success(), "{stdout}");
-    assert!(stdout.contains("unclosed_definition.circom:6:"), "{stdout}");
+    assert!(stdout.contains("unexpected end of Circom source"), "{stdout}");
+    assert!(stdout.contains("unclosed_definition.circom:4:19"), "{stdout}");
     assert!(stdout.contains("analyzing template 'AfterUnclosed'"), "{stdout}");
     assert!(!stdout.contains("analyzing template 'Unclosed'"), "{stdout}");
 }

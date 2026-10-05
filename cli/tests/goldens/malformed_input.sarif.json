@@ -1,6 +1,7 @@
 {
   "runs": [
     {
+      "columnKind": "unicodeCodePoints",
       "results": [
         {
           "level": "error",
@@ -8,7 +9,7 @@
             {
               "id": 0,
               "message": {
-                "text": "This token is invalid or unexpected here."
+                "text": "invalid Circom token"
               },
               "physicalLocation": {
                 "artifactLocation": {
@@ -24,13 +25,91 @@
             }
           ],
           "message": {
-            "text": "Unrecognized token `@` found. Expected one of `!`, `(`, `-`, `[`, `_`, `parallel`, `~`, r#`0x[0-9A-Fa-f]+`#, r#`[$_]*[a-zA-Z][a-zA-Z$_0-9]*`# or r#`[0-9]+`#."
+            "text": "invalid Circom token"
           },
           "relatedLocations": [],
           "rule": {
             "id": "P1000"
           },
           "ruleId": "P1000"
+        },
+        {
+          "level": "error",
+          "locations": [
+            {
+              "id": 0,
+              "message": {
+                "text": "unexpected token in Circom source"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixtures/lexical_error_library.circom"
+                },
+                "region": {
+                  "endColumn": 18,
+                  "endLine": 4,
+                  "startColumn": 17,
+                  "startLine": 4
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "unexpected token in Circom source"
+          },
+          "relatedLocations": [],
+          "rule": {
+            "id": "P1000"
+          },
+          "ruleId": "P1000"
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "id": 0,
+              "message": {
+                "text": "Some properties could not be certified."
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixtures/lexical_error_library.circom"
+                },
+                "region": {
+                  "endColumn": 18,
+                  "endLine": 4,
+                  "startColumn": 17,
+                  "startLine": 4
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Analysis is incomplete for this source scope."
+          },
+          "relatedLocations": [
+            {
+              "id": 1,
+              "message": {
+                "text": "source contains invalid syntax"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixtures/lexical_error_library.circom"
+                },
+                "region": {
+                  "endColumn": 18,
+                  "endLine": 4,
+                  "startColumn": 17,
+                  "startLine": 4
+                }
+              }
+            }
+          ],
+          "rule": {
+            "id": "CS0020"
+          },
+          "ruleId": "CS0020"
         }
       ],
       "tool": {
@@ -39,6 +118,10 @@
           "name": "Circomspect",
           "organization": "Trail of Bits",
           "rules": [
+            {
+              "id": "CS0020",
+              "name": "incomplete-analysis"
+            },
             {
               "id": "P1000",
               "name": "parse-fail"

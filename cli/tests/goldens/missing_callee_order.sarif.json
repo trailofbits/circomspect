@@ -1,6 +1,7 @@
 {
   "runs": [
     {
+      "columnKind": "unicodeCodePoints",
       "results": [
         {
           "level": "error",
@@ -8,14 +9,14 @@
             {
               "id": 0,
               "message": {
-                "text": "Unresolved call to `MissingFunction`."
+                "text": "unresolved Function call `MissingFunction`"
               },
               "physicalLocation": {
                 "artifactLocation": {
                   "uri": "file:///fixtures/unresolved_library.circom"
                 },
                 "region": {
-                  "endColumn": 44,
+                  "endColumn": 27,
                   "endLine": 4,
                   "startColumn": 12,
                   "startLine": 4
@@ -24,7 +25,7 @@
             }
           ],
           "message": {
-            "text": "The call target `MissingFunction` is not defined as a function or template."
+            "text": "unresolved Function call `MissingFunction`"
           },
           "relatedLocations": [],
           "rule": {
@@ -38,14 +39,14 @@
             {
               "id": 0,
               "message": {
-                "text": "Unresolved call to `MissingInner`."
+                "text": "unresolved Function call `MissingInner`"
               },
               "physicalLocation": {
                 "artifactLocation": {
                   "uri": "file:///fixtures/unresolved_library.circom"
                 },
                 "region": {
-                  "endColumn": 43,
+                  "endColumn": 40,
                   "endLine": 4,
                   "startColumn": 28,
                   "startLine": 4
@@ -54,7 +55,7 @@
             }
           ],
           "message": {
-            "text": "The call target `MissingInner` is not defined as a function or template."
+            "text": "unresolved Function call `MissingInner`"
           },
           "relatedLocations": [],
           "rule": {
@@ -68,14 +69,14 @@
             {
               "id": 0,
               "message": {
-                "text": "Unresolved call to `MissingTemplate`."
+                "text": "unresolved Template call `MissingTemplate`"
               },
               "physicalLocation": {
                 "artifactLocation": {
                   "uri": "file:///fixtures/unresolved_library.circom"
                 },
                 "region": {
-                  "endColumn": 40,
+                  "endColumn": 38,
                   "endLine": 8,
                   "startColumn": 23,
                   "startLine": 8
@@ -84,7 +85,7 @@
             }
           ],
           "message": {
-            "text": "The call target `MissingTemplate` is not defined as a function or template."
+            "text": "unresolved Template call `MissingTemplate`"
           },
           "relatedLocations": [],
           "rule": {

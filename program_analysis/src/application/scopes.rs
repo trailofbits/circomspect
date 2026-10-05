@@ -130,7 +130,7 @@ impl<'a, 'b, 'c, 'd> ScopeRunner<'a, 'b, 'c, 'd> {
                 IncompleteDetail {
                     span: abstention.span,
                     reason: IncompleteCause::Rule(abstention.reason.clone()),
-                    rule: Some(abstention.kind.code().id()),
+                    rule: Some(abstention.kind),
                 },
             );
         }

@@ -147,8 +147,9 @@ fn repeated_runs_preserve_exact_sarif_order_and_source_spans() {
         template First(){component c=Missing();}\n\
         template Second(){component c=Other();}\n",
     );
-    let (_, _, first) = run(&path, &[], "repeat-first");
-    let (_, _, second) = run(&path, &[], "repeat-second");
+    let (_, first_stdout, first) = run(&path, &[], "repeat");
+    let (_, second_stdout, second) = run(&path, &[], "repeat");
+    assert_eq!(first_stdout, second_stdout);
     assert_eq!(first, second);
     let results = first["runs"][0]["results"].as_array().unwrap();
     let missing = results.iter().find(|result| result["ruleId"] == "CS0019").unwrap();
@@ -202,6 +203,29 @@ fn incomplete_scopes_keep_distinct_call_paths_and_group_rule_reasons() {
             .contains("Reached through this call")));
     }
     assert_ne!(child[0]["relatedLocations"], child[1]["relatedLocations"]);
+}
+
+#[test]
+fn incomplete_source_scope_coalesces_identical_locations_and_reasons() {
+    let path =
+        fixture("incomplete-labels", "pragma circom 2.2.3;\ntemplate Broken(){\nvar value=;\n}\n");
+    let (_, stdout, sarif) = run(&path, &[], "incomplete-labels");
+    let results = sarif["runs"][0]["results"].as_array().unwrap();
+    let incomplete: Vec<_> = results.iter().filter(|result| result["ruleId"] == "CS0020").collect();
+    assert_eq!(incomplete.len(), 1, "{stdout}");
+    let related = incomplete[0]["relatedLocations"].as_array().unwrap();
+    let bodies: Vec<_> = related
+        .iter()
+        .filter(|label| {
+            let region = &label["physicalLocation"]["region"];
+            region["startLine"] == 2 && region["endLine"] == 4
+        })
+        .collect();
+    assert_eq!(bodies.len(), 1, "{stdout}");
+    let message = bodies[0]["message"]["text"].as_str().unwrap();
+    for id in ["CS0003", "CS0004", "CS0009", "CS0010", "CS0015", "CS0016"] {
+        assert!(message.contains(id), "{message}");
+    }
 }
 
 #[test]

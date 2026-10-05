@@ -1,0 +1,2 @@
+# Terminal snapshots preserve spaces emitted by the codespan renderer.
+cli/tests/goldens/*.stdout whitespace=-blank-at-eol

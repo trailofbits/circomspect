@@ -1,6 +1,7 @@
 {
   "runs": [
     {
+      "columnKind": "unicodeCodePoints",
       "results": [
         {
           "level": "error",
@@ -8,7 +9,7 @@
             {
               "id": 0,
               "message": {
-                "text": "File included here."
+                "text": "cannot find included file not_found.circom"
               },
               "physicalLocation": {
                 "artifactLocation": {
@@ -24,7 +25,7 @@
             }
           ],
           "message": {
-            "text": "Failed to open file `not_found.circom`."
+            "text": "cannot find included file not_found.circom"
           },
           "relatedLocations": [],
           "rule": {
@@ -38,29 +39,47 @@
             {
               "id": 0,
               "message": {
-                "text": "This signal does not occur in a constraint."
+                "text": "Some properties could not be certified."
               },
               "physicalLocation": {
                 "artifactLocation": {
                   "uri": "file:///fixtures/missing_include.circom"
                 },
                 "region": {
-                  "endColumn": 22,
-                  "endLine": 5,
-                  "startColumn": 5,
-                  "startLine": 5
+                  "endColumn": 28,
+                  "endLine": 2,
+                  "startColumn": 1,
+                  "startLine": 2
                 }
               }
             }
           ],
           "message": {
-            "text": "The signal `out` is not constrained by the template."
+            "text": "Analysis is incomplete for this source scope."
           },
-          "relatedLocations": [],
+          "relatedLocations": [
+            {
+              "id": 1,
+              "message": {
+                "text": "an included source is unavailable"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixtures/missing_include.circom"
+                },
+                "region": {
+                  "endColumn": 28,
+                  "endLine": 2,
+                  "startColumn": 1,
+                  "startLine": 2
+                }
+              }
+            }
+          ],
           "rule": {
-            "id": "CA01"
+            "id": "CS0020"
           },
-          "ruleId": "CA01"
+          "ruleId": "CS0020"
         }
       ],
       "tool": {
@@ -70,12 +89,12 @@
           "organization": "Trail of Bits",
           "rules": [
             {
-              "id": "P1000",
-              "name": "parse-fail"
+              "id": "CS0020",
+              "name": "incomplete-analysis"
             },
             {
-              "id": "CA01",
-              "name": "unconstrained-signal"
+              "id": "P1000",
+              "name": "parse-fail"
             }
           ]
         }

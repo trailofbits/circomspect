@@ -1286,7 +1286,7 @@ fn effect_span(effect: &Effect, block_span: Span) -> Span {
     }
 }
 
-/// Build a CFG from a checked HIR definition without changing the legacy analysis path.
+/// Build a CFG from a checked HIR definition.
 ///
 /// # Errors
 ///

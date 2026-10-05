@@ -1,17 +1,57 @@
-error: Unrecognized token `;` found. Expected one of `!`, `(`, `-`, `[`, `_`, `parallel`, `~`, r#`0x[0-9A-Fa-f]+`#, r#`[$_]*[a-zA-Z][a-zA-Z$_0-9]*`# or r#`[0-9]+`#.
-   ┌─ <fixture>:10:17
+error: invalid statement; parsing continued at the next statement or block boundary
+   ┌─ <fixture>:10:5
    │
 10 │     var value = ;
-   │                 ^ This token is invalid or unexpected here.
+   │     ^^^^^^^^^^^^^ invalid statement; parsing continued at the next statement or block boundary
 
-error: Unrecognized token `;` found. Expected one of `!`, `(`, `-`, `[`, `_`, `parallel`, `~`, r#`0x[0-9A-Fa-f]+`#, r#`[$_]*[a-zA-Z][a-zA-Z$_0-9]*`# or r#`[0-9]+`#.
-   ┌─ <fixture>:20:17
+error: invalid statement; parsing continued at the next statement or block boundary
+   ┌─ <fixture>:20:5
    │
 20 │     var value = ;
-   │                 ^ This token is invalid or unexpected here.
+   │     ^^^^^^^^^^^^^ invalid statement; parsing continued at the next statement or block boundary
 
-circomspect: analyzing template 'AfterError'
+warning: Analysis is incomplete for this source scope.
+   ┌─ <fixture>:9:10
+   │  
+ 9 │ ╭ template BrokenFirst() {
+   │            ^^^^^^^^^^^
+   │            │
+   │            Some properties could not be certified.
+   │            CS0006, CS0007, CS0008: the definition contains unresolved source errors
+   │            CS0011, CS0018: the definition contains unresolved source errors
+10 │ │     var value = ;
+   │ │     -------------
+   │ │     │
+   │ │     source contains invalid syntax
+   │ │     CS0005, CS0021: the required property is outside supported analysis
+11 │ │ }
+   │ ╰─' CS0003, CS0004, CS0009, CS0010, CS0015, CS0016: the definition contains unresolved source errors
+   │  
+   = For more details, see https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md#incomplete-analysis.
+
+warning: Analysis is incomplete for this source scope.
+   ┌─ <fixture>:19:10
+   │  
+19 │ ╭ template BrokenSecond() {
+   │            ^^^^^^^^^^^^
+   │            │
+   │            Some properties could not be certified.
+   │            CS0006, CS0007, CS0008: the definition contains unresolved source errors
+   │            CS0011, CS0018: the definition contains unresolved source errors
+20 │ │     var value = ;
+   │ │     -------------
+   │ │     │
+   │ │     source contains invalid syntax
+   │ │     CS0005, CS0021: the required property is outside supported analysis
+21 │ │ }
+   │ ╰─' CS0003, CS0004, CS0009, CS0010, CS0015, CS0016: the definition contains unresolved source errors
+   │  
+   = For more details, see https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md#incomplete-analysis.
+
 circomspect: analyzing template 'BeforeError'
+circomspect: analyzing template 'BrokenFirst'
 circomspect: analyzing template 'BetweenErrors'
+circomspect: analyzing template 'BrokenSecond'
+circomspect: analyzing template 'AfterError'
 circomspect: Result written to `<sarif>`.
-circomspect: 2 issues found.
+circomspect: 4 issues found.

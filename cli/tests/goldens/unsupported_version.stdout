@@ -1,0 +1,20 @@
+error: source requires Circom 2.3.0, but the supported target is 2.2.3
+  ┌─ <fixture>:1:1
+  │
+1 │ pragma circom 2.3.0;
+  │ ^^^^^^^^^^^^^^^^^^^^ source requires Circom 2.3.0, but the supported target is 2.2.3
+
+warning: Analysis is incomplete for this source scope.
+  ┌─ <fixture>:1:1
+  │
+1 │ pragma circom 2.3.0;
+  │ ^^^^^^^^^^^^^^^^^^^^
+  │ │
+  │ Some properties could not be certified.
+  │ source contains invalid syntax
+  │
+  = For more details, see https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md#incomplete-analysis.
+
+circomspect: analyzing template 'LibraryItem'
+circomspect: Result written to `<sarif>`.
+circomspect: 2 issues found.

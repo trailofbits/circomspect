@@ -1,13 +1,21 @@
-circomspect: analyzing template 'Main'
-warning: Using the signal assignment operator `<--` does not constrain the assigned signal.
-  ┌─ <fixture>:6:5
-  │
-6 │     out <-- in * in * in;
-  │     ^^^^^^^^^^^^^^^^^^^^ The assigned signal `out` is not constrained here.
-7 │     out === in;
-  │     ----------- The signal `out` is constrained here.
-  │
-  = For more details, see https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md#signal-assignment.
+warning: Analysis is incomplete for this source scope.
+   ┌─ <fixture>:3:10
+   │
+ 3 │ template Main() {
+   │          ^^^^ Some properties could not be certified.
+   ·
+ 6 │     out <-- in * in * in;
+   │     --------------------
+   │     │       │
+   │     │       CS0004: the required property is outside supported analysis
+   │     │       CS0004: the required property is outside supported analysis
+   │     CS0021: the required local facts could not be certified
+   ·
+10 │ component main = Main();
+   │ ------------------------ Reached through this call.
+   │
+   = For more details, see https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md#incomplete-analysis.
 
+circomspect: analyzing template 'Main'
 circomspect: Result written to `<sarif>`.
 circomspect: 1 issue found.

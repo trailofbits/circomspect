@@ -38,11 +38,12 @@ const CASES: &[GoldenCase] = &[
         status: 1,
     },
     GoldenCase {
-        name: "locationless_error",
+        name: "unsupported_version",
         source: "unsupported_version.circom",
         args: &[],
         status: 1,
     },
+    GoldenCase { name: "locationless_error", source: "absent_input.circom", args: &[], status: 1 },
     GoldenCase {
         name: "allow_suppression",
         source: "unresolved_library.circom",
@@ -74,7 +75,7 @@ fn normalize_sarif(value: &mut Value, fixture_root: &Path) {
             }
         }
         Value::String(text) => {
-            let prefix = format!("file://{}/", fixture_root.display());
+            let prefix = url::Url::from_directory_path(fixture_root).unwrap().to_string();
             if let Some(relative) = text.strip_prefix(&prefix) {
                 *text = format!("file:///fixtures/{relative}");
             } else {
@@ -84,36 +85,6 @@ fn normalize_sarif(value: &mut Value, fixture_root: &Path) {
         }
         Value::Null | Value::Bool(_) | Value::Number(_) => {}
     }
-}
-
-fn normalize_rule_order(value: &mut Value) {
-    let Some(rules) = value.pointer_mut("/runs/0/tool/driver/rules").and_then(Value::as_array_mut)
-    else {
-        return;
-    };
-    rules.sort_by(|left, right| {
-        let left = left.get("id").and_then(Value::as_str).expect("rule has no ID");
-        let right = right.get("id").and_then(Value::as_str).expect("rule has no ID");
-        left.cmp(right)
-    });
-}
-
-fn normalize_analysis_log(stdout: &str) -> String {
-    let mut lines: Vec<&str> = stdout.lines().collect();
-    let mut analysis_lines: Vec<&str> =
-        lines.iter().copied().filter(|line| line.starts_with("circomspect: analyzing ")).collect();
-    analysis_lines.sort_unstable();
-    let mut sorted = analysis_lines.into_iter();
-    for line in &mut lines {
-        if line.starts_with("circomspect: analyzing ") {
-            *line = sorted.next().expect("analysis line count changed");
-        }
-    }
-    let mut normalized = lines.join("\n");
-    if stdout.ends_with('\n') {
-        normalized.push('\n');
-    }
-    normalized
 }
 
 fn run_case(case: &GoldenCase) {
@@ -137,7 +108,6 @@ fn run_case(case: &GoldenCase) {
     let stdout = stdout
         .replace(&source.display().to_string(), "<fixture>")
         .replace(&sarif_path.display().to_string(), "<sarif>");
-    let stdout = normalize_analysis_log(&stdout);
     let golden_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/goldens");
     let expected_stdout =
         std::fs::read_to_string(golden_root.join(format!("{}.stdout", case.name)))
@@ -147,13 +117,11 @@ fn run_case(case: &GoldenCase) {
     std::fs::remove_file(&sarif_path).expect("failed to remove SARIF file");
     let mut sarif: Value = serde_json::from_str(&sarif).expect("invalid actual SARIF");
     normalize_sarif(&mut sarif, &root);
-    normalize_rule_order(&mut sarif);
     let expected_sarif =
         std::fs::read_to_string(golden_root.join(format!("{}.sarif.json", case.name)))
             .expect("missing SARIF golden");
-    let mut expected_sarif: Value =
+    let expected_sarif: Value =
         serde_json::from_str(&expected_sarif).expect("invalid SARIF golden");
-    normalize_rule_order(&mut expected_sarif);
     assert_eq!(sarif, expected_sarif, "{} SARIF changed", case.name);
 }
 
