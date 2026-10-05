@@ -229,6 +229,32 @@ fn incomplete_source_scope_coalesces_identical_locations_and_reasons() {
 }
 
 #[test]
+fn library_roots_are_independent_of_declaration_order() {
+    let child = "template Child(n){signal output y;if(n){y<==1;}else{y<==0;}}";
+    let wrapper = "template Wrapper(){component child=Child(1);}";
+    for (name, declarations) in [
+        ("library-child-first", format!("{child}\n{wrapper}")),
+        ("library-wrapper-first", format!("{wrapper}\n{child}")),
+    ] {
+        let path = fixture(name, &format!("pragma circom 2.2.3;\n{declarations}\n"));
+        let (_, stdout, sarif) = run(&path, &[], name);
+        let results = sarif["runs"][0]["results"].as_array().unwrap();
+        assert!(results.iter().any(|result| result["ruleId"] == "CS0009"), "{stdout}");
+        let symbolic_child = results.iter().any(|result| {
+            if result["ruleId"] != "CS0020" {
+                return false;
+            }
+            let related = result["relatedLocations"].as_array().unwrap();
+            let messages: Vec<_> =
+                related.iter().map(|label| label["message"]["text"].as_str().unwrap()).collect();
+            messages.iter().any(|message| message.contains("CS0009"))
+                && messages.iter().all(|message| !message.contains("Reached through this call"))
+        });
+        assert!(symbolic_child, "independent symbolic Child root missing: {stdout}");
+    }
+}
+
+#[test]
 fn failed_sarif_write_returns_a_visible_error_and_failure_exit() {
     let path = fixture("bad-sarif", "pragma circom 2.2.3;template Main(){}");
     let output = Command::new(env!("CARGO_BIN_EXE_circomspect"))

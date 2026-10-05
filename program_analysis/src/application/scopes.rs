@@ -71,9 +71,8 @@ impl<'a, 'b, 'c, 'd> ScopeRunner<'a, 'b, 'c, 'd> {
                 Ok(evidence) => self.pending.push_back(evidence),
                 Err(reason) => self.source_blocked(self.span(definition)?, &reason),
             }
-            self.drain()?;
         }
-        Ok(())
+        self.drain()
     }
 
     fn drain(&mut self) -> Result<(), ApplicationError> {
