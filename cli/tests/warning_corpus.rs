@@ -40,6 +40,8 @@ struct ObservedEvidence {
     findings: Vec<Value>,
     analyzed: bool,
     incomplete: bool,
+    incomplete_scopes: Vec<Value>,
+    target_code_incomplete_scopes: usize,
     seconds: f64,
     exit_code: Option<i32>,
 }
@@ -75,6 +77,8 @@ fn observed_evidence(case: &Value) -> ObservedEvidence {
     let results = sarif["runs"][0]["results"].as_array().expect("missing SARIF results");
     let mut evidence = Vec::new();
     let mut incomplete = false;
+    let mut incomplete_scopes = Vec::new();
+    let mut target_code_incomplete_scopes = 0;
     for result in results {
         let physical = &result["locations"][0]["physicalLocation"];
         let line = physical["region"]["startLine"].as_u64().expect("located diagnostic");
@@ -86,6 +90,10 @@ fn observed_evidence(case: &Value) -> ObservedEvidence {
         }
         if result["ruleId"] == "CS0020" {
             incomplete = true;
+            if incomplete_names_code(result, field(case, "rule_id")) {
+                target_code_incomplete_scopes += 1;
+            }
+            incomplete_scopes.push(result.clone());
         }
         if result["ruleId"] != field(case, "rule_id") {
             continue;
@@ -114,9 +122,20 @@ fn observed_evidence(case: &Value) -> ObservedEvidence {
         findings: evidence,
         analyzed,
         incomplete,
+        incomplete_scopes,
+        target_code_incomplete_scopes,
         seconds,
         exit_code: output.status.code(),
     }
+}
+
+fn incomplete_names_code(result: &Value, code: &str) -> bool {
+    let Some(locations) = result["relatedLocations"].as_array() else { return false };
+    locations.iter().any(|location| {
+        let Some(message) = location["message"]["text"].as_str() else { return false };
+        let Some((codes, _)) = message.split_once(':') else { return false };
+        codes.split(',').any(|item| item.trim() == code)
+    })
 }
 
 fn scope_lines(case: &Value, path: &Path) -> (u64, u64) {
@@ -271,6 +290,9 @@ fn cli_warning_corpus_preserves_adjudicated_findings() {
             "rule_id": field(&case, "rule_id"), "scope": field(&case, "scope"),
             "expected": expected, "classification": label, "analyzed": observed.analyzed,
             "incomplete": observed.incomplete, "exit_code": observed.exit_code,
+            "incomplete_scope_count": observed.incomplete_scopes.len(),
+            "target_code_incomplete_scope_count": observed.target_code_incomplete_scopes,
+            "incomplete_scopes": observed.incomplete_scopes,
             "seconds": observed.seconds, "findings": observed.findings,
         }));
         write_corpus_report(&observations, &totals, &failures, false);
