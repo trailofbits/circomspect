@@ -88,6 +88,43 @@ fn owned_bus_syntax_reaches_semantic_diagnostics() {
 }
 
 #[test]
+fn standalone_bus_library_reports_incomplete_without_main() {
+    let path = fixture("bus-only", "pragma circom 2.2.3;\nbus Pair(){signal x;}\n");
+    let (status, stdout, sarif) = run(&path, &[], "bus-only");
+    assert_eq!(status, 1, "{stdout}");
+    assert_eq!(ids(&sarif), BTreeSet::from(["CS0020"]), "{stdout}");
+    assert_eq!(sarif["runs"][0]["results"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn unsupported_library_definitions_have_scoped_incomplete_diagnostics() {
+    for (name, declaration, column) in [
+        ("standalone-bus", "bus Pair(){signal x;}", 5),
+        ("unsupported-bus", "bus Pair(){signal x;return 1;}", 5),
+        ("unused-custom", "template custom Native(){signal output out;}", 17),
+    ] {
+        let path = fixture(
+            name,
+            &format!(
+                "pragma circom 2.2.3; pragma custom_templates;\n{declaration}\n\
+                 template Good(){{signal output out;out<==1;}}\n"
+            ),
+        );
+        let (status, stdout, sarif) = run(&path, &[], name);
+        assert_eq!(status, 1, "{stdout}");
+        assert!(!stdout.contains("No issues found"), "{stdout}");
+        assert!(stdout.contains("analyzing template 'Good'"), "{stdout}");
+        let results = sarif["runs"][0]["results"].as_array().unwrap();
+        let incomplete: Vec<_> =
+            results.iter().filter(|result| result["ruleId"] == "CS0020").collect();
+        assert_eq!(incomplete.len(), 1, "{stdout}");
+        let region = &incomplete[0]["locations"][0]["physicalLocation"]["region"];
+        assert_eq!(region["startLine"], 2, "{stdout}");
+        assert_eq!(region["startColumn"], column, "{stdout}");
+    }
+}
+
+#[test]
 fn missing_input_file_is_visible_in_terminal_and_sarif() {
     let path = fixture("missing", "").with_file_name("absent.circom");
     let (status, stdout, sarif) = run(&path, &[], "missing");

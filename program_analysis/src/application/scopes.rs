@@ -63,6 +63,9 @@ impl<'a, 'b, 'c, 'd> ScopeRunner<'a, 'b, 'c, 'd> {
         for template in self.summaries.hir().templates() {
             definitions.push(DefinitionRef::Template(template.id));
         }
+        for bus in self.summaries.hir().buses() {
+            definitions.push(DefinitionRef::Bus(bus.id));
+        }
         for definition in definitions {
             if self.reports.contains_key(&definition) {
                 continue;

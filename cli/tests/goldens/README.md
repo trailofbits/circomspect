@@ -26,6 +26,9 @@ The owned frontend and analysis pipeline intentionally changed these outputs:
   coverage for locationless errors, bringing the corpus to ten cases.
 - SARIF declares Unicode-code-point columns and distinct per-result location
   IDs. File URIs preserve and encode source file names.
+- Bus definitions retain syntax and semantic diagnostics and emit scoped
+  `CS0020` because their analysis context is unsupported. Unused bus and
+  custom-template declarations cannot silently produce a complete result.
 
 The snapshots test presentation, not warning truth. Frozen truth labels and
 historical observations remain in `tests/warnings`.
