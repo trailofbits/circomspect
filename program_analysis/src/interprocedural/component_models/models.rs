@@ -66,7 +66,7 @@ impl ClosureEquations<'_> {
             add_support(&mut keys, key, budget)?;
         }
         for port in self.ready.bindings().keys() {
-            let key = self.ports.input_key(*port).ok_or(SummaryBlocker::WrongInstance)?;
+            let key = self.ports.input_key(port).ok_or(SummaryBlocker::WrongInstance)?;
             add_support(&mut keys, key, budget)?;
         }
         Ok(keys)
@@ -161,7 +161,7 @@ fn closure_baseline(
         return Ok(None);
     };
     for (port, binding) in equations.ready.bindings() {
-        let key = equations.ports.input_key(*port).ok_or(SummaryBlocker::WrongInstance)?;
+        let key = equations.ports.input_key(port).ok_or(SummaryBlocker::WrongInstance)?;
         if let GeneratedInputValue::ParentSignal(parent) = &binding.value {
             if let Some(value) = child_seeds.get(key) {
                 parent_seeds.entry(parent.clone()).or_insert_with(|| value.clone());
@@ -181,7 +181,7 @@ fn closure_baseline(
         return Ok(None);
     }
     for (port, binding) in equations.ready.bindings() {
-        let key = equations.ports.input_key(*port).ok_or(SummaryBlocker::WrongInstance)?;
+        let key = equations.ports.input_key(port).ok_or(SummaryBlocker::WrongInstance)?;
         let value = match &binding.value {
             GeneratedInputValue::Constant(value) => value.clone(),
             GeneratedInputValue::ParentSignal(parent) => {

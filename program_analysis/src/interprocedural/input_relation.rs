@@ -20,6 +20,29 @@ use crate::interprocedural::output_enumeration::EnumeratedComponentInstance;
 use crate::interprocedural::summary::certified;
 use crate::interprocedural::{ContextEvidence, SummaryBlocker};
 
+/// An element identity only; catalog membership supplies its checked port bounds.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub(super) struct InputPortElement {
+    port: PortId,
+    indices: Vec<usize>,
+}
+
+impl From<PortId> for InputPortElement {
+    fn from(port: PortId) -> Self {
+        Self { port, indices: Vec::new() }
+    }
+}
+
+impl InputPortElement {
+    pub(super) const fn port(&self) -> PortId {
+        self.port
+    }
+
+    pub(super) fn indices(&self) -> &[usize] {
+        &self.indices
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum GeneratedInputValue {
     Constant(FieldValue),
@@ -117,13 +140,13 @@ impl InputState {
 /// produce incomplete results before large dynamic paths can certify facts.
 enum RelationState {
     Unreachable,
-    Reached { instantiated: bool, inputs: BTreeMap<PortId, InputState> },
+    Reached { instantiated: bool, inputs: BTreeMap<InputPortElement, InputState> },
     Invalid,
 }
 
 impl RelationState {
-    fn boundary(inputs: &[PortId]) -> Self {
-        let inputs = inputs.iter().copied().map(|port| (port, InputState::Absent)).collect();
+    fn boundary(inputs: &[InputPortElement]) -> Self {
+        let inputs = inputs.iter().cloned().map(|port| (port, InputState::Absent)).collect();
         Self::Reached { instantiated: false, inputs }
     }
 
@@ -215,13 +238,13 @@ type ConstrainedInputBinding = CheckedInputBinding<GeneratedInputValue>;
 type WitnessInputBinding = CheckedInputBinding<WitnessInputValue>;
 
 struct ReadyInputs {
-    bindings: BTreeMap<PortId, CheckedInputBinding<BindingValue>>,
+    bindings: BTreeMap<InputPortElement, CheckedInputBinding<BindingValue>>,
 }
 
 impl ReadyInputs {
     fn into_bindings<Value>(
         self,
-    ) -> Result<BTreeMap<PortId, CheckedInputBinding<Value>>, SummaryBlocker>
+    ) -> Result<BTreeMap<InputPortElement, CheckedInputBinding<Value>>, SummaryBlocker>
     where
         Value: TryFrom<BindingValue, Error = SummaryBlocker>,
     {
@@ -244,7 +267,7 @@ impl ReadyInputs {
 pub(super) struct ReadyWitnessInputs {
     caller: ContextEvidence,
     instance: EnumeratedComponentInstance,
-    bindings: BTreeMap<PortId, WitnessInputBinding>,
+    bindings: BTreeMap<InputPortElement, WitnessInputBinding>,
 }
 
 impl ReadyWitnessInputs {
@@ -253,7 +276,7 @@ impl ReadyWitnessInputs {
     }
 
     pub(super) fn binding(&self, port: PortId) -> Option<&WitnessInputBinding> {
-        self.bindings.get(&port)
+        self.bindings.get(&port.into())
     }
 
     pub(super) fn matches(
@@ -268,7 +291,7 @@ impl ReadyWitnessInputs {
 }
 
 pub(super) struct ReadyInstanceAtUse {
-    bindings: BTreeMap<PortId, ConstrainedInputBinding>,
+    bindings: BTreeMap<InputPortElement, ConstrainedInputBinding>,
 }
 
 impl TryFrom<ReadyInputs> for ReadyInstanceAtUse {
@@ -280,12 +303,12 @@ impl TryFrom<ReadyInputs> for ReadyInstanceAtUse {
 }
 
 impl ReadyInstanceAtUse {
-    pub(super) fn bindings(&self) -> &BTreeMap<PortId, ConstrainedInputBinding> {
+    pub(super) fn bindings(&self) -> &BTreeMap<InputPortElement, ConstrainedInputBinding> {
         &self.bindings
     }
 
     pub(super) fn binding(&self, port: PortId) -> Option<&ConstrainedInputBinding> {
-        self.bindings.get(&port)
+        self.bindings.get(&port.into())
     }
 }
 
@@ -293,7 +316,7 @@ struct RelationAnalysis<'a> {
     facts: &'a AnalysisFacts<'a>,
     instance: &'a AccessPath,
     instantiation: NodeId,
-    inputs: Vec<PortId>,
+    inputs: Vec<InputPortElement>,
     policy: BindingPolicy,
 }
 
@@ -417,17 +440,18 @@ impl RelationAnalysis<'_> {
         if relation == InstanceRelation::Separate {
             return Ok(());
         }
-        let Some(port) = target_port(target) else {
-            state.invalidate();
-            return Err(SummaryBlocker::ExternalSummary);
-        };
+        let (port, indices) = self
+            .facts
+            .source_component_port_indices(target)
+            .map_err(|_| SummaryBlocker::UnsupportedContext)?;
+        let port = InputPortElement { port, indices };
         self.bind_input(node, port, relation, value, state)
     }
 
     fn bind_input(
         &self,
         node: &CfgNode,
-        port: PortId,
+        port: InputPortElement,
         relation: InstanceRelation,
         value: parser::hir::ExprId,
         state: &mut RelationState,
@@ -627,12 +651,6 @@ impl RelationAnalysis<'_> {
     }
 }
 
-fn target_port(path: &AccessPath) -> Option<PortId> {
-    let last = path.steps.last()?;
-    let AccessStep::Port { port, .. } = last else { return None };
-    Some(*port)
-}
-
 pub(super) fn ready_instance_at_use(
     facts: &AnalysisFacts<'_>,
     applied: &AppliedComponentPort,
@@ -750,7 +768,7 @@ fn ready_inputs(
     };
     let mut bindings = BTreeMap::new();
     for (port, binding) in inputs {
-        bindings.insert(*port, checked_binding(facts, binding)?);
+        bindings.insert(port.clone(), checked_binding(facts, binding)?);
     }
     Ok(ReadyInputs { bindings })
 }
@@ -758,7 +776,7 @@ fn ready_inputs(
 fn input_ports(
     facts: &AnalysisFacts<'_>,
     child: parser::hir::TemplateId,
-) -> Result<Vec<PortId>, SummaryBlocker> {
+) -> Result<Vec<InputPortElement>, SummaryBlocker> {
     let template = facts.hir().template(child).ok_or(SummaryBlocker::ForeignDefinition)?;
     let mut inputs = Vec::new();
     for id in &template.ports {
@@ -770,7 +788,7 @@ fn input_ports(
         if symbol.rank != 0 || port.schema != PortSchema::Signal {
             return Err(SummaryBlocker::UnsupportedContext);
         }
-        inputs.push(*id);
+        inputs.push((*id).into());
     }
     Ok(inputs)
 }
@@ -828,8 +846,8 @@ mod tests {
     use crate::interprocedural::{CallOwner, CallReachability, ProjectSummaries};
 
     use crate::interprocedural::input_relation::{
-        BindingPolicy, BindingValue, GeneratedInputValue, InputState, RelationAnalysis,
-        RelationState, SummaryBlocker,
+        BindingPolicy, BindingValue, GeneratedInputValue, InputPortElement, InputState,
+        RelationAnalysis, RelationState, SummaryBlocker, WitnessInputValue,
     };
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -848,12 +866,16 @@ mod tests {
                 sites: first,
             },
             InputState::Bound {
-                value: BindingValue::Generated(GeneratedInputValue::Constant(seven)),
+                value: BindingValue::Generated(GeneratedInputValue::Constant(seven.clone())),
                 sites: both,
             },
             InputState::Bound {
                 value: BindingValue::Generated(GeneratedInputValue::Constant(eight)),
                 sites: BTreeSet::from([NodeId::new(4)]),
+            },
+            InputState::Bound {
+                value: BindingValue::Witness(WitnessInputValue::Constant(seven)),
+                sites: BTreeSet::from([NodeId::new(3)]),
             },
         ];
         let mut states = vec![RelationState::Unreachable, RelationState::Invalid];
@@ -861,13 +883,20 @@ mod tests {
             for instantiated in [false, true] {
                 states.push(RelationState::Reached {
                     instantiated,
-                    inputs: BTreeMap::from([(port, input.clone())]),
+                    inputs: BTreeMap::from([(port.into(), input.clone())]),
                 });
             }
         }
         states.push(RelationState::Reached {
             instantiated: true,
-            inputs: BTreeMap::from([(other, InputState::Absent)]),
+            inputs: BTreeMap::from([(other.into(), InputState::Absent)]),
+        });
+        states.push(RelationState::Reached {
+            instantiated: true,
+            inputs: BTreeMap::from([(
+                InputPortElement { port, indices: vec![0] },
+                InputState::Absent,
+            )]),
         });
         states
     }
@@ -926,7 +955,7 @@ mod tests {
             facts: &facts,
             instance: target,
             instantiation: applied.instantiation(),
-            inputs: vec![ports[0]],
+            inputs: vec![ports[0].into()],
             policy: BindingPolicy::FixedOutput,
         };
         let field = FieldContext::for_curve(Curve::Bn254);

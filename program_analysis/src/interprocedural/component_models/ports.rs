@@ -2,10 +2,8 @@
 
 use std::collections::BTreeMap;
 
-use parser::hir::PortId;
-
 use crate::hir_facts::{AccessKey, AnalysisFacts};
-use crate::interprocedural::input_relation::ReadyInstanceAtUse;
+use crate::interprocedural::input_relation::{InputPortElement, ReadyInstanceAtUse};
 use crate::interprocedural::output_enumeration::EnumeratedComponentInstance;
 use crate::interprocedural::summary::certified;
 use crate::interprocedural::{AppliedComponentPort, ContextEvidence, SummaryBlocker};
@@ -21,7 +19,7 @@ struct CheckedOutput {
 pub(crate) struct ValidatedComponentPorts {
     evidence: ContextEvidence,
     outputs: Vec<CheckedOutput>,
-    inputs: BTreeMap<PortId, AccessKey>,
+    inputs: BTreeMap<InputPortElement, AccessKey>,
 }
 
 impl ValidatedComponentPorts {
@@ -49,9 +47,10 @@ impl ValidatedComponentPorts {
         let evidence = first.applied.caller_evidence().clone();
         let mut inputs = BTreeMap::new();
         for port in ready.bindings().keys() {
-            let handle =
-                child.port_handle(*port, &[]).map_err(|_| SummaryBlocker::UnsupportedContext)?;
-            inputs.insert(*port, certified(&child.exact_handle_key(&handle))?.clone());
+            let handle = child
+                .port_handle(port.port(), port.indices())
+                .map_err(|_| SummaryBlocker::UnsupportedContext)?;
+            inputs.insert(port.clone(), certified(&child.exact_handle_key(&handle))?.clone());
         }
         Ok(Self { evidence, outputs, inputs })
     }
@@ -68,7 +67,7 @@ impl ValidatedComponentPorts {
         self.outputs.iter().find_map(|output| (output.caller == *parent).then_some(&output.callee))
     }
 
-    pub(super) fn input_key(&self, port: PortId) -> Option<&AccessKey> {
-        self.inputs.get(&port)
+    pub(super) fn input_key(&self, port: &InputPortElement) -> Option<&AccessKey> {
+        self.inputs.get(port)
     }
 }
