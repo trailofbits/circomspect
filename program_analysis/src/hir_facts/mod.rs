@@ -201,6 +201,7 @@ pub struct AnalysisFacts<'a> {
     evidence_binding: Option<ContextEvidence>,
     ranges: Mutex<BTreeMap<ExprId, Fact<FieldRange>>>,
     body_writes: OnceLock<write_validity::BodyWriteResult>,
+    deferred_branches: OnceLock<Vec<NodeId>>,
 }
 
 /// Compute local facts. External summaries are unavailable until Phase 5.
@@ -270,6 +271,7 @@ pub(crate) fn analyze_owned_with_scalar_calls<'a>(
         evidence_binding,
         ranges,
         body_writes: OnceLock::new(),
+        deferred_branches: OnceLock::new(),
     })
 }
 
@@ -337,6 +339,7 @@ fn analyze_seeded<'a>(
         evidence_binding: None,
         ranges: Mutex::new(BTreeMap::new()),
         body_writes: OnceLock::new(),
+        deferred_branches: OnceLock::new(),
     })
 }
 
@@ -540,6 +543,7 @@ impl AnalysisFacts<'_> {
     pub(crate) fn bind_evidence(&mut self, evidence: ContextEvidence) {
         self.ranges.get_mut().unwrap_or_else(PoisonError::into_inner).clear();
         self.body_writes = OnceLock::new();
+        self.deferred_branches = OnceLock::new();
         self.evidence_binding = Some(evidence);
     }
 
@@ -1382,17 +1386,10 @@ impl AnalysisFacts<'_> {
                     }
                 }
             }
-            for branch in self.cfg.nodes() {
+            for branch in self.deferred_branches() {
                 if self.certified_dead_node(*branch) {
                     continue;
                 }
-                let Some(CfgNodeKind::Branch {
-                    guard: parser::hir::ControlGuard::DeferredScalar,
-                    ..
-                }) = self.cfg.node(*branch).map(|node| &node.kind)
-                else {
-                    continue;
-                };
                 let target = BTreeSet::from([*site]);
                 if self.can_reach_any(*branch, &target)
                     && self.can_reach_exit_avoiding(*branch, *site)
@@ -1403,6 +1400,22 @@ impl AnalysisFacts<'_> {
             }
         }
         blockers
+    }
+
+    fn deferred_branches(&self) -> &[NodeId] {
+        self.deferred_branches.get_or_init(|| {
+            let mut branches = Vec::new();
+            for site in self.cfg.nodes() {
+                if let Some(CfgNodeKind::Branch {
+                    guard: parser::hir::ControlGuard::DeferredScalar,
+                    ..
+                }) = self.cfg.node(*site).map(|node| &node.kind)
+                {
+                    branches.push(*site);
+                }
+            }
+            branches
+        })
     }
 
     fn specialized_guard(&self, branch: NodeId) -> bool {
