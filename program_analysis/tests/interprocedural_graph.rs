@@ -56,7 +56,7 @@ fn graph_finds_assignment_guard_nested_and_index_calls_without_main() {
     let index_calls = graph.calls_from(CallOwner::Definition(check));
     assert_eq!(index_calls.len(), 1);
     assert!(matches!(index_calls[0].target, CallTarget::Function(_)));
-    assert_eq!(index_calls[0].provenance, CallProvenance::Unattached);
+    assert_eq!(index_calls[0].provenance, CallProvenance::EffectOwned);
     assert!(index_calls[0].resolved().is_some());
     assert!(hir.mains().is_empty());
 }

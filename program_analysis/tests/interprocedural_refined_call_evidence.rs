@@ -12,8 +12,8 @@ use std::fs;
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::hir_facts::FactBlocker;
 use circomspect_program_analysis::interprocedural::{
-    AnalyzeEvidenceError, CallBlocker, CallOwner, CallProvenance, CallReachability, ContextOrigin,
-    ProjectSummaries, SummaryBlocker,
+    AnalyzeEvidenceError, ArgumentValue, CallBlocker, CallOwner, CallProvenance, CallReachability,
+    ContextOrigin, ProjectSummaries, SummaryBlocker,
 };
 use circomspect_program_analysis::new_rules::{run_registered, RuleContext, RuleKind};
 use parser::hir::{lift_project, IncompleteReason, LiftedProject, SemanticCode};
@@ -300,7 +300,7 @@ fn unknown_argument_and_budgeted_facts_cannot_mint_a_child_scope() {
 }
 
 #[test]
-fn unattached_call_and_invalid_array_target_cannot_mint_evidence() {
+fn preserved_index_call_requires_checked_reachability_instead_of_refinement() {
     let lifted = fixture(concat!(
         "function F(n){return n;} ",
         "template T(){signal output y[2];y[F(0)]<==1;}"
@@ -311,12 +311,51 @@ fn unattached_call_and_invalid_array_target_cannot_mint_evidence() {
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
     let facts = provider.analyze_for_evidence(&cfg, &caller, None).unwrap();
     let site = provider.graph().calls_from(CallOwner::Definition(parent))[0];
+    assert_eq!(site.provenance, CallProvenance::EffectOwned);
+    assert_eq!(
+        provider.refined_function_call_evidence(site.id(), &facts, &caller),
+        Err(SummaryBlocker::ForeignCall)
+    );
+    let CallReachability::Reachable(call) = provider.graph().reachable_call(site.id(), &facts)
+    else {
+        panic!("the preserved index call must be reachable")
+    };
+    let evidence = provider.call_evidence(&call, &facts, &caller).unwrap();
+    assert_eq!(evidence.context().definition(), lifted.hir.definition("F").unwrap());
+    assert_eq!(evidence.origin(), ContextOrigin::Call(site.id()));
+    let [ArgumentValue::Scalar(value)] = evidence.context().arguments() else {
+        panic!("the index call must retain its scalar argument")
+    };
+    assert_eq!(*value.as_bigint(), 0.into());
+}
+
+#[test]
+fn unattached_anonymous_input_call_cannot_mint_refined_evidence() {
+    let lifted = fixture(concat!(
+        "function F(){return 1;}",
+        "template Child(){signal input in;signal output out;out<==in;}",
+        "template T(){signal output y;y<==Child()(in<==F());}"
+    ));
+    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let parent = lifted.hir.definition("T").unwrap();
+    let caller = provider.symbolic_root(parent).unwrap();
+    let cfg = build_cfg(&lifted.hir, parent).unwrap();
+    let facts = provider.analyze_for_evidence(&cfg, &caller, None).unwrap();
+    let site = provider
+        .graph()
+        .calls_from(CallOwner::Definition(parent))
+        .into_iter()
+        .find(|site| site.resolved() == lifted.hir.definition("F"))
+        .unwrap();
     assert_eq!(site.provenance, CallProvenance::Unattached);
     assert_eq!(
         provider.refined_function_call_evidence(site.id(), &facts, &caller),
         Err(SummaryBlocker::ForeignCall)
     );
+}
 
+#[test]
+fn invalid_array_target_cannot_mint_evidence() {
     let lifted = fixture("function F(){return 7;} template T(){var x[2];x=F();}");
     let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("T").unwrap();
