@@ -108,7 +108,7 @@
             {
               "id": 2,
               "message": {
-                "text": "CS0011, CS0018: the definition contains unresolved source errors"
+                "text": "CS0011, CS0014, CS0018: the definition contains unresolved source errors"
               },
               "physicalLocation": {
                 "artifactLocation": {
@@ -224,7 +224,7 @@
             {
               "id": 2,
               "message": {
-                "text": "CS0011, CS0018: the definition contains unresolved source errors"
+                "text": "CS0011, CS0014, CS0018: the definition contains unresolved source errors"
               },
               "physicalLocation": {
                 "artifactLocation": {

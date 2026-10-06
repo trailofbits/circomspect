@@ -30,6 +30,10 @@ The owned frontend and analysis pipeline intentionally changed these outputs:
   `CS0020` because their analysis context is unsupported. Unused bus and
   custom-template declarations cannot silently produce a complete result.
 
+The comparator implementation also adds `CS0014` to the existing incomplete-analysis
+labels for both malformed definitions in `partial_library`. The terminal layout,
+source locations, diagnostic count, exit code, and other nine cases are unchanged.
+
 The snapshots test presentation, not warning truth. Frozen truth labels and
 historical observations remain in `tests/warnings`.
 

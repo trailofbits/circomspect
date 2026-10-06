@@ -18,7 +18,7 @@ warning: Analysis is incomplete for this source scope.
    │            │
    │            Some properties could not be certified.
    │            CS0006, CS0007, CS0008: the definition contains unresolved source errors
-   │            CS0011, CS0018: the definition contains unresolved source errors
+   │            CS0011, CS0014, CS0018: the definition contains unresolved source errors
 10 │ │     var value = ;
    │ │     -------------
    │ │     │
@@ -37,7 +37,7 @@ warning: Analysis is incomplete for this source scope.
    │            │
    │            Some properties could not be certified.
    │            CS0006, CS0007, CS0008: the definition contains unresolved source errors
-   │            CS0011, CS0018: the definition contains unresolved source errors
+   │            CS0011, CS0014, CS0018: the definition contains unresolved source errors
 20 │ │     var value = ;
    │ │     -------------
    │ │     │
