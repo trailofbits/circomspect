@@ -583,7 +583,6 @@ pub fn expression_degree(
         },
         ExprKind::Unary { operator: UnaryOperator::Negate, operand }
         | ExprKind::Parallel(operand) => expression_degree(analysis, *operand, values, degrees),
-        ExprKind::Unary { .. } => DegreeUpper::Unbounded,
         ExprKind::Binary { operator, left, right } => {
             let left = expression_degree(analysis, *left, values, degrees);
             let right = expression_degree(analysis, *right, values, degrees);
@@ -607,7 +606,8 @@ pub fn expression_degree(
         {
             DegreeUpper::Constant
         }
-        ExprKind::Call { .. }
+        ExprKind::Unary { .. }
+        | ExprKind::Call { .. }
         | ExprKind::AnonymousComponent { .. }
         | ExprKind::Array(_)
         | ExprKind::Tuple(_)

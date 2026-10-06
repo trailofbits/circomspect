@@ -120,7 +120,7 @@ impl AnalysisFacts<'_> {
         bits: &[AccessPath],
         budget: &mut ProofBudget,
     ) -> Fact<BitAmbiguityOutcome> {
-        self.local_bit_ambiguity_from_relation(self.bit_decomposition(input, bits), budget)
+        self.local_bit_ambiguity_from_relation(&self.bit_decomposition(input, bits), budget)
     }
 
     pub(crate) fn local_bit_ambiguity_handles(
@@ -129,12 +129,12 @@ impl AnalysisFacts<'_> {
         bits: &[AccessHandle],
         budget: &mut ProofBudget,
     ) -> Fact<BitAmbiguityOutcome> {
-        self.local_bit_ambiguity_from_relation(self.bit_decomposition_handles(input, bits), budget)
+        self.local_bit_ambiguity_from_relation(&self.bit_decomposition_handles(input, bits), budget)
     }
 
     fn local_bit_ambiguity_from_relation(
         &self,
-        relation: Fact<Option<BitDecomposition>>,
+        relation: &Fact<Option<BitDecomposition>>,
         budget: &mut ProofBudget,
     ) -> Fact<BitAmbiguityOutcome> {
         match self.bit_ambiguity_result(relation, budget) {
@@ -145,7 +145,7 @@ impl AnalysisFacts<'_> {
 
     fn bit_ambiguity_result(
         &self,
-        relation: Fact<Option<BitDecomposition>>,
+        relation: &Fact<Option<BitDecomposition>>,
         budget: &mut ProofBudget,
     ) -> Result<BitAmbiguityOutcome, BTreeSet<FactBlocker>> {
         let path = self.unique_generation_path(budget)?;

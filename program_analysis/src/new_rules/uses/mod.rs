@@ -35,6 +35,7 @@ static RULES: [&dyn Rule; 4] =
     [&UNUSED_VARIABLE, &UNUSED_PARAMETER, &SIDE_EFFECT_FREE, &UNUSED_OUTPUT];
 
 /// Use and effect rules enter the registry in this family's declared order.
+#[must_use]
 pub fn rules() -> &'static [&'static dyn Rule] {
     &RULES
 }

@@ -11,6 +11,7 @@ use crate::interprocedural::{
     SummaryBlocker, SummaryFact,
 };
 
+#[derive(Clone, Copy)]
 pub(super) struct LocalOutputPort<'a, 'hir> {
     pub facts: &'a AnalysisFacts<'hir>,
     pub handle: &'a AccessHandle,

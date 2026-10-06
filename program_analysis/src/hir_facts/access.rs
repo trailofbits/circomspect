@@ -74,10 +74,14 @@ impl AccessKey {
         }
         for (left, right) in self.steps.iter().zip(&other.steps) {
             match (left, right) {
-                (AccessKeyStep::Index(IndexKey::Symbolic(_)), AccessKeyStep::Index(_))
-                | (AccessKeyStep::Index(_), AccessKeyStep::Index(IndexKey::Symbolic(_)))
-                | (AccessKeyStep::Index(IndexKey::Unknown), AccessKeyStep::Index(_))
-                | (AccessKeyStep::Index(_), AccessKeyStep::Index(IndexKey::Unknown)) => {}
+                (
+                    AccessKeyStep::Index(IndexKey::Symbolic(_) | IndexKey::Unknown),
+                    AccessKeyStep::Index(_),
+                )
+                | (
+                    AccessKeyStep::Index(_),
+                    AccessKeyStep::Index(IndexKey::Symbolic(_) | IndexKey::Unknown),
+                ) => {}
                 (left, right) if left == right => {}
                 _ => return false,
             }

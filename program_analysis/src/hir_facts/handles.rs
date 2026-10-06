@@ -265,6 +265,9 @@ impl AnalysisFacts<'_> {
     }
 
     /// Name a declared local template or bus port, even with no source occurrence.
+    ///
+    /// # Errors
+    /// Returns an error for a foreign or opaque port, invalid rank, or unproved index bounds.
     pub fn port_handle(
         &self,
         port: PortId,
@@ -308,6 +311,9 @@ impl AnalysisFacts<'_> {
     }
 
     /// Name an exact output of a resolved component instance without a source access.
+    ///
+    /// # Errors
+    /// Returns an error for an invalid component or output port, rank, or index bounds.
     pub fn component_output_handle(
         &self,
         component: ComponentId,

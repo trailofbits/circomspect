@@ -11,6 +11,7 @@ use crate::hir_facts::relations::complete::ProofBudget;
 use crate::hir_facts::{AnalysisFacts, FactBlocker, FieldValue, VisitAccesses};
 use crate::interprocedural::ValidatedConstructorReads;
 
+#[derive(Clone, Copy)]
 enum GenerationScope<'a> {
     Leaf,
     CompletedChildren(&'a ValidatedConstructorReads),
@@ -47,7 +48,7 @@ impl AnalysisFacts<'_> {
             if !visited.insert(current) {
                 return Err(BTreeSet::from([FactBlocker::UnsupportedRelation(current)]));
             }
-            self.validate_model_control(current, &scope)?;
+            self.validate_model_control(current, scope)?;
             if current == self.cfg.exit() {
                 break;
             }
@@ -93,7 +94,7 @@ impl AnalysisFacts<'_> {
     fn validate_model_control(
         &self,
         site: NodeId,
-        scope: &GenerationScope<'_>,
+        scope: GenerationScope<'_>,
     ) -> Result<(), BTreeSet<FactBlocker>> {
         let Some(node) = self.cfg.node(site) else {
             return Err(BTreeSet::from([FactBlocker::ForeignQuery]));

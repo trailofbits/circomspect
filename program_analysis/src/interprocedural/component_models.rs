@@ -106,6 +106,7 @@ impl ComponentBitAmbiguity {
     }
 }
 
+#[derive(Clone, Copy)]
 enum RequestedBits<'a> {
     Paths { input: &'a AccessPath, bits: &'a [AccessPath] },
     Handles { input: &'a AccessHandle, bits: &'a [AccessHandle] },

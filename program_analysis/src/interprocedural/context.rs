@@ -84,21 +84,17 @@ impl CallContext {
         &self.arguments
     }
 
-    pub(crate) fn scalar_seeds(
-        &self,
-        parameters: &[SymbolId],
-    ) -> Result<BTreeMap<SymbolId, FieldValue>, SummaryBlocker> {
+    pub(crate) fn scalar_seeds(&self, parameters: &[SymbolId]) -> BTreeMap<SymbolId, FieldValue> {
         let mut values = BTreeMap::new();
         for (symbol, argument) in parameters.iter().zip(&self.arguments) {
             match argument {
                 ArgumentValue::Scalar(value) => {
                     values.insert(*symbol, value.clone());
                 }
-                ArgumentValue::Symbolic(_) => {}
-                ArgumentValue::Array(_) | ArgumentValue::Bus(_) => {}
+                ArgumentValue::Symbolic(_) | ArgumentValue::Array(_) | ArgumentValue::Bus(_) => {}
             }
         }
-        Ok(values)
+        values
     }
 }
 
@@ -333,6 +329,9 @@ pub struct ProjectSummaries<'a> {
 
 impl<'a> ProjectSummaries<'a> {
     /// Build a provider for one selected compiler curve and the lifted language version.
+    ///
+    /// # Errors
+    /// Returns a graph error if a call site references an invalid HIR identity.
     pub fn build(lifted: &'a LiftedProject, curve: Curve) -> Result<Self, CallGraphError> {
         let graph = build_call_graph(&lifted.hir)?;
         Ok(Self {
@@ -715,7 +714,7 @@ impl<'a> ProjectSummaries<'a> {
             Effect::OpaqueAssignment { target, value, operator, reason, .. }
                 if *reason == IncompleteReason::UnknownType =>
             {
-                self.matches_checked_assignment(&node.kind, target, *value, *operator)
+                Self::matches_checked_assignment(&node.kind, target, *value, *operator)
             }
             Effect::OpaqueAssignment { .. }
             | Effect::Declaration { .. }
@@ -740,7 +739,6 @@ impl<'a> ProjectSummaries<'a> {
     }
 
     fn matches_checked_assignment(
-        &self,
         kind: &CfgNodeKind,
         target: &parser::hir::AccessPath,
         value: ExprId,
@@ -801,6 +799,9 @@ impl<'a> ProjectSummaries<'a> {
     }
 
     /// Construct a key only when the definition and parameter count belong to this HIR.
+    ///
+    /// # Errors
+    /// Returns a blocker for a foreign definition or a mismatched argument count.
     pub fn context_for(
         &self,
         definition: DefinitionRef,
@@ -821,6 +822,9 @@ impl<'a> ProjectSummaries<'a> {
     }
 
     /// Create the universal library-root context without requiring a `main` instance.
+    ///
+    /// # Errors
+    /// Returns a blocker when the definition does not belong to this project.
     pub fn symbolic_context_for(
         &self,
         definition: DefinitionRef,
@@ -829,6 +833,10 @@ impl<'a> ProjectSummaries<'a> {
         self.context_for(definition, vec![ArgumentValue::Symbolic(ArgumentShape::Unknown); count])
     }
 
+    /// Validate that a specialization key belongs to this provider.
+    ///
+    /// # Errors
+    /// Returns a blocker for a different project, curve, version, definition, or arity.
     pub fn check_context(&self, context: &CallContext) -> Result<(), SummaryBlocker> {
         if context.project != self.lifted.hir.identity()
             || context.curve != self.field.curve().into()
@@ -846,6 +854,9 @@ impl<'a> ProjectSummaries<'a> {
 
     /// A library definition is a scope even without a `main` instantiation.
     /// A finding still needs a predicate proved for all symbolic values.
+    ///
+    /// # Errors
+    /// Returns a blocker when the definition does not belong to this project.
     pub fn symbolic_root(
         &self,
         definition: DefinitionRef,
@@ -858,6 +869,9 @@ impl<'a> ProjectSummaries<'a> {
     }
 
     /// Bind a checked `main` call to independently proved compile-time arguments.
+    ///
+    /// # Errors
+    /// Returns a blocker for a foreign main call or arguments that cannot be proved exact.
     pub fn main_evidence(
         &self,
         call: &ReachableCall<'_>,
@@ -881,6 +895,9 @@ impl<'a> ProjectSummaries<'a> {
     }
 
     /// Bind a checked reachable definition call to certified exact argument values.
+    ///
+    /// # Errors
+    /// Returns a blocker for mismatched facts, an invalid call scope, or unproved arguments.
     pub fn call_evidence(
         &self,
         call: &ReachableCall<'_>,
@@ -963,17 +980,19 @@ impl<'a> ProjectSummaries<'a> {
         let Some(expr) = self.hir().expression(expression) else {
             return Err(SummaryBlocker::ForeignCall);
         };
-        let arguments = match &expr.kind {
-            ExprKind::Call { arguments, .. } | ExprKind::AnonymousComponent { arguments, .. } => {
-                arguments
-            }
-            _ => return Err(SummaryBlocker::UnsupportedCallForm),
+        let (ExprKind::Call { arguments, .. } | ExprKind::AnonymousComponent { arguments, .. }) =
+            &expr.kind
+        else {
+            return Err(SummaryBlocker::UnsupportedCallForm);
         };
         let arguments = self.exact_call_arguments(arguments, facts)?;
         self.context_for(call.callee(), arguments)
     }
 
     /// Revalidate a scope before a rule combines it with local facts.
+    ///
+    /// # Errors
+    /// Returns a blocker for an invalid context, root origin, or source call path.
     pub fn check_evidence(&self, evidence: &ContextEvidence) -> Result<(), SummaryBlocker> {
         self.check_context(&evidence.context)?;
         match evidence.origin {
@@ -993,7 +1012,7 @@ impl<'a> ProjectSummaries<'a> {
     }
 
     fn check_call_path(&self, evidence: &ContextEvidence) -> Result<(), SummaryBlocker> {
-        self.check_path_origin(evidence)?;
+        Self::check_path_origin(evidence)?;
         if evidence.call_path.is_empty() {
             return Ok(());
         }
@@ -1007,7 +1026,7 @@ impl<'a> ProjectSummaries<'a> {
         Ok(())
     }
 
-    fn check_path_origin(&self, evidence: &ContextEvidence) -> Result<(), SummaryBlocker> {
+    fn check_path_origin(evidence: &ContextEvidence) -> Result<(), SummaryBlocker> {
         match evidence.origin {
             ContextOrigin::SymbolicRoot => {
                 if evidence.call_path.is_empty() {
@@ -1016,7 +1035,7 @@ impl<'a> ProjectSummaries<'a> {
                     Err(SummaryBlocker::WrongContext)
                 }
             }
-            ContextOrigin::Main(id) => self.check_main_path(id, &evidence.call_path),
+            ContextOrigin::Main(id) => Self::check_main_path(id, &evidence.call_path),
             ContextOrigin::Call(id) => {
                 if evidence.call_path.last().is_some_and(|site| site.site == id) {
                     Ok(())
@@ -1027,7 +1046,7 @@ impl<'a> ProjectSummaries<'a> {
         }
     }
 
-    fn check_main_path(&self, id: CallSiteId, path: &[CallPathSite]) -> Result<(), SummaryBlocker> {
+    fn check_main_path(id: CallSiteId, path: &[CallPathSite]) -> Result<(), SummaryBlocker> {
         let [site] = path else { return Err(SummaryBlocker::ForeignCall) };
         if site.site != id {
             return Err(SummaryBlocker::ForeignCall);
@@ -1054,6 +1073,9 @@ impl<'a> ProjectSummaries<'a> {
     }
 
     /// Analyze one definition under a validated source scope and bind the result to it.
+    ///
+    /// # Errors
+    /// Returns a blocker for invalid scope or unavailable facts, or a located shape error.
     pub fn analyze_for_evidence<'b>(
         &'b self,
         cfg: &'b DefinitionCfg,
@@ -1067,10 +1089,9 @@ impl<'a> ProjectSummaries<'a> {
         let parameters = self
             .parameters(cfg.definition())
             .ok_or(AnalyzeEvidenceError::Blocked(SummaryBlocker::ForeignDefinition))?;
-        let seeds =
-            evidence.context.scalar_seeds(parameters).map_err(AnalyzeEvidenceError::Blocked)?;
+        let seeds = evidence.context.scalar_seeds(parameters);
         let mut facts = self
-            .refined_facts(evidence.context(), seeds, budget)
+            .refined_facts(evidence.context(), &seeds, budget)
             .map_err(AnalyzeEvidenceError::Blocked)?;
         if let Some(failure) = self.invalid_value_use(parameters, evidence.context(), &facts) {
             return Err(failure.into_analysis_error(evidence.context()));
@@ -1080,6 +1101,9 @@ impl<'a> ProjectSummaries<'a> {
     }
 
     /// Check that local facts were computed under this exact certified source scope.
+    ///
+    /// # Errors
+    /// Returns a blocker unless facts belong to this exact project, field, and scope.
     pub fn check_facts_for_evidence(
         &self,
         facts: &AnalysisFacts<'_>,

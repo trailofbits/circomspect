@@ -19,6 +19,9 @@ pub struct SourceMap<'a> {
 
 impl<'a> SourceMap<'a> {
     /// Build a map for the existing terminal and SARIF renderers.
+    ///
+    /// # Errors
+    /// Returns an error for duplicate source identities or roots absent from the loaded project.
     pub fn from_loaded(
         project: &'a LoadedProject,
         roots: &[SourceId],
@@ -55,6 +58,9 @@ impl<'a> SourceMap<'a> {
     }
 
     /// Convert a typed HIR diagnostic through the existing report renderers.
+    ///
+    /// # Errors
+    /// Returns an error for an unknown source or an invalid UTF-8 byte span.
     pub fn semantic_report(&self, diagnostic: &SemanticDiagnostic) -> Result<Report, RenderError> {
         let (file, range) = self.location(diagnostic.span)?;
         let code = semantic_report_code(diagnostic.code);
@@ -208,6 +214,9 @@ impl Finding {
     }
 
     /// Convert a checked source span to the existing report representation.
+    ///
+    /// # Errors
+    /// Returns an error if any label has an unknown source or an invalid UTF-8 byte span.
     pub fn to_report(&self, sources: &SourceMap) -> Result<Report, RenderError> {
         let (file, range) = sources.location(self.primary)?;
         let code = self.kind.code();

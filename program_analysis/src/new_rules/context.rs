@@ -44,6 +44,9 @@ pub struct RuleContext<'a, 'facts, 'project> {
 
 impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
     /// Pair a checked local analysis with a provider-issued root or reachable call.
+    ///
+    /// # Errors
+    /// Returns an error for foreign facts, a different field or definition, or invalid evidence.
     pub fn new(
         facts: &'a AnalysisFacts<'facts>,
         summaries: &'a ProjectSummaries<'project>,
@@ -81,11 +84,17 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
     }
 
     /// Validate this active function or template's header and parameter list.
+    ///
+    /// # Errors
+    /// Returns a blocker when source recovery or validation prevents a complete header proof.
     pub fn validated_header(&self) -> Result<ValidatedHeader, SummaryBlocker> {
         self.summaries.validated_header(self.call_context().definition())
     }
 
     /// Validate source recovery across this active definition's body and header.
+    ///
+    /// # Errors
+    /// Returns a blocker when source recovery leaves the active definition incomplete.
     pub fn validated_definition(&self) -> Result<ValidatedDefinition, SummaryBlocker> {
         self.summaries.validated_definition(self.facts)
     }
@@ -93,6 +102,9 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
     /// Refuse claims in an active scope with a known execution failure path.
     ///
     /// Passing this check does not prove that the definition completes.
+    ///
+    /// # Errors
+    /// Returns a blocker for an invalid source scope or a proved execution failure.
     pub fn check_warning_execution_scope(&self) -> Result<(), SummaryBlocker> {
         self.summaries.check_warning_execution_scope(self.facts, self.evidence)
     }
@@ -101,6 +113,9 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
     ///
     /// Both complete source coverage and the known-failure refusal precede
     /// local demand certification. The returned fact retains solver blockers.
+    ///
+    /// # Errors
+    /// Returns a blocker when source completeness or execution validity cannot be established.
     pub fn assignment_demand(
         &self,
         node: abstract_interpretation::graph::NodeId,
@@ -137,6 +152,9 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
     /// Bind a child-local output summary to one may-reachable exact component instance.
     ///
     /// This does not certify caller-side constraint relations, witness readiness, or output use.
+    ///
+    /// # Errors
+    /// Returns a call blocker when reachability cannot be certified.
     pub fn applied_component_port(
         &self,
         site: CallSiteId,
@@ -159,6 +177,9 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
     /// The child port dimension is proved under the callee's exact parameters.
     /// A source call that is unreachable returns `None`; unresolved reachability
     /// retains its typed blocker.
+    ///
+    /// # Errors
+    /// Returns a call blocker when reachability cannot be certified.
     pub fn applied_component_first_output(
         &self,
         site: CallSiteId,
@@ -182,6 +203,9 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
     ///
     /// The applied port must belong to this exact source scope. The result proves a
     /// constraint relation; it does not by itself prove an output witness write.
+    ///
+    /// # Errors
+    /// Returns a blocker when the applied port belongs to another caller scope.
     pub fn composed_constraint_fixed_output(
         &self,
         applied: &AppliedComponentPort,
@@ -196,6 +220,9 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
     ///
     /// No local read returns unavailable evidence. It cannot prove that the
     /// output is unused across the project or in an uninstantiated library.
+    ///
+    /// # Errors
+    /// Returns a blocker when the applied port belongs to another caller scope.
     pub fn caller_output_read(
         &self,
         applied: &AppliedComponentPort,
@@ -231,6 +258,7 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
     }
 
     /// Request two complete satisfying bit models in a validated leaf root scope.
+    #[must_use]
     pub fn template_bit_ambiguity(
         &self,
         input: &AccessPath,

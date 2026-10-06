@@ -17,6 +17,9 @@ pub fn registered_rules() -> impl Iterator<Item = &'static dyn Rule> {
 }
 
 /// Run every implemented rule and reject findings outside its validated scope.
+///
+/// # Errors
+/// Returns an error for duplicate rules or results with a foreign rule kind or call scope.
 pub fn run_registered(context: &RuleContext<'_, '_, '_>) -> Result<RuleResult, RuleRunError> {
     run_rules(context, registered_rules())
 }

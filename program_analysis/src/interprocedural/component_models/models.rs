@@ -128,14 +128,22 @@ pub(super) fn prove_closure_models(
     if !validate_closure(field, equations, &assignments, budget)? {
         return Ok(no_certificate(NoBitAmbiguityCertificate::CandidatesRejected));
     }
+    let mut caller_origins = Vec::with_capacity(equations.caller.sites().len());
+    for site in equations.caller.sites() {
+        caller_origins.push(site.origin());
+    }
+    let mut callee_origins = Vec::with_capacity(equations.callee.sites().len());
+    for site in equations.callee.sites() {
+        callee_origins.push(site.origin());
+    }
     Ok(ComponentBitAmbiguityOutcome::Proved(Box::new(ComponentBitAmbiguity {
         applied: applied.clone(),
         decomposition: equations.relation.clone(),
         input,
         representations,
         assignments,
-        caller_origins: equations.caller.sites().iter().map(|site| site.origin()).collect(),
-        callee_origins: equations.callee.sites().iter().map(|site| site.origin()).collect(),
+        caller_origins,
+        callee_origins,
         binding_origins: equations
             .ready
             .bindings()

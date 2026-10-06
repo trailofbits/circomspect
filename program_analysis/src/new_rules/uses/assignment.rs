@@ -157,7 +157,13 @@ fn unused_internal_signal(
         Some(Incidence::Zero) => report_unused_value(context, node, target, result),
         Some(Incidence::May | Incidence::Must) => {}
         None => {
-            summary_abstain(context, RuleKind::UnusedVariableValue, target.span, &incidence, result)
+            summary_abstain(
+                context,
+                RuleKind::UnusedVariableValue,
+                target.span,
+                &incidence,
+                result,
+            );
         }
     }
 }

@@ -214,8 +214,9 @@ impl ProjectSummaries<'_> {
                         .ok_or(SummaryBlocker::ExternalSummary)?;
                     match &expr.kind {
                         ExprKind::Access(path) => match facts.handle_relation(handle, path) {
-                            InstanceRelation::Exact => uncertain = true,
-                            InstanceRelation::Possible => uncertain = true,
+                            InstanceRelation::Exact | InstanceRelation::Possible => {
+                                uncertain = true;
+                            }
                             InstanceRelation::Separate => {}
                         },
                         ExprKind::Opaque(_) | ExprKind::AnonymousComponent { .. } => {
@@ -235,7 +236,7 @@ impl ProjectSummaries<'_> {
         if uncertain {
             return Err(SummaryBlocker::ExternalSummary);
         }
-        self.linear_caller_path(facts)?;
+        Self::linear_caller_path(facts)?;
         Ok(())
     }
 
@@ -280,7 +281,6 @@ impl ProjectSummaries<'_> {
     }
 
     fn linear_caller_path(
-        &self,
         facts: &AnalysisFacts<'_>,
     ) -> Result<BTreeMap<NodeId, usize>, SummaryBlocker> {
         let cfg = facts.cfg();
@@ -419,7 +419,7 @@ impl ProjectSummaries<'_> {
             return Err(SummaryBlocker::UnsupportedContext);
         }
         self.with_local_template(child, applied.callee.context(), |template, cfg, facts| {
-            self.reject_reachable_child_loop(cfg, facts)?;
+            Self::reject_reachable_child_loop(cfg, facts)?;
             let output =
                 self.hir().port(applied.port.port()).ok_or(SummaryBlocker::ForeignDefinition)?;
             let symbol =
@@ -461,7 +461,6 @@ impl ProjectSummaries<'_> {
     }
 
     fn reject_reachable_child_loop(
-        &self,
         cfg: &DefinitionCfg,
         facts: &AnalysisFacts<'_>,
     ) -> Result<(), SummaryBlocker> {
@@ -496,8 +495,11 @@ impl ProjectSummaries<'_> {
                 Some(ChildOutputEffect::Constraint) if node.origin == Some(selected) => {
                     constraints += 1;
                 }
-                Some(ChildOutputEffect::Witness | ChildOutputEffect::Constraint)
-                | Some(ChildOutputEffect::Opaque) => {
+                Some(
+                    ChildOutputEffect::Witness
+                    | ChildOutputEffect::Constraint
+                    | ChildOutputEffect::Opaque,
+                ) => {
                     return Err(SummaryBlocker::ExternalSummary);
                 }
                 None => {}

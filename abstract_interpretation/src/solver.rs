@@ -298,8 +298,7 @@ where
         };
         let slot = D::from_mut(facts);
         match join_limited(slot, &seed, &mut work.updates, work.budget) {
-            Ok(true) => {}
-            Ok(false) => {}
+            Ok(true | false) => {}
             Err(()) => return Ok(Some(node)),
         }
     }
@@ -403,6 +402,11 @@ where
 /// One update is a strict change to a seeded boundary, node fact, or edge fact.
 /// An unbounded run requires a finite-height domain or a sound widening in the
 /// analysis transfer. Otherwise, pass an update budget to bound the run.
+///
+/// # Errors
+/// Returns a graph error for missing or duplicate node/edge identities, invalid
+/// endpoints, or entry/exit boundaries. Analysis opacity and budget exhaustion
+/// instead return an incomplete result with provisional facts and blockers.
 pub fn solve<G, A, D>(graph: &G, analysis: &A, budget: Option<usize>) -> SolveOutcome<G, A>
 where
     G: FlowGraph,

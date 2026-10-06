@@ -122,7 +122,7 @@ impl Lattice for MustEquations {
             origins.extend(other_origins);
             true
         });
-        left_blockers.extend(right_blockers.iter().cloned());
+        left_blockers.extend(right_blockers.iter().copied());
         *self != old
     }
 }
@@ -210,11 +210,8 @@ impl AnalysisFacts<'_> {
         let Some(symbolic) = state.symbolic() else { return Fact::known(None) };
         let inputs =
             NormalizationInputs::new(self.hir, self.field, values, self.calls.as_deref(), symbolic);
-        let equation = match witness_equation(&inputs, target, *value) {
-            Ok(equation) => equation,
-            Err(_) => {
-                return Fact::blocked(BTreeSet::from([FactBlocker::OpaqueExpression(*value)]))
-            }
+        let Ok(equation) = witness_equation(&inputs, target, *value) else {
+            return Fact::blocked(BTreeSet::from([FactBlocker::OpaqueExpression(*value)]));
         };
         let Some(exit) = facts.get(&self.cfg.exit()).and_then(|item| item.output.as_ref()) else {
             return Fact::blocked(BTreeSet::from([FactBlocker::MissingExit]));

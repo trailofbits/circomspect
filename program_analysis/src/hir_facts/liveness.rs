@@ -47,7 +47,7 @@ impl Lattice for LiveState {
 
     fn join_assign(&mut self, other: &Self) -> bool {
         match (&mut *self, other) {
-            (Self::Unreachable, Self::Unreachable) | (Self::Reached(_), Self::Unreachable) => false,
+            (Self::Unreachable | Self::Reached(_), Self::Unreachable) => false,
             (state @ Self::Unreachable, Self::Reached(_)) => {
                 *state = other.clone();
                 true
@@ -137,9 +137,6 @@ impl Transfer<LivenessAnalysis<'_>, LiveState, String> for CfgNode {
         let empty = BTreeMap::new();
         let mut complete = true;
         match &self.kind {
-            CfgNodeKind::Evaluate(expression) => {
-                complete &= collect(analysis, *expression, live, &empty);
-            }
             CfgNodeKind::Witness { target, .. } => {
                 let key = key_for_path(analysis.hir, analysis.field, target, &empty);
                 if analysis.observable_outputs.contains(&target.root) || target.component_input {
@@ -190,7 +187,8 @@ impl Transfer<LivenessAnalysis<'_>, LiveState, String> for CfgNode {
                     complete &= collect(analysis, *right, live, &empty);
                 }
             }
-            CfgNodeKind::Branch { condition: expression, .. }
+            CfgNodeKind::Evaluate(expression)
+            | CfgNodeKind::Branch { condition: expression, .. }
             | CfgNodeKind::Return(expression)
             | CfgNodeKind::Assert { condition: expression }
             | CfgNodeKind::DeferredAssert { condition: expression } => {

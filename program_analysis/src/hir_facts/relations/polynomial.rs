@@ -135,9 +135,9 @@ impl SourceForm {
     fn add(self, other: Self) -> Self {
         match (self, other) {
             (Self::Constant, Self::Constant) => Self::Constant,
-            (Self::Constant, Self::Linear)
-            | (Self::Linear, Self::Constant)
-            | (Self::Linear, Self::Linear) => Self::Linear,
+            (Self::Constant | Self::Linear, Self::Linear) | (Self::Linear, Self::Constant) => {
+                Self::Linear
+            }
             (Self::Constant | Self::Linear, Self::Quadratic)
             | (Self::Quadratic, Self::Constant | Self::Linear) => Self::Quadratic,
             (Self::Quadratic, Self::Quadratic)

@@ -374,7 +374,7 @@ impl<'a> Scanner<'a> {
             }
             Effect::Update { target, .. } => self.path(target)?,
             Effect::If { condition, guard, then_block, else_block, .. } => {
-                self.if_effect(*condition, *guard, *then_block, *else_block)?
+                self.if_effect(*condition, *guard, *then_block, *else_block)?;
             }
             Effect::While { condition, guard, body, .. } => {
                 self.control(*guard, |scanner| {
@@ -391,7 +391,7 @@ impl<'a> Scanner<'a> {
                 })?;
             }
             Effect::Return { value, .. } | Effect::AnonymousComponent { expression: value, .. } => {
-                self.expression(*value)?
+                self.expression(*value)?;
             }
             Effect::Assert { condition, .. } => self.expression(*condition)?,
             Effect::DeferredAssert { condition, .. } => {

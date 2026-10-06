@@ -382,9 +382,16 @@ impl ProjectSummaries<'_> {
     ) -> bool {
         let Some(expression) = self.hir().expression(id) else { return true };
         match &expression.kind {
-            ExprKind::Opaque(_) | ExprKind::AnonymousComponent { .. } => true,
-            ExprKind::Call { target: CallTarget::Function(_), .. } => false,
-            ExprKind::Call { .. } => true,
+            ExprKind::Call { target: CallTarget::Function(_), .. }
+            | ExprKind::Number(_)
+            | ExprKind::Array(_)
+            | ExprKind::Tuple(_)
+            | ExprKind::Unary { .. }
+            | ExprKind::Ternary { .. }
+            | ExprKind::Parallel(_) => false,
+            ExprKind::Opaque(_) | ExprKind::AnonymousComponent { .. } | ExprKind::Call { .. } => {
+                true
+            }
             ExprKind::Access(path) => facts.checked_access_bounds(path).is_err(),
             ExprKind::Binary { operator, right, .. } => match operator {
                 BinaryOperator::Divide | BinaryOperator::IntegerDivide | BinaryOperator::Modulo => {
@@ -408,12 +415,6 @@ impl ProjectSummaries<'_> {
                 | BinaryOperator::Subtract
                 | BinaryOperator::Multiply => false,
             },
-            ExprKind::Number(_)
-            | ExprKind::Array(_)
-            | ExprKind::Tuple(_)
-            | ExprKind::Unary { .. }
-            | ExprKind::Ternary { .. }
-            | ExprKind::Parallel(_) => false,
         }
     }
 
@@ -462,8 +463,8 @@ impl ProjectSummaries<'_> {
             return Err(SummaryBlocker::WrongContext);
         }
         self.check_context(context)?;
-        let parameters = context.scalar_seeds(&function.parameters)?;
-        self.with_refined_facts(context, parameters, |cfg, facts| {
+        let parameters = context.scalar_seeds(&function.parameters);
+        self.with_refined_facts(context, &parameters, |cfg, facts| {
             if let Some(failure) = self.invalid_value_use(&function.parameters, context, facts) {
                 return Err(failure.summary_blocker());
             }
@@ -499,14 +500,13 @@ impl ProjectSummaries<'_> {
                 return Err(SummaryBlocker::UnsupportedCallForm);
             };
             let callee = self.call_context(&call, facts)?;
-            let arguments = self.argument_dependencies(function, arguments, facts);
+            let arguments = Self::argument_dependencies(function, arguments, facts);
             calls.insert(expression, ReturnCall { callee, arguments });
         }
         Ok(calls)
     }
 
     fn argument_dependencies(
-        &self,
         function: &Function,
         arguments: &[ExprId],
         facts: &AnalysisFacts<'_>,

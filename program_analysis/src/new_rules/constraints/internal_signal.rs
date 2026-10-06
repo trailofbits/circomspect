@@ -142,13 +142,12 @@ fn reachable(
     result: &mut RuleResult,
 ) -> bool {
     let reachable = context.facts().reachable_node(node.id);
-    match reachable.certified() {
-        Some(value) => *value,
-        None => {
-            let reason =
-                AbstentionReason::LocalFacts(reachable.unavailable().cloned().unwrap_or_default());
-            abstain(context, result, RuleKind::UnconstrainedSignal, span, reason);
-            false
-        }
+    if let Some(value) = reachable.certified() {
+        *value
+    } else {
+        let reason =
+            AbstentionReason::LocalFacts(reachable.unavailable().cloned().unwrap_or_default());
+        abstain(context, result, RuleKind::UnconstrainedSignal, span, reason);
+        false
     }
 }

@@ -91,7 +91,9 @@ fn output_path(context: &RuleContext<'_, '_, '_>, proof: &ProjectOutputUse) -> O
         let symbol = context.hir().symbol(step.target().root)?;
         let mut segment = symbol.name.clone();
         for index in step.indices() {
-            segment.push_str(&format!("[{index}]"));
+            segment.push('[');
+            segment.push_str(&index.to_string());
+            segment.push(']');
         }
         segments.push(segment);
         if position + 1 < steps.len() {
@@ -102,7 +104,9 @@ fn output_path(context: &RuleContext<'_, '_, '_>, proof: &ProjectOutputUse) -> O
     let symbol = context.hir().symbol(proof.handle().path().terminal)?;
     let mut output = symbol.name.clone();
     for index in proof.output_indices()? {
-        output.push_str(&format!("[{index}]"));
+        output.push('[');
+        output.push_str(&index.to_string());
+        output.push(']');
     }
     segments.push(output);
     Some(OutputPath { name: segments.join("."), ancestors })

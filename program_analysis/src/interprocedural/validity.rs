@@ -69,24 +69,26 @@ impl ProjectSummaries<'_> {
     fn node_definitely_fails(&self, kind: &CfgNodeKind, facts: &AnalysisFacts<'_>) -> bool {
         match kind {
             CfgNodeKind::Assert { condition } | CfgNodeKind::DeferredAssert { condition } => {
-                self.proven_zero(*condition, facts)
+                Self::proven_zero(*condition, facts)
             }
             CfgNodeKind::Evaluate(expression) => {
                 self.expression_definitely_fails(*expression, facts)
             }
             CfgNodeKind::Declaration { symbol } => facts
                 .checked_symbol_dimensions(*symbol)
-                .is_err_and(|e| e.proves_invalid_execution()),
+                .is_err_and(crate::hir_facts::AccessHandleError::proves_invalid_execution),
             CfgNodeKind::Assignment { target, .. }
             | CfgNodeKind::DeferredAssignment { target, .. }
             | CfgNodeKind::OpaqueAssignment { target, .. }
             | CfgNodeKind::Witness { target, .. }
             | CfgNodeKind::Instantiate { target, .. }
-            | CfgNodeKind::Update { target, .. } => {
-                facts.checked_access_bounds(target).is_err_and(|e| e.proves_invalid_execution())
-            }
+            | CfgNodeKind::Update { target, .. } => facts
+                .checked_access_bounds(target)
+                .is_err_and(crate::hir_facts::AccessHandleError::proves_invalid_execution),
             CfgNodeKind::Constraint { target, .. } => target.as_ref().is_some_and(|target| {
-                facts.checked_access_bounds(target).is_err_and(|e| e.proves_invalid_execution())
+                facts
+                    .checked_access_bounds(target)
+                    .is_err_and(crate::hir_facts::AccessHandleError::proves_invalid_execution)
             }),
             CfgNodeKind::Entry
             | CfgNodeKind::Exit
@@ -102,7 +104,9 @@ impl ProjectSummaries<'_> {
     fn expression_definitely_fails(&self, expression: ExprId, facts: &AnalysisFacts<'_>) -> bool {
         let Some(expression) = self.hir().expression(expression) else { return false };
         if let ExprKind::Access(path) = &expression.kind {
-            return facts.checked_access_bounds(path).is_err_and(|e| e.proves_invalid_execution());
+            return facts
+                .checked_access_bounds(path)
+                .is_err_and(crate::hir_facts::AccessHandleError::proves_invalid_execution);
         }
         if let ExprKind::Binary {
             operator:
@@ -111,7 +115,7 @@ impl ProjectSummaries<'_> {
             ..
         } = &expression.kind
         {
-            return self.proven_zero(*right, facts);
+            return Self::proven_zero(*right, facts);
         }
         false
     }
@@ -216,7 +220,7 @@ impl ProjectSummaries<'_> {
         self.context_for(definition, arguments).ok()
     }
 
-    fn proven_zero(&self, expression: ExprId, facts: &AnalysisFacts<'_>) -> bool {
+    fn proven_zero(expression: ExprId, facts: &AnalysisFacts<'_>) -> bool {
         let value = facts.range(expression);
         let Some(Range::Exact(value)) = value.certified() else { return false };
         value.as_bigint().is_zero()

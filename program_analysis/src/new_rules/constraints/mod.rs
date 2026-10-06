@@ -21,6 +21,7 @@ pub const KINDS: &[RuleKind] = &[
 ];
 
 /// Constraint rules enter the registry in this family's declared order.
+#[must_use]
 pub fn rules() -> &'static [&'static dyn Rule] {
     &[&SignalAssignment, &RedundantWitness, &UnconstrainedSignal]
 }

@@ -129,7 +129,7 @@ impl ShapeValidator<'_, '_> {
                 let ExprKind::Access(path) = &self.facts.hir().expression(*id)?.kind else {
                     return None;
                 };
-                self.access_rank(path).err().map(|error| self.failure(path, error))
+                self.access_rank(path).err().map(|error| Self::failure(path, error))
             }
             CfgNodeKind::Assignment { target, value, operator }
             | CfgNodeKind::DeferredAssignment { target, value, operator }
@@ -137,11 +137,11 @@ impl ShapeValidator<'_, '_> {
                 self.assignment_failure(target, *value, *operator)
             }
             CfgNodeKind::Update { target, .. } => match self.access_rank(target) {
-                Err(error) => Some(self.failure(target, error)),
+                Err(error) => Some(Self::failure(target, error)),
                 Ok(Some(rank)) if rank > 0 => {
-                    Some(self.failure(target, ShapeError::AggregateUpdate))
+                    Some(Self::failure(target, ShapeError::AggregateUpdate))
                 }
-                Ok(Some(_)) | Ok(None) => None,
+                Ok(Some(_) | None) => None,
             },
             CfgNodeKind::Entry
             | CfgNodeKind::Exit
@@ -160,7 +160,7 @@ impl ShapeValidator<'_, '_> {
         }
     }
 
-    fn failure(&self, path: &AccessPath, error: ShapeError) -> ShapeFailure {
+    fn failure(path: &AccessPath, error: ShapeError) -> ShapeFailure {
         ShapeFailure { subject: FailureSubject::ValueUse(path.root), span: path.span, error }
     }
 
@@ -171,17 +171,17 @@ impl ShapeValidator<'_, '_> {
         operator: AssignmentOperator,
     ) -> Option<ShapeFailure> {
         let target_rank = match self.target_rank(target) {
-            Err(error) => return Some(self.failure(target, error)),
+            Err(error) => return Some(Self::failure(target, error)),
             Ok(rank) => rank?,
         };
         if operator != AssignmentOperator::Assign && target_rank > 0 {
-            return Some(self.failure(target, ShapeError::AggregateUpdate));
+            return Some(Self::failure(target, ShapeError::AggregateUpdate));
         }
         let value_rank = self.expression_rank(value, 0)?;
         if target_rank == value_rank {
             return None;
         }
-        let mut failure = self.failure(target, ShapeError::AssignmentRank);
+        let mut failure = Self::failure(target, ShapeError::AssignmentRank);
         if crate::hir_facts::deferred_scalar_target(self.facts.hir(), target) {
             failure.subject = FailureSubject::ScalarAssignment(value);
             failure.span = self.facts.hir().expression(value)?.span;

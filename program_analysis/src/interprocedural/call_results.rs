@@ -23,7 +23,7 @@ impl ProjectSummaries<'_> {
     pub(super) fn with_refined_facts<T>(
         &self,
         context: &CallContext,
-        parameters: BTreeMap<SymbolId, FieldValue>,
+        parameters: &BTreeMap<SymbolId, FieldValue>,
         work: impl FnOnce(&DefinitionCfg, &AnalysisFacts<'_>) -> Result<T, SummaryBlocker>,
     ) -> Result<T, SummaryBlocker> {
         let facts = self.refined_facts(context, parameters, None)?;
@@ -33,7 +33,7 @@ impl ProjectSummaries<'_> {
     pub(super) fn refined_facts<'a>(
         &'a self,
         context: &CallContext,
-        parameters: BTreeMap<SymbolId, FieldValue>,
+        parameters: &BTreeMap<SymbolId, FieldValue>,
         budget: Option<usize>,
     ) -> Result<AnalysisFacts<'a>, SummaryBlocker> {
         const MAX_REFINEMENTS: usize = 64;
@@ -41,7 +41,7 @@ impl ProjectSummaries<'_> {
         let definition = context.definition();
         let mut calls = ScalarExpressionEvidence::empty(self.hir(), context, self.curve().clone());
         for _ in 0..MAX_REFINEMENTS {
-            let cfg = build_cfg_with_exact_calls(self.hir(), definition, &calls, &parameters)
+            let cfg = build_cfg_with_exact_calls(self.hir(), definition, &calls, parameters)
                 .map_err(|error| SummaryBlocker::LocalAnalysis(format!("{error:?}")))?;
             let facts = analyze_owned_with_scalar_calls(
                 self.hir(),

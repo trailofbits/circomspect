@@ -29,7 +29,13 @@ impl RuleKind {
     /// both describe field-element arithmetic behavior under legacy `CS0004`.
     #[must_use]
     pub const fn code(self) -> ReportCode {
-        use RuleKind::*;
+        use crate::new_rules::RuleKind::{
+            BitwiseComplement, FieldArithmetic, Bn254SpecificCircuit, ConstantConditional,
+            FieldComparison, NonstrictBinaryConversion, UnconstrainedDivision, SignalAssignment,
+            RedundantWitnessAssignment, UnconstrainedSignal, UnconstrainedLessThan,
+            UnusedVariableValue, UnusedParameterValue, SideEffectFreeAssignment,
+            UnusedOutputSignal, Complexity, TooManyArguments, IncompleteCoverage,
+        };
         match self {
             BitwiseComplement | FieldArithmetic => ReportCode::FieldElementArithmetic,
             Bn254SpecificCircuit => ReportCode::Bn254SpecificCircuit,
@@ -53,7 +59,14 @@ impl RuleKind {
 
     #[must_use]
     pub const fn category(self) -> MessageCategory {
-        use RuleKind::*;
+        use crate::new_rules::RuleKind::{
+            BitwiseComplement, FieldArithmetic, FieldComparison, Bn254SpecificCircuit,
+            ConstantConditional, NonstrictBinaryConversion, UnconstrainedDivision,
+            SignalAssignment, RedundantWitnessAssignment, UnconstrainedSignal,
+            UnconstrainedLessThan, UnusedVariableValue, UnusedParameterValue,
+            SideEffectFreeAssignment, UnusedOutputSignal, Complexity, TooManyArguments,
+            IncompleteCoverage,
+        };
         match self {
             BitwiseComplement | FieldArithmetic | FieldComparison => MessageCategory::Info,
             Bn254SpecificCircuit

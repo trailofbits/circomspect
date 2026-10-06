@@ -43,7 +43,7 @@ impl Lattice for DemandState {
 
     fn join_assign(&mut self, other: &Self) -> bool {
         match (&mut *self, other) {
-            (Self::Unreachable, Self::Unreachable) | (Self::Reached(_), Self::Unreachable) => false,
+            (Self::Unreachable | Self::Reached(_), Self::Unreachable) => false,
             (state @ Self::Unreachable, Self::Reached(_)) => {
                 *state = other.clone();
                 true

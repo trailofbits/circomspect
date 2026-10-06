@@ -12,6 +12,7 @@ use crate::hir_facts::access::key_for_path;
 use crate::hir_facts::liveness::LiveState;
 use crate::hir_facts::{AnalysisFacts, Fact, FactBlocker, VisitAccesses};
 
+#[derive(Clone, Copy)]
 pub(super) enum ReadScope {
     Handle,
     Parameter,
@@ -82,7 +83,7 @@ impl AnalysisFacts<'_> {
     }
 
     pub(super) fn read_path(&self, path: &AccessPath, scope: ReadScope) -> Fact<bool> {
-        let blockers = self.read_blockers(path, &scope);
+        let blockers = self.read_blockers(path, scope);
         if !blockers.is_empty() {
             return Fact::blocked(blockers);
         }
@@ -112,7 +113,7 @@ impl AnalysisFacts<'_> {
         }
     }
 
-    fn read_blockers(&self, path: &AccessPath, scope: &ReadScope) -> BTreeSet<FactBlocker> {
+    fn read_blockers(&self, path: &AccessPath, scope: ReadScope) -> BTreeSet<FactBlocker> {
         let mut blockers = self.backward_blockers_query(path, true);
         if let ReadScope::Parameter = scope {
             blockers.remove(&FactBlocker::AggregateAccess);

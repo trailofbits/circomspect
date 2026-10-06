@@ -169,13 +169,12 @@ impl ProjectSummaries<'_> {
             if !facts.cfg().owns_symbol(component.symbol) {
                 continue;
             }
-            self.check_component_complete(facts, component)?;
+            Self::check_component_complete(facts, component)?;
         }
         Ok(())
     }
 
     fn check_component_complete(
-        &self,
         facts: &AnalysisFacts<'_>,
         component: &parser::hir::Component,
     ) -> Result<(), SummaryBlocker> {

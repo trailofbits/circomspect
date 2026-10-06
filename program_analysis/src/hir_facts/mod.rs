@@ -204,7 +204,10 @@ pub struct AnalysisFacts<'a> {
     deferred_branches: OnceLock<Vec<NodeId>>,
 }
 
-/// Compute local facts. External summaries are unavailable until Phase 5.
+/// Compute local facts without external call evidence.
+///
+/// # Errors
+/// Returns an error when the CFG, HIR, or initial analysis state cannot be validated.
 pub fn analyze<'a>(
     hir: &'a HirProject,
     cfg: &'a DefinitionCfg,
@@ -801,14 +804,13 @@ impl AnalysisFacts<'_> {
                     Blocker::PendingNode(node) if self.can_reach_any(*node, &sites) => {
                         blockers.insert(FactBlocker::Budget(*node));
                     }
-                    Blocker::PendingNode(_) => {}
                     Blocker::OpaqueNode { node, reason }
                         if self.can_reach_any(*node, &sites)
                             && uses.iter().any(|path| self.opaque_relevant(*node, path)) =>
                     {
                         blockers.insert(FactBlocker::OpaqueNode(*node, reason.clone()));
                     }
-                    Blocker::OpaqueNode { .. } => {}
+                    Blocker::PendingNode(_) | Blocker::OpaqueNode { .. } => {}
                     Blocker::OpaqueEdge { edge, reason } => {
                         if self
                             .cfg
@@ -898,10 +900,10 @@ impl AnalysisFacts<'_> {
         let mut found = false;
         for id in self.cfg.nodes() {
             let Some(node) = self.cfg.node(*id) else { continue };
-            let (target, operator) = match &node.kind {
-                CfgNodeKind::DeferredAssignment { target, operator, .. }
-                | CfgNodeKind::Assignment { target, operator, .. } => (target, operator),
-                _ => continue,
+            let (CfgNodeKind::DeferredAssignment { target, operator, .. }
+            | CfgNodeKind::Assignment { target, operator, .. }) = &node.kind
+            else {
+                continue;
             };
             if target.root != symbol || self.site_state(*id).is_none() {
                 continue;
@@ -971,10 +973,12 @@ impl AnalysisFacts<'_> {
             Some(parser::hir::SymbolKind::Variable) => {
                 variables.insert(path.root);
             }
-            Some(parser::hir::SymbolKind::Signal)
-            | Some(parser::hir::SymbolKind::Component)
-            | Some(parser::hir::SymbolKind::Bus)
-            | Some(parser::hir::SymbolKind::Tag)
+            Some(
+                parser::hir::SymbolKind::Signal
+                | parser::hir::SymbolKind::Component
+                | parser::hir::SymbolKind::Bus
+                | parser::hir::SymbolKind::Tag,
+            )
             | None => {}
         });
         for variable in variables {
@@ -1269,7 +1273,6 @@ impl AnalysisFacts<'_> {
                 {
                     blockers.insert(FactBlocker::Budget(*node));
                 }
-                Blocker::PendingNode(_) => {}
                 Blocker::OpaqueEdge { edge, reason } => {
                     if self.cfg.edge(*edge).map_or(true, |item| {
                         !potential_sites.is_empty()
@@ -1287,7 +1290,7 @@ impl AnalysisFacts<'_> {
                         blockers.insert(FactBlocker::OpaqueNode(*node, reason.clone()));
                     }
                 }
-                Blocker::OpaqueNode { .. } => {}
+                Blocker::PendingNode(_) | Blocker::OpaqueNode { .. } => {}
             }
         }
         blockers

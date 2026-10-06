@@ -6,6 +6,7 @@ use std::fmt::Debug;
 pub struct NodeId(usize);
 
 impl NodeId {
+    #[must_use]
     pub const fn new(index: usize) -> Self {
         Self(index)
     }
@@ -15,6 +16,7 @@ impl NodeId {
 pub struct EdgeId(usize);
 
 impl EdgeId {
+    #[must_use]
     pub const fn new(index: usize) -> Self {
         Self(index)
     }
@@ -67,6 +69,9 @@ pub struct IndexedGraph<N, E> {
 
 impl<N, E> IndexedGraph<N, E> {
     /// Validate every endpoint and boundary before creating a graph.
+    ///
+    /// # Errors
+    /// Returns the edge or boundary whose node index is outside `nodes`.
     pub fn new(
         nodes: Vec<N>,
         edges: Vec<(NodeId, NodeId, E)>,
