@@ -22,6 +22,8 @@ mod constraint_relation;
 mod bit_decomposition;
 mod constructor_readiness;
 mod called_port;
+mod comparator_range;
+pub use crate::interprocedural::comparator_range::ComparatorRangeViolation;
 
 pub(crate) use crate::interprocedural::constructor_readiness::ValidatedConstructorReads;
 

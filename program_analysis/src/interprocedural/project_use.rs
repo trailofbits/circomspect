@@ -32,9 +32,10 @@ enum OutputTarget {
 }
 
 #[derive(Clone, Copy)]
-enum MainSourceScope {
+enum MainSourceScope<'a> {
     WholeProject,
     ModelDefinitions,
+    CompletedModel(&'a crate::interprocedural::constructor_readiness::CompletedTemplate),
 }
 
 /// A project-wide output-use result for one bounded main-rooted instance chain.
@@ -461,16 +462,33 @@ impl ProjectSummaries<'_> {
         self.check_main_identity(facts, main, MainSourceScope::ModelDefinitions)
     }
 
+    pub(super) fn check_completed_model_main(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        main: &ContextEvidence,
+        completed: &crate::interprocedural::constructor_readiness::CompletedTemplate,
+    ) -> Result<(), SummaryBlocker> {
+        if !completed.matches(facts) {
+            return Err(SummaryBlocker::WrongContext);
+        }
+        self.check_main_identity(facts, main, MainSourceScope::CompletedModel(completed))
+    }
+
     fn check_main_identity(
         &self,
         facts: &AnalysisFacts<'_>,
         main: &ContextEvidence,
-        source: MainSourceScope,
+        source: MainSourceScope<'_>,
     ) -> Result<(), SummaryBlocker> {
         self.check_facts_for_evidence(facts, main)?;
         let complete = match source {
             MainSourceScope::WholeProject => self.source_complete(),
-            MainSourceScope::ModelDefinitions => self.model_source_complete(facts.definition()),
+            MainSourceScope::ModelDefinitions => {
+                self.model_source_complete(facts.definition(), None)
+            }
+            MainSourceScope::CompletedModel(completed) => {
+                self.model_source_complete(facts.definition(), Some(completed))
+            }
         };
         if !complete || self.hir().mains().len() != 1 {
             return Err(SummaryBlocker::ExternalSummary);

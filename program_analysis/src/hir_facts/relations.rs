@@ -2,6 +2,7 @@
 
 mod ambiguity;
 mod assignment;
+pub(crate) use crate::hir_facts::relations::assignment::GeneratedInputEquation;
 mod complete;
 mod completion;
 mod decomposition;
@@ -358,6 +359,20 @@ impl AnalysisFacts<'_> {
         self.relation_access_blockers_for(source, site, None)
     }
 
+    // Exact scalar parameters are substituted by the same site environment used
+    // for normalization; they do not denote generated signal storage.
+    fn constant_relation_parameter(&self, path: &parser::hir::AccessPath, site: NodeId) -> bool {
+        if path.root != path.terminal
+            || !path.steps.is_empty()
+            || !self.specialized_parameters.contains(&path.root)
+        {
+            return false;
+        }
+        self.site_state(site)
+            .and_then(ForwardState::variables)
+            .is_some_and(|values| values.contains_key(&path.root))
+    }
+
     fn relation_access_blockers_for(
         &self,
         source: &impl VisitAccesses,
@@ -369,6 +384,9 @@ impl AnalysisFacts<'_> {
             self.hir,
             &|expression| self.exact_call_value(expression).is_some(),
             &mut |path| {
+                if self.constant_relation_parameter(path, site) {
+                    return;
+                }
                 let fact = match ports {
                     Some(ports) => self.exact_closed_component_key(path, site, ports),
                     None => self.exact_access_key_at(path, site),

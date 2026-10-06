@@ -11,11 +11,15 @@ mod handles;
 mod liveness;
 mod purity;
 mod relations;
+mod source_assignment;
 mod use_queries;
 mod walk;
 mod write_validity;
 #[cfg(test)]
 mod range_tests;
+
+pub(crate) use crate::hir_facts::relations::GeneratedInputEquation;
+pub(crate) use crate::hir_facts::source_assignment::{DescribeSignalAssignment, SourceSignalAssignment};
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};

@@ -353,7 +353,11 @@ impl<'a> ProjectSummaries<'a> {
             && self.lifted.incomplete.is_empty()
     }
 
-    pub(super) fn model_source_complete(&self, active: DefinitionRef) -> bool {
+    pub(super) fn model_source_complete(
+        &self,
+        active: DefinitionRef,
+        completed: Option<&crate::interprocedural::constructor_readiness::CompletedTemplate>,
+    ) -> bool {
         if !self.lifted.syntax_diagnostics.is_empty() {
             return false;
         }
@@ -366,10 +370,14 @@ impl<'a> ProjectSummaries<'a> {
         for region in &self.lifted.incomplete {
             let scoped = match &region.reason {
                 IncompleteReason::Syntax | IncompleteReason::Include => false,
+                IncompleteReason::UnknownType => region.span().is_some_and(|span| {
+                    self.other_definition_body_contains(span, &connected)
+                        || completed
+                            .is_some_and(|completed| self.completed_body_contains(span, completed))
+                }),
                 IncompleteReason::MissingReference(_)
                 | IncompleteReason::AmbiguousReference(_)
                 | IncompleteReason::WrongKind(_)
-                | IncompleteReason::UnknownType
                 | IncompleteReason::UnknownSymbol(_)
                 | IncompleteReason::NonCompileTime
                 | IncompleteReason::InvalidAssignment
@@ -382,6 +390,23 @@ impl<'a> ProjectSummaries<'a> {
             }
         }
         true
+    }
+
+    fn completed_body_contains(
+        &self,
+        span: Span,
+        completed: &crate::interprocedural::constructor_readiness::CompletedTemplate,
+    ) -> bool {
+        for template in self.hir().templates() {
+            if !completed.contains_checked_definition(DefinitionRef::Template(template.id)) {
+                continue;
+            }
+            let Some(body) = self.hir().block(template.body) else { continue };
+            if SourceScope::from_span(body.span).contains(span) {
+                return true;
+            }
+        }
+        false
     }
 
     fn connected_definitions(&self, active: DefinitionRef) -> BTreeSet<DefinitionRef> {

@@ -236,6 +236,28 @@ impl AnalysisFacts<'_> {
         }
     }
 
+    /// Compare one source read with a checked handle using that read's exact
+    /// scalar environment. This reports aliasing and does not validate a handle.
+    pub(crate) fn handle_relation_at(
+        &self,
+        handle: &AccessHandle,
+        path: &AccessPath,
+        site: abstract_interpretation::graph::NodeId,
+    ) -> InstanceRelation {
+        let Some(values) = self.site_state(site).and_then(|state| state.variables()) else {
+            return InstanceRelation::Possible;
+        };
+        let requested = key_for_path(self.hir, self.field, handle.path(), values);
+        let actual = key_for_path(self.hir, self.field, path, values);
+        if requested.exact_alias(&actual) {
+            InstanceRelation::Exact
+        } else if requested.may_alias(&actual) {
+            InstanceRelation::Possible
+        } else {
+            InstanceRelation::Separate
+        }
+    }
+
     pub(crate) fn instance_relation(
         &self,
         handle: &AccessHandle,
@@ -321,7 +343,8 @@ impl AnalysisFacts<'_> {
         port: PortId,
         port_indices: &[usize],
     ) -> Result<AccessHandle, AccessHandleError> {
-        let mut path = self.component_port_prefix(component, component_indices, port)?;
+        let mut path =
+            self.component_port_prefix(component, component_indices, port, PortDirection::Output)?;
         let terminal = self.hir.symbol(path.terminal).ok_or(AccessHandleError::ForeignPort)?;
         path.steps.extend(self.checked_indices(terminal, port_indices)?);
         Ok(AccessHandle {
@@ -341,6 +364,27 @@ impl AnalysisFacts<'_> {
         component_indices: &[usize],
         local: &AccessHandle,
     ) -> Result<AccessHandle, AccessHandleError> {
+        self.component_port_from_local(component, component_indices, local, PortDirection::Output)
+    }
+
+    /// Combine a checked caller instance with an input checked in its callee context.
+    /// The provider must bind the local handle to the exact source call first.
+    pub(crate) fn component_input_from_local(
+        &self,
+        component: ComponentId,
+        component_indices: &[usize],
+        local: &AccessHandle,
+    ) -> Result<AccessHandle, AccessHandleError> {
+        self.component_port_from_local(component, component_indices, local, PortDirection::Input)
+    }
+
+    fn component_port_from_local(
+        &self,
+        component: ComponentId,
+        component_indices: &[usize],
+        local: &AccessHandle,
+        direction: PortDirection,
+    ) -> Result<AccessHandle, AccessHandleError> {
         let DefinitionRef::Template(template) = local.definition else {
             return Err(AccessHandleError::ForeignPort);
         };
@@ -353,7 +397,8 @@ impl AnalysisFacts<'_> {
             .iter()
             .find_map(|id| self.hir.port(*id).filter(|port| port.symbol == local.path.root))
             .ok_or(AccessHandleError::ForeignPort)?;
-        let mut path = self.component_port_prefix(component, component_indices, port.id)?;
+        let mut path =
+            self.component_port_prefix(component, component_indices, port.id, direction)?;
         path.steps.extend(local.path.steps.iter().cloned());
         Ok(AccessHandle {
             definition: self.cfg.definition(),
@@ -369,6 +414,7 @@ impl AnalysisFacts<'_> {
         component: ComponentId,
         component_indices: &[usize],
         port: PortId,
+        direction: PortDirection,
     ) -> Result<AccessPath, AccessHandleError> {
         let component = self.hir.component(component).ok_or(AccessHandleError::ForeignComponent)?;
         if !self.cfg.owns_symbol(component.symbol) {
@@ -382,7 +428,7 @@ impl AnalysisFacts<'_> {
             return Err(AccessHandleError::PortNotInTemplate);
         }
         let port = self.hir.port(port).ok_or(AccessHandleError::PortNotInTemplate)?;
-        if port.direction != Some(PortDirection::Output) {
+        if port.direction != Some(direction) {
             return Err(AccessHandleError::NotOutput);
         }
         if let PortSchema::Opaque(_) = port.schema {
@@ -397,8 +443,8 @@ impl AnalysisFacts<'_> {
             root: root.id,
             steps,
             terminal: terminal.id,
-            component_input: false,
-            component_output: true,
+            component_input: direction == PortDirection::Input,
+            component_output: direction == PortDirection::Output,
             span: component.span,
         })
     }

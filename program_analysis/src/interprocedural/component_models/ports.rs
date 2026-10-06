@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use crate::hir_facts::{AccessKey, AnalysisFacts};
-use crate::interprocedural::input_relation::{InputPortElement, ReadyInstanceAtUse};
+use crate::interprocedural::input_relation::{CheckedInputSchema, InputPortElement, ReadyInstanceAtUse};
 use crate::interprocedural::output_enumeration::EnumeratedComponentInstance;
 use crate::interprocedural::summary::certified;
 use crate::interprocedural::{AppliedComponentPort, ContextEvidence, SummaryBlocker};
@@ -20,6 +20,7 @@ pub(crate) struct ValidatedComponentPorts {
     evidence: ContextEvidence,
     outputs: Vec<CheckedOutput>,
     inputs: BTreeMap<InputPortElement, AccessKey>,
+    input_aliases: BTreeMap<AccessKey, AccessKey>,
 }
 
 impl ValidatedComponentPorts {
@@ -29,22 +30,7 @@ impl ValidatedComponentPorts {
         instance: &EnumeratedComponentInstance,
         ready: &ReadyInstanceAtUse,
     ) -> Result<Self, SummaryBlocker> {
-        let mut outputs = Vec::new();
-        for output in &instance.outputs {
-            let applied = output.applied_port();
-            let (port, indices) =
-                applied.handle().output_port().ok_or(SummaryBlocker::WrongInstance)?;
-            let handle = child
-                .port_handle(port, &indices)
-                .map_err(|_| SummaryBlocker::UnsupportedContext)?;
-            outputs.push(CheckedOutput {
-                caller: certified(&caller.applied_component_key(applied))?.clone(),
-                callee: certified(&child.exact_handle_key(&handle))?.clone(),
-                applied: applied.clone(),
-            });
-        }
-        let first = outputs.first().ok_or(SummaryBlocker::WrongInstance)?;
-        let evidence = first.applied.caller_evidence().clone();
+        let (evidence, outputs) = checked_outputs(caller, child, instance)?;
         let mut inputs = BTreeMap::new();
         for port in ready.bindings().keys() {
             let handle = child
@@ -52,7 +38,42 @@ impl ValidatedComponentPorts {
                 .map_err(|_| SummaryBlocker::UnsupportedContext)?;
             inputs.insert(port.clone(), certified(&child.exact_handle_key(&handle))?.clone());
         }
-        Ok(Self { evidence, outputs, inputs })
+        Ok(Self { evidence, outputs, inputs, input_aliases: BTreeMap::new() })
+    }
+
+    pub(in crate::interprocedural) fn from_schema(
+        caller: &AnalysisFacts<'_>,
+        child: &AnalysisFacts<'_>,
+        instance: &EnumeratedComponentInstance,
+        schema: CheckedInputSchema,
+    ) -> Result<Self, SummaryBlocker> {
+        let inputs = schema.into_elements(caller, child, instance)?;
+        let (evidence, outputs) = checked_outputs(caller, child, instance)?;
+        let mut ports =
+            Self { evidence, outputs, inputs: BTreeMap::new(), input_aliases: BTreeMap::new() };
+        for (element, (parent, local)) in inputs {
+            ports.inputs.insert(element, local.clone());
+            ports.input_aliases.insert(parent, local);
+        }
+        Ok(ports)
+    }
+
+    pub(crate) fn contains_access(&self, key: &AccessKey) -> bool {
+        self.contains_output(key) || self.input_aliases.contains_key(key)
+    }
+
+    pub(in crate::interprocedural) fn input_elements(
+        &self,
+    ) -> impl Iterator<Item = &InputPortElement> {
+        self.inputs.keys()
+    }
+
+    pub(in crate::interprocedural) fn input_element(
+        &self,
+        caller: &AccessKey,
+    ) -> Option<&InputPortElement> {
+        let child = self.input_aliases.get(caller)?;
+        self.inputs.iter().find_map(|(element, key)| (key == child).then_some(element))
     }
 
     pub(crate) fn evidence(&self) -> &ContextEvidence {
@@ -63,11 +84,41 @@ impl ValidatedComponentPorts {
         self.outputs.iter().any(|output| &output.caller == key)
     }
 
-    pub(super) fn child_key(&self, parent: &AccessKey) -> Option<&AccessKey> {
+    pub(in crate::interprocedural) fn child_key(&self, parent: &AccessKey) -> Option<&AccessKey> {
         self.outputs.iter().find_map(|output| (output.caller == *parent).then_some(&output.callee))
     }
 
-    pub(super) fn input_key(&self, port: &InputPortElement) -> Option<&AccessKey> {
+    pub(in crate::interprocedural) fn parent_key(&self, child: &AccessKey) -> Option<&AccessKey> {
+        self.outputs.iter().find_map(|output| (&output.callee == child).then_some(&output.caller))
+    }
+
+    pub(in crate::interprocedural) fn input_key(
+        &self,
+        port: &InputPortElement,
+    ) -> Option<&AccessKey> {
         self.inputs.get(port)
     }
+}
+
+fn checked_outputs(
+    caller: &AnalysisFacts<'_>,
+    child: &AnalysisFacts<'_>,
+    instance: &EnumeratedComponentInstance,
+) -> Result<(ContextEvidence, Vec<CheckedOutput>), SummaryBlocker> {
+    let mut outputs = Vec::new();
+    for output in &instance.outputs {
+        let applied = output.applied_port();
+        let (port, indices) =
+            applied.handle().output_port().ok_or(SummaryBlocker::WrongInstance)?;
+        let handle =
+            child.port_handle(port, &indices).map_err(|_| SummaryBlocker::UnsupportedContext)?;
+        outputs.push(CheckedOutput {
+            caller: certified(&caller.applied_component_key(applied))?.clone(),
+            callee: certified(&child.exact_handle_key(&handle))?.clone(),
+            applied: applied.clone(),
+        });
+    }
+    let first = outputs.first().ok_or(SummaryBlocker::WrongInstance)?;
+    let evidence = first.applied.caller_evidence().clone();
+    Ok((evidence, outputs))
 }

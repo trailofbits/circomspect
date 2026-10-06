@@ -16,7 +16,7 @@ use crate::hir_facts::{
     forward_pruned_edges, AccessHandle, AccessKey, AnalysisFacts, Fact, FactBlocker,
     SignalReadIssue, VisitAccesses, WitnessWriteIssue,
 };
-use crate::interprocedural::{ContextEvidence, ValidatedConstructorReads};
+use crate::interprocedural::{ContextEvidence, ValidatedComponentPorts, ValidatedConstructorReads};
 
 /// Proof that one exact target has no repeated body witness write in this scope.
 /// Incoming component input initialization is outside this certificate's claim.
@@ -235,14 +235,14 @@ struct ReadCheck<'a> {
     uncertain: &'a [UncertainWrite],
     blockers: &'a mut BTreeSet<FactBlocker>,
     constructor: &'a dyn Fn(ExprId) -> bool,
-    output: &'a dyn Fn(&AccessPath) -> bool,
+    output: &'a dyn Fn(&AccessPath, NodeId) -> bool,
 }
 
 impl AnalysisFacts<'_> {
     /// Require every reachable signal read to have a prior exact body write
     /// or an input-port initialization; input-port writes are invalid.
     pub(crate) fn body_signal_reads_ready(&self) -> Fact<()> {
-        self.body_signal_reads_ready_by(&|_| false, &|_| false)
+        self.body_signal_reads_ready_by(&|_| false, &|_, _| false)
     }
 
     /// Permit only provider-validated constructors bound to these exact source facts.
@@ -253,15 +253,15 @@ impl AnalysisFacts<'_> {
         if self.evidence_binding.as_ref() != Some(constructors.evidence()) {
             return Fact::blocked(BTreeSet::from([FactBlocker::ForeignQuery]));
         }
-        self.body_signal_reads_ready_by(&|call| constructors.contains(call), &|path| {
-            constructors.allows_output(self, path)
+        self.body_signal_reads_ready_by(&|call| constructors.contains(call), &|path, site| {
+            constructors.allows_output(self, path, site)
         })
     }
 
     fn body_signal_reads_ready_by(
         &self,
         constructor: &dyn Fn(ExprId) -> bool,
-        output: &dyn Fn(&AccessPath) -> bool,
+        output: &dyn Fn(&AccessPath, NodeId) -> bool,
     ) -> Fact<()> {
         let solved = match self.solve_body_writes() {
             Ok(result) => result,
@@ -339,7 +339,7 @@ impl AnalysisFacts<'_> {
     }
 
     fn path_read_blockers(&self, path: &AccessPath, check: &mut ReadCheck<'_>) {
-        if (check.output)(path) {
+        if (check.output)(path, check.site) {
             return;
         }
         let Some(symbol) = self.hir.symbol(path.terminal) else {
@@ -502,6 +502,24 @@ impl AnalysisFacts<'_> {
             Ok(result) => result,
             Err(blockers) => return Fact::blocked(blockers.clone()),
         };
+        self.no_repeated_writes_in(solved)
+    }
+
+    /// Refine only provider-checked component targets before the same write analysis.
+    pub(crate) fn no_possible_repeated_body_writes_with(
+        &self,
+        ports: &ValidatedComponentPorts,
+    ) -> Fact<()> {
+        if self.evidence_binding.as_ref() != Some(ports.evidence()) {
+            return Fact::blocked(BTreeSet::from([FactBlocker::ForeignQuery]));
+        }
+        match self.compute_body_writes_with(Some(ports)) {
+            Ok(solved) => self.no_repeated_writes_in(&solved),
+            Err(blockers) => Fact::blocked(blockers),
+        }
+    }
+
+    fn no_repeated_writes_in(&self, solved: &BodyWriteSolve) -> Fact<()> {
         let Some(WriteState::Reached { may_repeat, must_repeat_any, .. }) =
             solved.facts.get(&self.cfg.exit()).and_then(|item| item.output.as_ref())
         else {
@@ -567,6 +585,10 @@ impl AnalysisFacts<'_> {
     }
 
     fn compute_body_writes(&self) -> BodyWriteResult {
+        self.compute_body_writes_with(None)
+    }
+
+    fn compute_body_writes_with(&self, ports: Option<&ValidatedComponentPorts>) -> BodyWriteResult {
         const WRITE_UPDATE_BUDGET: usize = 100_000;
         let mut exact_writes = BTreeMap::new();
         let mut uncertain = Vec::new();
@@ -576,6 +598,9 @@ impl AnalysisFacts<'_> {
             }
             let Some(node) = self.cfg.node(*site) else { continue };
             self.classify_write(*site, &node.kind, &mut exact_writes, &mut uncertain);
+        }
+        if let Some(ports) = ports {
+            self.refine_component_writes(&mut exact_writes, &mut uncertain, ports);
         }
         if let SolveResult::Incomplete { .. } = &self.forward {
             let mut blockers = self.forward_completion_blockers();
@@ -607,6 +632,25 @@ impl AnalysisFacts<'_> {
                 Err(blockers.iter().map(FactBlocker::from).collect())
             }
         }
+    }
+
+    fn refine_component_writes(
+        &self,
+        exact: &mut BTreeMap<NodeId, AccessKey>,
+        uncertain: &mut Vec<UncertainWrite>,
+        ports: &ValidatedComponentPorts,
+    ) {
+        uncertain.retain(|write| {
+            let Some(CfgNodeKind::Witness { target, .. }) =
+                self.cfg.node(write.site).map(|node| &node.kind)
+            else {
+                return true;
+            };
+            let key = self.exact_closed_component_key(target, write.site, ports);
+            let Some(key) = key.certified() else { return true };
+            exact.insert(write.site, key.clone());
+            false
+        });
     }
 
     fn classify_write(

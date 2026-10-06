@@ -299,6 +299,14 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
         self.summaries.component_bit_ambiguity_ports(self.facts, applied, input, bits)
     }
 
+    /// Prove a comparator range violation through the complete three-scope closure.
+    pub fn component_comparator_range(
+        &self,
+        applied: &AppliedComponentPort,
+    ) -> SummaryFact<Vec<crate::interprocedural::ComparatorRangeViolation>> {
+        self.summaries.component_comparator_range(self.facts, applied)
+    }
+
     /// Request a source-valid bit relation in this validated root template scope.
     #[must_use]
     pub fn template_bit_decomposition(

@@ -628,7 +628,7 @@
       "expected": "emit",
       "truth": "confirmed_property",
       "compiler_class": "success",
-      "reason": "constraint-fixed out-of-range input versus witness-only constant",
+      "reason": "BN254 p-254 is fixed by generated equality and is outside [0,256); its nine-bit reconstruction is 1. Circom 2.2.3 accepts the canonical fixture. The historical noncanonical literal reduces to 147946756881789318990833708069417712712 and required an impossible nine-bit reconstruction; legacy observations are retained without recapture.",
       "legacy_rule_id": "CS0014",
       "legacy_observed_count": 1,
       "legacy_analyzed": true,

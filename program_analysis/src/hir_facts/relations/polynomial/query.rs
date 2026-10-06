@@ -3,8 +3,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use num_traits::Signed;
+use num_bigint::BigInt;
 
-use crate::hir_facts::relations::polynomial::{CurveTag, Monomial, NormalizedEquation};
+use crate::hir_facts::relations::polynomial::{
+    CurveTag, Monomial, NormalizedEquation, QuadraticPolynomial,
+};
 use crate::hir_facts::{AccessKey, FieldContext, FieldValue};
 
 /// Why an equation cannot be evaluated against a supplied field assignment.
@@ -19,6 +22,29 @@ pub(crate) enum EquationEvaluationError {
 }
 
 impl NormalizedEquation {
+    /// Compare a field-bound equation with a canonical linear relation.
+    ///
+    /// Coefficients describe an equation equal to zero; scalar multiples and
+    /// rearrangements compare equally through the existing normalization.
+    pub(crate) fn matches_linear_relation(
+        &self,
+        field: &FieldContext,
+        constant: BigInt,
+        terms: &[(AccessKey, i32)],
+    ) -> Result<bool, EquationEvaluationError> {
+        self.check_field(field)?;
+        let mut polynomial = QuadraticPolynomial::zero(field);
+        polynomial.add_term(field, Monomial::Constant, field.canonical(constant));
+        for (key, coefficient) in terms {
+            polynomial.add_term(
+                field,
+                Monomial::Linear(key.clone()),
+                field.canonical((*coefficient).into()),
+            );
+        }
+        Ok(*self == Self::between(polynomial, QuadraticPolynomial::zero(field), field))
+    }
+
     /// Number of stored canonical terms, available without allocating a support set.
     pub(crate) fn term_count(&self) -> usize {
         self.0.terms.len()

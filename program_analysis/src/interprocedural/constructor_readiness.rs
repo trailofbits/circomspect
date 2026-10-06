@@ -8,8 +8,10 @@ use parser::new_frontend::PortDirection;
 
 use crate::hir_cfg::{build_cfg, CfgNodeKind};
 use crate::hir_facts::{AnalysisFacts, InstanceRelation};
+use crate::interprocedural::ValidatedComponentPorts;
 use crate::interprocedural::input_relation::{
     ready_enumerated_instance, ready_model_instance, ReadyInstanceAtUse, ReadyWitnessInputs,
+    ReadyGeneratedInputs,
 };
 use crate::interprocedural::{
     AppliedComponentPort, CallOwner, CallReachability, CallSiteId, ContextEvidence,
@@ -34,7 +36,7 @@ struct ValidatedComponentOutputRead {
 }
 
 impl ValidatedComponentOutputRead {
-    fn matches(&self, facts: &AnalysisFacts<'_>, path: &AccessPath) -> bool {
+    fn matches(&self, facts: &AnalysisFacts<'_>, path: &AccessPath, site: NodeId) -> bool {
         let Some(CfgNodeKind::Evaluate(expression)) =
             facts.cfg().node(self.site).map(|node| &node.kind)
         else {
@@ -48,12 +50,24 @@ impl ValidatedComponentOutputRead {
         self.path == *path
             && source == path
             && facts.reachable_node(self.site).certified() == Some(&true)
-            && facts.handle_relation(self.applied.handle(), path) == InstanceRelation::Exact
+            && facts.handle_relation_at(self.applied.handle(), path, site)
+                == InstanceRelation::Exact
     }
 }
 
 pub(super) struct CompletedTemplate {
     evidence: ContextEvidence,
+    checked_definitions: BTreeSet<DefinitionRef>,
+}
+
+impl CompletedTemplate {
+    pub(super) fn matches(&self, facts: &AnalysisFacts<'_>) -> bool {
+        facts.matches_evidence(&self.evidence)
+    }
+
+    pub(super) fn contains_checked_definition(&self, definition: DefinitionRef) -> bool {
+        self.checked_definitions.contains(&definition)
+    }
 }
 
 enum ChildCompletion {
@@ -78,12 +92,16 @@ impl ValidatedConstructorReads {
         self.calls.contains(&expression)
     }
 
-    /// The input relation has already checked every reachable matching
-    /// `Evaluate` site in this caller's completed CFG. The same access may be
-    /// visited again from its enclosing expression or effect by the generic
-    /// read visitor; this capability covers those visits as well.
-    pub(crate) fn allows_output(&self, facts: &AnalysisFacts<'_>, path: &AccessPath) -> bool {
-        self.outputs.iter().any(|read| read.matches(facts, path))
+    /// Check the current read's indices against a completed child output.
+    /// The same source path may denote different cells after loop expansion;
+    /// enclosing-expression revisits must therefore use their own site values.
+    pub(crate) fn allows_output(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        path: &AccessPath,
+        site: NodeId,
+    ) -> bool {
+        self.outputs.iter().any(|read| read.matches(facts, path, site))
     }
 }
 
@@ -135,6 +153,19 @@ impl ProjectSummaries<'_> {
         instance: &EnumeratedComponentInstance,
         completed: CompletedTemplate,
         ready: &ReadyWitnessInputs,
+    ) -> Result<CompletedChild, SummaryBlocker> {
+        if !ready.matches(facts, instance) {
+            return Err(SummaryBlocker::WrongContext);
+        }
+        self.checked_completed_child(facts, ready.caller(), instance, completed)
+    }
+
+    pub(super) fn completed_generated_child(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        instance: &EnumeratedComponentInstance,
+        completed: CompletedTemplate,
+        ready: &ReadyGeneratedInputs,
     ) -> Result<CompletedChild, SummaryBlocker> {
         if !ready.matches(facts, instance) {
             return Err(SummaryBlocker::WrongContext);
@@ -196,7 +227,7 @@ impl ProjectSummaries<'_> {
             else {
                 continue;
             };
-            if facts.handle_relation(applied.handle(), path) != InstanceRelation::Exact {
+            if facts.handle_relation_at(applied.handle(), path, *id) != InstanceRelation::Exact {
                 continue;
             }
             match facts.reachable_node(*id).certified() {
@@ -218,6 +249,25 @@ impl ProjectSummaries<'_> {
         evidence: &ContextEvidence,
         children: &[CompletedChild],
     ) -> Result<CompletedTemplate, SummaryBlocker> {
+        self.completed_template(facts, evidence, children, None)
+    }
+
+    pub(super) fn completed_generated_template(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        children: &[CompletedChild],
+        ready: &ReadyGeneratedInputs,
+    ) -> Result<CompletedTemplate, SummaryBlocker> {
+        self.completed_template(facts, ready.caller(), children, Some(ready.ports()))
+    }
+
+    fn completed_template(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        evidence: &ContextEvidence,
+        children: &[CompletedChild],
+        ports: Option<&ValidatedComponentPorts>,
+    ) -> Result<CompletedTemplate, SummaryBlocker> {
         self.check_facts_for_evidence(facts, evidence)?;
         self.validated_definition(facts)?;
         self.check_warning_execution_scope(facts, evidence)?;
@@ -226,9 +276,21 @@ impl ProjectSummaries<'_> {
         }
         let constructors = self.completed_constructor_reads(facts, evidence, children)?;
         certified(&facts.body_signal_reads_ready_with(&constructors))?;
-        certified(&facts.generated_constraints_valid())?;
-        certified(&facts.no_possible_repeated_body_writes())?;
-        Ok(CompletedTemplate { evidence: evidence.clone() })
+        let validity = match ports {
+            Some(ports) => facts.generated_constraints_valid_with(ports),
+            None => facts.generated_constraints_valid(),
+        };
+        certified(&validity)?;
+        let writes = match ports {
+            Some(ports) => facts.no_possible_repeated_body_writes_with(ports),
+            None => facts.no_possible_repeated_body_writes(),
+        };
+        certified(&writes)?;
+        let mut checked_definitions = BTreeSet::from([facts.definition()]);
+        for child in children {
+            checked_definitions.extend(&child.completed.checked_definitions);
+        }
+        Ok(CompletedTemplate { evidence: evidence.clone(), checked_definitions })
     }
 
     pub(super) fn completed_constructor_reads(

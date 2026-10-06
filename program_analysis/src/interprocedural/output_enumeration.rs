@@ -273,14 +273,11 @@ pub(super) fn exact_instance_indices(
     Ok(indices)
 }
 
-fn checked_indices(bounds: &[usize], remaining: usize) -> Result<Vec<Vec<usize>>, SummaryBlocker> {
-    let mut count = 1_usize;
-    for bound in bounds {
-        count = count.checked_mul(*bound).ok_or(SummaryBlocker::ContextBudget)?;
-        if count > remaining {
-            return Err(SummaryBlocker::ContextBudget);
-        }
-    }
+pub(super) fn checked_indices(
+    bounds: &[usize],
+    remaining: usize,
+) -> Result<Vec<Vec<usize>>, SummaryBlocker> {
+    checked_index_count(bounds, remaining)?;
     let mut indices = vec![Vec::new()];
     for bound in bounds {
         let mut next = Vec::new();
@@ -296,6 +293,23 @@ fn checked_indices(bounds: &[usize], remaining: usize) -> Result<Vec<Vec<usize>>
     Ok(indices)
 }
 
+pub(super) fn checked_index_count(
+    bounds: &[usize],
+    remaining: usize,
+) -> Result<usize, SummaryBlocker> {
+    let mut count = 1_usize;
+    for bound in bounds {
+        count = count.checked_mul(*bound).ok_or(SummaryBlocker::ContextBudget)?;
+        if count > remaining {
+            return Err(SummaryBlocker::ContextBudget);
+        }
+    }
+    if count > remaining {
+        return Err(SummaryBlocker::ContextBudget);
+    }
+    Ok(count)
+}
+
 fn call_blocker(blocker: CallBlocker) -> SummaryBlocker {
     match blocker {
         CallBlocker::LocalFacts(blockers) => SummaryBlocker::LocalFacts(blockers),
@@ -304,5 +318,22 @@ fn call_blocker(blocker: CallBlocker) -> SummaryBlocker {
         | CallBlocker::UnresolvedTarget
         | CallBlocker::ProvisionalSite
         | CallBlocker::MissingExpression => SummaryBlocker::ExternalSummary,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::interprocedural::output_enumeration::{checked_index_count, checked_indices};
+    use crate::interprocedural::SummaryBlocker;
+
+    #[test]
+    fn scalar_cells_obey_the_same_enumeration_budget_as_array_cells() {
+        assert_eq!(checked_index_count(&[], 0), Err(SummaryBlocker::ContextBudget));
+        assert_eq!(checked_indices(&[], 0), Err(SummaryBlocker::ContextBudget));
+        assert_eq!(checked_index_count(&[], 1), Ok(1));
+        assert_eq!(checked_indices(&[], 1), Ok(vec![Vec::<usize>::new()]));
+        assert_eq!(checked_index_count(&[0], 0), Ok(0));
+        assert_eq!(checked_index_count(&[512], 512), Ok(512));
+        assert_eq!(checked_index_count(&[513], 512), Err(SummaryBlocker::ContextBudget));
     }
 }

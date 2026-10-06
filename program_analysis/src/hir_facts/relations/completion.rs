@@ -3,14 +3,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use abstract_interpretation::graph::{FlowGraph, NodeId};
-use parser::hir::{Effect, SymbolKind};
+use parser::hir::SymbolKind;
 use parser::new_frontend::PortDirection;
 
 use crate::hir_cfg::CfgNodeKind;
 use crate::hir_facts::relations::complete::{GeneratedConstraintSite, GeneratedEquationSites};
 use crate::hir_facts::{
-    AccessKey, AnalysisFacts, FactBlocker, FieldContext, FieldValue, NormalizedEquation,
-    ProofBudget,
+    AccessKey, AnalysisFacts, DescribeSignalAssignment, FactBlocker, FieldContext, FieldValue,
+    NormalizedEquation, SourceSignalAssignment, ProofBudget,
 };
 
 struct GeneratedAssignment<'a> {
@@ -109,10 +109,12 @@ impl AnalysisFacts<'_> {
             .block(origin.block)
             .and_then(|block| block.effects.get(origin.effect_index))
             .ok_or_else(foreign)?;
-        let Effect::ConstraintAssignment { target: source, value, .. } = effect else {
+        let Some(SourceSignalAssignment::Generated { target: source, value }) =
+            effect.signal_assignment()
+        else {
             return Err(foreign());
         };
-        if source != target || value != left || node.origin != Some(origin) {
+        if source != target || value != *left || node.origin != Some(origin) {
             return Err(foreign());
         }
         let symbol = self.hir.symbol(target.root).ok_or_else(foreign)?;

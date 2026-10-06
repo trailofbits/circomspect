@@ -17,7 +17,7 @@ use crate::interprocedural::{
 };
 
 impl ProjectSummaries<'_> {
-    pub(super) fn single_model_call<'a>(
+    pub(in crate::interprocedural) fn single_model_call<'a>(
         &'a self,
         facts: &AnalysisFacts<'_>,
         applied: &AppliedComponentPort,
@@ -41,7 +41,7 @@ impl ProjectSummaries<'_> {
         Ok(call)
     }
 
-    pub(super) fn model_source_instance(
+    pub(in crate::interprocedural) fn model_source_instance(
         &self,
         facts: &AnalysisFacts<'_>,
         child: &AnalysisFacts<'_>,

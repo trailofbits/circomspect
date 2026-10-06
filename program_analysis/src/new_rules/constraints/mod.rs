@@ -1,6 +1,7 @@
 //! Constraint and signal warning family.
 
 mod internal_signal;
+mod comparator;
 mod redundant_witness;
 mod signal_assignment;
 
@@ -23,7 +24,12 @@ pub const KINDS: &[RuleKind] = &[
 /// Constraint rules enter the registry in this family's declared order.
 #[must_use]
 pub fn rules() -> &'static [&'static dyn Rule] {
-    &[&SignalAssignment, &RedundantWitness, &UnconstrainedSignal]
+    &[
+        &SignalAssignment,
+        &RedundantWitness,
+        &UnconstrainedSignal,
+        &crate::new_rules::constraints::comparator::Comparator,
+    ]
 }
 
 fn witness_only(effect: Option<&Effect>) -> bool {

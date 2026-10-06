@@ -61,6 +61,26 @@ impl AnalysisFacts<'_> {
         Fact::known(key)
     }
 
+    /// Read the storage key of a provider-bound component handle. Local port and
+    /// caller instance bounds were checked when the handle was constructed.
+    pub(crate) fn component_handle_key(&self, handle: &AccessHandle) -> Fact<AccessKey> {
+        let Some(evidence) = &self.evidence_binding else {
+            return Fact::blocked(BTreeSet::from([FactBlocker::ForeignQuery]));
+        };
+        if handle.definition != self.definition()
+            || handle.curve != *self.field.curve()
+            || !handle.matches_context(evidence.context())
+            || handle.component().is_none()
+        {
+            return Fact::blocked(BTreeSet::from([FactBlocker::ForeignQuery]));
+        }
+        let key = key_for_path(self.hir, self.field, handle.path(), &BTreeMap::new());
+        if !key.exact_alias(&key) {
+            return Fact::blocked(BTreeSet::from([FactBlocker::AggregateAccess]));
+        }
+        Fact::known(key)
+    }
+
     pub(crate) fn exact_closed_component_key(
         &self,
         path: &AccessPath,
@@ -83,7 +103,7 @@ impl AnalysisFacts<'_> {
             return Fact::blocked(BTreeSet::from([FactBlocker::MissingExit]));
         };
         let key = key_for_path(self.hir, self.field, path, values);
-        if ports.contains_output(&key) {
+        if ports.contains_access(&key) {
             Fact::known(key)
         } else {
             self.exact_access_key_at(path, site)

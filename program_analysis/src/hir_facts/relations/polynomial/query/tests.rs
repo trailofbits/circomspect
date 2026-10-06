@@ -267,3 +267,38 @@ fn target_completion_rejects_missing_or_quadratic_targets_and_wrong_fields() {
         );
     }
 }
+
+#[test]
+fn linear_pattern_matching_preserves_field_scale_coefficients_and_support() {
+    let keys = keys();
+    for curve in [Curve::Bn254, Curve::Bls12_381, Curve::Goldilocks] {
+        let field = FieldContext::for_curve(curve);
+        let normalized = equation(
+            &field,
+            &[
+                (Monomial::Constant, -512),
+                (Monomial::Linear(keys[0].clone()), 2),
+                (Monomial::Linear(keys[1].clone()), -2),
+                (Monomial::Linear(keys[2].clone()), 2),
+            ],
+        );
+        let terms = [(keys[0].clone(), 1), (keys[1].clone(), -1), (keys[2].clone(), 1)];
+        assert_eq!(normalized.matches_linear_relation(&field, (-256).into(), &terms), Ok(true));
+        assert_eq!(normalized.matches_linear_relation(&field, (-255).into(), &terms), Ok(false));
+        assert_eq!(
+            normalized.matches_linear_relation(&field, (-256).into(), &terms[..2]),
+            Ok(false)
+        );
+        let negated = [(keys[2].clone(), -1), (keys[1].clone(), 1), (keys[0].clone(), -1)];
+        assert_eq!(normalized.matches_linear_relation(&field, 256.into(), &negated), Ok(true));
+        let quadratic =
+            equation(&field, &[(Monomial::Quadratic(keys[0].clone(), keys[1].clone()), 1)]);
+        assert_eq!(quadratic.matches_linear_relation(&field, 0.into(), &terms), Ok(false));
+    }
+    let bn = FieldContext::for_curve(Curve::Bn254);
+    let gold = FieldContext::for_curve(Curve::Goldilocks);
+    assert_eq!(
+        equation(&bn, &[]).matches_linear_relation(&gold, 0.into(), &[]),
+        Err(EquationEvaluationError::WrongCurve)
+    );
+}

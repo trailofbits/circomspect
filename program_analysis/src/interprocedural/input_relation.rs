@@ -8,13 +8,21 @@ use abstract_interpretation::solver::{
     solve, DataflowAnalysis, Forward, SolveResult, Transfer, TransferOutcome,
 };
 use parser::hir::{
-    AccessPath, AccessStep, ArrayIndex, ControlGuard, Effect, ExprKind, PortId, PortSchema,
-    SymbolKind,
+    AccessPath, AccessStep, ArrayIndex, ControlGuard, ExprKind, PortId, PortSchema, SymbolKind,
 };
 use parser::new_frontend::PortDirection;
 
 use crate::hir_cfg::{CfgEdge, CfgNode, CfgNodeKind, Origin};
-use crate::hir_facts::{AccessKey, AnalysisFacts, FieldValue, InstanceRelation, Range, VisitAccesses};
+use crate::hir_facts::{
+    AccessKey, AnalysisFacts, DescribeSignalAssignment, FieldValue, GeneratedInputEquation,
+    InstanceRelation, Range, SourceSignalAssignment, VisitAccesses,
+};
+use crate::interprocedural::ValidatedComponentPorts;
+
+mod generated;
+pub(super) use crate::interprocedural::input_relation::generated::{
+    CheckedInputSchema, ReadyGeneratedInputs,
+};
 use crate::interprocedural::component::AppliedComponentPort;
 use crate::interprocedural::output_enumeration::EnumeratedComponentInstance;
 use crate::interprocedural::summary::certified;
@@ -54,6 +62,7 @@ enum BindingPolicy {
     FixedOutput,
     CompleteModels,
     WitnessInputs,
+    GeneratedExpressions,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -66,6 +75,7 @@ pub(super) enum WitnessInputValue {
 enum BindingValue {
     Generated(GeneratedInputValue),
     Witness(WitnessInputValue),
+    Equation(GeneratedInputEquation),
 }
 
 enum BindingSource {
@@ -80,6 +90,7 @@ impl TryFrom<BindingValue> for GeneratedInputValue {
         match value {
             BindingValue::Generated(value) => Ok(value),
             BindingValue::Witness(_) => Err(SummaryBlocker::WitnessOnlyInput),
+            BindingValue::Equation(_) => Err(SummaryBlocker::UnsupportedContext),
         }
     }
 }
@@ -90,7 +101,21 @@ impl TryFrom<BindingValue> for WitnessInputValue {
     fn try_from(value: BindingValue) -> Result<Self, Self::Error> {
         match value {
             BindingValue::Witness(value) => Ok(value),
+            BindingValue::Generated(_) | BindingValue::Equation(_) => {
+                Err(SummaryBlocker::UnsupportedContext)
+            }
+        }
+    }
+}
+
+impl TryFrom<BindingValue> for GeneratedInputEquation {
+    type Error = SummaryBlocker;
+
+    fn try_from(value: BindingValue) -> Result<Self, Self::Error> {
+        match value {
+            BindingValue::Equation(equation) => Ok(equation),
             BindingValue::Generated(_) => Err(SummaryBlocker::UnsupportedContext),
+            BindingValue::Witness(_) => Err(SummaryBlocker::WitnessOnlyInput),
         }
     }
 }
@@ -171,8 +196,8 @@ impl Lattice for RelationState {
 
     fn leq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::Unreachable, _) => true,
-            (_, Self::Invalid) => true,
+            (Self::Unreachable, Self::Unreachable | Self::Reached { .. } | Self::Invalid)
+            | (Self::Reached { .. } | Self::Invalid, Self::Invalid) => true,
             (Self::Invalid, Self::Unreachable | Self::Reached { .. })
             | (Self::Reached { .. }, Self::Unreachable) => false,
             (
@@ -318,6 +343,7 @@ struct RelationAnalysis<'a> {
     instantiation: NodeId,
     inputs: Vec<InputPortElement>,
     policy: BindingPolicy,
+    ports: Option<&'a ValidatedComponentPorts>,
 }
 
 impl DataflowAnalysis<crate::hir_cfg::DefinitionCfg> for RelationAnalysis<'_> {
@@ -379,9 +405,7 @@ impl RelationAnalysis<'_> {
                 }
                 Ok(())
             }
-            CfgNodeKind::Witness { target, value } => {
-                self.bind_witness(node, target, *value, &mut state)
-            }
+            CfgNodeKind::Witness { target, .. } => self.bind_witness(node, target, &mut state),
             CfgNodeKind::Constraint { target: None, left, right } => {
                 self.check_competing_equality(*left, *right, &mut state)
             }
@@ -430,7 +454,6 @@ impl RelationAnalysis<'_> {
         &self,
         node: &CfgNode,
         target: &AccessPath,
-        value: parser::hir::ExprId,
         state: &mut RelationState,
     ) -> Result<(), SummaryBlocker> {
         if target.root != self.instance.root {
@@ -440,26 +463,36 @@ impl RelationAnalysis<'_> {
         if relation == InstanceRelation::Separate {
             return Ok(());
         }
-        let (port, indices) = self
-            .facts
-            .source_component_port_indices(target)
-            .map_err(|_| SummaryBlocker::UnsupportedContext)?;
-        let port = InputPortElement { port, indices };
-        self.bind_input(node, port, relation, value, state)
+        let port = match self.ports {
+            Some(ports) => {
+                let key = self.facts.exact_closed_component_key(target, node.id, ports);
+                ports
+                    .input_element(certified(&key)?)
+                    .cloned()
+                    .ok_or(SummaryBlocker::UnsupportedContext)?
+            }
+            None => {
+                let (port, indices) = self
+                    .facts
+                    .source_component_port_indices(target)
+                    .map_err(|_| SummaryBlocker::UnsupportedContext)?;
+                InputPortElement { port, indices }
+            }
+        };
+        self.bind_input(node, &port, relation, state)
     }
 
     fn bind_input(
         &self,
         node: &CfgNode,
-        port: InputPortElement,
+        port: &InputPortElement,
         relation: InstanceRelation,
-        value: parser::hir::ExprId,
         state: &mut RelationState,
     ) -> Result<(), SummaryBlocker> {
         let RelationState::Reached { instantiated, inputs, .. } = state else {
             return Ok(());
         };
-        let Some(binding) = inputs.get_mut(&port) else {
+        let Some(binding) = inputs.get_mut(port) else {
             state.invalidate();
             return Err(SummaryBlocker::ExternalSummary);
         };
@@ -471,6 +504,9 @@ impl RelationAnalysis<'_> {
                 SummaryBlocker::ExternalSummary
             });
         }
+        let CfgNodeKind::Witness { value, .. } = node.kind else {
+            return Err(SummaryBlocker::ExternalSummary);
+        };
         let value = self.checked_binding_value(node, value)?;
         match binding {
             InputState::Absent => {
@@ -493,11 +529,18 @@ impl RelationAnalysis<'_> {
             (BindingPolicy::WitnessInputs, BindingSource::Witness) => {
                 return self.checked_witness_value(value).map(BindingValue::Witness);
             }
+            (BindingPolicy::GeneratedExpressions, BindingSource::Generated) => {
+                let ports = self.ports.ok_or(SummaryBlocker::WrongContext)?;
+                let equation = self.facts.generated_assignment_equation(node.id, ports);
+                return Ok(BindingValue::Equation(certified(&equation)?.clone()));
+            }
             (BindingPolicy::WitnessInputs, BindingSource::Generated) => {
                 return Err(SummaryBlocker::UnsupportedContext);
             }
             (
-                BindingPolicy::FixedOutput | BindingPolicy::CompleteModels,
+                BindingPolicy::FixedOutput
+                | BindingPolicy::CompleteModels
+                | BindingPolicy::GeneratedExpressions,
                 BindingSource::Witness,
             ) => {
                 return Err(SummaryBlocker::WitnessOnlyInput);
@@ -535,38 +578,19 @@ impl RelationAnalysis<'_> {
             .block(origin.block)
             .and_then(|block| block.effects.get(origin.effect_index))
             .ok_or(SummaryBlocker::ExternalSummary)?;
-        let (source, value, provenance) = match effect {
-            Effect::ConstraintAssignment { target, value, .. } => {
+        let (source, value, provenance) = match effect.signal_assignment() {
+            Some(SourceSignalAssignment::Generated { target, value }) => {
                 (target, value, BindingSource::Generated)
             }
-            Effect::WitnessAssignment { target, value, .. } => {
+            Some(SourceSignalAssignment::Witness { target, value }) => {
                 (target, value, BindingSource::Witness)
             }
-            Effect::Declaration { .. }
-            | Effect::VariableAssignment { .. }
-            | Effect::DeferredVariableAssignment { .. }
-            | Effect::ComponentInstantiation { .. }
-            | Effect::OpaqueAssignment { .. }
-            | Effect::EqualityConstraint { .. }
-            | Effect::OpaqueEquality { .. }
-            | Effect::Update { .. }
-            | Effect::If { .. }
-            | Effect::While { .. }
-            | Effect::For { .. }
-            | Effect::Return { .. }
-            | Effect::Assert { .. }
-            | Effect::DeferredAssert { .. }
-            | Effect::Log { .. }
-            | Effect::AnonymousComponent { .. }
-            | Effect::Block(_)
-            | Effect::Opaque { .. } => {
-                return Err(SummaryBlocker::ExternalSummary);
-            }
+            None => return Err(SummaryBlocker::ExternalSummary),
         };
         let CfgNodeKind::Witness { target, value: node_value } = &node.kind else {
             return Err(SummaryBlocker::ExternalSummary);
         };
-        if source != target || value != node_value || *value != expression {
+        if source != target || value != *node_value || value != expression {
             return Err(SummaryBlocker::ExternalSummary);
         }
         Ok(provenance)
@@ -630,7 +654,7 @@ impl RelationAnalysis<'_> {
         right: Option<parser::hir::ExprId>,
         state: &mut RelationState,
     ) -> Result<(), SummaryBlocker> {
-        if let BindingPolicy::CompleteModels = self.policy {
+        if let BindingPolicy::CompleteModels | BindingPolicy::GeneratedExpressions = self.policy {
             return Ok(());
         }
         for expression in [Some(left), right].into_iter().flatten() {
@@ -744,8 +768,13 @@ fn ready_inputs(
     policy: BindingPolicy,
 ) -> Result<ReadyInputs, SummaryBlocker> {
     let inputs = input_ports(facts, child)?;
-    let analysis = RelationAnalysis { facts, instance, instantiation, inputs, policy };
-    let result = solve::<_, _, Forward>(facts.cfg(), &analysis, Some(100_000))
+    let analysis = RelationAnalysis { facts, instance, instantiation, inputs, policy, ports: None };
+    solve_inputs(&analysis)
+}
+
+fn solve_inputs(analysis: &RelationAnalysis<'_>) -> Result<ReadyInputs, SummaryBlocker> {
+    let facts = analysis.facts;
+    let result = solve::<_, _, Forward>(facts.cfg(), analysis, Some(100_000))
         .map_err(|error| SummaryBlocker::LocalAnalysis(format!("{error:?}")))?;
     let states = match result {
         SolveResult::Complete(states) => states,
@@ -768,7 +797,7 @@ fn ready_inputs(
     };
     let mut bindings = BTreeMap::new();
     for (port, binding) in inputs {
-        bindings.insert(port.clone(), checked_binding(facts, binding)?);
+        bindings.insert(port.clone(), checked_binding(facts, binding, analysis.ports)?);
     }
     Ok(ReadyInputs { bindings })
 }
@@ -796,6 +825,7 @@ fn input_ports(
 fn checked_binding(
     facts: &AnalysisFacts<'_>,
     binding: &InputState,
+    ports: Option<&ValidatedComponentPorts>,
 ) -> Result<CheckedInputBinding<BindingValue>, SummaryBlocker> {
     let InputState::Bound { value, sites } = binding else {
         return Err(SummaryBlocker::MissingInputBinding);
@@ -808,7 +838,11 @@ fn checked_binding(
         else {
             return Err(SummaryBlocker::ExternalSummary);
         };
-        let key = certified(&facts.exact_access_key(target))?.clone();
+        let key = match ports {
+            Some(ports) => facts.exact_closed_component_key(target, *id, ports),
+            None => facts.exact_access_key(target),
+        };
+        let key = certified(&key)?.clone();
         if target_key.as_ref().is_some_and(|previous| previous != &key) {
             return Err(SummaryBlocker::WrongInstance);
         }
@@ -842,7 +876,7 @@ mod tests {
     use program_structure::utils::constants::Curve;
 
     use crate::hir_cfg::build_cfg;
-    use crate::hir_facts::{FieldContext, FieldValue};
+    use crate::hir_facts::{FieldContext, FieldValue, GeneratedInputEquation, ProofBudget};
     use crate::interprocedural::{CallOwner, CallReachability, ProjectSummaries};
 
     use crate::interprocedural::input_relation::{
@@ -856,6 +890,7 @@ mod tests {
         other: PortId,
         seven: FieldValue,
         eight: FieldValue,
+        equation: GeneratedInputEquation,
     ) -> Vec<RelationState> {
         let first = BTreeSet::from([NodeId::new(3)]);
         let both = BTreeSet::from([NodeId::new(3), NodeId::new(5)]);
@@ -876,6 +911,14 @@ mod tests {
             InputState::Bound {
                 value: BindingValue::Witness(WitnessInputValue::Constant(seven)),
                 sites: BTreeSet::from([NodeId::new(3)]),
+            },
+            InputState::Bound {
+                value: BindingValue::Equation(equation.clone()),
+                sites: BTreeSet::from([NodeId::new(3)]),
+            },
+            InputState::Bound {
+                value: BindingValue::Equation(equation),
+                sites: BTreeSet::from([NodeId::new(3), NodeId::new(5)]),
             },
         ];
         let mut states = vec![RelationState::Unreachable, RelationState::Invalid];
@@ -951,18 +994,44 @@ mod tests {
         else {
             panic!("expected a checked instantiation");
         };
-        let analysis = RelationAnalysis {
-            facts: &facts,
-            instance: target,
-            instantiation: applied.instantiation(),
-            inputs: vec![ports[0].into()],
-            policy: BindingPolicy::FixedOutput,
-        };
+        let instance = provider.enumerate_call(&facts, &caller, &call, 4).unwrap();
+        let child_cfg = build_cfg(&lifted.hir, call.callee()).unwrap();
+        let child = provider.analyze_for_evidence(&child_cfg, &instance.callee, None).unwrap();
+        let ready = provider
+            .ready_generated_instance(&facts, &child, &instance, &mut ProofBudget::default())
+            .unwrap();
+        let equation = ready.bindings().values().next().unwrap().value.clone();
         let field = FieldContext::for_curve(Curve::Bn254);
-        let states =
-            samples(ports[0], ports[1], field.canonical(7.into()), field.canonical(8.into()));
+        let states = samples(
+            ports[0],
+            ports[1],
+            field.canonical(7.into()),
+            field.canonical(8.into()),
+            equation,
+        );
         check_lattice_laws(&states);
-        check_transfer_monotonicity(&cfg, &analysis, &states);
+        for policy in [
+            BindingPolicy::FixedOutput,
+            BindingPolicy::CompleteModels,
+            BindingPolicy::WitnessInputs,
+            BindingPolicy::GeneratedExpressions,
+        ] {
+            let checked_ports = match policy {
+                BindingPolicy::GeneratedExpressions => Some(ready.ports()),
+                BindingPolicy::FixedOutput
+                | BindingPolicy::CompleteModels
+                | BindingPolicy::WitnessInputs => None,
+            };
+            let analysis = RelationAnalysis {
+                facts: &facts,
+                instance: target,
+                instantiation: applied.instantiation(),
+                inputs: vec![ports[0].into()],
+                policy,
+                ports: checked_ports,
+            };
+            check_transfer_monotonicity(facts.cfg(), &analysis, &states);
+        }
     }
 
     fn check_lattice_laws(states: &[RelationState]) {
