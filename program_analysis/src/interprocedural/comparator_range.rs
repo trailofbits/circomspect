@@ -126,6 +126,7 @@ impl ProjectSummaries<'_> {
         applied: &AppliedComponentPort,
         budget: &mut ProofBudget,
     ) -> Result<Vec<ComparatorRangeViolation>, SummaryBlocker> {
+        self.check_comparator_output(facts, applied)?;
         self.check_parent_components_complete(facts)?;
         self.single_model_call(facts, applied)?;
         self.with_component_port_facts(applied.callee_evidence(), |comparison| {

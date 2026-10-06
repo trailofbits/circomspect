@@ -146,3 +146,37 @@ fn unreachable_library_body_errors_do_not_hide_a_complete_comparator() {
         );
     });
 }
+
+#[test]
+fn array_outputs_are_refused_before_any_comparator_proof_work() {
+    let source = SOURCE
+        .replace("signal output y;component e=", "signal output y[2];component e=")
+        .replace("y<==1-e.y[2];", "y[0]<==1-e.y[2];y[1]<==0;")
+        .replace("y<==c.y;", "y<==c.y[0];");
+    with_query(&source, |provider, other, facts, applied| {
+        let mut budget = ProofBudget::limited(0, 0, 0, 0);
+        assert_eq!(
+            provider.comparator_range_result(facts, applied, &mut budget),
+            Err(crate::interprocedural::SummaryBlocker::UnsupportedContext)
+        );
+        let symbolic = provider.symbolic_root(facts.definition()).unwrap();
+        let symbolic = provider.analyze_for_evidence(facts.cfg(), &symbolic, None).unwrap();
+        let result = provider.component_comparator_range(&symbolic, applied);
+        assert!(result
+            .unavailable()
+            .unwrap()
+            .contains(&crate::interprocedural::SummaryBlocker::WrongContext));
+        let result = other.component_comparator_range(facts, applied);
+        assert!(!result
+            .unavailable()
+            .unwrap()
+            .contains(&crate::interprocedural::SummaryBlocker::UnsupportedContext));
+        with_query(&source, |foreign, _, _, _| {
+            let result = foreign.component_comparator_range(facts, applied);
+            assert!(!result
+                .unavailable()
+                .unwrap()
+                .contains(&crate::interprocedural::SummaryBlocker::UnsupportedContext));
+        });
+    });
+}

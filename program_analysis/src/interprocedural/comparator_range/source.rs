@@ -5,9 +5,37 @@ use parser::new_frontend::PortDirection;
 
 use crate::hir_facts::{AccessHandle, AnalysisFacts};
 use crate::interprocedural::output_enumeration::EnumeratedComponentInstance;
-use crate::interprocedural::{ContextEvidence, ProjectSummaries, SummaryBlocker};
+use crate::interprocedural::{AppliedComponentPort, ContextEvidence, ProjectSummaries, SummaryBlocker};
 
 impl ProjectSummaries<'_> {
+    pub(super) fn check_comparator_output(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        applied: &AppliedComponentPort,
+    ) -> Result<(), SummaryBlocker> {
+        self.check_facts_for_evidence(facts, applied.caller_evidence())?;
+        self.check_evidence(applied.callee_evidence())?;
+        let DefinitionRef::Template(id) = applied.callee_evidence().context().definition() else {
+            return Err(SummaryBlocker::WrongInstance);
+        };
+        let (port, indices) =
+            applied.handle().output_port().ok_or(SummaryBlocker::WrongInstance)?;
+        let template = self.hir().template(id).ok_or(SummaryBlocker::ForeignDefinition)?;
+        if !template.ports.contains(&port) {
+            return Err(SummaryBlocker::WrongInstance);
+        }
+        let port = self.hir().port(port).ok_or(SummaryBlocker::ForeignDefinition)?;
+        let symbol = self.hir().symbol(port.symbol).ok_or(SummaryBlocker::ForeignDefinition)?;
+        if port.direction != Some(PortDirection::Output)
+            || port.schema != PortSchema::Signal
+            || symbol.rank != 0
+            || !indices.is_empty()
+        {
+            return Err(SummaryBlocker::UnsupportedContext);
+        }
+        Ok(())
+    }
+
     pub(super) fn comparator_child(
         &self,
         facts: &AnalysisFacts<'_>,
