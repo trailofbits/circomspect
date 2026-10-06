@@ -119,10 +119,11 @@ impl AnalysisFacts<'_> {
         self.certify_access_key(path, false)
     }
 
-    /// Identify a source access at one certified execution site.
+    /// Identify a source access using checked static indices or certified site values.
     ///
-    /// An induction index may vary across sites, but must be exact and in
-    /// bounds at this site. This does not prove the same key at other sites.
+    /// Static addresses do not depend on forward value propagation. An induction
+    /// index must be exact and in bounds at this site. This proves neither that
+    /// the site executes nor that the same key is used at other sites.
     pub(crate) fn exact_access_key_at(&self, path: &AccessPath, site: NodeId) -> Fact<AccessKey> {
         if let Some(blocker) = self.validate_query_path(path, false) {
             return Fact::blocked(BTreeSet::from([blocker]));
@@ -134,6 +135,14 @@ impl AnalysisFacts<'_> {
             return Fact::blocked(BTreeSet::from([FactBlocker::AggregateAccess]));
         }
         let SolveResult::Complete(_) = &self.forward else {
+            if path.steps.iter().all(|step| match step {
+                AccessStep::Index { index: parser::hir::ArrayIndex::Symbolic(_), .. } => false,
+                AccessStep::Index { index: parser::hir::ArrayIndex::Constant(_), .. }
+                | AccessStep::Port { .. }
+                | AccessStep::Tag { .. } => true,
+            }) {
+                return self.exact_access_key(path);
+            }
             return Fact::blocked(self.forward_completion_blockers());
         };
         let Some(values) = self.site_state(site).and_then(|state| state.variables()) else {

@@ -301,7 +301,7 @@ fn competing_input_writes_and_early_output_reads_abstain() {
 }
 
 #[test]
-fn symbolic_or_aggregate_child_inputs_cannot_close_an_unused_claim() {
+fn repeated_or_aggregate_child_inputs_cannot_close_an_unused_claim() {
     let symbolic = concat!(
         "template Child(){signal input in;signal output out;out<==in;} ",
         "template Parent(k){component c[2];c[0]=Child();c[1]=Child();",
@@ -309,7 +309,8 @@ fn symbolic_or_aggregate_child_inputs_cannot_close_an_unused_claim() {
     );
     let lifted = fixture(symbolic);
     assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
-    assert!(internal_use(symbolic, 0).certified().is_none());
+    // Parent(0) makes both input writes target c[0], so application can already refuse it.
+    assert_no_internal_use_certificate(symbolic);
     let array = concat!(
         "template Child(){signal input in[2];signal output out;out<==in[0];} ",
         "template Parent(){component c=Child();",

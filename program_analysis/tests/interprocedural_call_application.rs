@@ -301,3 +301,18 @@ fn scalar_subarray_target_cannot_receive_array() {
         assert!(facts.witnesses.certified().is_none());
     }
 }
+
+#[test]
+fn unrelated_unknown_values_preserve_write_conflicts_and_alias_uncertainty() {
+    for (body, indices) in [
+        ("signal output out;out<==1;out<==2;", Vec::new()),
+        ("signal output out;if(n){out<--1;}out<==2;", Vec::new()),
+        ("signal output out[2];out[0]<==1;out[n]<--2;", vec![0]),
+    ] {
+        let source = format!("template T(n){{var unrelated=Missing();{body}}}");
+        let facts = output_facts(&source, None, &indices);
+        assert!(facts.port.certified().is_none(), "{source}: {:?}", facts.port);
+        assert!(facts.read.certified().is_none(), "{source}: {:?}", facts.read);
+        assert!(facts.witnesses.certified().is_none(), "{source}: {:?}", facts.witnesses);
+    }
+}

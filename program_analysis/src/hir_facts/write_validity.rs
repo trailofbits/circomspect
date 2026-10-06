@@ -5,7 +5,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use abstract_interpretation::graph::{EdgeId, FlowGraph, NodeId};
 use abstract_interpretation::lattice::Lattice;
 use abstract_interpretation::solver::{
-    solve, CertifiedFacts, DataflowAnalysis, Forward, SolveResult, Transfer, TransferOutcome,
+    solve, Blocker, CertifiedFacts, DataflowAnalysis, Forward, SolveResult, Transfer,
+    TransferOutcome,
 };
 use parser::hir::{AccessPath, AccessStep, ArrayIndex, ExprId, ProjectIdentity, SymbolKind};
 use parser::new_frontend::{AssignmentOperator, PortDirection};
@@ -602,17 +603,7 @@ impl AnalysisFacts<'_> {
         if let Some(ports) = ports {
             self.refine_component_writes(&mut exact_writes, &mut uncertain, ports);
         }
-        if let SolveResult::Incomplete { .. } = &self.forward {
-            let mut blockers = self.forward_completion_blockers();
-            for write in uncertain {
-                blockers.extend(write.blockers);
-                blockers.insert(FactBlocker::WitnessWrite(
-                    write.site,
-                    WitnessWriteIssue::UnresolvedTarget,
-                ));
-            }
-            return Err(blockers);
-        }
+        self.check_forward_write_budget(&uncertain)?;
         let analysis = WriteAnalysis {
             exact_writes,
             pruned: forward_pruned_edges(
@@ -632,6 +623,29 @@ impl AnalysisFacts<'_> {
                 Err(blockers.iter().map(FactBlocker::from).collect())
             }
         }
+    }
+
+    fn check_forward_write_budget(
+        &self,
+        uncertain: &[UncertainWrite],
+    ) -> Result<(), BTreeSet<FactBlocker>> {
+        let SolveResult::Incomplete { blockers, .. } = &self.forward else { return Ok(()) };
+        for blocker in blockers {
+            if let Blocker::PendingNode(_) = blocker {
+                let mut reasons = self.forward_completion_blockers();
+                for write in uncertain {
+                    reasons.extend(write.blockers.iter().cloned());
+                    reasons.insert(FactBlocker::WitnessWrite(
+                        write.site,
+                        WitnessWriteIssue::UnresolvedTarget,
+                    ));
+                }
+                return Err(reasons);
+            }
+        }
+        // Opaque values leave all control edges available to the independent
+        // write solver. Unknown write targets remain explicit alias blockers.
+        Ok(())
     }
 
     fn refine_component_writes(
