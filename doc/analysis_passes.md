@@ -1,187 +1,153 @@
-# Analysis Passes
+# Analysis passes
 
-### Side-effect free assignment
+Circomspect analyzes Circom 2.2.3 source, including libraries without a `main`
+component. Findings use validated source, control flow, and call-context
+facts. A warning describes the property established by that analysis; it does
+not establish that a circuit is exploitable. Incomplete analysis is reported
+separately as `CS0020`.
 
-An assigned value which does not contribute either directly or indirectly to a constraint, or a function return value, typically indicates a mistake in the implementation of the circuit. For example, consider the following `BinSum` template from circomlib where we've changed the final constraint to introduce a bug.
+## Side-effect-free assignment
 
-```cpp
-  template BinSum(n, ops) {
-      var nout = nbits((2 ** n - 1) * ops);
-      var lin = 0;
-      var lout = 0;
+`CS0008` reports an assigned local value whose evaluation can be removed and
+which reaches no return, output, constraint, or required witness effect.
+Function calls need complete effect summaries. Unknown calls, potentially
+failing evaluations, symbolic aliases, and observable effects prevent this
+finding.
 
-      signal input in[ops][n];
-      signal output out[nout];
+## Unused variable or parameter
 
-      var e2 = 1;
-      for (var k = 0; k < n; k++) {
-          for (var j = 0; j < ops; j++) {
-              lin += in[j][k] * e2;
-          }
-          e2 = e2 + e2;
-      }
+`CS0006` reports an assigned local value that is never read before overwrite
+or exit, or an internal signal with no read or generated-constraint use.
+`CS0007` reports an unused parameter. These are use findings: an unread return
+value can be reported even when evaluating its function has side effects.
 
-      e2 = 1;
-      for (var k = 0; k < nout; k++) {
-          out[k] <-- (lin >> k) & 1;
-          out[k] * (out[k] - 1) === 0;
+## Shadowing variable
 
-          lout += out[k] * e2;  // The value assigned here is not used.
-          e2 = e2 + e2;
-      }
+`CS0001` identifies a declaration that hides an outer symbol. `CS0002`
+identifies a parameter-name collision. Resolution uses lexical scopes and
+keeps distinct symbols separate.
 
-      lin === nout;  // Should use `lout`, but uses `nout` by mistake.
-  }
-```
+## Signal assignment
 
-Here, `lout` no longer influences the generated circuit, which is detected by Circomspect.
+`CS0005` identifies a reachable witness-only assignment to an exact observable
+signal with zero incidence in the complete generated constraint closure.
+`<--` computes a witness value but creates no constraint. Propagating a
+constant through `<--` does not prove that constraints fix that value.
 
-### Shadowing variable
+## Redundant witness assignment
 
-A shadowing variable declaration is a declaration of a variable with the same name as a previously declared variable. This does not have to be a problem, but if a variable declared in an outer scope is shadowed by mistake, this could change the semantics of the program which would be an issue.
+`CS0021` reports that the normalized equation of a witness assignment is
+already generated on every reachable path. It requires source-valid,
+quadratic equations with matching access paths and retained source evidence.
+The finding does not recommend changing the assignment operator.
 
-For example, consider this function which is supposed to compute the number of bits needed to represent `a`.
+The former `CS0013` diagnostic has been removed.
 
-```cpp
-  function numberOfBits(a) {
-      var n = 1;
-      var r = 0;  // Shadowed variable is declared here.
-      while (n - 1 < a) {
-          var r = r + 1;  // Shadowing declaration here.
-          n *= 2;
-      }
-      return r;
-  }
-```
+## Unconstrained signal
 
-Since a new variable `r` is declared in the while-statement body, the outer variable is never updated and the return value is always 0.
+`CA01` reports an exact internal signal access with zero generated-constraint
+incidence across a complete dependency closure. It does not claim that one
+constraint is enough to determine a signal, or that a satisfying witness
+exists. Symbolic aliases and incomplete component effects cause abstention.
 
-### Signal assignment
+The former `CS0017` occurrence-count heuristic has been removed.
 
-Signals should typically be assigned using the constraint assignment operator `<==`. This ensures that the circuit and witness generation stay in sync. If `<--` is used it is up to the developer to ensure that the signal is properly constrained. Circomspect will try to detect if the right-hand side of the assignment is a quadratic expression. If it is, the signal assignment can be rewritten using the constraint assignment operator `<==`.
+## Unused output signal
 
-However, sometimes it is not possible to express the assignment using a quadratic expression. In this case Circomspect will try to list all constraints containing the assigned signal to make it easier for the developer (or reviewer) to ensure that the variable is properly constrained.
+`CS0018` reports an exact component output that has no read or constraint use
+in a complete, finite project rooted at `main`. Exported main outputs count
+as environment reads. Component readiness, input bindings, nested instances,
+array indices, and all consumers are checked. A library's uninstantiated
+output cannot be called unused.
 
-The Tornado Cash codebase was originally affected by an issue of this type. For details see [the Tornado Cash disclosure](https://tornado-cash.medium.com/tornado-cash-got-hacked-by-us-b1e012a3c9a8).
+## Constant branch condition
 
-### Under-constrained signal
+`CS0009` reports a condition with the same definite Boolean value on every
+reachable execution in the analyzed context. Concrete main and call arguments
+can establish a value; a symbolic library parameter alone cannot.
 
-Under-constrained signals are one of the most common issues in zero-knowledge circuits. Circomspect will flag intermediate signals that only occur in a single constraint. Since intermediate signals are not available outside the template, this typically indicates an issue with the implementation.
+## Non-strict binary conversion
 
-### Unused output signal
+`CS0010` requires a validated bit-decomposition relation and two distinct bit
+representations of the same field value that satisfy the analyzed generated
+constraints. Template names do not establish conversion behavior. Unknown
+widths, unresolved caller restrictions, and incomplete models cause
+abstention.
 
-When a template is instantiated, the corresponding input signals must be constrained. This is typically also true for the output signals defined by the template, but if we fail to constrain an output signal defined by a template this will not be flagged as an error by the compiler. There are examples (like `Num2Bits` from Circomlib) where the template constrains the input and no further constraints on the output are required. However, in the general case, failing to constrain the output from a template indicates a potential mistake that should be investigated.
+Called conversions currently support a main template with one completed leaf
+component, a scalar input, and a one-dimensional bit output. Both candidate
+models must satisfy every checked caller and child equation. Generated caller
+constraints can therefore prevent a finding. Deeper or additional component
+dependencies require further analysis and produce scoped incompleteness.
 
-Circomspect will generate a warning whenever it identifies an instantiated template where one or more output signals defined by the template are not constrained. Each location can then be manually reviewed for correctness.
+## Unconstrained less-than
 
-This type of issue [was identified by Veridise](https://medium.com/veridise/circom-pairing-a-million-dollar-zk-bug-caught-early-c5624b278f25) during a review of the circom-pairing library.
+`CS0014` requires a validated comparator relation and an input fixed by a
+generated equality outside the proven safe range. It reports the input and
+bound. A familiar comparator name or witness-only constant does not establish
+this property.
 
-### Constant branching condition
+The supported closure has one main template, one comparator, and one bit
+conversion child. The comparator has two input elements and uses a validated
+`a + 2^n - b` relation with an ordered `n + 1` bit decomposition; `2^(n+1)`
+must be smaller than the field prime. A complete satisfying assignment checks
+every generated equation in all three scopes. Additional component dependencies
+or unsupported guards prevent this finding.
 
-If a branching statement condition always evaluates to either `true` or `false`, this means that the branch is either always taken, or never taken. This typically indicates a mistake in the code which should be fixed.
+## Unconstrained division
 
-### Non-strict binary conversion
+`CS0015` reports a reachable witness division whose exact input divisor has
+zero incidence in a complete generated-constraint closure. The message states
+that no generated constraint excludes zero; it does not claim that a
+satisfying zero-divisor witness exists. Any possible generated dependency or
+incomplete call closure prevents the finding.
 
-Using `Num2Bits` and `Bits2Num` from
-[Circomlib](https://github.com/iden3/circomlib) to convert a field element to
-and from binary form is only safe if the input size is smaller than the size of
-the prime. If not, there may be multiple correct representations of the input
-which could cause issues, since we typically expect the circuit output to be
-uniquely determined by the input.
+The supported called case has one main template and one completed leaf
+component with scalar inputs initialized by witness-only assignments from
+constants or external main inputs. Related parent constraints, incomplete
+initialization, internal witness aliases, and deeper calls prevent this claim.
 
-For example, suppose that we create a component `n2b` given by `Num2Bits(254)` and set the input to `1`. Now, both the binary representation of `1` _and_ the representation of `p + 1` (where `p` is the order of the underlying finite field) will satisfy the circuit over BN254, since both are 254-bit numbers. If you cannot restrict the input size below the prime size you should use the strict versions `Num2Bits_strict` and `Bits2Num_strict` to convert to and from binary representation. Circomspect will generate a warning if it cannot prove (using constant propagation) that the input size passed to `Num2Bits` or `Bits2Num` is less than the size of the prime in bits.
+## BN254-specific circuit
 
-### Unconstrained less-than
+`CS0016` reports a reachable hard-coded BN254 assumption incompatible with
+the selected curve. Evidence includes the literal and relevant call path.
+Names of templates and libraries are not trusted summaries.
 
-The Circomlib `LessThan` template takes an input size as argument. If the individual input signals are not constrained to be non-negative (for example using the Circomlib `Num2Bits` circuit), it is possible to find inputs `a` and `b` such that `a > b`, but `LessThan` still evaluates to true when given `a` and `b` as inputs.
+## Overly complex function or template
 
-For example, consider the following template which takes a single input signal
-and attempts to constrain it to be less than two.
+`CS0011` reports certified cyclomatic complexity above 20, computed as
+`E - N + 2P` over reachable control flow. `CS0012` reports more than seven
+parameters in a validated function or template header.
 
-```cpp
-  template LessThanTwo() {
-    signal input in;
+## Bitwise complement
 
-    component lt = LessThan(8);
-    lt.in[0] <== in;
-    lt.in[1] <== 2;
+`CS0004` reports the selected curve's bitwise-complement and field-reduction
+semantics as informational output. The bit width depends on the selected
+field; it is not always 256 bits.
 
-    lt.out === 1;
-  }
-```
+## Field element arithmetic
 
-Suppose that we define the private input `in` as `p - 254`, where `p` is the prime order of the field. Clearly, `p - 254` is not less than two (at least not when viewed as an unsigned integer), so we would perhaps expect `LessThanTwo` to fail. However, looking at [the implementation](https://github.com/iden3/circomlib/blob/cff5ab6288b55ef23602221694a6a38a0239dcc0/circuits/comparators.circom#L89-L99) of `LessThan`, we see that `lt.out` is given by
+`CS0004` also reports certified modular wraparound at an arithmetic expression.
+Unknown values do not justify a wraparound finding. Use `--level info` to see
+informational results.
 
-```cpp
-    1 - n2b.out[8] = 1 - bit 8 of (p - 254 + (1 << 8) - 2) = 1 - 0 = 1.
-```
+## Field element comparison
 
-It follows that `p - 254` satisfies `LessThanTwo()`, which is probably not what we expected. Note that, `p - 254` is equal to -254 which _is_ less than two, so there is nothing wrong with the Circomlib `LessThan` circuit. This may just be unexpected behavior if we're thinking of field elements as unsigned integers.
+`CS0003` reports a comparison for which certified operands give different
+signed Circom and unsigned orderings. Circom maps canonical residues greater
+than half the prime to negative integers for comparisons.
 
-Circomspect will check if the inputs to `LessThan` are constrained to be strictly less than `log(p) - 1` bits using `Num2Bits`. This guarantees that both inputs are non-negative, which avoids this issue. If it cannot prove that both inputs are constrained in this way, a warning is generated.
+## Incomplete analysis
 
-### Unconstrained division
+`CS0020` is a warning that required facts could not be certified. It is grouped
+per definition and exact call context, with related locations identifying the
+affected rules and reasons. Different call paths remain separate. Parser and
+semantic errors are also reported at their source locations, and independent
+valid definitions continue to be analyzed.
 
-Since division cannot be expressed directly using a quadratic constraint, it is common to use the following pattern to ensure that the signal `c` is equal to `a / b`.
-
-```cpp
-    c <-- a / b;
-    c * b === a;
-```
-
-This forces `c` to be equal to `a / b` during witness generation, and checks that `c * b = a` during proof verification. However, the statement `c = a / b` only makes sense when `b` is non-zero, whereas `c * b = a` may be true even when `b` is zero. For this reason it is important to also constrain the divisor `b` to ensure that it is non-zero when the proof is verified.
-
-Circomspect will identify signal assignments on the form `c <-- a / b` and ensure that the expression `b` is constrained to be non-zero using the Circomlib `IsZero` template. If no such constraint is found, a warning is emitted.
-
-### BN254 specific circuit
-
-Circom defaults to using the BN254 scalar field (a 254-bit prime field),
-but it also supports BSL12-381 (which has a 255-bit scalar field) and
-Goldilocks (with a 64-bit scalar field). However, since there are no constants denoting either the prime or the prime size in bits available in the Circom language, some Circomlib templates like `Sign` (which returns the sign of the input signal), and `AliasCheck` (used by the strict versions of `Num2Bits` and `Bits2Num`), hardcode either the BN254 prime size or some other constant related to BN254. Using these circuits with a custom prime may thus lead to unexpected results and should be avoided.
-
-Circomlib templates that may be problematic when used together with curves other than BN254 include the following circuit definitions. (An `x` means that the template should not be used together with the corresponding curve.)
-
-| Template                  | Goldilocks (64 bits) | BLS12-381 (255 bits) |
-| :------------------------ | :------------------: | :------------------: |
-| `AliasCheck`              |           x          |           x          |
-| `BabyPbk`                 |           x          |                      |
-| `Bits2Num_strict`         |           x          |           x          |
-| `Num2Bits_strict`         |           x          |           x          |
-| `CompConstant`            |           x          |           x          |
-| `EdDSAVerifier`           |           x          |           x          |
-| `EdDSAMiMCVerifier`       |           x          |           x          |
-| `EdDSAMiMCSpongeVerifier` |           x          |           x          |
-| `EdDSAPoseidonVerifier`   |           x          |           x          |
-| `EscalarMulAny`           |           x          |                      |
-| `MiMC7`                   |           x          |                      |
-| `MultiMiMC7`              |           x          |                      |
-| `MiMCFeistel`             |           x          |                      |
-| `MiMCSponge`              |           x          |                      |
-| `Pedersen`                |           x          |                      |
-| `Bits2Point_strict`       |           x          |           x          |
-| `Point2Bits_strict`       |           x          |           x          |
-| `PoseidonEx`              |           x          |                      |
-| `Poseidon`                |           x          |                      |
-| `Sign`                    |           x          |           x          |
-| `SMTHash1`                |           x          |                      |
-| `SMTHash2`                |           x          |                      |
-| `SMTProcessor`            |           x          |           x          |
-| `SMTProcessorLevel`       |           x          |                      |
-| `SMTVerifier`             |           x          |           x          |
-| `SMTVerifierLevel`        |           x          |                      |
-
-### Overly complex function or template
-
-As functions and templates grow in complexity they become more difficult to review and maintain. This typically indicates that the code should be refactored into smaller, more easily understandable, components. Circomspect uses cyclomatic complexity to estimate the complexity of each function and template, and will generate a warning if the code is considered too complex. Circomspect will also generate a warning if a function or template takes too many arguments, as this also impacts the readability of the code.
-
-### Bitwise complement
-
-Circom supports taking the 256-bit complement `~x` of a field element `x`. Since the result is reduced modulo `p`, it will typically not satisfy the expected relations `(~x)ᵢ == ~(xᵢ)` for each bit `i`, which could lead to surprising results.
-
-### Field element arithmetic
-
-Circom supports a large number of arithmetic expressions. Since arithmetic expressions can overflow or underflow in Circom it is worth paying extra attention to field arithmetic to ensure that elements are constrained to the correct range.
-
-### Field element comparison
-
-Field elements are normalized to the interval `(-p/2, p/2]` before they are compared, by first reducing them modulo `p` and then mapping them to the correct interval by subtracting `p` from the value `x`, if `x` is greater than `p/2`. In particular, this means that `p/2 + 1 < 0 < p/2 - 1`. This can be surprising if you are used to thinking of elements in `GF(p)` as unsigned integers.
+Missing definitions, symbolic values, unsupported relations or aggregate
+shapes, bus analysis contexts, custom templates, recursion, and exhausted
+analysis budgets can produce this warning.
+Absence of a security finding does not mean an incomplete scope was proven
+safe. `--allow CS0020` hides these warnings; `--level error` hides all warnings.
+Both affect exit status in the same way as other output filters.
