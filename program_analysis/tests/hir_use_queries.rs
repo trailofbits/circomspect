@@ -70,7 +70,7 @@ fn exact_array_element_liveness_respects_distinct_and_symbolic_indices() {
     for (source, expected) in [
         ("function Check(){var x[2];x[0]=1;return x[1];}", Some(false)),
         ("function Check(){var x[2];x[0]=1;return x[0];}", Some(true)),
-        ("function Check(i){var x[2];x[0]=1;return x[i];}", None),
+        ("function Check(i){var x[2];x[0]=1;return x[i];}", Some(true)),
     ] {
         let (hir, definition) = fixture(source);
         let cfg = build_cfg(&hir, definition).unwrap();
