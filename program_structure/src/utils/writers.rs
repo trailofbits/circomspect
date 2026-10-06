@@ -49,18 +49,6 @@ pub trait ReportWriter {
         file_library: &FileLibrary,
     ) -> Result<usize, ReportWriteError>;
 
-    /// Filter and write a single report. Returns the number of reports written (0 or 1).
-    ///
-    /// # Errors
-    /// Returns the same errors as [`ReportWriter::write_reports`].
-    fn write_report(
-        &mut self,
-        report: Report,
-        file_library: &FileLibrary,
-    ) -> Result<usize, ReportWriteError> {
-        self.write_reports(&[report], file_library)
-    }
-
     /// Returns the number of reports written.
     #[must_use]
     fn reports_written(&self) -> usize;

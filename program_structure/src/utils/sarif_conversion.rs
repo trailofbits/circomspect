@@ -211,7 +211,6 @@ pub enum SarifError {
     InvalidRun(#[from] sarif::RunBuilderError),
     InvalidSarif(#[from] sarif::SarifBuilderError),
     InvalidTool(#[from] sarif::ToolBuilderError),
-    InvalidFix(#[from] sarif::FixBuilderError),
     UnknownLocation(FileID, Range<usize>),
     UnknownFile(FileID),
     InvalidFilePath(PathBuf),

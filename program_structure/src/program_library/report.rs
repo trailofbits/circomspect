@@ -9,7 +9,6 @@ use crate::program_library::report_code::ReportCode;
 use crate::program_library::file_definition::{FileID, FileLocation};
 
 pub type ReportCollection = Vec<Report>;
-pub type DiagnosticCode = String;
 pub type ReportLabel = Label<FileID>;
 type ReportNote = String;
 
@@ -123,12 +122,6 @@ impl Report {
     ) -> &mut Self {
         let label = ReportLabel::primary(file_id, location).with_message(message);
         self.primary_mut().push(label);
-        self.primary_file_ids_mut().push(file_id);
-        self
-    }
-
-    /// Associates a report with a file when no precise source span is available.
-    pub fn scope_to_file(&mut self, file_id: FileID) -> &mut Self {
         self.primary_file_ids_mut().push(file_id);
         self
     }

@@ -8,6 +8,9 @@ that the whole circuit is safe. `abstain` contains unknown or damaged evidence.
 The detailed phase plan is local and ignored; the `reason` field and source
 files remain available in a clean checkout.
 
+The `legacy_*` fields are historical comparison data used by regression tests.
+They do not select or execute a legacy analyzer; the CLI has one analysis pipeline.
+
 The CLI replay checks each target rule within the declared source scope.
 An `emit` case must have a finding, a `no_finding` case must not, and an
 `abstain` case must have scoped `CS0020` with no target finding. The separate

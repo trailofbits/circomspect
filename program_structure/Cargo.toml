@@ -22,7 +22,5 @@ thiserror = "1.0"
 termcolor = "1.1.3"
 url = "2.5.8"
 
-[dev-dependencies]
-
 [lints]
 workspace = true
