@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::{
+use crate::hir::{
     AccessPath, AccessStep, AnonymousInputEffect, AnonymousInputTarget, ArrayIndex, BlockId, Bus,
     BusId, BusTarget, CallTarget, ComponentId, ControlGuard, DefinitionKind, DefinitionRef, Effect,
     ExprId, ExprKind, HirProject, IncompleteLocation, IncompleteReason, IncompleteRegion,
@@ -179,7 +179,7 @@ impl Lifter<'_> {
                         ),
                     ),
                     Some(ValueType::Plain) => {}
-                    Some(ValueType::Component(_)) | Some(ValueType::Unknown) | None => {
+                    Some(ValueType::Component(_) | ValueType::Unknown) | None => {
                         self.incomplete(check.span, IncompleteReason::UnknownType);
                     }
                 }

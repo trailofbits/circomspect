@@ -1,4 +1,11 @@
-use crate::hir::lift::*;
+use crate::hir::lift::{
+    AccessPath, AccessStep, AnonymousInputTarget, ArrayIndex, AssignmentOperator, BTreeSet,
+    BlockId, BusTarget, CallTarget, ControlGuard, Declaration, DeclarationKind, DeclaredSymbol,
+    DefinitionKind, DefinitionRef, DirectionSyntax, Effect, ExprId, ExprKind, Expression,
+    Identifier, IncompleteReason, Knownness, Lifter, LogArgument, PortDirection, ScalarShape,
+    SemanticCode, Severity, ShapeCheck, Span, Statement, SymbolId, SymbolKind, SymbolState,
+    ValueEvidence, ValueType,
+};
 
 impl Lifter<'_> {
     fn path_depends_on_invalid(
@@ -395,13 +402,12 @@ impl Lifter<'_> {
             Knownness::WitnessDependent if shape == ScalarShape::Checked => {
                 Ok(ControlGuard::WitnessOnly)
             }
-            Knownness::WitnessDependent => Err(IncompleteReason::UnknownType),
             Knownness::Opaque
                 if shape == ScalarShape::Deferred && self.provisionally_compile_time(condition) =>
             {
                 Ok(ControlGuard::DeferredScalar)
             }
-            Knownness::Opaque => Err(IncompleteReason::UnknownType),
+            Knownness::WitnessDependent | Knownness::Opaque => Err(IncompleteReason::UnknownType),
         }
     }
 
@@ -452,12 +458,12 @@ impl Lifter<'_> {
             Effect::Return { value, .. } | Effect::Assert { condition: value, .. } => {
                 self.expression_is_witness_only(*value)
             }
-            Effect::DeferredAssert { .. } => false,
             Effect::Log { values, .. } => {
                 values.iter().all(|id| self.expression_is_witness_only(*id))
             }
             Effect::Block(child) => self.branch_is_witness_only(*child),
-            Effect::ComponentInstantiation { .. }
+            Effect::DeferredAssert { .. }
+            | Effect::ComponentInstantiation { .. }
             | Effect::DeferredVariableAssignment { .. }
             | Effect::ConstraintAssignment { .. }
             | Effect::EqualityConstraint { .. }
@@ -1004,21 +1010,25 @@ impl Lifter<'_> {
             }
         }
         match (kind, operator) {
-            (SymbolKind::Variable, AssignmentOperator::Assign)
-            | (SymbolKind::Variable, AssignmentOperator::Add)
-            | (SymbolKind::Variable, AssignmentOperator::Subtract)
-            | (SymbolKind::Variable, AssignmentOperator::Multiply)
-            | (SymbolKind::Variable, AssignmentOperator::Divide)
-            | (SymbolKind::Variable, AssignmentOperator::IntegerDivide)
-            | (SymbolKind::Variable, AssignmentOperator::Modulo)
-            | (SymbolKind::Variable, AssignmentOperator::Power)
-            | (SymbolKind::Variable, AssignmentOperator::ShiftLeft)
-            | (SymbolKind::Variable, AssignmentOperator::ShiftRight)
-            | (SymbolKind::Variable, AssignmentOperator::BitAnd)
-            | (SymbolKind::Variable, AssignmentOperator::BitOr)
-            | (SymbolKind::Variable, AssignmentOperator::BitXor)
-            | (SymbolKind::Component, AssignmentOperator::Assign)
-            | (SymbolKind::Tag, AssignmentOperator::Assign) => {
+            (
+                SymbolKind::Variable | SymbolKind::Component | SymbolKind::Tag,
+                AssignmentOperator::Assign,
+            )
+            | (
+                SymbolKind::Variable,
+                AssignmentOperator::Add
+                | AssignmentOperator::Subtract
+                | AssignmentOperator::Multiply
+                | AssignmentOperator::Divide
+                | AssignmentOperator::IntegerDivide
+                | AssignmentOperator::Modulo
+                | AssignmentOperator::Power
+                | AssignmentOperator::ShiftLeft
+                | AssignmentOperator::ShiftRight
+                | AssignmentOperator::BitAnd
+                | AssignmentOperator::BitOr
+                | AssignmentOperator::BitXor,
+            ) => {
                 if matches!(kind, SymbolKind::Variable | SymbolKind::Tag) {
                     let current = self.hir.symbols[path.terminal.index].knownness;
                     let next = self.knownness(value);

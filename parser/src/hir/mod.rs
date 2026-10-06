@@ -746,9 +746,8 @@ impl HirProject {
             bus_arguments: Vec::new(),
             tags: Vec::new(),
             knownness: match kind {
-                SymbolKind::Parameter => Knownness::ParameterDependent,
+                SymbolKind::Parameter | SymbolKind::Tag => Knownness::ParameterDependent,
                 SymbolKind::Signal | SymbolKind::Bus => Knownness::WitnessDependent,
-                SymbolKind::Tag => Knownness::ParameterDependent,
                 SymbolKind::Variable | SymbolKind::Component => Knownness::Opaque,
             },
             value_evidence: ValueEvidence::Checked,

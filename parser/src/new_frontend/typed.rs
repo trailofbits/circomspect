@@ -404,25 +404,27 @@ fn two_children(mut node: SyntaxNode) -> Result<(SyntaxNode, SyntaxNode), Syntax
     }
 }
 
-fn identifier(node: SyntaxNode) -> Result<Identifier, SyntaxDiagnostic> {
+fn identifier(mut node: SyntaxNode) -> Result<Identifier, SyntaxDiagnostic> {
     if node.kind != SyntaxKind::Identifier || !node.children.is_empty() {
         return Err(malformed(&node, "expected identifier"));
     }
-    Ok(Identifier { name: required_text(&node)?, span: node.span })
+    let name =
+        node.text.take().ok_or_else(|| malformed(&node, "missing syntax name or operator"))?;
+    Ok(Identifier { name, span: node.span })
 }
 
 fn identifiers(nodes: Vec<SyntaxNode>) -> Result<Vec<Identifier>, SyntaxDiagnostic> {
     nodes.into_iter().map(identifier).collect()
 }
 
-fn direction(node: SyntaxNode) -> Result<SpannedDirection, SyntaxDiagnostic> {
+fn direction(node: &SyntaxNode) -> Result<SpannedDirection, SyntaxDiagnostic> {
     if node.kind != SyntaxKind::Direction {
-        return Err(malformed(&node, "expected signal direction"));
+        return Err(malformed(node, "expected signal direction"));
     }
     let direction = match node.text.as_deref() {
         Some("input") => PortDirection::Input,
         Some("output") => PortDirection::Output,
-        _ => return Err(malformed(&node, "invalid signal direction")),
+        _ => return Err(malformed(node, "invalid signal direction")),
     };
     Ok(SpannedDirection { direction, span: node.span })
 }
@@ -562,6 +564,7 @@ enum ExpressionFrame {
     Collection(CollectionFrame),
 }
 
+#[derive(Clone, Copy)]
 enum OperatorFrame {
     Unary(UnaryOperator, Span),
     Binary(BinaryOperator, Span),
@@ -852,7 +855,7 @@ fn declaration_header(mut node: SyntaxNode) -> Result<DeclarationKind, SyntaxDia
     let mut arguments = ArgumentList::Omitted;
     for child in node.children {
         match child.kind {
-            SyntaxKind::Direction => direction_value = Some(direction(child)?),
+            SyntaxKind::Direction => direction_value = Some(direction(&child)?),
             SyntaxKind::Tags => tag_values = tags(child)?,
             SyntaxKind::Arguments if is_bus => {
                 arguments = ArgumentList::Parenthesized(

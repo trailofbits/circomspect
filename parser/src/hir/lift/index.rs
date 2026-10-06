@@ -1,4 +1,10 @@
-use crate::hir::lift::*;
+use crate::hir::lift::{
+    BTreeMap, BTreeSet, BlockId, Bus, BusId, BusTarget, CallTarget, Declaration, DeclarationKind,
+    DeclaredSymbol, Definition, DefinitionKind, DefinitionRef, ExprId, Expression, Function,
+    FunctionId, Identifier, IncompleteReason, Item, Knownness, Lifter, PortDirection, PortSchema,
+    SemanticCode, SemanticDiagnostic, Severity, SourceDefinitionKind, Span, Statement, SymbolId,
+    SymbolKind, Template, TemplateId,
+};
 
 struct PortContext<'a> {
     reference: DefinitionRef,
@@ -147,10 +153,10 @@ impl Lifter<'_> {
                 let parameters = self.parameters(definition);
                 match reference {
                     DefinitionRef::Function(id) => {
-                        self.hir.functions[id.index].parameters = parameters
+                        self.hir.functions[id.index].parameters = parameters;
                     }
                     DefinitionRef::Template(id) => {
-                        self.hir.templates[id.index].parameters = parameters
+                        self.hir.templates[id.index].parameters = parameters;
                     }
                     DefinitionRef::Bus(id) => self.hir.buses[id.index].parameters = parameters,
                 }
@@ -239,10 +245,10 @@ impl Lifter<'_> {
             .dimensions
             .iter()
             .all(|value| Self::syntactic_compile_time(value, context.known_parameters));
-        self.hir.symbols[symbol.index].bus_type = context.bus_type.clone();
+        self.hir.symbols[symbol.index].bus_type.clone_from(&context.bus_type);
         self.hir.symbols[symbol.index].rank = declared.dimensions.len();
         self.hir.symbols[symbol.index].shape_checked = checked_shape;
-        let schema = Self::port_schema(context.kind, checked_shape, &context.bus_type);
+        let schema = Self::port_schema(context.kind, checked_shape, context.bus_type.as_ref());
         let port = self.hir.add_port(symbol, context.direction, schema, declared.span);
         for tag in context.tags {
             let tag_id = self.hir.add_symbol(tag.name.clone(), SymbolKind::Tag, tag.span);
@@ -260,7 +266,7 @@ impl Lifter<'_> {
     fn port_schema(
         kind: SymbolKind,
         checked_shape: bool,
-        bus_type: &Option<BusTarget>,
+        bus_type: Option<&BusTarget>,
     ) -> PortSchema {
         if !checked_shape {
             return PortSchema::Opaque(IncompleteReason::UnknownType);

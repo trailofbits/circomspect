@@ -1,4 +1,11 @@
-use crate::hir::lift::*;
+use crate::hir::lift::{
+    Access, AccessPath, AccessState, AccessStep, AnonymousCallExpr, AnonymousInput,
+    AnonymousInputEffect, AnonymousInputTarget, ArrayIndex, BTreeSet, BusTarget, CallTarget,
+    DefinitionKind, ExprId, ExprKind, Expression, Identifier, IncompleteReason,
+    InputAssignmentOperator, Item, Knownness, Lifter, Main, PortDirection, PortSchema, ScalarShape,
+    SemanticCode, Severity, ShapeCheck, Span, SymbolId, SymbolKind, TemplateId, ValueEvidence,
+    ValueType,
+};
 
 impl Lifter<'_> {
     pub(super) fn lift_access(&mut self, expression: &Expression) -> Option<AccessPath> {
@@ -533,7 +540,6 @@ impl Lifter<'_> {
         let expression = self.hir.expression(id)?;
         match &expression.kind {
             ExprKind::Number(_) | ExprKind::Unary { .. } | ExprKind::Binary { .. } => Some(0),
-            ExprKind::Call { .. } => None,
             ExprKind::Access(path) => self.access_rank(path),
             ExprKind::Array(elements) => {
                 let Some(first) = elements.first() else { return Some(1) };
@@ -553,7 +559,7 @@ impl Lifter<'_> {
                 let CallTarget::Template(template) = target else { return None };
                 self.anonymous_output_shape(*template).map(|(_, rank)| rank)
             }
-            ExprKind::Tuple(_) | ExprKind::Opaque(_) => None,
+            ExprKind::Call { .. } | ExprKind::Tuple(_) | ExprKind::Opaque(_) => None,
         }
     }
 
