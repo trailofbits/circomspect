@@ -101,6 +101,20 @@ fn additional_free_inputs_never_turn_defaults_into_fixed_range_evidence() {
         (
             SOURCE.replace(
                 "signal output y;component c=Comparison();c.x[0]<==4;",
+                "signal input z;signal output y;component c=Comparison();c.x[0]<==z+4;",
+            ),
+            0,
+        ),
+        (
+            SOURCE.replace(
+                "signal output y;component c=Comparison();c.x[0]<==4;",
+                "signal input z;z===0;signal output y;component c=Comparison();c.x[0]<==z+4;",
+            ),
+            1,
+        ),
+        (
+            SOURCE.replace(
+                "signal output y;component c=Comparison();c.x[0]<==4;",
                 "signal input z;z===4;signal output y;component c=Comparison();c.x[0]<==z;",
             ),
             1,
