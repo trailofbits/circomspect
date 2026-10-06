@@ -337,16 +337,18 @@ fn run_corpus(cases: Vec<Value>) {
             ScopeKind::SourceRecovery => !observed.analyzed && observed.syntax_error,
         };
         if !scope_checked
-            || (expected == "abstain" && !observed.incomplete)
+            || (expected == "abstain" && !has_expected_abstention(&observed))
             || label == "FN"
             || label == "FP"
             || label == "unexpected finding"
         {
             failures.push(format!(
-                "{}: {label}, scope analyzed={analyzed}, incomplete={incomplete}",
+                "{}: {label}, scope analyzed={analyzed}, incomplete={incomplete}, \
+                 target incomplete scopes={target_incomplete}",
                 field(&case, "id"),
                 analyzed = observed.analyzed,
                 incomplete = observed.incomplete,
+                target_incomplete = observed.target_code_incomplete_scopes,
             ));
         }
         observations.push(json!({
@@ -364,6 +366,27 @@ fn run_corpus(cases: Vec<Value>) {
     }
     write_corpus_report(&observations, &totals, &failures, true);
     assert!(failures.is_empty(), "{totals:?}\n{}", failures.join("\n"));
+}
+
+fn has_expected_abstention(observed: &ObservedEvidence) -> bool {
+    observed.incomplete
+        && match observed.scope_kind {
+            ScopeKind::Definition => observed.target_code_incomplete_scopes > 0,
+            ScopeKind::SourceRecovery => observed.syntax_error,
+        }
+}
+
+#[test]
+fn unrelated_incompleteness_does_not_satisfy_an_abstention_case() {
+    let mut case = manifest()
+        .into_iter()
+        .find(|case| field(case, "id") == "field_arithmetic_abstain")
+        .expect("the arithmetic abstention fixture exists");
+    case["rule_id"] = json!("CS0012");
+    let observed = observed_evidence(&case);
+    assert!(observed.incomplete, "the fixture exercises an unrelated incomplete rule");
+    assert_eq!(observed.target_code_incomplete_scopes, 0);
+    assert!(!has_expected_abstention(&observed));
 }
 
 fn write_corpus_report(
