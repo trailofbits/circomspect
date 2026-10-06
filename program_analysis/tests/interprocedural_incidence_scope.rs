@@ -175,7 +175,7 @@ fn scoped_port_queries_preserve_main_but_refuse_incoming_call_closure() {
     let cfg = build_cfg(&lifted.hir, child.context().definition()).unwrap();
     let facts = provider.analyze_for_evidence(&cfg, &child, None).unwrap();
     let result = provider.template_port_for_evidence(&facts, &child, port(&lifted, "y"), &[]);
-    assert!(result.unavailable().unwrap().contains(&SummaryBlocker::ExternalSummary));
+    assert!(result.unavailable().unwrap().contains(&SummaryBlocker::UnsupportedContext));
 }
 
 #[test]
