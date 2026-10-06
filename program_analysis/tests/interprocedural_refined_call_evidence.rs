@@ -1,3 +1,12 @@
+// Tests intentionally fail by panicking; fixture assembly favors readable assertions.
+// Rust 1.74 requires `allow` here because `expect` lint attributes are not yet stable.
+#![allow(
+    clippy::allow_attributes,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::panic_in_result_fn,
+    clippy::unwrap_used
+)]
 use std::fs;
 
 use circomspect_program_analysis::hir_cfg::build_cfg;
@@ -319,7 +328,7 @@ fn unattached_call_and_invalid_array_target_cannot_mint_evidence() {
         | AnalyzeEvidenceError::InvalidAssignment { .. } => {}
         AnalyzeEvidenceError::Blocked(blocker) => panic!("wrong blocker: {blocker:?}"),
         AnalyzeEvidenceError::InvalidValueUse { diagnostic, .. } => {
-            assert_eq!(diagnostic.code, SemanticCode::InvalidAssignment)
+            assert_eq!(diagnostic.code, SemanticCode::InvalidAssignment);
         }
     }
 }

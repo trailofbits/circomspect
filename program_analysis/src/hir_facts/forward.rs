@@ -1732,7 +1732,7 @@ mod tests {
             })
             .unwrap();
         let analysis = ForwardAnalysis::new(&hir, &field);
-        check_transfer_order(node, &analysis, &variable_states(u, key.clone(), &field));
+        check_transfer_order(node, &analysis, &variable_states(u, &key, &field));
         let mut state = ForwardState::boundary();
         let ForwardState::Reached { dependencies, .. } = &mut state else { panic!("reached") };
         dependencies.insert(u, MayAccessSet::from_keys(BTreeSet::from([key.clone()])));
@@ -1771,7 +1771,7 @@ mod tests {
 
     fn variable_states(
         symbol: SymbolId,
-        dependency: AccessKey,
+        dependency: &AccessKey,
         field: &FieldContext,
     ) -> Vec<ForwardState> {
         let mut states = vec![ForwardState::Unreachable, ForwardState::boundary()];
@@ -1822,7 +1822,7 @@ mod tests {
         let t = hir.symbols().iter().find(|symbol| symbol.name == "t").unwrap().id;
         let x = hir.symbols().iter().find(|symbol| symbol.name == "x").unwrap().id;
         let key = AccessKey { root: x, instance: None, steps: Vec::new() };
-        let states = variable_states(t, key, &field);
+        let states = variable_states(t, &key, &field);
         let analysis = ForwardAnalysis::new(&hir, &field);
         for id in cfg.nodes() {
             check_transfer_order(cfg.node(*id).unwrap(), &analysis, &states);
@@ -1846,7 +1846,7 @@ mod tests {
         let field = FieldContext::for_curve(Curve::Bn254);
         let t = hir.symbols().iter().find(|symbol| symbol.name == "t").unwrap().id;
         let key = AccessKey { root: t, instance: None, steps: Vec::new() };
-        let states = variable_states(t, key, &field);
+        let states = variable_states(t, &key, &field);
         let analysis = ForwardAnalysis::new(&hir, &field);
         let edges: Vec<_> = cfg
             .edges()
@@ -1896,7 +1896,7 @@ mod tests {
                 Some(node)
             })
             .unwrap();
-        let states = variable_states(t, key, &field);
+        let states = variable_states(t, &key, &field);
         check_transfer_order(constraint, &analysis, &states);
     }
 }

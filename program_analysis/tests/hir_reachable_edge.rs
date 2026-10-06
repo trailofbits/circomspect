@@ -1,3 +1,12 @@
+// Tests intentionally fail by panicking; fixture assembly favors readable assertions.
+// Rust 1.74 requires `allow` here because `expect` lint attributes are not yet stable.
+#![allow(
+    clippy::allow_attributes,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::panic_in_result_fn,
+    clippy::unwrap_used
+)]
 use std::fs;
 
 use abstract_interpretation::graph::{EdgeId, FlowGraph};
@@ -213,11 +222,11 @@ fn dead_nested_symbolic_control_has_certified_dead_edges_but_live_control_blocks
                 blocked += 1;
             }
         }
-        if !dead {
-            assert!(blocked > 0, "live symbolic control must retain a blocker");
-        } else {
+        if dead {
             let budget = analyze(&lifted.hir, &cfg, &field, Some(0)).unwrap();
             assert!(edges.iter().all(|edge| budget.reachable_edge(*edge).certified().is_none()));
+        } else {
+            assert!(blocked > 0, "live symbolic control must retain a blocker");
         }
     }
 }

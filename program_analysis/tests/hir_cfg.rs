@@ -1,3 +1,13 @@
+// Tests intentionally fail by panicking; fixture assembly favors readable assertions.
+// Rust 1.74 requires `allow` here because `expect` lint attributes are not yet stable.
+#![allow(
+    clippy::allow_attributes,
+    clippy::assert_is_empty,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::panic_in_result_fn,
+    clippy::unwrap_used
+)]
 use abstract_interpretation::graph::FlowGraph;
 use circomspect_program_analysis::hir_cfg::{build_cfg, BuildError, CfgNodeKind, EdgeKind};
 use parser::hir::{lift_project, ControlGuard, DefinitionRef};
@@ -213,12 +223,11 @@ fn declaration_dimensions_are_evaluated_before_declaration() {
     let dimension = cfg
         .nodes()
         .iter()
-        .filter_map(|id| {
+        .find_map(|id| {
             let node = cfg.node(*id).unwrap();
             let CfgNodeKind::Evaluate(expression) = node.kind else { return None };
             (node.origin.unwrap().effect_index == a.1.effect_index).then_some((*id, expression))
         })
-        .next()
         .unwrap();
     assert!(dimension.0 < a.0);
 }

@@ -1,3 +1,13 @@
+// Tests intentionally fail by panicking; fixture assembly favors readable assertions.
+// Rust 1.74 requires `allow` here because `expect` lint attributes are not yet stable.
+#![allow(
+    clippy::allow_attributes,
+    clippy::assert_is_empty,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::panic_in_result_fn,
+    clippy::unwrap_used
+)]
 use circomspect_parser::new_frontend::{
     load_sources, parse_source, DefinitionKind, DiagnosticKind, DiagnosticLocation, Expression,
     Item, SourceId, Statement, SyntaxCategory, Version, VersionPolicy, WalkSyntax,
@@ -416,6 +426,8 @@ fn arbitrary_unicode_and_malformed_strings_never_panic_or_make_invalid_spans() {
 
 #[test]
 fn typed_ast_distinguishes_definition_and_direction_kinds() {
+    use circomspect_parser::new_frontend::{DeclarationKind, DirectionSyntax};
+
     let outcome = parse("template T() { output signal x; signal input y; }");
     assert!(outcome.diagnostics.is_empty());
     let Item::Definition(definition) = &outcome.ast.items[0] else {
@@ -431,7 +443,6 @@ fn typed_ast_distinguishes_definition_and_direction_kinds() {
     let Statement::Declaration(second) = &definition.body.statements[1] else {
         panic!("second declaration");
     };
-    use circomspect_parser::new_frontend::{DeclarationKind, DirectionSyntax};
     let DeclarationKind::Signal { direction: DirectionSyntax::Before(before), tags: first_tags } =
         &first.kind
     else {

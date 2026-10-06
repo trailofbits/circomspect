@@ -6,8 +6,18 @@ mod loader;
 mod typed;
 mod walk;
 
+// LALRPOP emits its own parser machine, including unreachable-state panics and
+// generated patterns. These exceptions apply only to generated code; the grammar,
+// lexer, recovery, and lifting code retain the workspace policy. Rust 1.74 cannot
+// use `expect` lint attributes yet.
 lalrpop_mod!(
-    #[allow(clippy::all)]
+    #[allow(
+        clippy::all,
+        clippy::pedantic,
+        clippy::allow_attributes,
+        clippy::unwrap_used,
+        clippy::panic
+    )]
     syntax,
     "/new_frontend/syntax.rs"
 );

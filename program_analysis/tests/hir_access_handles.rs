@@ -1,3 +1,12 @@
+// Tests intentionally fail by panicking; fixture assembly favors readable assertions.
+// Rust 1.74 requires `allow` here because `expect` lint attributes are not yet stable.
+#![allow(
+    clippy::allow_attributes,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::panic_in_result_fn,
+    clippy::unwrap_used
+)]
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::hir_facts::{analyze, AccessHandleError, FactBlocker, FieldContext};
 use parser::hir::{lift_project, DefinitionRef, HirProject};

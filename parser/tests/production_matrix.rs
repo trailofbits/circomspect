@@ -1,3 +1,12 @@
+// Tests intentionally fail by panicking; fixture assembly favors readable assertions.
+// Rust 1.74 requires `allow` here because `expect` lint attributes are not yet stable.
+#![allow(
+    clippy::allow_attributes,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::panic_in_result_fn,
+    clippy::unwrap_used
+)]
 use circomspect_parser::new_frontend::{
     parse_source, DiagnosticKind, SourceId, SyntaxCategory, Version, VersionPolicy, WalkSyntax,
 };
@@ -60,8 +69,10 @@ fn owned_parser_agrees_with_pinned_compiler_syntax_matrix() {
         if !outcome.diagnostics.is_empty() {
             failures.push(format!("{id}: accepted source rejected: {:?}", outcome.diagnostics));
         }
-        let start = row["span"]["start"].as_u64().expect("span start") as usize;
-        let end = row["span"]["end"].as_u64().expect("span end") as usize;
+        let start = usize::try_from(row["span"]["start"].as_u64().expect("span start"))
+            .expect("span fits usize");
+        let end = usize::try_from(row["span"]["end"].as_u64().expect("span end"))
+            .expect("span fits usize");
         let category = if id == "comment_line" || id == "comment_block" {
             SyntaxCategory::Trivia
         } else {
@@ -200,8 +211,10 @@ fn matrix_features_enforce_target_version_without_locking_to_source_pragma() {
             1,
         );
         let outcome = parse_source(SourceId::new(0), &source, VersionPolicy::new(target));
-        let focal_start = row["span"]["start"].as_u64().expect("focal start") as usize;
-        let focal_end = row["span"]["end"].as_u64().expect("focal end") as usize;
+        let focal_start = usize::try_from(row["span"]["start"].as_u64().expect("focal start"))
+            .expect("span fits usize");
+        let focal_end = usize::try_from(row["span"]["end"].as_u64().expect("focal end"))
+            .expect("span fits usize");
         let mut declaration = None;
         outcome.ast.walk_syntax(None, &mut |category, span, _| {
             if category == SyntaxCategory::Declaration

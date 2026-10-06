@@ -1,3 +1,13 @@
+// Tests intentionally fail by panicking; fixture assembly favors readable assertions.
+// Rust 1.74 requires `allow` here because `expect` lint attributes are not yet stable.
+#![allow(
+    clippy::allow_attributes,
+    clippy::assert_is_empty,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::panic_in_result_fn,
+    clippy::unwrap_used
+)]
 use abstract_interpretation::graph::FlowGraph;
 use circomspect_program_analysis::hir_cfg::{build_cfg, CfgNodeKind};
 use circomspect_program_analysis::hir_facts::{
@@ -71,7 +81,7 @@ fn last_assigned_path(hir: &HirProject, definition: DefinitionRef, name: &str) -
 fn expression_path(hir: &HirProject, name: &str, minimum_steps: usize) -> AccessPath {
     hir.expressions()
         .iter()
-        .filter_map(|expression| match &expression.kind {
+        .find_map(|expression| match &expression.kind {
             ExprKind::Access(path)
                 if hir.symbol(path.root).is_some_and(|symbol| symbol.name == name)
                     && path.steps.len() >= minimum_steps =>
@@ -80,7 +90,6 @@ fn expression_path(hir: &HirProject, name: &str, minimum_steps: usize) -> Access
             }
             _ => None,
         })
-        .next()
         .unwrap()
 }
 

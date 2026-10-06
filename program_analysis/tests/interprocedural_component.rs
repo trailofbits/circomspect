@@ -1,3 +1,12 @@
+// Tests intentionally fail by panicking; fixture assembly favors readable assertions.
+// Rust 1.74 requires `allow` here because `expect` lint attributes are not yet stable.
+#![allow(
+    clippy::allow_attributes,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::panic_in_result_fn,
+    clippy::unwrap_used
+)]
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::hir_facts::{
     analyze, FactBlocker, FieldContext, Incidence, WitnessWriteIssue,
@@ -321,7 +330,9 @@ fn checked_input_relation_agrees_with_direct_inline_output() {
     let inline_output = lifted.hir.template(inline).unwrap().ports[0];
     let direct = provider.template_port(inline, &inline_context, inline_output);
     assert_eq!(
-        composed.certified().map(|item| item.value()),
+        composed.certified().map(
+            circomspect_program_analysis::interprocedural::ComposedConstraintFixedOutput::value
+        ),
         direct.certified().unwrap().fixed_value(),
         "{:?}",
         composed.unavailable()
@@ -392,7 +403,9 @@ fn repeated_instances_compose_only_their_own_checked_inputs() {
         let applied = provider.apply_component_output(&facts, &scope, &call, &handle);
         let value = provider.composed_constraint_fixed_output(&facts, applied.certified().unwrap());
         assert_eq!(
-            value.certified().map(|item| item.value()),
+            value.certified().map(
+                circomspect_program_analysis::interprocedural::ComposedConstraintFixedOutput::value
+            ),
             Some(&field.canonical(expected.into()))
         );
         let certificate = value.certified().unwrap();
@@ -432,12 +445,11 @@ fn duplicate_and_missing_input_bindings_cannot_fix_an_output() {
             panic!("component call must be reachable")
         };
         let applied = provider.apply_component_output(&facts, &scope, &call, &handle);
-        let result = match applied.certified() {
-            Some(applied) => provider.composed_constraint_fixed_output(&facts, applied),
-            None => {
-                assert!(applied.unavailable().unwrap().contains(&expected));
-                continue;
-            }
+        let result = if let Some(applied) = applied.certified() {
+            provider.composed_constraint_fixed_output(&facts, applied)
+        } else {
+            assert!(applied.unavailable().unwrap().contains(&expected));
+            continue;
         };
         assert!(result.unavailable().unwrap().contains(&expected));
     }
@@ -528,7 +540,12 @@ fn unrelated_branch_preserves_the_later_checked_input_value() {
     let applied = provider.apply_component_output(&facts, &scope, &call, &handle);
     let result = provider.composed_constraint_fixed_output(&facts, applied.certified().unwrap());
     let expected = FieldContext::for_curve(Curve::Bn254).canonical(7.into());
-    assert_eq!(result.certified().map(|proof| proof.value()), Some(&expected));
+    assert_eq!(
+        result.certified().map(
+            circomspect_program_analysis::interprocedural::ComposedConstraintFixedOutput::value
+        ),
+        Some(&expected)
+    );
 }
 
 #[test]

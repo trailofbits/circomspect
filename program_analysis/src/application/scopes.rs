@@ -179,7 +179,7 @@ impl<'a, 'b, 'c, 'd> ScopeRunner<'a, 'b, 'c, 'd> {
     ) -> Result<(), ApplicationError> {
         match error {
             AnalyzeEvidenceError::Blocked(reason) => {
-                self.context_blocked(evidence, span, &reason)?
+                self.context_blocked(evidence, span, &reason)?;
             }
             AnalyzeEvidenceError::InvalidAssignment { diagnostic, .. }
             | AnalyzeEvidenceError::InvalidValueUse { diagnostic, .. } => {

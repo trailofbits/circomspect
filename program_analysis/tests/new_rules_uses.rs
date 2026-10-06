@@ -1,3 +1,13 @@
+// Tests intentionally fail by panicking; fixture assembly favors readable assertions.
+// Rust 1.74 requires `allow` here because `expect` lint attributes are not yet stable.
+#![allow(
+    clippy::allow_attributes,
+    clippy::expect_used,
+    clippy::format_push_string,
+    clippy::panic,
+    clippy::panic_in_result_fn,
+    clippy::unwrap_used
+)]
 mod support;
 
 use std::collections::BTreeSet;
@@ -158,9 +168,12 @@ fn dead_scalar_chain_emits_two_cs0008_findings_at_assignment_sources() {
                 assert_eq!(result["ruleId"], "CS0008");
                 assert_eq!(result["level"], "warning");
                 assert_eq!(result["locations"][0]["physicalLocation"]["region"]["startLine"], 1);
-                result["locations"][0]["physicalLocation"]["region"]["startColumn"]
-                    .as_u64()
-                    .unwrap() as usize
+                usize::try_from(
+                    result["locations"][0]["physicalLocation"]["region"]["startColumn"]
+                        .as_u64()
+                        .unwrap(),
+                )
+                .unwrap()
             })
             .collect();
         assert_eq!(columns, vec![source.find("x=1").unwrap() + 1, source.find("y=x").unwrap() + 1]);
@@ -312,10 +325,10 @@ fn unused_local_value_and_internal_signal_emit_cs0006() {
         assert_eq!(count(results, RuleKind::UnusedVariableValue), 1);
     });
     run_case("template Check(){signal x;x<--7;signal output y;y<==1;}", "Check", |results, _| {
-        assert_eq!(count(results, RuleKind::UnusedVariableValue), 1)
+        assert_eq!(count(results, RuleKind::UnusedVariableValue), 1);
     });
     run_case("template Check(){signal output x;x<--7;}", "Check", |results, _| {
-        assert_eq!(count(results, RuleKind::UnusedVariableValue), 0)
+        assert_eq!(count(results, RuleKind::UnusedVariableValue), 0);
     });
 }
 
@@ -743,8 +756,12 @@ fn dead_pure_call_chain_emits_cs0008_at_both_assignment_sources() {
             .map(|item| {
                 assert_eq!(item["ruleId"], "CS0008");
                 assert_eq!(item["level"], "warning");
-                item["locations"][0]["physicalLocation"]["region"]["startColumn"].as_u64().unwrap()
-                    as usize
+                usize::try_from(
+                    item["locations"][0]["physicalLocation"]["region"]["startColumn"]
+                        .as_u64()
+                        .unwrap(),
+                )
+                .unwrap()
             })
             .collect();
         assert_eq!(

@@ -300,6 +300,7 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
     }
 
     /// Prove a comparator range violation through the complete three-scope closure.
+    #[must_use]
     pub fn component_comparator_range(
         &self,
         applied: &AppliedComponentPort,

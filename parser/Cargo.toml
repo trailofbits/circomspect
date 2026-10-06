@@ -21,3 +21,6 @@ lalrpop-util = "0.20"
 [dev-dependencies]
 proptest = "=1.8.0"
 serde_json = "=1.0.151"
+
+[lints]
+workspace = true

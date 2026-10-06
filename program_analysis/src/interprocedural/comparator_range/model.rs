@@ -39,7 +39,7 @@ pub(super) fn validate_candidate(
     }
     let origins = constraint_origins(closure);
     for violation in &mut violations {
-        violation.origins = origins.clone();
+        violation.origins.clone_from(&origins);
     }
     Ok(violations)
 }

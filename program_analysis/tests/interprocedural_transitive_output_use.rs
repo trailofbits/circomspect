@@ -1,3 +1,13 @@
+// Tests intentionally fail by panicking; fixture assembly favors readable assertions.
+// Rust 1.74 requires `allow` here because `expect` lint attributes are not yet stable.
+#![allow(
+    clippy::allow_attributes,
+    clippy::expect_used,
+    clippy::format_push_string,
+    clippy::panic,
+    clippy::panic_in_result_fn,
+    clippy::unwrap_used
+)]
 use std::fs;
 
 use circomspect_program_analysis::hir_cfg::build_cfg;
@@ -73,8 +83,14 @@ fn nested_component_output_use_keeps_exact_array_elements_separate() {
     let unused = uses
         .iter()
         .find(|proof| proof.instance_depth() == 2 && proof.output_indices() == Some(&[1][..]));
-    assert_eq!(read.map(|proof| proof.status()), Some(ProjectOutputStatus::Read));
-    assert_eq!(unused.map(|proof| proof.status()), Some(ProjectOutputStatus::Unused));
+    assert_eq!(
+        read.map(circomspect_program_analysis::interprocedural::ProjectOutputUse::status),
+        Some(ProjectOutputStatus::Read)
+    );
+    assert_eq!(
+        unused.map(circomspect_program_analysis::interprocedural::ProjectOutputUse::status),
+        Some(ProjectOutputStatus::Unused)
+    );
 }
 
 #[test]

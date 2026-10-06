@@ -1,3 +1,12 @@
+// Tests intentionally fail by panicking; fixture assembly favors readable assertions.
+// Rust 1.74 requires `allow` here because `expect` lint attributes are not yet stable.
+#![allow(
+    clippy::allow_attributes,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::panic_in_result_fn,
+    clippy::unwrap_used
+)]
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
@@ -25,16 +34,16 @@ fn joined<S: Lattice>(left: &S, right: &S) -> S {
     result
 }
 
-fn laws<S: Lattice + std::fmt::Debug>(a: S, b: S, c: S) {
-    assert!(S::bottom().leq(&a));
-    assert!(a.leq(&a));
-    assert_eq!(joined(&a, &a), a);
-    assert_eq!(joined(&a, &b), joined(&b, &a));
-    assert_eq!(joined(&joined(&a, &b), &c), joined(&a, &joined(&b, &c)));
-    let union = joined(&a, &b);
+fn laws<S: Lattice + std::fmt::Debug>(a: &S, b: &S, c: &S) {
+    assert!(S::bottom().leq(a));
+    assert!(a.leq(a));
+    assert_eq!(&joined(a, a), a);
+    assert_eq!(joined(a, b), joined(b, a));
+    assert_eq!(joined(&joined(a, b), c), joined(a, &joined(b, c)));
+    let union = joined(a, b);
     assert!(a.leq(&union) && b.leq(&union));
-    if a.leq(&b) {
-        assert_eq!(union, b);
+    if a.leq(b) {
+        assert_eq!(&union, b);
     }
 }
 
@@ -52,8 +61,8 @@ fn shared_lattices_preserve_join_laws_and_prior_snapshots() {
     for a in 0..4 {
         for b in 0..4 {
             for c in 0..4 {
-                laws(Arc::new(constant(a)), Arc::new(constant(b)), Arc::new(constant(c)));
-                laws(Arc::new(set(a)), Arc::new(set(b)), Arc::new(set(c)));
+                laws(&Arc::new(constant(a)), &Arc::new(constant(b)), &Arc::new(constant(c)));
+                laws(&Arc::new(set(a)), &Arc::new(set(b)), &Arc::new(set(c)));
             }
         }
     }
@@ -184,12 +193,12 @@ proptest! {
 
     #[test]
     fn set_laws(a in any::<u8>(), b in any::<u8>(), c in any::<u8>()) {
-        laws(set(a), set(b), set(c));
+        laws(&set(a), &set(b), &set(c));
     }
 
     #[test]
     fn constant_laws(a in any::<u8>(), b in any::<u8>(), c in any::<u8>()) {
-        laws(constant(a), constant(b), constant(c));
+        laws(&constant(a), &constant(b), &constant(c));
     }
 
     #[test]
@@ -229,7 +238,7 @@ fn reachability_laws_are_exhaustive() {
     for a in values {
         for b in values {
             for c in values {
-                laws(a, b, c);
+                laws(&a, &b, &c);
             }
         }
     }

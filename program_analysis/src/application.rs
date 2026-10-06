@@ -34,7 +34,9 @@ pub struct AnalyzedScope {
 /// Analyze entry files and their includes using Circom 2.2.3 syntax.
 ///
 /// Syntax and semantic failures become reports and preserve independent definitions.
-/// An error return denotes a violated internal source or analysis invariant.
+///
+/// # Errors
+/// Returns an error for a violated source identity, location, or analysis invariant.
 pub fn analyze_files(
     paths: &[PathBuf],
     libraries: &[PathBuf],

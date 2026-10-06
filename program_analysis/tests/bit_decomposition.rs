@@ -1,3 +1,13 @@
+// Tests intentionally fail by panicking; fixture assembly favors readable assertions.
+// Rust 1.74 requires `allow` here because `expect` lint attributes are not yet stable.
+#![allow(
+    clippy::allow_attributes,
+    clippy::expect_used,
+    clippy::format_push_string,
+    clippy::panic,
+    clippy::panic_in_result_fn,
+    clippy::unwrap_used
+)]
 use std::fs;
 
 use circomspect_program_analysis::hir_cfg::build_cfg;
@@ -8,7 +18,7 @@ use parser::hir::{lift_project, AccessPath, AccessStep, ArrayIndex, HirProject, 
 use parser::new_frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
 
-fn source(boolean: &[bool; 3], weight: usize, generated: bool) -> String {
+fn source(boolean: [bool; 3], weight: usize, generated: bool) -> String {
     let mut body = String::from(
         "template Bits(){signal input in;signal output bits[3];\
          bits[0]<--0;bits[1]<--0;bits[2]<--0;",
@@ -41,7 +51,7 @@ fn unrolled_source(count: usize) -> String {
 }
 
 fn accumulated_source(extra: &str) -> String {
-    let mut source = source(&[true; 3], 4, true);
+    let mut source = source([true; 3], 4, true);
     source = source.replace(
         "in===bits[0]+2*bits[1]+4*bits[2];",
         &format!("var sum=0;sum+=bits[0];sum+=2*bits[1];sum+=4*bits[2];{extra}sum===in;"),
@@ -153,7 +163,7 @@ fn inspect_indices_with_budget(
 
 #[test]
 fn explicit_unrolled_boolean_and_weighted_relations_certify_three_bits() {
-    let source = source(&[true; 3], 4, true);
+    let source = source([true; 3], 4, true);
     let fact = inspect(&source, Curve::Bn254);
     let certificate = fact.certified().unwrap().as_ref().unwrap();
     assert_eq!(certificate.bits().len(), 3);
@@ -171,10 +181,8 @@ fn explicit_unrolled_boolean_and_weighted_relations_certify_three_bits() {
 
 #[test]
 fn missing_boolean_wrong_weight_and_witness_only_relation_do_not_certify() {
-    let witness_only =
-        source(&[true; 3], 4, false).replace("signal input in;", "signal output in;");
-    for source in [source(&[true, false, true], 4, true), source(&[true; 3], 3, true), witness_only]
-    {
+    let witness_only = source([true; 3], 4, false).replace("signal input in;", "signal output in;");
+    for source in [source([true, false, true], 4, true), source([true; 3], 3, true), witness_only] {
         let fact = inspect(&source, Curve::Bn254);
         assert!(fact.certified().unwrap().is_none(), "unexpected certificate: {fact:?}");
     }
@@ -182,7 +190,7 @@ fn missing_boolean_wrong_weight_and_witness_only_relation_do_not_certify() {
 
 #[test]
 fn unsupported_extra_constraint_blocks_complete_local_relation_claim() {
-    let mut source = source(&[true; 3], 4, true);
+    let mut source = source([true; 3], 4, true);
     source.pop();
     source.push_str("bits[0]*bits[1]*bits[2]===0;}");
     let fact = inspect(&source, Curve::Bn254);
@@ -191,7 +199,7 @@ fn unsupported_extra_constraint_blocks_complete_local_relation_claim() {
 
 #[test]
 fn symbolic_branch_cannot_supply_a_universal_boolean_equation() {
-    let source = source(&[true; 3], 4, true)
+    let source = source([true; 3], 4, true)
         .replace("template Bits()", "template Bits(n)")
         .replace("bits[0]*(bits[0]-1)===0;", "if(n){bits[0]*(bits[0]-1)===0;}");
     let fact = inspect(&source, Curve::Bn254);
@@ -203,7 +211,7 @@ fn unrelated_unready_reads_and_input_reassignment_withhold_decomposition() {
     for extra in
         ["signal s;var y=s;s<--0;", "in<--0;", "signal input a[1];signal input i;var y=a[i];"]
     {
-        let mut source = source(&[true; 3], 4, true);
+        let mut source = source([true; 3], 4, true);
         source.pop();
         source.push_str(extra);
         source.push('}');
@@ -214,7 +222,7 @@ fn unrelated_unready_reads_and_input_reassignment_withhold_decomposition() {
 
 #[test]
 fn possible_unrelated_repeated_write_withholds_whole_body_relation() {
-    let mut source = source(&[true; 3], 4, true).replace("template Bits()", "template Bits(n)");
+    let mut source = source([true; 3], 4, true).replace("template Bits()", "template Bits(n)");
     source.pop();
     source.push_str("signal s;s<--0;if(n){s<--1;}}");
     let fact = inspect(&source, Curve::Bn254);
@@ -223,7 +231,7 @@ fn possible_unrelated_repeated_write_withholds_whole_body_relation() {
 
 #[test]
 fn unresolved_unrelated_witness_target_withholds_whole_body_relation() {
-    let mut source = source(&[true; 3], 4, true);
+    let mut source = source([true; 3], 4, true);
     source.pop();
     source.push_str("signal input index;signal s[2];s[index]<--0;}");
     let fact = inspect(&source, Curve::Bn254);
@@ -233,7 +241,7 @@ fn unresolved_unrelated_witness_target_withholds_whole_body_relation() {
 #[test]
 fn dead_and_mutually_exclusive_writes_keep_local_relation_available() {
     for extra in ["signal s;s<--0;if(0){s<--1;}", "signal s;if(n){s<--0;}else{s<--1;}"] {
-        let mut source = source(&[true; 3], 4, true).replace("template Bits()", "template Bits(n)");
+        let mut source = source([true; 3], 4, true).replace("template Bits()", "template Bits(n)");
         source.pop();
         source.push_str(extra);
         source.push('}');
@@ -244,7 +252,7 @@ fn dead_and_mutually_exclusive_writes_keep_local_relation_available() {
 
 #[test]
 fn bit_paths_require_exact_distinct_ordered_in_bounds_elements() {
-    let source = source(&[true; 3], 4, true);
+    let source = source([true; 3], 4, true);
     for indices in [[0, 1, 1], [1, 0, 2]] {
         let fact = inspect_indices(&source, Curve::Bn254, &indices);
         assert!(fact.certified().is_some_and(Option::is_none), "{fact:?}");
@@ -255,7 +263,7 @@ fn bit_paths_require_exact_distinct_ordered_in_bounds_elements() {
 
 #[test]
 fn empty_and_over_budget_bit_lists_withhold_certificates() {
-    let source = source(&[true; 3], 4, true);
+    let source = source([true; 3], 4, true);
     for count in [0, 513] {
         let fact = inspect_count(&source, Curve::Bn254, count);
         assert!(fact.unavailable().is_some(), "count {count}: {fact:?}");
@@ -264,7 +272,7 @@ fn empty_and_over_budget_bit_lists_withhold_certificates() {
 
 #[test]
 fn incomplete_solver_cannot_release_provisional_bit_equations() {
-    let source = source(&[true; 3], 4, true);
+    let source = source([true; 3], 4, true);
     let fact = inspect_indices_with_budget(&source, Curve::Bn254, &[0, 1, 2], Some(0));
     let blockers = fact.unavailable().unwrap();
     assert!(blockers.iter().any(|blocker| {
@@ -293,11 +301,10 @@ fn unrolled_bn254_bits_prove_all_indexed_bits() {
 
 #[test]
 fn equivalent_branch_equations_keep_every_source_origin() {
-    let source =
-        source(&[true; 3], 4, true).replace("template Bits()", "template Bits(n)").replace(
-            "bits[0]*(bits[0]-1)===0;",
-            "if(n){bits[0]*(bits[0]-1)===0;}else{0===2*bits[0]*(bits[0]-1);}",
-        );
+    let source = source([true; 3], 4, true).replace("template Bits()", "template Bits(n)").replace(
+        "bits[0]*(bits[0]-1)===0;",
+        "if(n){bits[0]*(bits[0]-1)===0;}else{0===2*bits[0]*(bits[0]-1);}",
+    );
     let fact = inspect(&source, Curve::Bn254);
     let certificate = fact.certified().unwrap().as_ref().unwrap();
     assert_eq!(certificate.boolean_origins()[0].len(), 2);
@@ -306,7 +313,7 @@ fn equivalent_branch_equations_keep_every_source_origin() {
 #[test]
 fn repeated_unrelated_signal_write_prevents_body_certificate() {
     for extra in ["signal s;s<--1;s<--2;", "signal s;s<--1;if(n){s<--2;}"] {
-        let mut source = source(&[true; 3], 4, true).replace("template Bits()", "template Bits(n)");
+        let mut source = source([true; 3], 4, true).replace("template Bits()", "template Bits(n)");
         source.pop();
         source.push_str(extra);
         source.push('}');
@@ -317,7 +324,7 @@ fn repeated_unrelated_signal_write_prevents_body_certificate() {
 
 #[test]
 fn body_relation_does_not_claim_two_representations_survive_other_equations() {
-    let mut source = source(&[true; 3], 4, true);
+    let mut source = source([true; 3], 4, true);
     source.pop();
     source.push_str("bits[0]===0;bits[1]===0;bits[2]===0;}");
     let fact = inspect(&source, Curve::Bn254);
@@ -327,7 +334,7 @@ fn body_relation_does_not_claim_two_representations_survive_other_equations() {
 #[test]
 fn independent_decomposition_budgets_do_not_promote_missing_or_wrong_relations() {
     for budget in 0..65 {
-        for source in [source(&[true, false, true], 4, true), source(&[true; 3], 3, true)] {
+        for source in [source([true, false, true], 4, true), source([true; 3], 3, true)] {
             let fact = inspect_indices_with_budget(&source, Curve::Bn254, &[0, 1, 2], Some(budget));
             assert!(
                 fact.certified().and_then(Option::as_ref).is_none(),
@@ -344,7 +351,7 @@ fn independent_dead_and_disjoint_unrelated_writes_preserve_relations() {
         "signal s;if(n){s<--1;}else{s<--2;}",
         "signal s[2];s[0]<--1;s[1]<--2;",
     ] {
-        let mut source = source(&[true; 3], 4, true).replace("template Bits()", "template Bits(n)");
+        let mut source = source([true; 3], 4, true).replace("template Bits()", "template Bits(n)");
         source.pop();
         source.push_str(extra);
         source.push('}');

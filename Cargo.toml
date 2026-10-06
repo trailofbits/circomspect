@@ -8,3 +8,22 @@ members = [
   "program_analysis",
   "program_structure",
 ]
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "warn"
+panic = "deny"
+panic_in_result_fn = "deny"
+unimplemented = "deny"
+allow_attributes = "deny"
+dbg_macro = "deny"
+todo = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+await_holding_lock = "deny"
+large_futures = "deny"
+exit = "deny"
+mem_forget = "deny"
+module_name_repetitions = "allow"
+similar_names = "allow"

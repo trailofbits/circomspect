@@ -1,3 +1,13 @@
+// Tests intentionally fail by panicking; fixture assembly favors readable assertions.
+// Rust 1.74 requires `allow` here because `expect` lint attributes are not yet stable.
+#![allow(
+    clippy::allow_attributes,
+    clippy::expect_used,
+    clippy::format_push_string,
+    clippy::panic,
+    clippy::panic_in_result_fn,
+    clippy::unwrap_used
+)]
 use std::fs;
 
 use circomspect_program_analysis::hir_cfg::build_cfg;
@@ -141,7 +151,7 @@ fn inspect_with(
     result.certified().cloned()
 }
 
-fn certificate(result: &Option<ComponentBitAmbiguityOutcome>) -> &ComponentBitAmbiguity {
+fn certificate(result: Option<&ComponentBitAmbiguityOutcome>) -> &ComponentBitAmbiguity {
     let Some(ComponentBitAmbiguityOutcome::Proved(proof)) = result else {
         panic!("expected two complete closure models: {result:?}");
     };
@@ -186,7 +196,7 @@ fn generated_literal_and_free_parent_signal_bindings_prove_complete_models() {
         ("signal input x;component c=Convert(64);c.in<==x;", 0),
     ] {
         let result = inspect(&source(parent, ""), None);
-        verify_pair(certificate(&result), input);
+        verify_pair(certificate(result.as_ref()), input);
     }
 }
 
@@ -261,7 +271,7 @@ fn numeric_variable_results_do_not_hide_signal_dependent_generation_control() {
 fn checked_handles_support_parameterized_canonical_loop_children() {
     let source = "template Convert(n){signal input in;signal output bits[n];var sum=0;        for(var i=0;i<n;i++){bits[i]<--(in >> i)&1;bits[i]*(bits[i]-1)===0;        sum+=bits[i]*(2**i);}in===sum;}        template Parent(){signal input x;component c=Convert(64);c.in<==x;}        component main=Parent();";
     let result = inspect_with(source, None, Curve::Goldilocks, 64, QueryForm::Handles);
-    verify_pair(certificate(&result), 0);
+    verify_pair(certificate(result.as_ref()), 0);
     assert_eq!(
         inspect_with(
             &source.replace("Convert(64)", "Convert(63)"),
@@ -320,7 +330,7 @@ fn generated_input_seeds_and_witness_values_have_distinct_provenance() {
         ("signal x;x<--7;component c=Convert(64);c.in<==x;", "", 0),
     ] {
         let result = inspect(&source(parent, child), None);
-        let proof = certificate(&result);
+        let proof = certificate(result.as_ref());
         assert_eq!(
             proof.input_value(),
             &FieldContext::for_curve(Curve::Goldilocks).canonical(expected.into())
@@ -355,7 +365,7 @@ fn all_parent_and_child_restrictive_equations_survive_source_site_collection() {
     }
     let result =
         inspect(&source("component c=Convert(64);c.in<==0;if(0){c.bits[0]===0;}", ""), None);
-    verify_pair(certificate(&result), 0);
+    verify_pair(certificate(result.as_ref()), 0);
 }
 
 #[test]
@@ -473,7 +483,7 @@ fn closure_preserves_additional_bound_and_external_inputs() {
         ("component c=Convert(64);c.in<==0;c.aux<==7;", "signal input aux;aux===7;"),
     ] {
         let result = inspect(&source(parent, child), None);
-        let proof = certificate(&result);
+        let proof = certificate(result.as_ref());
         assert_eq!(proof.assignments()[0].caller(), proof.assignments()[1].caller());
         let seven = FieldContext::for_curve(Curve::Goldilocks).canonical(7.into());
         assert!(proof.assignments()[0].caller().values().any(|value| value == &seven));
@@ -505,7 +515,7 @@ fn bn254_canonical_loop_closure_obeys_the_actual_field_boundary() {
                 ))
             );
         } else {
-            let proof = certificate(&result);
+            let proof = certificate(result.as_ref());
             assert_eq!(proof.decomposition().curve(), &Curve::Bn254);
             assert_ne!(proof.representations()[0], proof.representations()[1]);
             let field = FieldContext::for_curve(Curve::Bn254);
@@ -525,7 +535,7 @@ fn bn254_canonical_loop_closure_obeys_the_actual_field_boundary() {
 fn main_output_forwarding_completes_both_parent_models() {
     let source = source("component c=Convert(64);c.in<==0;signal output out;out<==c.bits[0];", "");
     let result = inspect(&source, None);
-    let proof = certificate(&result);
+    let proof = certificate(result.as_ref());
     let field = FieldContext::for_curve(Curve::Goldilocks);
     let one = field.canonical(1.into());
     assert!(proof.assignments()[0].caller().values().all(|value| field.is_zero(value)));
@@ -539,7 +549,7 @@ fn generated_output_chains_preserve_external_inputs_and_all_restrictions() {
         signal output out;signal mid;mid<==c.bits[0]+z;out<==mid*2;";
     let source = source(prefix, "");
     let result = inspect(&source, None);
-    let proof = certificate(&result);
+    let proof = certificate(result.as_ref());
     let field = FieldContext::for_curve(Curve::Goldilocks);
     for (index, assignment) in proof.assignments().iter().enumerate() {
         assert!(assignment.caller().values().any(|value| value == &field.canonical(7.into())));
@@ -582,7 +592,7 @@ fn generated_parent_signal_completion_sets_child_input_before_pair_selection() {
         ),
         None,
     );
-    let proof = certificate(&result);
+    let proof = certificate(result.as_ref());
     let field = FieldContext::for_curve(Curve::Goldilocks);
     assert_eq!(proof.input_value(), &field.canonical(1.into()));
     assert!(proof

@@ -1775,7 +1775,7 @@ mod call_shape_tests {
                 else {
                     continue;
                 };
-                if indexed != !target.steps.is_empty() {
+                if indexed == target.steps.is_empty() {
                     continue;
                 }
                 if !indexed && *operator != AssignmentOperator::Add {

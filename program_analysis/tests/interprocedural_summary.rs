@@ -1,3 +1,13 @@
+// Tests intentionally fail by panicking; fixture assembly favors readable assertions.
+// Rust 1.74 requires `allow` here because `expect` lint attributes are not yet stable.
+#![allow(
+    clippy::allow_attributes,
+    clippy::assert_is_empty,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::panic_in_result_fn,
+    clippy::unwrap_used
+)]
 use circomspect_program_analysis::hir_facts::{FieldContext, Incidence, Range};
 use circomspect_program_analysis::interprocedural::{
     ArgumentValue, FunctionEffect, ProjectSummaries, ReturnEvidence, SummaryBlocker,
@@ -1023,7 +1033,12 @@ fn complete_call_result_agrees_with_inlined_template_constraint() {
         let port = lifted.hir.template(template).unwrap().ports[0];
         let context = provider.symbolic_context_for(DefinitionRef::Template(template)).unwrap();
         let summary = provider.template_port(template, &context, port);
-        assert_eq!(summary.certified().map(|item| item.incidence()), Some(Incidence::Must));
+        assert_eq!(
+            summary
+                .certified()
+                .map(circomspect_program_analysis::interprocedural::PortSummary::incidence),
+            Some(Incidence::Must)
+        );
         assert_eq!(
             summary.certified().and_then(|item| item.fixed_value()),
             Some(&field.canonical(7.into()))

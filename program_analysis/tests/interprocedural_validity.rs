@@ -1,3 +1,13 @@
+// Tests intentionally fail by panicking; fixture assembly favors readable assertions.
+// Rust 1.74 requires `allow` here because `expect` lint attributes are not yet stable.
+#![allow(
+    clippy::allow_attributes,
+    clippy::assert_is_empty,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::panic_in_result_fn,
+    clippy::unwrap_used
+)]
 use std::fs;
 
 use circomspect_program_analysis::hir_facts::{FieldContext, Incidence};
@@ -165,7 +175,8 @@ fn valid_execution_and_unrelated_opacity_preserve_independent_port_facts() {
         let output = lifted.hir.template(template).unwrap().ports[0];
         let port = provider.template_port(template, &context, output);
         assert_eq!(
-            port.certified().map(|port| port.incidence()),
+            port.certified()
+                .map(circomspect_program_analysis::interprocedural::PortSummary::incidence),
             Some(Incidence::Must),
             "{statement}: {port:?}"
         );

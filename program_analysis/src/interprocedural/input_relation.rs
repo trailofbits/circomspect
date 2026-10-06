@@ -463,21 +463,18 @@ impl RelationAnalysis<'_> {
         if relation == InstanceRelation::Separate {
             return Ok(());
         }
-        let port = match self.ports {
-            Some(ports) => {
-                let key = self.facts.exact_closed_component_key(target, node.id, ports);
-                ports
-                    .input_element(certified(&key)?)
-                    .cloned()
-                    .ok_or(SummaryBlocker::UnsupportedContext)?
-            }
-            None => {
-                let (port, indices) = self
-                    .facts
-                    .source_component_port_indices(target)
-                    .map_err(|_| SummaryBlocker::UnsupportedContext)?;
-                InputPortElement { port, indices }
-            }
+        let port = if let Some(ports) = self.ports {
+            let key = self.facts.exact_closed_component_key(target, node.id, ports);
+            ports
+                .input_element(certified(&key)?)
+                .cloned()
+                .ok_or(SummaryBlocker::UnsupportedContext)?
+        } else {
+            let (port, indices) = self
+                .facts
+                .source_component_port_indices(target)
+                .map_err(|_| SummaryBlocker::UnsupportedContext)?;
+            InputPortElement { port, indices }
         };
         self.bind_input(node, &port, relation, state)
     }

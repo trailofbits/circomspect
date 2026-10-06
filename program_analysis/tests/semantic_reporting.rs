@@ -1,3 +1,12 @@
+// Tests intentionally fail by panicking; fixture assembly favors readable assertions.
+// Rust 1.74 requires `allow` here because `expect` lint attributes are not yet stable.
+#![allow(
+    clippy::allow_attributes,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::panic_in_result_fn,
+    clippy::unwrap_used
+)]
 mod support;
 
 use std::fs;
@@ -130,7 +139,10 @@ fn static_hir_warnings_use_the_same_converter_and_existing_filters() {
         .iter()
         .map(|diagnostic| all_roots.semantic_report(diagnostic).unwrap())
         .collect();
-    assert_eq!(reports.iter().map(|report| report.id()).collect::<Vec<_>>(), ["CS0002", "CS0001"]);
+    assert_eq!(
+        reports.iter().map(program_structure::report::Report::id).collect::<Vec<_>>(),
+        ["CS0002", "CS0001"]
+    );
     assert!(reports.iter().all(|report| *report.category() == MessageCategory::Warning));
     let output = root.path.with_extension("sarif.json");
     assert_eq!(
