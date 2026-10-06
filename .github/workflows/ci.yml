@@ -65,4 +65,5 @@ jobs:
       - name: Check warning fixture validity
         run: |
           CIRCOM_COMPILER="$RUNNER_TEMP/circom-oracle/circom-v2.2.3/target/release/circom" \
-            cargo test -p circomspect --test warning_corpus -- --ignored
+            cargo test -p circomspect --test warning_corpus --locked \
+              warning_cases_have_recorded_compiler_classes -- --exact --ignored
