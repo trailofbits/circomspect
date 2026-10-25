@@ -8,6 +8,7 @@ use parser::new_frontend::{PortDirection, Span};
 use crate::hir_cfg::CfgNodeKind;
 use crate::hir_facts::{AnalysisFacts, Range};
 use crate::interprocedural::component_port::LocalOutputPort;
+use crate::interprocedural::component::binding::CheckedComponentCall;
 
 use crate::interprocedural::{
     AppliedComponentPort, CallBlocker, CallOwner, CallReachability, CallSiteId, ContextEvidence,
@@ -36,8 +37,8 @@ pub(super) struct EnumeratedComponentInstance {
 }
 
 impl EnumeratedComponentOutput {
-    pub(super) fn from_call(call: &ReachableCall<'_>, applied: AppliedComponentPort) -> Self {
-        Self { site: call.site().id(), source_span: call.site().span, applied }
+    pub(super) fn new(site: CallSiteId, source_span: Span, applied: AppliedComponentPort) -> Self {
+        Self { site, source_span, applied }
     }
 
     #[must_use]
@@ -141,16 +142,11 @@ impl ProjectSummaries<'_> {
         call: &ReachableCall<'_>,
         limit: usize,
     ) -> Result<EnumeratedComponentInstance, SummaryBlocker> {
+        let checked = CheckedComponentCall::for_enumeration(self, facts, caller, call)?;
         let DefinitionRef::Template(child) = call.callee() else {
             return Err(SummaryBlocker::UnsupportedCallForm);
         };
-        let (component, target, instantiation) =
-            self.instantiated_component(facts, call.site().expression)?;
-        let bounds =
-            facts.component_bounds(component).map_err(|_| SummaryBlocker::UnsupportedContext)?;
-        let instance = exact_instance_indices(facts, &target, &bounds)?;
-        let callee = self.call_evidence(call, facts, caller)?;
-        let outputs = self.with_component_port_facts(&callee, |child_facts| {
+        let outputs = checked.with_port_facts(|child_facts| {
             let ports = self.output_ports(child, child_facts)?;
             let mut state = Enumeration { outputs: Vec::new(), inspected: 0, limit };
             for (port, port_bounds) in &ports {
@@ -161,30 +157,16 @@ impl ProjectSummaries<'_> {
                     let handle = child_facts
                         .port_handle(*port, &element)
                         .map_err(|_| SummaryBlocker::UnsupportedContext)?;
-                    let applied = self.apply_local_port(
-                        facts,
-                        caller,
-                        call,
-                        LocalOutputPort { facts: child_facts, handle: &handle },
-                    )?;
-                    state.outputs.push(EnumeratedComponentOutput {
-                        site: call.site().id(),
-                        source_span: call.site().span,
-                        applied,
-                    });
+                    let applied = checked.apply_local_port(LocalOutputPort {
+                        facts: child_facts,
+                        handle: &handle,
+                    })?;
+                    state.outputs.push(checked.output(applied));
                 }
             }
             Ok(state.outputs)
         })?;
-        Ok(EnumeratedComponentInstance {
-            site: call.site().id(),
-            instantiation,
-            target,
-            component,
-            indices: instance,
-            callee,
-            outputs,
-        })
+        Ok(checked.into_enumerated(outputs))
     }
 
     pub(super) fn instantiated_component(

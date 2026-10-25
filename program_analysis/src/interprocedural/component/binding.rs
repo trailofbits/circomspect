@@ -1,16 +1,19 @@
 //! A call context checked against one immutable caller analysis.
 
 use abstract_interpretation::graph::{FlowGraph, NodeId};
-use parser::hir::{DefinitionRef, ExprId};
+use parser::hir::{AccessPath, ComponentId, DefinitionRef, ExprId};
+use parser::new_frontend::Span;
 
 use crate::hir_cfg::CfgNodeKind;
 use crate::hir_facts::{AccessHandle, AnalysisFacts, InstanceRelation};
 use crate::interprocedural::component::AppliedComponentPort;
 use crate::interprocedural::component_port::LocalOutputPort;
-use crate::interprocedural::output_enumeration::exact_instance_indices;
+use crate::interprocedural::output_enumeration::{
+    exact_instance_indices, EnumeratedComponentInstance, EnumeratedComponentOutput,
+};
 use crate::interprocedural::template::port_summary;
 use crate::interprocedural::{
-    ContextEvidence, PortSummary, ProjectSummaries, ReachableCall, SummaryBlocker,
+    CallSiteId, ContextEvidence, PortSummary, ProjectSummaries, ReachableCall, SummaryBlocker,
 };
 
 #[derive(Clone)]
@@ -20,6 +23,8 @@ pub(in crate::interprocedural) struct CheckedCallContext<'query, 'project> {
     caller: &'query ContextEvidence,
     callee: ContextEvidence,
     expression: Option<ExprId>,
+    site: CallSiteId,
+    source_span: Span,
 }
 
 impl<'query, 'project> CheckedCallContext<'query, 'project> {
@@ -30,7 +35,65 @@ impl<'query, 'project> CheckedCallContext<'query, 'project> {
         call: &ReachableCall<'_>,
     ) -> Result<Self, SummaryBlocker> {
         let callee = provider.call_evidence(call, facts, caller)?;
-        Ok(Self { provider, facts, caller, callee, expression: call.site().expression })
+        Ok(Self::from_evidence(provider, facts, caller, call, callee))
+    }
+
+    fn from_evidence(
+        provider: &'query ProjectSummaries<'project>,
+        facts: &'query AnalysisFacts<'query>,
+        caller: &'query ContextEvidence,
+        call: &ReachableCall<'_>,
+        callee: ContextEvidence,
+    ) -> Self {
+        Self {
+            provider,
+            facts,
+            caller,
+            callee,
+            expression: call.site().expression,
+            site: call.site().id(),
+            source_span: call.site().span,
+        }
+    }
+
+    pub(in crate::interprocedural) fn for_model(
+        provider: &'query ProjectSummaries<'project>,
+        facts: &'query AnalysisFacts<'query>,
+        applied: &'query AppliedComponentPort,
+    ) -> Result<Self, SummaryBlocker> {
+        let call = provider.single_model_call(facts, applied)?;
+        Ok(Self::from_evidence(
+            provider,
+            facts,
+            applied.caller_evidence(),
+            &call,
+            applied.callee_evidence().clone(),
+        ))
+    }
+
+    pub(in crate::interprocedural) fn callee(&self) -> &ContextEvidence {
+        &self.callee
+    }
+
+    pub(in crate::interprocedural) fn select_instance(
+        &self,
+        check_source: impl FnOnce(ComponentId, &AccessPath, NodeId) -> Result<(), SummaryBlocker>,
+    ) -> Result<CheckedComponentCall<'query, 'project>, SummaryBlocker> {
+        let (component, target, instantiation) =
+            self.provider.instantiated_component(self.facts, self.expression)?;
+        check_source(component, &target, instantiation)?;
+        let bounds = self
+            .facts
+            .component_bounds(component)
+            .map_err(|_| SummaryBlocker::UnsupportedContext)?;
+        let indices = exact_instance_indices(self.facts, &target, &bounds)?;
+        Ok(CheckedComponentCall {
+            context: self.clone(),
+            component,
+            target,
+            instantiation,
+            indices,
+        })
     }
 
     pub(in crate::interprocedural) fn with_port_facts<T>(
@@ -45,21 +108,8 @@ impl<'query, 'project> CheckedCallContext<'query, 'project> {
         local: LocalOutputPort<'_, '_>,
     ) -> Result<AppliedComponentPort, SummaryBlocker> {
         let summary = self.local_summary(local)?;
-        let (component, target, _) =
-            self.provider.instantiated_component(self.facts, self.expression)?;
-        let bounds = self
-            .facts
-            .component_bounds(component)
-            .map_err(|_| SummaryBlocker::UnsupportedContext)?;
-        let indices = exact_instance_indices(self.facts, &target, &bounds)?;
-        let handle = self
-            .facts
-            .component_output_from_local(component, &indices, local.handle)
-            .map_err(|_| SummaryBlocker::UnsupportedContext)?;
-        self.check_output(&handle, &summary)?;
-        let instantiation =
-            self.provider.bind_instantiation(self.facts, self.expression, &handle)?;
-        Ok(self.issue_output(handle, summary, instantiation))
+        let call = self.select_instance(|_component, _target, _instantiation| Ok(()))?;
+        call.bind_local_port(local, summary)
     }
 
     fn local_summary(&self, local: LocalOutputPort<'_, '_>) -> Result<PortSummary, SummaryBlocker> {
@@ -109,6 +159,95 @@ impl<'query, 'project> CheckedCallContext<'query, 'project> {
             handle,
             port,
             instantiation,
+        }
+    }
+}
+
+pub(in crate::interprocedural) struct CheckedComponentCall<'query, 'project> {
+    context: CheckedCallContext<'query, 'project>,
+    component: ComponentId,
+    target: AccessPath,
+    instantiation: NodeId,
+    indices: Vec<usize>,
+}
+
+impl<'query, 'project> CheckedComponentCall<'query, 'project> {
+    pub(in crate::interprocedural) fn for_enumeration(
+        provider: &'query ProjectSummaries<'project>,
+        facts: &'query AnalysisFacts<'query>,
+        caller: &'query ContextEvidence,
+        call: &ReachableCall<'_>,
+    ) -> Result<Self, SummaryBlocker> {
+        let DefinitionRef::Template(_child) = call.callee() else {
+            return Err(SummaryBlocker::UnsupportedCallForm);
+        };
+        let (component, target, instantiation) =
+            provider.instantiated_component(facts, call.site().expression)?;
+        let bounds =
+            facts.component_bounds(component).map_err(|_| SummaryBlocker::UnsupportedContext)?;
+        let indices = exact_instance_indices(facts, &target, &bounds)?;
+        let context = CheckedCallContext::new(provider, facts, caller, call)?;
+        Ok(Self { context, component, target, instantiation, indices })
+    }
+
+    pub(in crate::interprocedural) fn with_port_facts<T>(
+        &self,
+        work: impl FnOnce(&AnalysisFacts<'_>) -> Result<T, SummaryBlocker>,
+    ) -> Result<T, SummaryBlocker> {
+        self.context.with_port_facts(work)
+    }
+
+    pub(in crate::interprocedural) fn apply_local_port(
+        &self,
+        local: LocalOutputPort<'_, '_>,
+    ) -> Result<AppliedComponentPort, SummaryBlocker> {
+        let summary = self.context.local_summary(local)?;
+        self.bind_local_port(local, summary)
+    }
+
+    fn bind_local_port(
+        &self,
+        local: LocalOutputPort<'_, '_>,
+        summary: PortSummary,
+    ) -> Result<AppliedComponentPort, SummaryBlocker> {
+        let context = &self.context;
+        let handle = context
+            .facts
+            .component_output_from_local(self.component, &self.indices, local.handle)
+            .map_err(|_| SummaryBlocker::UnsupportedContext)?;
+        context.check_output(&handle, &summary)?;
+        let instantiation =
+            context.provider.bind_instantiation(context.facts, context.expression, &handle)?;
+        Ok(context.issue_output(handle, summary, instantiation))
+    }
+
+    pub(in crate::interprocedural) fn instantiation(&self) -> NodeId {
+        self.instantiation
+    }
+
+    pub(in crate::interprocedural) fn indices(&self) -> &[usize] {
+        &self.indices
+    }
+
+    pub(in crate::interprocedural) fn output(
+        &self,
+        applied: AppliedComponentPort,
+    ) -> EnumeratedComponentOutput {
+        EnumeratedComponentOutput::new(self.context.site, self.context.source_span, applied)
+    }
+
+    pub(in crate::interprocedural) fn into_enumerated(
+        self,
+        outputs: Vec<EnumeratedComponentOutput>,
+    ) -> EnumeratedComponentInstance {
+        EnumeratedComponentInstance {
+            site: self.context.site,
+            instantiation: self.instantiation,
+            target: self.target,
+            component: self.component,
+            indices: self.indices,
+            callee: self.context.callee,
+            outputs,
         }
     }
 }

@@ -7,11 +7,12 @@ use parser::hir::{AccessPath, AccessStep, ArrayIndex, DefinitionRef, PortSchema}
 use parser::new_frontend::PortDirection;
 
 use crate::hir_facts::{AccessKey, AnalysisFacts, GeneratedInputEquation, ProofBudget};
+use crate::interprocedural::component::binding::CheckedCallContext;
 use crate::interprocedural::input_relation::{
     solve_inputs, BindingPolicy, CheckedInputBinding, InputPortElement, RelationAnalysis,
 };
 use crate::interprocedural::output_enumeration::{
-    checked_index_count, checked_indices, exact_instance_indices, EnumeratedComponentInstance,
+    checked_index_count, checked_indices, EnumeratedComponentInstance,
 };
 use crate::interprocedural::summary::certified;
 use crate::interprocedural::{
@@ -126,27 +127,27 @@ impl ProjectSummaries<'_> {
         else {
             return Err(SummaryBlocker::ForeignCall);
         };
-        if self.call_evidence(&call, facts, caller)? != instance.callee {
+        let context = CheckedCallContext::new(self, facts, caller, &call)?;
+        if context.callee() != &instance.callee {
             return Err(SummaryBlocker::WrongContext);
         }
-        let (component, target, site) =
-            self.instantiated_component(facts, call.site().expression)?;
-        if component != instance.component
-            || target != instance.target
-            || site != instance.instantiation
-        {
-            return Err(SummaryBlocker::WrongInstance);
-        }
-        let bounds =
-            facts.component_bounds(component).map_err(|_| SummaryBlocker::UnsupportedContext)?;
-        if exact_instance_indices(facts, &target, &bounds)? != instance.indices {
+        let checked = context.select_instance(|component, target, site| {
+            if component != instance.component
+                || target != &instance.target
+                || site != instance.instantiation
+            {
+                return Err(SummaryBlocker::WrongInstance);
+            }
+            Ok(())
+        })?;
+        if checked.indices() != instance.indices {
             return Err(SummaryBlocker::WrongInstance);
         }
         for output in &instance.outputs {
             let applied = output.applied_port();
             if applied.caller_evidence() != caller
                 || applied.callee_evidence() != &instance.callee
-                || applied.instantiation() != site
+                || applied.instantiation() != checked.instantiation()
             {
                 return Err(SummaryBlocker::WrongContext);
             }
@@ -219,3 +220,6 @@ fn exact_path(instance: &EnumeratedComponentInstance) -> AccessPath {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod context_tests;

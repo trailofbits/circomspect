@@ -78,16 +78,6 @@ impl ProjectSummaries<'_> {
         work(&facts)
     }
 
-    pub(super) fn apply_local_port(
-        &self,
-        facts: &AnalysisFacts<'_>,
-        caller: &ContextEvidence,
-        call: &ReachableCall<'_>,
-        local: LocalOutputPort<'_, '_>,
-    ) -> Result<AppliedComponentPort, SummaryBlocker> {
-        CheckedCallContext::new(self, facts, caller, call)?.apply_local_port(local)
-    }
-
     pub(super) fn local_output_key(
         &self,
         handle: &AccessHandle,

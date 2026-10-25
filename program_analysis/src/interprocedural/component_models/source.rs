@@ -8,9 +8,8 @@ use parser::hir::{AccessPath, ExprKind, PortId};
 use crate::hir_cfg::CfgNodeKind;
 use crate::hir_facts::{AnalysisFacts, InstanceRelation, ProofBudget};
 use crate::interprocedural::component_port::LocalOutputPort;
-use crate::interprocedural::output_enumeration::{
-    exact_instance_indices, EnumeratedComponentInstance, EnumeratedComponentOutput,
-};
+use crate::interprocedural::component::binding::CheckedCallContext;
+use crate::interprocedural::output_enumeration::EnumeratedComponentInstance;
 use crate::interprocedural::summary::certified;
 use crate::interprocedural::{
     AppliedComponentPort, CallReachability, ProjectSummaries, ReachableCall, SummaryBlocker,
@@ -48,43 +47,29 @@ impl ProjectSummaries<'_> {
         applied: &AppliedComponentPort,
         budget: &mut ProofBudget,
     ) -> Result<EnumeratedComponentInstance, SummaryBlocker> {
-        let call = self.single_model_call(facts, applied)?;
-        let (component, target, instantiation) =
-            self.instantiated_component(facts, call.site().expression)?;
-        if instantiation != applied.instantiation()
-            || facts.instance_relation(applied.handle(), &target) != InstanceRelation::Exact
-        {
-            return Err(SummaryBlocker::WrongInstance);
-        }
-        let bounds =
-            facts.component_bounds(component).map_err(|_| SummaryBlocker::UnsupportedContext)?;
-        let indices = exact_instance_indices(facts, &target, &bounds)?;
+        let context = CheckedCallContext::for_model(self, facts, applied)?;
+        let checked = context.select_instance(|_component, target, instantiation| {
+            if instantiation != applied.instantiation()
+                || facts.instance_relation(applied.handle(), target) != InstanceRelation::Exact
+            {
+                return Err(SummaryBlocker::WrongInstance);
+            }
+            Ok(())
+        })?;
         let keys = self.observed_model_outputs(facts, applied, budget)?;
         let mut outputs = Vec::new();
         for (port, indices) in keys {
             let local = child
                 .port_handle(port, &indices)
                 .map_err(|_| SummaryBlocker::UnsupportedContext)?;
-            let output = self.apply_local_port(
-                facts,
-                applied.caller_evidence(),
-                &call,
-                LocalOutputPort { facts: child, handle: &local },
-            )?;
-            outputs.push(EnumeratedComponentOutput::from_call(&call, output));
+            let output =
+                checked.apply_local_port(LocalOutputPort { facts: child, handle: &local })?;
+            outputs.push(checked.output(output));
         }
         if !outputs.iter().any(|output| output.applied_port() == applied) {
             return Err(SummaryBlocker::WrongInstance);
         }
-        Ok(EnumeratedComponentInstance {
-            site: call.site().id(),
-            instantiation,
-            target,
-            component,
-            indices,
-            callee: applied.callee_evidence().clone(),
-            outputs,
-        })
+        Ok(checked.into_enumerated(outputs))
     }
     fn observed_model_outputs(
         &self,

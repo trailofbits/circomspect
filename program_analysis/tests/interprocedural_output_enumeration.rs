@@ -206,3 +206,27 @@ fn enumerated_outputs_retain_closed_project_use_provenance() {
     }
     assert_eq!(statuses, [ProjectOutputStatus::Read, ProjectOutputStatus::Unused]);
 }
+
+#[test]
+fn empty_outputs_do_not_require_selected_instance_uniqueness() {
+    for outputs in ["", "signal output empty[0];"] {
+        let source = format!(
+            "template Child(){{{outputs}}}template Parent(){{component c;c=Child();c=Child();}}\
+             component main=Parent();"
+        );
+        let result = enumerated(&source);
+        assert_eq!(result.certified(), Some(&Vec::new()), "{outputs}: {result:?}");
+    }
+}
+
+#[test]
+fn late_invalid_output_dimensions_precede_selected_instance_conflicts() {
+    let result = enumerated(concat!(
+        "template Child(n){signal output first;signal output late[n-2];first<==1;}",
+        "template Parent(){component c;c=Child(1);c=Child(1);}component main=Parent();"
+    ));
+    assert_eq!(
+        result.unavailable(),
+        Some(&std::collections::BTreeSet::from([SummaryBlocker::UnsupportedContext,]))
+    );
+}
