@@ -8,7 +8,7 @@ use abstract_interpretation::solver::{DataflowAnalysis, SolveResult, Transfer, T
 use parser::hir::{AccessPath, DefinitionRef, Effect, ExprId, ExprKind, HirProject, SymbolKind};
 use parser::new_frontend::{AssignmentOperator, Span};
 
-use crate::hir_cfg::{CfgEdge, CfgNode, CfgNodeKind, DefinitionCfg};
+use crate::hir_cfg::{Constraint, CfgEdge, CfgNode, CfgNodeKind, DefinitionCfg};
 use crate::hir_facts::access::{key_for_path, AccessKey};
 use crate::hir_facts::purity::ScalarEvaluationSafety;
 use crate::hir_facts::{AnalysisFacts, Fact, FactBlocker, FieldContext, VisitAccesses};
@@ -185,11 +185,16 @@ impl<'a> DemandAnalysis<'a> {
     }
 
     fn transfer_observation(&self, node: &CfgNode, keys: &mut BTreeSet<AccessKey>) -> bool {
-        if let CfgNodeKind::Constraint { target, left, right } = &node.kind {
-            let target_complete =
-                target.as_ref().map_or(true, |path| self.collect_path(path, keys));
-            let right_complete = right.map_or(true, |value| self.collect(value, keys));
-            return target_complete && self.collect(*left, keys) && right_complete;
+        if let CfgNodeKind::Constraint(constraint) = &node.kind {
+            return match constraint {
+                Constraint::Assignment { target, value } => {
+                    self.collect_path(target, keys) && self.collect(*value, keys)
+                }
+                Constraint::Equality { left, right } => {
+                    let right_complete = self.collect(*right, keys);
+                    self.collect(*left, keys) && right_complete
+                }
+            };
         }
         if let CfgNodeKind::Branch { condition, .. }
         | CfgNodeKind::Assert { condition }
@@ -234,7 +239,7 @@ impl Transfer<DemandAnalysis<'_>, DemandState, String> for CfgNode {
             | CfgNodeKind::DeferredAssignment { .. }
             | CfgNodeKind::Declaration { .. }
             | CfgNodeKind::Log => analysis.transfer_local(self, keys),
-            CfgNodeKind::Constraint { .. }
+            CfgNodeKind::Constraint(_)
             | CfgNodeKind::Branch { .. }
             | CfgNodeKind::Assert { .. }
             | CfgNodeKind::DeferredAssert { .. }

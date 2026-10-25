@@ -6,7 +6,7 @@ use abstract_interpretation::graph::{FlowGraph, NodeId};
 use parser::hir::{AccessPath, DefinitionRef, ExprId, ExprKind, PortId, PortSchema, SymbolId};
 use parser::new_frontend::PortDirection;
 
-use crate::hir_cfg::{CfgNodeKind, DefinitionCfg, Origin};
+use crate::hir_cfg::{Constraint, CfgNodeKind, DefinitionCfg, Origin};
 use crate::hir_facts::{AccessHandle, AnalysisFacts, FieldValue, InstanceRelation, VisitAccesses};
 
 use crate::interprocedural::input_relation::ready_instance_at_use;
@@ -430,8 +430,7 @@ impl ProjectSummaries<'_> {
             let mut result = None;
             for id in cfg.nodes() {
                 let Some(node) = cfg.node(*id) else { continue };
-                let CfgNodeKind::Constraint { target: Some(target), left, right: None } =
-                    &node.kind
+                let CfgNodeKind::Constraint(Constraint::Assignment { target, value }) = &node.kind
                 else {
                     continue;
                 };
@@ -439,7 +438,7 @@ impl ProjectSummaries<'_> {
                     continue;
                 }
                 let Some(ExprKind::Access(source)) =
-                    self.hir().expression(*left).map(|expr| &expr.kind)
+                    self.hir().expression(*value).map(|expr| &expr.kind)
                 else {
                     continue;
                 };
@@ -520,8 +519,8 @@ impl ProjectSummaries<'_> {
         if let CfgNodeKind::Witness { target, .. } = node {
             return Ok((target.root == output).then_some(ChildOutputEffect::Witness));
         }
-        if let CfgNodeKind::Constraint { target, left, right } = node {
-            let touches = self.constraint_touches_output(target.as_ref(), *left, *right, output)?;
+        if let CfgNodeKind::Constraint(constraint) = node {
+            let touches = self.constraint_touches_output(constraint, output)?;
             return Ok(touches.then_some(ChildOutputEffect::Constraint));
         }
         if let CfgNodeKind::OpaqueAssignment { target, .. } = node {
@@ -537,20 +536,17 @@ impl ProjectSummaries<'_> {
 
     fn constraint_touches_output(
         &self,
-        target: Option<&AccessPath>,
-        left: ExprId,
-        right: Option<ExprId>,
+        constraint: &Constraint,
         output: SymbolId,
     ) -> Result<bool, SummaryBlocker> {
-        let Some(target) = target else {
-            let left_touches = self.expression_touches_output(left, output)?;
-            let right_touches = match right {
-                Some(value) => self.expression_touches_output(value, output)?,
-                None => false,
-            };
-            return Ok(left_touches || right_touches);
-        };
-        Ok(target.root == output)
+        match constraint {
+            Constraint::Assignment { target, .. } => Ok(target.root == output),
+            Constraint::Equality { left, right } => {
+                let left_touches = self.expression_touches_output(*left, output)?;
+                let right_touches = self.expression_touches_output(*right, output)?;
+                Ok(left_touches || right_touches)
+            }
+        }
     }
 
     fn expression_touches_output(

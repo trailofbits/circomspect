@@ -7,7 +7,7 @@ use abstract_interpretation::solver::SolveResult;
 use parser::hir::{AccessPath, AccessStep, PortId, SymbolKind};
 use num_traits::ToPrimitive;
 
-use crate::hir_cfg::CfgNodeKind;
+use crate::hir_cfg::{CfgNodeKind, Constraint};
 use crate::hir_facts::access::key_for_path;
 use crate::hir_facts::{
     AccessHandle, AccessKey, AccessKeyStep, AnalysisFacts, Fact, FactBlocker, IndexKey, Range,
@@ -170,13 +170,16 @@ impl AnalysisFacts<'_> {
             target.visit_accesses_with(self.hir, unresolved, &mut visit);
             value.visit_accesses_with(self.hir, unresolved, &mut visit);
         }
-        if let CfgNodeKind::Constraint { target, left, right } = &node.kind {
-            if let Some(target) = target {
-                target.visit_accesses_with(self.hir, unresolved, &mut visit);
-            }
-            left.visit_accesses_with(self.hir, unresolved, &mut visit);
-            if let Some(right) = right {
-                right.visit_accesses_with(self.hir, unresolved, &mut visit);
+        if let CfgNodeKind::Constraint(constraint) = &node.kind {
+            match constraint {
+                Constraint::Assignment { target, value } => {
+                    target.visit_accesses_with(self.hir, unresolved, &mut visit);
+                    value.visit_accesses_with(self.hir, unresolved, &mut visit);
+                }
+                Constraint::Equality { left, right } => {
+                    left.visit_accesses_with(self.hir, unresolved, &mut visit);
+                    right.visit_accesses_with(self.hir, unresolved, &mut visit);
+                }
             }
         }
         found

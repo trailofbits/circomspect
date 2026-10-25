@@ -9,8 +9,8 @@
     clippy::unwrap_used
 )]
 use abstract_interpretation::graph::FlowGraph;
-use circomspect_program_analysis::hir_cfg::{build_cfg, BuildError, CfgNodeKind, EdgeKind};
-use parser::hir::{lift_project, ControlGuard, DefinitionRef};
+use circomspect_program_analysis::hir_cfg::{Constraint, build_cfg, BuildError, CfgNodeKind, EdgeKind};
+use parser::hir::{lift_project, AccessStep, ArrayIndex, ControlGuard, DefinitionRef, Effect};
 use parser::new_frontend::{load_sources, Version, VersionPolicy};
 use std::fs;
 
@@ -49,7 +49,7 @@ fn mixed_component_target_cannot_leave_an_earlier_generated_constraint() {
     assert!(!cfg
         .nodes()
         .iter()
-        .any(|id| { matches!(cfg.node(*id).unwrap().kind, CfgNodeKind::Constraint { .. }) }));
+        .any(|id| { matches!(cfg.node(*id).unwrap().kind, CfgNodeKind::Constraint(_)) }));
 }
 
 #[test]
@@ -66,7 +66,9 @@ fn mixed_component_target_invalidates_transitive_use_but_keeps_independent_const
         .nodes()
         .iter()
         .filter_map(|id| {
-            let CfgNodeKind::Constraint { target: Some(path), .. } = &cfg.node(*id)?.kind else {
+            let CfgNodeKind::Constraint(Constraint::Assignment { target: path, .. }) =
+                &cfg.node(*id)?.kind
+            else {
                 return None;
             };
             lifted.hir.symbol(path.root).map(|symbol| symbol.name.as_str())
@@ -89,7 +91,9 @@ fn mixed_component_target_blocks_later_reads_of_earlier_tainted_local() {
         .nodes()
         .iter()
         .filter_map(|id| {
-            let CfgNodeKind::Constraint { target: Some(path), .. } = &cfg.node(*id)?.kind else {
+            let CfgNodeKind::Constraint(Constraint::Assignment { target: path, .. }) =
+                &cfg.node(*id)?.kind
+            else {
                 return None;
             };
             lifted.hir.symbol(path.root).map(|symbol| symbol.name.as_str())
@@ -107,15 +111,12 @@ fn witness_constraint_and_assert_are_distinct() {
     let cfg = build_cfg(&project.hir, definition).unwrap();
     let kinds: Vec<_> = cfg.nodes().iter().map(|id| &cfg.node(*id).unwrap().kind).collect();
     assert_eq!(kinds.iter().filter(|kind| matches!(kind, CfgNodeKind::Witness { .. })).count(), 2);
-    assert_eq!(
-        kinds.iter().filter(|kind| matches!(kind, CfgNodeKind::Constraint { .. })).count(),
-        2
-    );
+    assert_eq!(kinds.iter().filter(|kind| matches!(kind, CfgNodeKind::Constraint(_))).count(), 2);
     assert_eq!(kinds.iter().filter(|kind| matches!(kind, CfgNodeKind::Assert { .. })).count(), 1);
     let witness_only =
         kinds.iter().position(|kind| matches!(kind, CfgNodeKind::Witness { .. })).unwrap();
     let constrained =
-        kinds.iter().position(|kind| matches!(kind, CfgNodeKind::Constraint { .. })).unwrap();
+        kinds.iter().position(|kind| matches!(kind, CfgNodeKind::Constraint(_))).unwrap();
     assert!(witness_only < constrained);
     let witness = cfg.node(cfg.nodes()[witness_only]).unwrap().origin.unwrap();
     let constraint = cfg.node(cfg.nodes()[constrained]).unwrap().origin.unwrap();
@@ -152,7 +153,7 @@ fn symbolic_target_index_is_evaluated_before_witness_and_constraint() {
             match &node.kind {
                 CfgNodeKind::Evaluate(expr) => Some(("eval", Some(*expr), node.origin.unwrap())),
                 CfgNodeKind::Witness { .. } => Some(("witness", None, node.origin.unwrap())),
-                CfgNodeKind::Constraint { .. } => Some(("constraint", None, node.origin.unwrap())),
+                CfgNodeKind::Constraint(_) => Some(("constraint", None, node.origin.unwrap())),
                 _ => None,
             }
         })
@@ -168,6 +169,42 @@ fn symbolic_target_index_is_evaluated_before_witness_and_constraint() {
     assert_eq!(positions[2].2.effect_index, positions[3].2.effect_index);
     assert_eq!(positions[2].2.expression, positions[3].2.expression);
     assert!(positions[0].2.expression.is_some());
+    let block = project.hir.block(positions[2].2.block).unwrap();
+    let Effect::ConstraintAssignment { target, value, .. } = &block.effects[assignment_index]
+    else {
+        panic!("generated assignment");
+    };
+    let AccessStep::Index { index: ArrayIndex::Symbolic(index), .. } = target.steps[0] else {
+        panic!("symbolic target index");
+    };
+    assert_eq!(positions[0].1, Some(index));
+    assert_eq!(positions[1].1, Some(*value));
+    assert_eq!(positions[2].2, positions[3].2);
+    let witness = cfg
+        .nodes()
+        .iter()
+        .copied()
+        .find(|id| {
+            cfg.node(*id).is_some_and(|node| {
+                node.origin == Some(positions[2].2)
+                    && matches!(node.kind, CfgNodeKind::Witness { .. })
+            })
+        })
+        .unwrap();
+    let outgoing: Vec<_> = cfg
+        .edges()
+        .iter()
+        .filter_map(|id| cfg.edge(*id))
+        .filter(|edge| edge.source == witness)
+        .collect();
+    assert_eq!(outgoing.len(), 1);
+    assert_eq!(outgoing[0].payload.kind, EdgeKind::Normal);
+    let constraint = cfg.node(outgoing[0].target).unwrap();
+    assert_eq!(constraint.origin, Some(positions[2].2));
+    assert_eq!(
+        constraint.kind,
+        CfgNodeKind::Constraint(Constraint::Assignment { target: target.clone(), value: *value })
+    );
 }
 
 #[test]
@@ -192,7 +229,7 @@ fn deferred_variable_write_remains_targeted_and_cannot_generate_a_constraint() {
         kind,
         CfgNodeKind::Branch { guard: ControlGuard::DeferredScalar, .. }
     )));
-    assert!(kinds.iter().all(|kind| !matches!(kind, CfgNodeKind::Constraint { .. })));
+    assert!(kinds.iter().all(|kind| !matches!(kind, CfgNodeKind::Constraint(_))));
 }
 
 #[test]
@@ -313,4 +350,25 @@ fn effects_after_return_do_not_enter_the_cfg() {
         .collect();
     assert_eq!(return_edges.len(), 1);
     assert_eq!(return_edges[0].target, cfg.exit());
+}
+
+#[test]
+fn equality_constraint_keeps_source_operand_order() {
+    let (project, definition) = fixture("template Check(){signal input x; x === 7;}");
+    let cfg = build_cfg(&project.hir, definition).unwrap();
+    let constraint = cfg
+        .nodes()
+        .iter()
+        .filter_map(|id| cfg.node(*id))
+        .find(|node| matches!(node.kind, CfgNodeKind::Constraint(_)))
+        .unwrap();
+    let origin = constraint.origin.unwrap();
+    let block = project.hir.block(origin.block).unwrap();
+    let Effect::EqualityConstraint { left, right, span } = block.effects[origin.effect_index]
+    else {
+        panic!("equality source");
+    };
+    assert_eq!(constraint.kind, CfgNodeKind::Constraint(Constraint::Equality { left, right }));
+    assert_eq!(origin.expression, Some(left));
+    assert_eq!(origin.span, span);
 }

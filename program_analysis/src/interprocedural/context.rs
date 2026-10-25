@@ -10,7 +10,7 @@ use parser::hir::{
 use parser::new_frontend::{AssignmentOperator, SourceId, Span, Version};
 use program_structure::utils::constants::Curve;
 
-use crate::hir_cfg::{CfgNodeKind, DefinitionCfg, Origin};
+use crate::hir_cfg::{Constraint, CfgNodeKind, DefinitionCfg, Origin};
 use crate::hir_facts::{
     exact_compile_time, AnalysisFacts, FactBlocker, FieldContext, FieldValue, Range,
 };
@@ -675,11 +675,10 @@ impl<'a> ProjectSummaries<'a> {
         else {
             return false;
         };
-        let CfgNodeKind::Constraint {
-            target: None,
+        let CfgNodeKind::Constraint(Constraint::Equality {
             left: checked_left,
-            right: Some(checked_right),
-        } = &node.kind
+            right: checked_right,
+        }) = &node.kind
         else {
             return false;
         };
@@ -788,11 +787,14 @@ impl<'a> ProjectSummaries<'a> {
                 checked == target && *checked_value == value
             }
             AssignmentOperator::Constraint | AssignmentOperator::ReverseConstraint => {
-                let CfgNodeKind::Constraint { target: Some(checked), left, right: None } = kind
+                let CfgNodeKind::Constraint(Constraint::Assignment {
+                    target: checked,
+                    value: checked_value,
+                }) = kind
                 else {
                     return false;
                 };
-                checked == target && *left == value
+                checked == target && *checked_value == value
             }
             AssignmentOperator::Add
             | AssignmentOperator::Subtract

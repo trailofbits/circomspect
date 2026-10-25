@@ -167,7 +167,7 @@ impl ProjectSummaries<'_> {
                     | CfgNodeKind::OpaqueEquality { .. }
                     | CfgNodeKind::Instantiate { .. }
                     | CfgNodeKind::Witness { .. }
-                    | CfgNodeKind::Constraint { .. } => Some(Err(SummaryBlocker::ExternalSummary)),
+                    | CfgNodeKind::Constraint(_) => Some(Err(SummaryBlocker::ExternalSummary)),
                     _ => None,
                 };
                 let Some(effect) = effect else { continue };

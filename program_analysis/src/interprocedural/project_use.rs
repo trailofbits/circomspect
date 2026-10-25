@@ -9,7 +9,7 @@ use parser::hir::{
 };
 use parser::new_frontend::{AssignmentOperator, PortDirection, Span};
 
-use crate::hir_cfg::{build_cfg, CfgNodeKind, DefinitionCfg, Origin};
+use crate::hir_cfg::{Constraint, build_cfg, CfgNodeKind, DefinitionCfg, Origin};
 use crate::hir_facts::{AccessHandle, AnalysisFacts, FieldContext, Range};
 use crate::interprocedural::component::LocalOutputUse;
 use crate::interprocedural::summary::{certified, is_proven_nonzero};
@@ -263,8 +263,8 @@ impl ProjectSummaries<'_> {
             CfgNodeKind::Witness { target, .. }
             | CfgNodeKind::Instantiate { target, .. }
             | CfgNodeKind::Update { target, .. } => facts.checked_access_bounds(target).is_err(),
-            CfgNodeKind::Constraint { target, .. } => {
-                target.as_ref().is_some_and(|target| facts.checked_access_bounds(target).is_err())
+            CfgNodeKind::Constraint(Constraint::Assignment { target, .. }) => {
+                facts.checked_access_bounds(target).is_err()
             }
             CfgNodeKind::Assignment { target, operator, .. } => {
                 *operator != AssignmentOperator::Assign
@@ -288,9 +288,11 @@ impl ProjectSummaries<'_> {
             | CfgNodeKind::OpaqueEquality { .. }
             | CfgNodeKind::LoopHeader => true,
             CfgNodeKind::Declaration { symbol } => self.declaration_may_fail(*symbol, facts),
-            CfgNodeKind::Entry | CfgNodeKind::Exit | CfgNodeKind::Return(_) | CfgNodeKind::Log => {
-                false
-            }
+            CfgNodeKind::Constraint(Constraint::Equality { .. })
+            | CfgNodeKind::Entry
+            | CfgNodeKind::Exit
+            | CfgNodeKind::Return(_)
+            | CfgNodeKind::Log => false,
         }
     }
 

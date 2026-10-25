@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 use abstract_interpretation::graph::{FlowGraph, NodeId};
 use abstract_interpretation::solver::SolveResult;
 
-use crate::hir_cfg::{CfgNode, CfgNodeKind};
+use crate::hir_cfg::{Constraint, CfgNode, CfgNodeKind};
 use crate::hir_facts::{
     AccessKey, AnalysisFacts, DescribeSignalAssignment, Fact, FactBlocker, FieldValue,
     NormalizedEquation, SourceSignalAssignment,
@@ -113,7 +113,8 @@ impl AnalysisFacts<'_> {
                 .cfg
                 .node(edge.target)
                 .ok_or_else(|| BTreeSet::from([FactBlocker::ForeignQuery]))?;
-            let CfgNodeKind::Constraint { target: Some(target), left, right: None } = &node.kind
+            let CfgNodeKind::Constraint(Constraint::Assignment { target, value: generated_value }) =
+                &node.kind
             else {
                 return Err(BTreeSet::from([FactBlocker::UnsupportedRelation(node.id)]));
             };
@@ -121,7 +122,7 @@ impl AnalysisFacts<'_> {
                 return Err(BTreeSet::from([FactBlocker::ForeignQuery]));
             };
             if target != written
-                || left != value
+                || generated_value != value
                 || node.origin != witness.origin
                 || found.replace(node).is_some()
             {

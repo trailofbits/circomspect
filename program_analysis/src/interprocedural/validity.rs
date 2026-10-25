@@ -8,7 +8,7 @@ use num_traits::Zero;
 use parser::hir::{BusId, BusTarget, CallTarget, DefinitionRef, ExprId, ExprKind, SymbolId};
 use parser::new_frontend::BinaryOperator;
 
-use crate::hir_cfg::{build_cfg, CfgNodeKind};
+use crate::hir_cfg::{Constraint, build_cfg, CfgNodeKind};
 use crate::hir_facts::{AnalysisFacts, Range};
 use crate::interprocedural::{
     CallContext, CallOwner, CallProvenance, CallSite, ProjectSummaries, SummaryBlocker,
@@ -82,15 +82,12 @@ impl ProjectSummaries<'_> {
             | CfgNodeKind::OpaqueAssignment { target, .. }
             | CfgNodeKind::Witness { target, .. }
             | CfgNodeKind::Instantiate { target, .. }
-            | CfgNodeKind::Update { target, .. } => facts
+            | CfgNodeKind::Update { target, .. }
+            | CfgNodeKind::Constraint(Constraint::Assignment { target, .. }) => facts
                 .checked_access_bounds(target)
                 .is_err_and(crate::hir_facts::AccessHandleError::proves_invalid_execution),
-            CfgNodeKind::Constraint { target, .. } => target.as_ref().is_some_and(|target| {
-                facts
-                    .checked_access_bounds(target)
-                    .is_err_and(crate::hir_facts::AccessHandleError::proves_invalid_execution)
-            }),
-            CfgNodeKind::Entry
+            CfgNodeKind::Constraint(Constraint::Equality { .. })
+            | CfgNodeKind::Entry
             | CfgNodeKind::Exit
             | CfgNodeKind::LoopHeader
             | CfgNodeKind::Branch { .. }

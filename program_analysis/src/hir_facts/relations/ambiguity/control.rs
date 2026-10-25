@@ -128,7 +128,7 @@ impl AnalysisFacts<'_> {
             | CfgNodeKind::Exit
             | CfgNodeKind::Evaluate(_)
             | CfgNodeKind::Witness { .. }
-            | CfgNodeKind::Constraint { .. }
+            | CfgNodeKind::Constraint(_)
             | CfgNodeKind::Assignment { .. }
             | CfgNodeKind::Update { .. }
             | CfgNodeKind::Declaration { .. }

@@ -6,7 +6,7 @@ use abstract_interpretation::graph::{FlowGraph, NodeId};
 use parser::hir::SymbolKind;
 use parser::new_frontend::PortDirection;
 
-use crate::hir_cfg::CfgNodeKind;
+use crate::hir_cfg::{CfgNodeKind, Constraint};
 use crate::hir_facts::relations::complete::{GeneratedConstraintSite, GeneratedEquationSites};
 use crate::hir_facts::{
     AccessKey, AnalysisFacts, DescribeSignalAssignment, FactBlocker, FieldContext, FieldValue,
@@ -100,7 +100,9 @@ impl AnalysisFacts<'_> {
     ) -> Result<Option<AccessKey>, BTreeSet<FactBlocker>> {
         let foreign = || BTreeSet::from([FactBlocker::ForeignQuery]);
         let node = self.cfg.node(site.site()).ok_or_else(foreign)?;
-        let CfgNodeKind::Constraint { target: Some(target), left, right: None } = &node.kind else {
+        let CfgNodeKind::Constraint(Constraint::Assignment { target, value: generated_value }) =
+            &node.kind
+        else {
             return Ok(None);
         };
         let origin = site.origin();
@@ -114,7 +116,7 @@ impl AnalysisFacts<'_> {
         else {
             return Err(foreign());
         };
-        if source != target || value != *left || node.origin != Some(origin) {
+        if source != target || value != *generated_value || node.origin != Some(origin) {
             return Err(foreign());
         }
         let symbol = self.hir.symbol(target.root).ok_or_else(foreign)?;

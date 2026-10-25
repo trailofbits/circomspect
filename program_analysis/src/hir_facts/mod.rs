@@ -35,7 +35,7 @@ use parser::hir::{
 };
 use parser::new_frontend::{AssignmentOperator, InputAssignmentOperator};
 
-use crate::hir_cfg::{CfgNodeKind, DefinitionCfg};
+use crate::hir_cfg::{Constraint, CfgNodeKind, DefinitionCfg};
 use crate::hir_facts::demand::{DemandAnalysis, DemandState};
 use crate::hir_facts::use_queries::ReadScope;
 use crate::interprocedural::ContextEvidence;
@@ -1188,34 +1188,31 @@ impl AnalysisFacts<'_> {
 
     fn site_touches_with_state(&self, id: NodeId, query: &AccessKey, state: &ForwardState) -> bool {
         let Some(node) = self.cfg.node(id) else { return true };
-        let CfgNodeKind::Constraint { target, left, right } = &node.kind else { return false };
+        let CfgNodeKind::Constraint(constraint) = &node.kind else { return false };
         let empty = BTreeMap::new();
         let variables = state.variables().unwrap_or(&empty);
         let analysis = self.forward_analysis();
         if let Some(touches) = forward::proven_linear_touches(&analysis, &node.kind, variables) {
             return touches.iter().any(|key| key.may_alias(query));
         }
-        let target_touches = target.as_ref().is_some_and(|path| {
-            key_for_path(self.hir, self.field, path, variables).may_alias(query)
-        });
-        let index_touches = target.as_ref().is_some_and(|path| {
-            path.steps.iter().any(|step| match step {
-                parser::hir::AccessStep::Index {
-                    index: parser::hir::ArrayIndex::Symbolic(id),
-                    ..
-                } => self.expr_touches(*id, query, state),
-                parser::hir::AccessStep::Index {
-                    index: parser::hir::ArrayIndex::Constant(_),
-                    ..
-                }
-                | parser::hir::AccessStep::Port { .. }
-                | parser::hir::AccessStep::Tag { .. } => false,
-            })
-        });
-        target_touches
-            || index_touches
-            || self.expr_touches(*left, query, state)
-            || right.is_some_and(|id| self.expr_touches(id, query, state))
+        match constraint {
+            Constraint::Assignment { target, value } => {
+                let target_touches =
+                    key_for_path(self.hir, self.field, target, variables).may_alias(query);
+                let index_touches = target.steps.iter().any(|step| match step {
+                    AccessStep::Index { index: ArrayIndex::Symbolic(id), .. } => {
+                        self.expr_touches(*id, query, state)
+                    }
+                    AccessStep::Index { index: ArrayIndex::Constant(_), .. }
+                    | AccessStep::Port { .. }
+                    | AccessStep::Tag { .. } => false,
+                });
+                target_touches || index_touches || self.expr_touches(*value, query, state)
+            }
+            Constraint::Equality { left, right } => {
+                self.expr_touches(*left, query, state) || self.expr_touches(*right, query, state)
+            }
+        }
     }
 
     fn expr_touches(&self, id: ExprId, query: &AccessKey, state: &ForwardState) -> bool {
@@ -1493,7 +1490,7 @@ impl AnalysisFacts<'_> {
             | CfgNodeKind::LoopHeader
             | CfgNodeKind::Branch { .. }
             | CfgNodeKind::Witness { .. }
-            | CfgNodeKind::Constraint { .. }
+            | CfgNodeKind::Constraint(_)
             | CfgNodeKind::Update { .. }
             | CfgNodeKind::Declaration { .. }
             | CfgNodeKind::Return(_)
@@ -1545,46 +1542,56 @@ impl AnalysisFacts<'_> {
 
     fn aggregate_site_touches(&self, site: NodeId, query: &AccessKey) -> bool {
         let Some(node) = self.cfg.node(site) else { return true };
-        let CfgNodeKind::Constraint { target, left, right } = &node.kind else { return false };
+        let CfgNodeKind::Constraint(constraint) = &node.kind else { return false };
         let empty = BTreeMap::new();
         let variables = self.site_state(site).and_then(ForwardState::variables).unwrap_or(&empty);
         let aggregate = |path: &AccessPath| {
             let key = key_for_path(self.hir, self.field, path, variables);
             key.steps.len() < query.steps.len() && key.may_alias(query)
         };
-        if target.as_ref().is_some_and(aggregate) {
-            return true;
-        }
         let mut found = false;
-        left.visit_accesses(self.hir, &mut |path| found |= aggregate(path));
-        if let Some(right) = right {
-            right.visit_accesses(self.hir, &mut |path| found |= aggregate(path));
+        match constraint {
+            Constraint::Assignment { target, value } => {
+                if aggregate(target) {
+                    return true;
+                }
+                value.visit_accesses(self.hir, &mut |path| found |= aggregate(path));
+            }
+            Constraint::Equality { left, right } => {
+                left.visit_accesses(self.hir, &mut |path| found |= aggregate(path));
+                right.visit_accesses(self.hir, &mut |path| found |= aggregate(path));
+            }
         }
         found
     }
 
     fn unresolved_site_dependency(&self, site: NodeId) -> Option<ExprId> {
         let node = self.cfg.node(site)?;
-        let CfgNodeKind::Constraint { target, left, right } = &node.kind else { return None };
+        let CfgNodeKind::Constraint(constraint) = &node.kind else { return None };
         let state = self.site_state(site)?;
         let values = state.variables()?;
         let dependencies = state.dependencies()?;
         let analysis = self.forward_analysis();
         let unresolved =
             |id| forward::expression_dependencies(&analysis, id, values, dependencies).is_none();
-        if let Some(target) = target {
-            for step in &target.steps {
-                if let AccessStep::Index { index: ArrayIndex::Symbolic(id), .. } = step {
-                    if unresolved(*id) {
-                        return Some(*id);
+        match constraint {
+            Constraint::Assignment { target, value } => {
+                for step in &target.steps {
+                    if let AccessStep::Index { index: ArrayIndex::Symbolic(id), .. } = step {
+                        if unresolved(*id) {
+                            return Some(*id);
+                        }
                     }
                 }
+                unresolved(*value).then_some(*value)
+            }
+            Constraint::Equality { left, right } => {
+                if unresolved(*left) {
+                    return Some(*left);
+                }
+                unresolved(*right).then_some(*right)
             }
         }
-        if unresolved(*left) {
-            return Some(*left);
-        }
-        right.filter(|id| unresolved(*id))
     }
 
     fn opaque_relevant(&self, node_id: NodeId, path: &AccessPath) -> bool {

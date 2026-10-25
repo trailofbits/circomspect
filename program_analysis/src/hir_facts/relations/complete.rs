@@ -197,7 +197,7 @@ impl AnalysisFacts<'_> {
         let Some(node) = self.cfg.node(id) else {
             return Err(BTreeSet::from([FactBlocker::ForeignQuery]));
         };
-        let CfgNodeKind::Constraint { .. } = &node.kind else { return Ok(None) };
+        let CfgNodeKind::Constraint(_) = &node.kind else { return Ok(None) };
         let output = facts.get(&id).and_then(|item| item.output.as_ref());
         let equation = output.and_then(|state| state.must_equations().equation_at_origin(id));
         let Some(equation) = equation else {

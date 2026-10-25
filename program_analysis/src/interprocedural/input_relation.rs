@@ -12,7 +12,7 @@ use parser::hir::{
 };
 use parser::new_frontend::PortDirection;
 
-use crate::hir_cfg::{CfgEdge, CfgNode, CfgNodeKind, Origin};
+use crate::hir_cfg::{Constraint, CfgEdge, CfgNode, CfgNodeKind, Origin};
 use crate::hir_facts::{
     AccessKey, AnalysisFacts, DescribeSignalAssignment, FieldValue, GeneratedInputEquation,
     InstanceRelation, Range, SourceSignalAssignment, VisitAccesses,
@@ -406,7 +406,7 @@ impl RelationAnalysis<'_> {
                 Ok(())
             }
             CfgNodeKind::Witness { target, .. } => self.bind_witness(node, target, &mut state),
-            CfgNodeKind::Constraint { target: None, left, right } => {
+            CfgNodeKind::Constraint(Constraint::Equality { left, right }) => {
                 self.check_competing_equality(*left, *right, &mut state)
             }
             CfgNodeKind::Evaluate(expression) => self.check_read(*expression, &mut state),
@@ -423,7 +423,7 @@ impl RelationAnalysis<'_> {
             }
             CfgNodeKind::Entry
             | CfgNodeKind::Exit
-            | CfgNodeKind::Constraint { target: Some(_), .. }
+            | CfgNodeKind::Constraint(Constraint::Assignment { .. })
             | CfgNodeKind::Assignment { .. }
             | CfgNodeKind::DeferredAssignment { .. }
             | CfgNodeKind::Update { .. }
@@ -648,13 +648,13 @@ impl RelationAnalysis<'_> {
     fn check_competing_equality(
         &self,
         left: parser::hir::ExprId,
-        right: Option<parser::hir::ExprId>,
+        right: parser::hir::ExprId,
         state: &mut RelationState,
     ) -> Result<(), SummaryBlocker> {
         if let BindingPolicy::CompleteModels | BindingPolicy::GeneratedExpressions = self.policy {
             return Ok(());
         }
-        for expression in [Some(left), right].into_iter().flatten() {
+        for expression in [left, right] {
             let mut touches = false;
             if !expression.visit_accesses(self.facts.hir(), &mut |path| {
                 touches |= self.facts.instance_path_relation(self.instance, path)

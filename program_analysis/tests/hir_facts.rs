@@ -411,7 +411,7 @@ fn function_call_blocks_only_argument_dependent_incidence() {
         cfg.nodes()
             .iter()
             .filter_map(|id| cfg.node(*id))
-            .filter(|node| matches!(node.kind, CfgNodeKind::Constraint { .. }))
+            .filter(|node| matches!(node.kind, CfgNodeKind::Constraint(_)))
             .count(),
         1
     );
@@ -472,7 +472,7 @@ fn scalar_local_declaration_has_compiler_default_zero_without_a_constraint() {
     assert!(cfg
         .nodes()
         .iter()
-        .all(|id| !matches!(cfg.node(*id).unwrap().kind, CfgNodeKind::Constraint { .. })));
+        .all(|id| !matches!(cfg.node(*id).unwrap().kind, CfgNodeKind::Constraint(_))));
 }
 
 #[test]
@@ -520,7 +520,7 @@ fn opaque_function_equality_blocks_only_its_argument() {
             cfg.nodes()
                 .iter()
                 .filter_map(|id| cfg.node(*id))
-                .filter(|node| matches!(node.kind, CfgNodeKind::Constraint { .. }))
+                .filter(|node| matches!(node.kind, CfgNodeKind::Constraint(_)))
                 .count(),
             1
         );
@@ -555,7 +555,7 @@ fn unresolved_witness_call_never_generates_a_constraint() {
     assert!(cfg
         .nodes()
         .iter()
-        .all(|id| { !matches!(cfg.node(*id).unwrap().kind, CfgNodeKind::Constraint { .. }) }));
+        .all(|id| { !matches!(cfg.node(*id).unwrap().kind, CfgNodeKind::Constraint(_)) }));
 }
 
 #[test]

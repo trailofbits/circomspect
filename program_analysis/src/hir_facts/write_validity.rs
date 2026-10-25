@@ -11,7 +11,7 @@ use abstract_interpretation::solver::{
 use parser::hir::{AccessPath, AccessStep, ArrayIndex, ExprId, ProjectIdentity, SymbolKind};
 use parser::new_frontend::{AssignmentOperator, PortDirection};
 
-use crate::hir_cfg::{CfgEdge, CfgNode, CfgNodeKind, DefinitionCfg, Origin};
+use crate::hir_cfg::{Constraint, CfgEdge, CfgNode, CfgNodeKind, DefinitionCfg, Origin};
 use crate::hir_facts::access::key_for_path;
 use crate::hir_facts::{
     forward_pruned_edges, AccessHandle, AccessKey, AnalysisFacts, Fact, FactBlocker,
@@ -308,13 +308,16 @@ impl AnalysisFacts<'_> {
             self.target_index_read_blockers(target, check);
             self.expression_read_blockers(*value, check);
         }
-        if let CfgNodeKind::Constraint { target, left, right } = kind {
-            if let Some(target) = target {
-                self.target_index_read_blockers(target, check);
-            }
-            self.expression_read_blockers(*left, check);
-            if let Some(right) = right {
-                self.expression_read_blockers(*right, check);
+        if let CfgNodeKind::Constraint(constraint) = kind {
+            match constraint {
+                Constraint::Assignment { target, value } => {
+                    self.target_index_read_blockers(target, check);
+                    self.expression_read_blockers(*value, check);
+                }
+                Constraint::Equality { left, right } => {
+                    self.expression_read_blockers(*left, check);
+                    self.expression_read_blockers(*right, check);
+                }
             }
         }
     }
@@ -699,7 +702,7 @@ impl AnalysisFacts<'_> {
             | CfgNodeKind::Evaluate(_)
             | CfgNodeKind::LoopHeader
             | CfgNodeKind::Branch { .. }
-            | CfgNodeKind::Constraint { .. }
+            | CfgNodeKind::Constraint(_)
             | CfgNodeKind::Assignment { .. }
             | CfgNodeKind::DeferredAssignment { .. }
             | CfgNodeKind::Update { .. }

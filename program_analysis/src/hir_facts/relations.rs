@@ -13,7 +13,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use abstract_interpretation::graph::{FlowGraph, NodeId};
 use abstract_interpretation::lattice::Lattice;
 use abstract_interpretation::solver::{CertifiedFacts, SolveResult};
-use crate::hir_cfg::{CfgNodeKind, Origin};
+use crate::hir_cfg::{Constraint, CfgNodeKind, Origin};
 use crate::hir_facts::forward::ForwardState;
 use crate::hir_facts::relations::polynomial::witness_equation;
 use crate::hir_facts::{
@@ -316,16 +316,19 @@ impl AnalysisFacts<'_> {
         site: NodeId,
         ports: Option<&ValidatedComponentPorts>,
     ) -> BTreeSet<FactBlocker> {
-        let CfgNodeKind::Constraint { target, left, right } = kind else {
+        let CfgNodeKind::Constraint(constraint) = kind else {
             return BTreeSet::from([FactBlocker::UnsupportedRelation(site)]);
         };
         let mut blockers = BTreeSet::new();
-        if let Some(target) = target {
-            blockers.extend(self.relation_access_blockers_for(target, site, ports));
-        }
-        blockers.extend(self.relation_access_blockers_for(left, site, ports));
-        if let Some(right) = right {
-            blockers.extend(self.relation_access_blockers_for(right, site, ports));
+        match constraint {
+            Constraint::Assignment { target, value } => {
+                blockers.extend(self.relation_access_blockers_for(target, site, ports));
+                blockers.extend(self.relation_access_blockers_for(value, site, ports));
+            }
+            Constraint::Equality { left, right } => {
+                blockers.extend(self.relation_access_blockers_for(left, site, ports));
+                blockers.extend(self.relation_access_blockers_for(right, site, ports));
+            }
         }
         blockers
     }
@@ -344,7 +347,7 @@ impl AnalysisFacts<'_> {
                 continue;
             }
             let Some(node) = self.cfg.node(*site) else { continue };
-            if let CfgNodeKind::Constraint { .. } = &node.kind {
+            if let CfgNodeKind::Constraint(_) = &node.kind {
                 blockers.extend(self.relation_constraint_blockers_for(&node.kind, *site, ports));
             }
         }

@@ -21,6 +21,13 @@ pub struct Origin {
     pub span: Span,
 }
 
+/// A generated assignment or a source equality, with operands in source order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Constraint {
+    Assignment { target: AccessPath, value: ExprId },
+    Equality { left: ExprId, right: ExprId },
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CfgNodeKind {
     Entry,
@@ -35,11 +42,7 @@ pub enum CfgNodeKind {
         target: AccessPath,
         value: ExprId,
     },
-    Constraint {
-        target: Option<AccessPath>,
-        left: ExprId,
-        right: Option<ExprId>,
-    },
+    Constraint(Constraint),
     Assignment {
         target: AccessPath,
         value: ExprId,
@@ -510,7 +513,7 @@ impl Builder<'_> {
                 let tails = self.evaluate(tails, *right, origin)?;
                 Ok(self.append(
                     tails,
-                    CfgNodeKind::Constraint { target: None, left: *left, right: Some(*right) },
+                    CfgNodeKind::Constraint(Constraint::Equality { left: *left, right: *right }),
                     Origin { expression: Some(*left), ..origin },
                 ))
             }
@@ -520,7 +523,10 @@ impl Builder<'_> {
                 if self.specialized_equality(*left, *right, reason) {
                     return Ok(self.append(
                         tails,
-                        CfgNodeKind::Constraint { target: None, left: *left, right: Some(*right) },
+                        CfgNodeKind::Constraint(Constraint::Equality {
+                            left: *left,
+                            right: *right,
+                        }),
                         Origin { expression: Some(*left), ..origin },
                     ));
                 }
@@ -681,7 +687,7 @@ impl Builder<'_> {
             self.append(tails, CfgNodeKind::Witness { target: target.clone(), value }, origin);
         self.append(
             tails,
-            CfgNodeKind::Constraint { target: Some(target.clone()), left: value, right: None },
+            CfgNodeKind::Constraint(Constraint::Assignment { target: target.clone(), value }),
             origin,
         )
     }

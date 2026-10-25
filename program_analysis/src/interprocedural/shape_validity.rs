@@ -148,7 +148,7 @@ impl ShapeValidator<'_, '_> {
             | CfgNodeKind::LoopHeader
             | CfgNodeKind::Branch { .. }
             | CfgNodeKind::Witness { .. }
-            | CfgNodeKind::Constraint { .. }
+            | CfgNodeKind::Constraint(_)
             | CfgNodeKind::Instantiate { .. }
             | CfgNodeKind::Declaration { .. }
             | CfgNodeKind::Return(_)

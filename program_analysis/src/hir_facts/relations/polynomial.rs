@@ -9,7 +9,7 @@ use parser::hir::{AccessPath, ExprId, ExprKind, HirProject, SymbolId, SymbolKind
 use parser::new_frontend::{BinaryOperator, UnaryOperator};
 use program_structure::utils::constants::Curve;
 
-use crate::hir_cfg::CfgNodeKind;
+use crate::hir_cfg::{CfgNodeKind, Constraint};
 use crate::hir_facts::access::{key_for_path, AccessKey};
 use crate::hir_facts::field::{FieldContext, FieldValue};
 use crate::hir_facts::forward::eval_expression_with_calls;
@@ -281,7 +281,6 @@ pub(crate) enum RelationBlocker {
     MissingExpression(ExprId),
     UnsupportedExpression(ExprId),
     UnsupportedPath,
-    MissingRight,
     DegreeExceeded(ExprId),
     GeneratedShape(ExprId),
 }
@@ -517,22 +516,23 @@ pub(crate) fn constraint_equation(
     inputs: &NormalizationInputs<'_>,
     kind: &CfgNodeKind,
 ) -> Result<NormalizedEquation, RelationBlocker> {
-    let CfgNodeKind::Constraint { target, left, right } = kind else {
+    let CfgNodeKind::Constraint(constraint) = kind else {
         return Err(RelationBlocker::UnsupportedPath);
     };
-    let left_side = if let Some(target) = target {
-        ExpressionPolynomial::new(polynomial_for_path(inputs, target)?, SourceForm::Linear)
-    } else {
-        polynomial_for_expression(inputs, *left)?
-    };
-    let right_side = if target.is_some() {
-        polynomial_for_expression(inputs, *left)?
-    } else {
-        let right = right.ok_or(RelationBlocker::MissingRight)?;
-        polynomial_for_expression(inputs, right)?
+    let (left_side, right_side, source) = match constraint {
+        Constraint::Assignment { target, value } => (
+            ExpressionPolynomial::new(polynomial_for_path(inputs, target)?, SourceForm::Linear),
+            polynomial_for_expression(inputs, *value)?,
+            *value,
+        ),
+        Constraint::Equality { left, right } => (
+            polynomial_for_expression(inputs, *left)?,
+            polynomial_for_expression(inputs, *right)?,
+            *left,
+        ),
     };
     if left_side.form.add(right_side.form) == SourceForm::Unsupported {
-        return Err(RelationBlocker::GeneratedShape(*left));
+        return Err(RelationBlocker::GeneratedShape(source));
     }
     Ok(NormalizedEquation::between(left_side.polynomial, right_side.polynomial, inputs.field))
 }
@@ -585,7 +585,7 @@ mod tests {
     use parser::new_frontend::{load_sources, BinaryOperator, Version, VersionPolicy};
     use program_structure::utils::constants::Curve;
 
-    use crate::hir_cfg::{build_cfg, CfgNodeKind};
+    use crate::hir_cfg::{Constraint, build_cfg, CfgNodeKind};
     use crate::hir_facts::field::FieldContext;
     use crate::hir_facts::relations::polynomial::{
         constraint_equation, variable_polynomial, witness_equation, ExpressionPolynomial,
@@ -624,7 +624,7 @@ mod tests {
                     witness = Some(witness_equation(&inputs, target, *value).unwrap());
                 }
             }
-            if let CfgNodeKind::Constraint { target: Some(_), .. } = &node.kind {
+            if let CfgNodeKind::Constraint(Constraint::Assignment { .. }) = &node.kind {
                 generated = Some(constraint_equation(&inputs, &node.kind).unwrap());
             }
         }

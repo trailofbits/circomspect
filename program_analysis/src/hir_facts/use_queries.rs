@@ -167,7 +167,7 @@ impl AnalysisFacts<'_> {
             | CfgNodeKind::LoopHeader
             | CfgNodeKind::Branch { .. }
             | CfgNodeKind::Witness { .. }
-            | CfgNodeKind::Constraint { .. }
+            | CfgNodeKind::Constraint(_)
             | CfgNodeKind::DeferredAssignment { .. }
             | CfgNodeKind::Instantiate { .. }
             | CfgNodeKind::OpaqueAssignment { .. }

@@ -8,7 +8,7 @@
     clippy::unwrap_used
 )]
 use abstract_interpretation::graph::FlowGraph;
-use circomspect_program_analysis::hir_cfg::{build_cfg, CfgNodeKind};
+use circomspect_program_analysis::hir_cfg::{Constraint, build_cfg, CfgNodeKind};
 use circomspect_program_analysis::interprocedural::{
     AnalyzeEvidenceError, CallOwner, CallReachability, ProjectSummaries, SummaryBlocker,
 };
@@ -61,7 +61,7 @@ fn exact_scalar_parameter_preserves_both_comparator_constraints() {
     let nodes = specialized_nodes(&source("8")).expect("exact scalar call context");
     let mut targets = Vec::new();
     for node in &nodes {
-        if let CfgNodeKind::Constraint { target: Some(path), .. } = node {
+        if let CfgNodeKind::Constraint(Constraint::Assignment { target: path, .. }) = node {
             targets.push(path.steps.len());
         }
     }
@@ -78,7 +78,7 @@ fn array_parameter_cannot_specialize_scalar_comparator_assignments() {
     let nodes = specialized_nodes(&source("[8]"));
     if let Some(nodes) = nodes {
         for node in nodes {
-            if let CfgNodeKind::Constraint { target: Some(_), .. } = node {
+            if let CfgNodeKind::Constraint(Constraint::Assignment { .. }) = node {
                 panic!("array parameter cannot authorize a scalar constraint");
             }
         }
@@ -97,14 +97,14 @@ fn an_unseeded_library_body_keeps_deferred_assignments_opaque() {
         let Some(node) = cfg.node(*id) else { continue };
         match &node.kind {
             CfgNodeKind::OpaqueAssignment { .. } => opaque += 1,
-            CfgNodeKind::Constraint { target: Some(_), .. } => constraints += 1,
+            CfgNodeKind::Constraint(Constraint::Assignment { .. }) => constraints += 1,
             CfgNodeKind::Entry
             | CfgNodeKind::Exit
             | CfgNodeKind::Evaluate(_)
             | CfgNodeKind::LoopHeader
             | CfgNodeKind::Branch { .. }
             | CfgNodeKind::Witness { .. }
-            | CfgNodeKind::Constraint { target: None, .. }
+            | CfgNodeKind::Constraint(Constraint::Equality { .. })
             | CfgNodeKind::Assignment { .. }
             | CfgNodeKind::DeferredAssignment { .. }
             | CfgNodeKind::Update { .. }
@@ -126,7 +126,7 @@ fn a_written_parameter_cannot_reuse_its_incoming_scalar_seed() {
     let source = source("8").replace("component d=Child(n+1);", "n=9;component d=Child(n+1);");
     let nodes = specialized_nodes(&source).expect("valid mutable parameter context");
     for node in nodes {
-        if let CfgNodeKind::Constraint { target: Some(_), .. } = node {
+        if let CfgNodeKind::Constraint(Constraint::Assignment { .. }) = node {
             panic!("the incoming value of n is stale after a body write");
         }
     }
@@ -143,7 +143,10 @@ fn bus_valued_child_output_cannot_become_a_scalar_answer_constraint() {
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
     for id in cfg.nodes() {
         let Some(node) = cfg.node(*id) else { continue };
-        let CfgNodeKind::Constraint { target: Some(path), .. } = &node.kind else { continue };
+        let CfgNodeKind::Constraint(Constraint::Assignment { target: path, .. }) = &node.kind
+        else {
+            continue;
+        };
         assert_ne!(lifted.hir.symbol(path.terminal).unwrap().name, "answer");
     }
 }

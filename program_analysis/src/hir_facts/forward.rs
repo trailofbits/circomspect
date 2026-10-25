@@ -8,7 +8,7 @@ use abstract_interpretation::solver::{DataflowAnalysis, Transfer, TransferOutcom
 use parser::hir::{AccessPath, CallTarget, ExprId, ExprKind, HirProject, SymbolId, SymbolKind};
 use parser::new_frontend::{AssignmentOperator, BinaryOperator, PostfixOperator, UnaryOperator};
 
-use crate::hir_cfg::{CfgEdge, CfgNode, CfgNodeKind, DefinitionCfg, EdgeKind};
+use crate::hir_cfg::{Constraint, CfgEdge, CfgNode, CfgNodeKind, DefinitionCfg, EdgeKind};
 use crate::scalar_evidence::ScalarExpressionEvidence;
 
 use crate::hir_facts::access::{key_for_path, AccessKey, MayAccessSet};
@@ -302,22 +302,21 @@ fn fixed_side(
 
 fn fixed_equation(
     analysis: &ForwardAnalysis<'_>,
-    target: Option<&AccessPath>,
-    left: ExprId,
-    right: Option<ExprId>,
+    constraint: &Constraint,
     variables: &BTreeMap<SymbolId, FieldValue>,
 ) -> Option<(AccessKey, FieldValue)> {
-    if let Some(target) = target {
-        let key = key_for_path(analysis.hir, analysis.field, target, variables);
-        if !key.exact_alias(&key) {
-            return None;
+    match constraint {
+        Constraint::Assignment { target, value } => {
+            let key = key_for_path(analysis.hir, analysis.field, target, variables);
+            if !key.exact_alias(&key) {
+                return None;
+            }
+            let value = analysis.evaluate(*value, variables)?;
+            Some((key, value))
         }
-        let value = analysis.evaluate(left, variables)?;
-        return Some((key, value));
+        Constraint::Equality { left, right } => fixed_side(analysis, *left, *right, variables)
+            .or_else(|| fixed_side(analysis, *right, *left, variables)),
     }
-    let right = right?;
-    fixed_side(analysis, left, right, variables)
-        .or_else(|| fixed_side(analysis, right, left, variables))
 }
 
 #[derive(Default)]
@@ -435,15 +434,15 @@ fn linear_constraint(
     kind: &CfgNodeKind,
     values: &BTreeMap<SymbolId, FieldValue>,
 ) -> Option<LinearForm> {
-    let CfgNodeKind::Constraint { target, left, right } = kind else { return None };
-    let form = if let Some(path) = target {
-        LinearForm::from_path(analysis, path, values)
-    } else {
-        left.linearize(analysis, values)
+    let CfgNodeKind::Constraint(constraint) = kind else { return None };
+    let (form, opposite) = match constraint {
+        Constraint::Assignment { target, value } => {
+            (LinearForm::from_path(analysis, target, values), *value)
+        }
+        Constraint::Equality { left, right } => (left.linearize(analysis, values), *right),
     };
     let mut form = form?;
-    let opposite = if target.is_some() { Some(*left) } else { *right };
-    let mut opposite = opposite?.linearize(analysis, values)?;
+    let mut opposite = opposite.linearize(analysis, values)?;
     opposite.scale(analysis.field, &analysis.field.canonical((-1).into()));
     form.add(analysis.field, opposite);
     Some(form)
@@ -916,15 +915,13 @@ impl ForwardState {
         else {
             return Ok(());
         };
-        let CfgNodeKind::Constraint { target, left, right } = &node.kind else {
+        let CfgNodeKind::Constraint(constraint) = &node.kind else {
             return Err("expected constraint node".into());
         };
         may_constraints.insert(node.id);
         must_constraints.insert(node.id);
         must_touches.extend(constraint_touches(analysis, &node.kind, variables));
-        if let Some((key, value)) =
-            fixed_equation(analysis, target.as_ref(), *left, *right, variables)
-        {
+        if let Some((key, value)) = fixed_equation(analysis, constraint, variables) {
             must_fixed.insert((key, value));
         }
         let inputs = NormalizationInputs::new(
@@ -991,7 +988,7 @@ impl ForwardState {
             CfgNodeKind::Update { target, operator } => {
                 self.apply_update(analysis, target, *operator)
             }
-            CfgNodeKind::Constraint { .. } => self.apply_constraint(analysis, node),
+            CfgNodeKind::Constraint(_) => self.apply_constraint(analysis, node),
             CfgNodeKind::Opaque(reason) | CfgNodeKind::OpaqueEquality { reason, .. } => {
                 Err(format!("{reason:?}"))
             }
@@ -1350,7 +1347,7 @@ mod tests {
             .iter()
             .find_map(|id| {
                 let node = cfg.node(*id)?;
-                if let CfgNodeKind::Constraint { .. } = node.kind {
+                if let CfgNodeKind::Constraint(_) = node.kind {
                     Some(node)
                 } else {
                     None
@@ -1576,7 +1573,7 @@ mod tests {
             .iter()
             .find_map(|id| {
                 let node = cfg.node(*id)?;
-                let CfgNodeKind::Constraint { .. } = &node.kind else { return None };
+                let CfgNodeKind::Constraint(_) = &node.kind else { return None };
                 Some(node)
             })
             .unwrap();
@@ -1892,7 +1889,7 @@ mod tests {
             .iter()
             .find_map(|id| {
                 let node = cfg.node(*id)?;
-                let CfgNodeKind::Constraint { .. } = &node.kind else { return None };
+                let CfgNodeKind::Constraint(_) = &node.kind else { return None };
                 Some(node)
             })
             .unwrap();

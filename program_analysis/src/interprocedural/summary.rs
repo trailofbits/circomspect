@@ -350,7 +350,7 @@ impl ProjectSummaries<'_> {
             | CfgNodeKind::OpaqueEquality { .. }
             | CfgNodeKind::Instantiate { .. }
             | CfgNodeKind::Witness { .. }
-            | CfgNodeKind::Constraint { .. } => true,
+            | CfgNodeKind::Constraint(_) => true,
             CfgNodeKind::Assignment { target, operator, .. } => {
                 *operator != AssignmentOperator::Assign
                     || facts.checked_access_bounds(target).is_err()

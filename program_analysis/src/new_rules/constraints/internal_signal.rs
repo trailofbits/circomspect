@@ -6,7 +6,7 @@ use abstract_interpretation::graph::FlowGraph;
 use parser::hir::{AccessPath, DefinitionRef, SymbolId, SymbolKind};
 use parser::new_frontend::Span;
 
-use crate::hir_cfg::{CfgNode, CfgNodeKind};
+use crate::hir_cfg::{Constraint, CfgNode, CfgNodeKind};
 use crate::hir_facts::{AccessKey, Incidence, VisitAccesses};
 use crate::new_rules::{AbstentionReason, Rule, RuleContext, RuleKind, RuleResult};
 use crate::new_rules::constraints::abstain;
@@ -50,8 +50,11 @@ fn candidates(context: &RuleContext<'_, '_, '_>, node: &CfgNode) -> Vec<AccessPa
         | CfgNodeKind::DeferredAssignment { target, .. }
         | CfgNodeKind::OpaqueAssignment { target, .. }
         | CfgNodeKind::Update { target, .. } => paths.push(target.clone()),
-        CfgNodeKind::Constraint { target, .. } => paths.extend(target.iter().cloned()),
-        CfgNodeKind::Entry
+        CfgNodeKind::Constraint(Constraint::Assignment { target, .. }) => {
+            paths.push(target.clone());
+        }
+        CfgNodeKind::Constraint(Constraint::Equality { .. })
+        | CfgNodeKind::Entry
         | CfgNodeKind::Exit
         | CfgNodeKind::LoopHeader
         | CfgNodeKind::Branch { .. }

@@ -8,7 +8,7 @@ use abstract_interpretation::solver::{DataflowAnalysis, Transfer, TransferOutcom
 use parser::hir::{DefinitionRef, ExprId, HirProject, SymbolId};
 use parser::new_frontend::{AssignmentOperator, PortDirection};
 
-use crate::hir_cfg::{CfgEdge, CfgNode, CfgNodeKind, DefinitionCfg, EdgeKind};
+use crate::hir_cfg::{Constraint, CfgEdge, CfgNode, CfgNodeKind, DefinitionCfg, EdgeKind};
 use crate::scalar_evidence::ScalarExpressionEvidence;
 
 use super::access::{key_for_path, AccessKey};
@@ -178,14 +178,13 @@ impl Transfer<LivenessAnalysis<'_>, LiveState, String> for CfgNode {
             CfgNodeKind::Update { target, .. } => {
                 live.insert(key_for_path(analysis.hir, analysis.field, target, &empty));
             }
-            CfgNodeKind::Constraint { target, left, right } => {
-                if let Some(target) = target {
-                    live.insert(key_for_path(analysis.hir, analysis.field, target, &empty));
-                }
+            CfgNodeKind::Constraint(Constraint::Assignment { target, value }) => {
+                live.insert(key_for_path(analysis.hir, analysis.field, target, &empty));
+                complete &= collect(analysis, *value, live, &empty);
+            }
+            CfgNodeKind::Constraint(Constraint::Equality { left, right }) => {
                 complete &= collect(analysis, *left, live, &empty);
-                if let Some(right) = right {
-                    complete &= collect(analysis, *right, live, &empty);
-                }
+                complete &= collect(analysis, *right, live, &empty);
             }
             CfgNodeKind::Evaluate(expression)
             | CfgNodeKind::Branch { condition: expression, .. }
