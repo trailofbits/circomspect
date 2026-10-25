@@ -230,6 +230,29 @@ fn rejects_illegal_top_level_order_and_expression_statements() {
 }
 
 #[test]
+fn nested_call_and_tuple_children_retain_order_and_spans() {
+    let source = "function F(){return A(B(1,(2,3)),C([4,5],D(6)),7);}";
+    let outcome = parse(source);
+    assert!(outcome.diagnostics.is_empty(), "{:?}", outcome.diagnostics);
+    let mut names = Vec::new();
+    let mut numbers = Vec::new();
+    outcome.ast.walk_syntax(None, &mut |kind, span, _| {
+        let text = &source[span.start()..span.end()];
+        if kind == SyntaxCategory::Identifier {
+            names.push(text);
+        }
+        if kind == SyntaxCategory::Expression {
+            if let Ok(number) = text.parse::<u8>() {
+                numbers.push(number);
+            }
+        }
+    });
+    assert_eq!(names, ["F", "A", "B", "C", "D"]);
+    assert_eq!(numbers, [1, 2, 3, 4, 5, 6, 7]);
+    assert_spans(source, &outcome);
+}
+
+#[test]
 fn invalid_expression_statement_preserves_later_call_and_neighbor() {
     for invalid in ["1;", "1 + 2;", "Rejected();"] {
         let source = format!(

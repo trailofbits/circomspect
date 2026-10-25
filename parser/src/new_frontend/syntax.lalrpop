@@ -13,15 +13,26 @@ pub Item: SyntaxNode = {
         => labelled(SyntaxKind::Include, source, s, e, path, vec![]),
     <s:@L> "function" <name:Name> <params:Parameters> <body:Block> <e:@R>
         => node(SyntaxKind::Function, source, s, e, vec![name, params, body]),
-    <s:@L> "template" <mods:TemplateModifiers> <name:Name> <params:Parameters?> <body:Block> <e:@R>
-        => node(SyntaxKind::Template, source, s, e,
-            [mods, vec![name], params.into_iter().collect(), vec![body]].concat()),
+    <s:@L> "template" <mut mods:TemplateModifiers> <name:Name> <params:Parameters?> <body:Block> <e:@R>
+        => {
+            mods.push(name);
+            mods.extend(params);
+            mods.push(body);
+            node(SyntaxKind::Template, source, s, e, mods)
+        },
     <s:@L> "bus" <name:Name> <params:Parameters?> <body:Block> <e:@R>
-        => node(SyntaxKind::Bus, source, s, e,
-            [vec![name], params.into_iter().collect(), vec![body]].concat()),
+        => {
+            let mut children = vec![name];
+            children.extend(params);
+            children.push(body);
+            node(SyntaxKind::Bus, source, s, e, children)
+        },
     <s:@L> "component" "main" <public:PublicList?> "=" <expr:Expr> ";" <e:@R>
-        => node(SyntaxKind::Main, source, s, e,
-            [public.into_iter().collect(), vec![expr]].concat()),
+        => {
+            let mut children: Vec<_> = public.into_iter().collect();
+            children.push(expr);
+            node(SyntaxKind::Main, source, s, e, children)
+        },
 };
 
 TemplateModifiers: Vec<SyntaxNode> = {
@@ -75,18 +86,34 @@ Declaration: SyntaxNode = {
     <s:@L> "component" <symbols:SymbolList> <e:@R>
         => labelled(SyntaxKind::Declaration, source, s, e, "component".into(), symbols),
     <s:@L> <header:SignalHeader> <symbols:SignalSymbolList> <e:@R>
-        => node(SyntaxKind::Declaration, source, s, e, [vec![header], symbols].concat()),
+        => {
+            let mut children = vec![header];
+            children.extend(symbols);
+            node(SyntaxKind::Declaration, source, s, e, children)
+        },
     <s:@L> <header:BusHeader> <symbols:SignalSymbolList> <e:@R>
-        => node(SyntaxKind::Declaration, source, s, e, [vec![header], symbols].concat()),
-    <s:@L> "var" "(" <symbols:SimpleSymbolList> ")" <init:TupleInit?> <e:@R>
-        => labelled(SyntaxKind::TupleDeclaration, source, s, e, "var".into(),
-            [symbols, init.into_iter().collect()].concat()),
-    <s:@L> "component" "(" <symbols:SimpleSymbolList> ")" <init:TupleInit?> <e:@R>
-        => labelled(SyntaxKind::TupleDeclaration, source, s, e, "component".into(),
-            [symbols, init.into_iter().collect()].concat()),
+        => {
+            let mut children = vec![header];
+            children.extend(symbols);
+            node(SyntaxKind::Declaration, source, s, e, children)
+        },
+    <s:@L> "var" "(" <mut symbols:SimpleSymbolList> ")" <init:TupleInit?> <e:@R>
+        => {
+            symbols.extend(init);
+            labelled(SyntaxKind::TupleDeclaration, source, s, e, "var".into(), symbols)
+        },
+    <s:@L> "component" "(" <mut symbols:SimpleSymbolList> ")" <init:TupleInit?> <e:@R>
+        => {
+            symbols.extend(init);
+            labelled(SyntaxKind::TupleDeclaration, source, s, e, "component".into(), symbols)
+        },
     <s:@L> <header:SignalHeader> "(" <symbols:SimpleSymbolList> ")" <init:TupleInit?> <e:@R>
-        => node(SyntaxKind::TupleDeclaration, source, s, e,
-            [vec![header], symbols, init.into_iter().collect()].concat()),
+        => {
+            let mut children = vec![header];
+            children.extend(symbols);
+            children.extend(init);
+            node(SyntaxKind::TupleDeclaration, source, s, e, children)
+        },
 };
 
 SymbolList: Vec<SyntaxNode> = {
@@ -100,7 +127,11 @@ SignalSymbolList: Vec<SyntaxNode> = {
 };
 SimpleSymbol: SyntaxNode = {
     <s:@L> <name:Name> <dims:Index*> <e:@R>
-        => node(SyntaxKind::Name, source, s, e, [vec![name], dims].concat()),
+        => {
+            let mut children = vec![name];
+            children.extend(dims);
+            node(SyntaxKind::Name, source, s, e, children)
+        },
 };
 Symbol: SyntaxNode = {
     <base:SimpleSymbol> => base,
@@ -118,20 +149,34 @@ TupleInit: SyntaxNode = {
 };
 SignalHeader: SyntaxNode = {
     <s:@L> "signal" <direction:Direction?> <tags:Tags?> <e:@R>
-        => node(SyntaxKind::SignalHeader, source, s, e,
-            [direction.into_iter().collect(), tags.unwrap_or_default()].concat()),
+        => {
+            let mut children: Vec<_> = direction.into_iter().collect();
+            children.extend(tags.unwrap_or_default());
+            node(SyntaxKind::SignalHeader, source, s, e, children)
+        },
     <s:@L> <direction:Direction> "signal" <tags:Tags?> <e:@R>
-        => node(SyntaxKind::DirectionFirstSignalHeader, source, s, e,
-            [vec![direction], tags.unwrap_or_default()].concat()),
+        => {
+            let mut children = vec![direction];
+            children.extend(tags.unwrap_or_default());
+            node(SyntaxKind::DirectionFirstSignalHeader, source, s, e, children)
+        },
 };
 BusHeader: SyntaxNode = {
     <s:@L> <name:Name> <args:Arguments?> <direction:Direction?> <tags:Tags?> <e:@R>
-        => node(SyntaxKind::BusHeader, source, s, e,
-            [vec![name], args.into_iter().collect(), direction.into_iter().collect(),
-                tags.unwrap_or_default()].concat()),
+        => {
+            let mut children = vec![name];
+            children.extend(args);
+            children.extend(direction);
+            children.extend(tags.unwrap_or_default());
+            node(SyntaxKind::BusHeader, source, s, e, children)
+        },
     <s:@L> <direction:Direction> <name:Name> <args:Arguments?> <tags:Tags?> <e:@R>
-        => node(SyntaxKind::DirectionFirstBusHeader, source, s, e,
-            [vec![direction, name], args.into_iter().collect(), tags.unwrap_or_default()].concat()),
+        => {
+            let mut children = vec![direction, name];
+            children.extend(args);
+            children.extend(tags.unwrap_or_default());
+            node(SyntaxKind::DirectionFirstBusHeader, source, s, e, children)
+        },
 };
 Tags: Vec<SyntaxNode> = {
     <s:@L> "{" <names:NameList> "}" <e:@R>
@@ -208,7 +253,11 @@ PostfixOp: String = { "++" => "++".into(), "--" => "--".into() };
 
 Variable: SyntaxNode = {
     <s:@L> <name:Name> <access:Access*> <e:@R>
-        => node(SyntaxKind::Name, source, s, e, [vec![name], access].concat()),
+        => {
+            let mut children = vec![name];
+            children.extend(access);
+            node(SyntaxKind::Name, source, s, e, children)
+        },
 };
 Access: SyntaxNode = {
     Index,
@@ -274,13 +323,19 @@ Expression1: SyntaxNode = {
             vec![name, node(SyntaxKind::Parameters, source, ps, pe, params.unwrap_or_default()),
                  node(SyntaxKind::Inputs, source, is, ie, inputs.unwrap_or_default())]),
     <s:@L> <name:Name> "(" <args:ExpressionList?> ")" <e:@R>
-        => node(SyntaxKind::Call, source, s, e,
-            [vec![name], args.unwrap_or_default()].concat()),
+        => {
+            let mut children = vec![name];
+            children.extend(args.unwrap_or_default());
+            node(SyntaxKind::Call, source, s, e, children)
+        },
     <s:@L> "[" <items:ExpressionList> "]" <e:@R>
         => node(SyntaxKind::Array, source, s, e, items),
     <s:@L> "(" <first:Expr> "," <second:Expr> <rest:("," <Expr>)*> ")" <e:@R>
-        => node(SyntaxKind::Tuple, source, s, e,
-            [vec![first, second], rest].concat()),
+        => {
+            let mut children = vec![first, second];
+            children.extend(rest);
+            node(SyntaxKind::Tuple, source, s, e, children)
+        },
     Primary,
 };
 Primary: SyntaxNode = {
