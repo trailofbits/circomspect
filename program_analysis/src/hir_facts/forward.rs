@@ -93,20 +93,41 @@ impl LocalValueFacts {
     }
 
     fn join_assign(&mut self, other: &Self) -> bool {
-        let old = self.clone();
+        let variable_count = self.variables.len();
         self.variables.retain(|key, value| other.variables.get(key) == Some(value));
-        self.symbolic.join_assign(&other.symbolic);
+        let mut changed = self.variables.len() != variable_count;
+        changed |= self.symbolic.join_assign(&other.symbolic);
+        changed |= self.join_dependencies(&other.dependencies);
+        changed |= self.join_degrees(&other.degrees);
+        changed
+    }
+
+    fn join_dependencies(&mut self, other: &BTreeMap<SymbolId, MayAccessSet>) -> bool {
+        let mut changed = false;
         self.dependencies.retain(|key, left| {
-            let Some(right) = other.dependencies.get(key) else { return false };
-            left.join_assign(right);
+            let Some(right) = other.get(key) else {
+                changed = true;
+                return false;
+            };
+            changed |= left.join_assign(right);
             true
         });
+        changed
+    }
+
+    fn join_degrees(&mut self, other: &BTreeMap<SymbolId, DegreeUpper>) -> bool {
+        let mut changed = false;
         self.degrees.retain(|key, left| {
-            let Some(right) = other.degrees.get(key) else { return false };
-            *left = (*left).max(*right);
-            *left != DegreeUpper::Unbounded
+            let Some(right) = other.get(key) else {
+                changed = true;
+                return false;
+            };
+            let joined = (*left).max(*right);
+            changed |= *left != joined || joined == DegreeUpper::Unbounded;
+            *left = joined;
+            joined != DegreeUpper::Unbounded
         });
-        *self != old
+        changed
     }
 }
 
@@ -130,13 +151,20 @@ impl ConstraintFacts {
     }
 
     fn join_assign(&mut self, other: &Self) -> bool {
-        let old = self.clone();
+        let may_count = self.may_constraints.len();
         self.may_constraints.extend(&other.may_constraints);
+        let mut changed = self.may_constraints.len() != may_count;
+        let must_count = self.must_constraints.len();
         self.must_constraints.retain(|site| other.must_constraints.contains(site));
+        changed |= self.must_constraints.len() != must_count;
+        let touch_count = self.must_touches.len();
         self.must_touches.retain(|key| other.must_touches.contains(key));
+        changed |= self.must_touches.len() != touch_count;
+        let fixed_count = self.must_fixed.len();
         self.must_fixed.retain(|equation| other.must_fixed.contains(equation));
-        self.must_equations.join_assign(&other.must_equations);
-        *self != old
+        changed |= self.must_fixed.len() != fixed_count;
+        changed |= self.must_equations.join_assign(&other.must_equations);
+        changed
     }
 }
 

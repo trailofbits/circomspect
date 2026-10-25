@@ -110,7 +110,6 @@ impl Lattice for MustEquations {
             *self = other.clone();
             return true;
         }
-        let old = self.clone();
         let (
             Self::Reached { equations: left, blockers: left_blockers },
             Self::Reached { equations: right, blockers: right_blockers },
@@ -118,13 +117,20 @@ impl Lattice for MustEquations {
         else {
             return false;
         };
+        let mut changed = false;
         left.retain(|equation, origins| {
-            let Some(other_origins) = right.get(equation) else { return false };
+            let Some(other_origins) = right.get(equation) else {
+                changed = true;
+                return false;
+            };
+            let origin_count = origins.len();
             origins.extend(other_origins);
+            changed |= origins.len() != origin_count;
             true
         });
+        let blocker_count = left_blockers.len();
         left_blockers.extend(right_blockers.iter().copied());
-        *self != old
+        changed || left_blockers.len() != blocker_count
     }
 }
 
@@ -461,7 +467,8 @@ mod tests {
             assert!(left.leq(left));
             for right in &states {
                 let mut joined = left.clone();
-                joined.join_assign(right);
+                let changed = joined.join_assign(right);
+                assert_eq!(changed, joined != *left);
                 assert!(left.leq(&joined));
                 assert!(right.leq(&joined));
                 let mut reverse = right.clone();

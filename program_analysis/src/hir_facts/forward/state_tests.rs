@@ -2,7 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::sync::Arc;
 
-use abstract_interpretation::graph::FlowGraph;
+use abstract_interpretation::graph::{FlowGraph, NodeId};
+use abstract_interpretation::lattice::Lattice;
 use abstract_interpretation::solver::{Transfer, TransferOutcome};
 use parser::hir::{lift_project, ExprKind, HirProject, SymbolId};
 use parser::new_frontend::{load_sources, AssignmentOperator, Version, VersionPolicy};
@@ -12,7 +13,10 @@ use crate::hir_cfg::{build_cfg, CfgNode, CfgNodeKind, DefinitionCfg};
 use crate::hir_facts::access::{AccessKey, AccessKeyStep, IndexKey, MayAccessSet};
 use crate::hir_facts::domains::DegreeUpper;
 use crate::hir_facts::forward::{ForwardAnalysis, ForwardState, LocalValueFacts, ReachedFacts};
-use crate::hir_facts::relations::{variable_polynomial, ExpressionPolynomial, NormalizationInputs};
+use crate::hir_facts::relations::{
+    variable_polynomial, ExpressionPolynomial, MustEquations, MustSymbolicVariables,
+    NormalizationInputs,
+};
 use crate::hir_facts::FieldContext;
 
 const SOURCE: &str = "template T(n){signal input a[2];var x=n;x*=2;x++;x=a[x];\
@@ -295,4 +299,155 @@ fn self_conditioned_assignment_selects_old_rhs_degree_and_dependencies() {
         panic!("known conditional assignment")
     };
     assert_eq!(output, expected);
+}
+
+fn altered(state: &ForwardState, change: impl FnOnce(&mut ReachedFacts)) -> ForwardState {
+    let mut state = state.clone();
+    let ForwardState::Reached(facts) = &mut state else { panic!("reached fixture") };
+    change(facts);
+    state
+}
+
+fn assert_join(left: &ForwardState, right: &ForwardState, expected: &ForwardState) {
+    let left_snapshot = left.clone();
+    let right_snapshot = right.clone();
+    let mut joined = left.clone();
+    let changed = joined.join_assign(right);
+    assert_eq!(&joined, expected);
+    assert_eq!(changed, joined != *left);
+    assert!(!joined.join_assign(right));
+    assert_eq!(&joined, expected);
+    assert_eq!(left, &left_snapshot);
+    assert_eq!(right, &right_snapshot);
+}
+
+#[test]
+fn local_join_reports_every_property_change_with_exact_results() {
+    let (hir, cfg, field) = fixture(SOURCE);
+    let left = seeded_state(&hir, &cfg, &field);
+    let x = symbol(&hir, "x");
+    let left = altered(&left, |facts| {
+        facts.locals.degrees.insert(x, DegreeUpper::Constant);
+    });
+    let mut wildcard = signal_key(&hir, &field, 0);
+    wildcard.steps = vec![AccessKeyStep::Index(IndexKey::Unknown)];
+    let right_states = [
+        altered(&left, |facts| {
+            facts.locals.variables.remove(&x);
+        }),
+        altered(&left, |facts| {
+            Arc::make_mut(&mut facts.locals.symbolic).remove(x);
+        }),
+        altered(&left, |facts| {
+            facts.locals.dependencies.remove(&x);
+        }),
+        altered(&left, |facts| {
+            facts
+                .locals
+                .dependencies
+                .insert(x, MayAccessSet::from_keys(BTreeSet::from([wildcard])));
+        }),
+        altered(&left, |facts| {
+            facts.locals.degrees.remove(&x);
+        }),
+        altered(&left, |facts| {
+            facts.locals.degrees.insert(x, DegreeUpper::Linear);
+        }),
+    ];
+    for right in right_states {
+        assert_ne!(left, right);
+        assert_join(&left, &right, &right);
+    }
+    let right = altered(&left, |facts| {
+        facts.locals.variables.insert(x, field.canonical(2.into()));
+    });
+    let expected = altered(&left, |facts| {
+        facts.locals.variables.remove(&x);
+    });
+    assert_join(&left, &right, &expected);
+    let right = altered(&left, |facts| {
+        facts.locals.degrees.insert(x, DegreeUpper::Unbounded);
+    });
+    let expected = altered(&left, |facts| {
+        facts.locals.degrees.remove(&x);
+    });
+    assert_join(&left, &right, &expected);
+}
+
+#[test]
+fn constraint_join_reports_each_set_and_provenance_change() {
+    let (hir, cfg, field) = fixture(SOURCE);
+    let left = seeded_state(&hir, &cfg, &field);
+    let new_site = NodeId::new(999);
+    let right_states = [
+        altered(&left, |facts| {
+            facts.constraints.may_constraints.insert(new_site);
+        }),
+        altered(&left, |facts| {
+            facts.constraints.must_constraints.clear();
+        }),
+        altered(&left, |facts| {
+            facts.constraints.must_touches.clear();
+        }),
+        altered(&left, |facts| {
+            facts.constraints.must_fixed.clear();
+        }),
+        altered(&left, |facts| {
+            let MustEquations::Reached { equations, .. } =
+                Arc::make_mut(&mut facts.constraints.must_equations)
+            else {
+                panic!("reached")
+            };
+            assert_eq!(equations.len(), 1);
+            for origins in equations.values_mut() {
+                origins.insert(new_site);
+            }
+        }),
+        altered(&left, |facts| {
+            Arc::make_mut(&mut facts.constraints.must_equations).block(new_site);
+        }),
+        altered(&left, |facts| {
+            let MustEquations::Reached { equations, .. } =
+                Arc::make_mut(&mut facts.constraints.must_equations)
+            else {
+                panic!("reached")
+            };
+            equations.clear();
+        }),
+    ];
+    for right in right_states {
+        assert_ne!(left, right);
+        assert_join(&left, &right, &right);
+    }
+}
+
+#[test]
+fn join_keeps_later_changes_and_distinguishes_bottom_from_reached_empty() {
+    let (hir, cfg, field) = fixture(SOURCE);
+    let left = seeded_state(&hir, &cfg, &field);
+    let right = altered(&left, |facts| {
+        facts.locals.variables.clear();
+        facts.locals.symbolic = Arc::new(MustSymbolicVariables::reachable_empty());
+        facts.locals.dependencies.clear();
+        facts.locals.degrees.clear();
+        facts.constraints.may_constraints.insert(NodeId::new(999));
+        facts.constraints.must_constraints.clear();
+        facts.constraints.must_touches.clear();
+        facts.constraints.must_fixed.clear();
+        facts.constraints.must_equations = Arc::new(MustEquations::reachable_empty());
+    });
+    let expected = altered(&right, |facts| {
+        let MustEquations::Reached { blockers, .. } = left.must_equations() else {
+            panic!("reached equations")
+        };
+        for blocker in blockers {
+            Arc::make_mut(&mut facts.constraints.must_equations).block(*blocker);
+        }
+    });
+    assert_join(&left, &right, &expected);
+    for state in [ForwardState::Unreachable, ForwardState::boundary(), left, right] {
+        assert_join(&ForwardState::Unreachable, &state, &state);
+        assert_join(&state, &ForwardState::Unreachable, &state);
+        assert_join(&state, &state, &state);
+    }
 }

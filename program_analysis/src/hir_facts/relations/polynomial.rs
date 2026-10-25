@@ -248,9 +248,9 @@ impl Lattice for MustSymbolicVariables {
             *self = other.clone();
             return true;
         };
-        let old = left.clone();
+        let value_count = left.len();
         left.retain(|symbol, value| right.get(symbol) == Some(value));
-        *left != old
+        left.len() != value_count
     }
 }
 
@@ -665,7 +665,8 @@ mod tests {
             assert!(!idempotent.join_assign(left));
             for right in &states {
                 let mut joined = left.clone();
-                joined.join_assign(right);
+                let changed = joined.join_assign(right);
+                assert_eq!(changed, joined != *left);
                 assert!(left.leq(&joined));
                 assert!(right.leq(&joined));
                 let mut reverse = right.clone();
