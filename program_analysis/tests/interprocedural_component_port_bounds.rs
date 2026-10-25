@@ -8,11 +8,12 @@
     clippy::unwrap_used
 )]
 use std::fs;
+use abstract_interpretation::graph::NodeId;
 
 use circomspect_program_analysis::hir_cfg::build_cfg;
-use circomspect_program_analysis::hir_facts::{AccessHandle, AnalysisFacts};
+use circomspect_program_analysis::hir_facts::{AccessHandle, AnalysisFacts, FactBlocker};
 use circomspect_program_analysis::interprocedural::{
-    CallOwner, CallReachability, ContextEvidence, ProjectSummaries,
+    CallOwner, CallReachability, ContextEvidence, ProjectSummaries, SummaryBlocker, SummaryFact,
 };
 use parser::hir::{lift_project, LiftedProject};
 use parser::new_frontend::{load_sources, Version, VersionPolicy};
@@ -66,7 +67,12 @@ fn local_handle(
             provider.graph().calls_from(CallOwner::Definition(facts.definition()))[call_index];
         let CallReachability::Reachable(call) = provider.graph().reachable_call(site.id(), facts)
         else {
-            panic!("child call must be reachable");
+            if let CallReachability::Unavailable(blocker) =
+                provider.graph().reachable_call(site.id(), facts)
+            {
+                panic!("child call unavailable: {blocker:?}");
+            }
+            panic!("child call unreachable");
         };
         let child = provider.call_evidence(&call, facts, caller).unwrap();
         let cfg = build_cfg(&project.hir, call.callee()).unwrap();
@@ -205,12 +211,28 @@ fn wrong_caller_and_incomplete_caller_cannot_borrow_a_valid_local_handle() {
         };
         let wrong = provider.symbolic_root(facts.definition()).unwrap();
         let result = provider.apply_component_local_output(facts, &wrong, &call, &local);
-        assert!(result.unavailable().is_some(), "{result:?}");
+        assert_blocked(&result, SummaryBlocker::WrongContext);
+        let warm = provider.apply_component_local_output(facts, caller, &call, &local);
+        let applied = warm.certified().unwrap_or_else(|| panic!("{warm:?}"));
+        let port = applied.port_summary().port();
+        assert_eq!(provider.apply_component_output(facts, caller, &call, applied.handle()), warm,);
+        assert_eq!(provider.apply_component_first_output(facts, caller, &call, port), warm);
         let cfg = build_cfg(&project.hir, facts.definition()).unwrap();
-        for limit in [0, 1, 4] {
+        for (limit, pending_node) in [(0, 0), (1, 0), (4, 2)] {
             let pending = provider.analyze_for_evidence(&cfg, caller, Some(limit)).unwrap();
             let result = provider.apply_component_local_output(&pending, caller, &call, &local);
-            assert!(result.unavailable().is_some(), "{limit}: {result:?}");
+            let blocker = SummaryBlocker::LocalFacts(std::collections::BTreeSet::from([
+                FactBlocker::Budget(NodeId::new(pending_node)),
+            ]));
+            assert_blocked(&result, blocker.clone());
+            assert_blocked(
+                &provider.apply_component_first_output(&pending, caller, &call, port),
+                blocker,
+            );
+            assert_blocked(
+                &provider.apply_component_output(&pending, caller, &call, applied.handle()),
+                SummaryBlocker::ExternalSummary,
+            );
         }
     });
 }
@@ -305,4 +327,104 @@ fn same_parameter_instances_stay_distinct_and_late_bad_shapes_withhold_all_outpu
             }
         });
     }
+}
+
+fn assert_blocked<T: std::fmt::Debug>(result: &SummaryFact<T>, blocker: SummaryBlocker) {
+    assert_eq!(result.unavailable(), Some(&std::collections::BTreeSet::from([blocker])));
+}
+
+#[test]
+fn component_instantiation_in_a_loop_remains_unavailable() {
+    let project = fixture(concat!(
+        "template Child(){signal output bits[1];bits[0]<==1;}",
+        "template Parent(n){component c[n];for(var i=0;i<n;i++){c[i]=Child();}}",
+        "component main=Parent(2);"
+    ));
+    with_parent(&project, Curve::Bn254, |provider, facts, caller| {
+        let result = provider.exact_component_outputs(facts, caller);
+        assert_blocked(
+            &result,
+            SummaryBlocker::LocalFacts(std::collections::BTreeSet::from([
+                FactBlocker::OpaqueNode(NodeId::new(15), "unknown update value".into()),
+                FactBlocker::DeferredControl(NodeId::new(11)),
+            ])),
+        );
+    });
+}
+
+#[test]
+fn competing_assignments_keep_selected_instance_refusals_on_every_entry() {
+    for (assignment, blocker) in [
+        ("c[0]=Child();", SummaryBlocker::DuplicateInstance),
+        ("c[i]=Child();", SummaryBlocker::SymbolicInstance),
+    ] {
+        let source = format!(
+            "template Child(){{signal output bits[1];bits[0]<==1;}}\
+             template Parent(){{signal input i;component c[2];c[0]=Child();{assignment}}}\
+             component main=Parent();"
+        );
+        let project = fixture(&source);
+        let local = local_handle(&project, Curve::Bn254, 0, "bits", &[0]);
+        with_parent(&project, Curve::Bn254, |provider, facts, caller| {
+            let site = provider.graph().calls_from(CallOwner::Definition(facts.definition()))[0];
+            let CallReachability::Reachable(call) =
+                provider.graph().reachable_call(site.id(), facts)
+            else {
+                panic!("first call must be reachable")
+            };
+            let output = project.hir.ports()[0].id;
+            let handle = facts
+                .component_output_handle(project.hir.components()[0].id, &[0], output, &[0])
+                .unwrap();
+            for result in [
+                provider.apply_component_output(facts, caller, &call, &handle),
+                provider.apply_component_local_output(facts, caller, &call, &local),
+                provider.apply_component_first_output(facts, caller, &call, output),
+            ] {
+                assert_blocked(&result, blocker.clone());
+            }
+            assert_blocked(&provider.exact_component_outputs(facts, caller), blocker.clone());
+        });
+    }
+}
+
+#[test]
+fn local_context_checks_precede_competing_selected_assignments() {
+    let source = concat!(
+        "template Child(){signal output bits[1];bits[0]<==1;}",
+        "template Parent(){component c;c=Child();c=Child();}component main=Parent();"
+    );
+    let project = fixture(source);
+    let foreign = fixture(source);
+    let handles = [
+        local_handle(&project, Curve::Goldilocks, 0, "bits", &[0]),
+        local_handle(&foreign, Curve::Bn254, 0, "bits", &[0]),
+        local_handle(&project, Curve::Bn254, 1, "bits", &[0]),
+    ];
+    with_parent(&project, Curve::Bn254, |provider, facts, caller| {
+        let site = provider.graph().calls_from(CallOwner::Definition(facts.definition()))[0];
+        let CallReachability::Reachable(call) = provider.graph().reachable_call(site.id(), facts)
+        else {
+            panic!("first child call must be reachable")
+        };
+        for (handle, blocker) in handles.iter().zip([
+            SummaryBlocker::WrongContext,
+            SummaryBlocker::WrongContext,
+            SummaryBlocker::DuplicateInstance,
+        ]) {
+            assert_blocked(
+                &provider.apply_component_local_output(facts, caller, &call, handle),
+                blocker,
+            );
+            assert_blocked(
+                &provider.apply_component_output(facts, caller, &call, handle),
+                SummaryBlocker::WrongContext,
+            );
+        }
+        let wrong = provider.symbolic_root(facts.definition()).unwrap();
+        assert_blocked(
+            &provider.apply_component_first_output(facts, &wrong, &call, project.hir.ports()[0].id),
+            SummaryBlocker::WrongContext,
+        );
+    });
 }

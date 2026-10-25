@@ -129,7 +129,8 @@ impl ProjectSummaries<'_> {
         if self.call_evidence(&call, facts, caller)? != instance.callee {
             return Err(SummaryBlocker::WrongContext);
         }
-        let (component, target, site) = self.instantiated_component(facts, &call)?;
+        let (component, target, site) =
+            self.instantiated_component(facts, call.site().expression)?;
         if component != instance.component
             || target != instance.target
             || site != instance.instantiation

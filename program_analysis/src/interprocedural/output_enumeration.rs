@@ -2,7 +2,7 @@
 
 use abstract_interpretation::graph::{FlowGraph, NodeId};
 use num_traits::ToPrimitive;
-use parser::hir::{AccessPath, AccessStep, ArrayIndex, ComponentId, DefinitionRef, PortId};
+use parser::hir::{AccessPath, AccessStep, ArrayIndex, ComponentId, DefinitionRef, ExprId, PortId};
 use parser::new_frontend::{PortDirection, Span};
 
 use crate::hir_cfg::CfgNodeKind;
@@ -144,7 +144,8 @@ impl ProjectSummaries<'_> {
         let DefinitionRef::Template(child) = call.callee() else {
             return Err(SummaryBlocker::UnsupportedCallForm);
         };
-        let (component, target, instantiation) = self.instantiated_component(facts, call)?;
+        let (component, target, instantiation) =
+            self.instantiated_component(facts, call.site().expression)?;
         let bounds =
             facts.component_bounds(component).map_err(|_| SummaryBlocker::UnsupportedContext)?;
         let instance = exact_instance_indices(facts, &target, &bounds)?;
@@ -189,7 +190,7 @@ impl ProjectSummaries<'_> {
     pub(super) fn instantiated_component(
         &self,
         facts: &AnalysisFacts<'_>,
-        call: &ReachableCall<'_>,
+        expression: Option<ExprId>,
     ) -> Result<(ComponentId, AccessPath, NodeId), SummaryBlocker> {
         let mut component = None;
         for id in facts.cfg().nodes() {
@@ -198,7 +199,7 @@ impl ProjectSummaries<'_> {
             else {
                 continue;
             };
-            if Some(*value) != call.site().expression {
+            if Some(*value) != expression {
                 continue;
             }
             match facts.reachable_node(*id).certified() {

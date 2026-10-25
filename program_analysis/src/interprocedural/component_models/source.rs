@@ -49,7 +49,8 @@ impl ProjectSummaries<'_> {
         budget: &mut ProofBudget,
     ) -> Result<EnumeratedComponentInstance, SummaryBlocker> {
         let call = self.single_model_call(facts, applied)?;
-        let (component, target, instantiation) = self.instantiated_component(facts, &call)?;
+        let (component, target, instantiation) =
+            self.instantiated_component(facts, call.site().expression)?;
         if instantiation != applied.instantiation()
             || facts.instance_relation(applied.handle(), &target) != InstanceRelation::Exact
         {

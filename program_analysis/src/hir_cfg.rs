@@ -2,6 +2,9 @@
 
 mod index;
 
+#[cfg(test)]
+pub(crate) mod component_fixture;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::hir_cfg::index::TopologyIndex;

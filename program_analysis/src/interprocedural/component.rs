@@ -1,5 +1,7 @@
 //! Checked binding of a local template port summary to one component instance.
 
+pub(in crate::interprocedural) mod binding;
+
 use std::collections::BTreeSet;
 
 use abstract_interpretation::graph::{FlowGraph, NodeId};
@@ -314,101 +316,6 @@ impl ProjectSummaries<'_> {
         SummaryFact::from_result(self.component_output_result(facts, caller, call, handle))
     }
 
-    fn component_output_result(
-        &self,
-        facts: &AnalysisFacts<'_>,
-        caller: &ContextEvidence,
-        call: &ReachableCall<'_>,
-        handle: &AccessHandle,
-    ) -> Result<AppliedComponentPort, SummaryBlocker> {
-        self.check_facts_for_evidence(facts, caller)?;
-        let DefinitionRef::Template(template) = call.callee() else {
-            return Err(SummaryBlocker::WrongInstance);
-        };
-        if !handle.matches_context(caller.context()) {
-            return Err(SummaryBlocker::WrongContext);
-        }
-        let component = handle.component().ok_or(SummaryBlocker::WrongInstance)?;
-        let component = facts.hir().component(component).ok_or(SummaryBlocker::WrongInstance)?;
-        if handle.path().root != component.symbol {
-            return Err(SummaryBlocker::WrongInstance);
-        }
-        self.bind_instantiation(facts, call, handle)?;
-        let callee = self.call_evidence(call, facts, caller)?;
-        let (port, indices) = handle.output_port().ok_or(SummaryBlocker::WrongInstance)?;
-        let summary = self.template_port_at(template, callee.context(), port, &indices);
-        let port = summary.certified().cloned().ok_or_else(|| {
-            summary
-                .unavailable()
-                .and_then(|blockers| blockers.iter().next())
-                .cloned()
-                .unwrap_or(SummaryBlocker::ExternalSummary)
-        })?;
-        self.bind_local_output_summary(facts, caller, call, (handle.clone(), port))
-    }
-
-    pub(super) fn bind_local_output_summary(
-        &self,
-        facts: &AnalysisFacts<'_>,
-        caller: &ContextEvidence,
-        call: &ReachableCall<'_>,
-        output: (AccessHandle, PortSummary),
-    ) -> Result<AppliedComponentPort, SummaryBlocker> {
-        let (handle, port) = output;
-        self.check_facts_for_evidence(facts, caller)?;
-        let callee = self.call_evidence(call, facts, caller)?;
-        if !handle.matches_context(caller.context()) || port.context() != callee.context() {
-            return Err(SummaryBlocker::WrongContext);
-        }
-        let (id, indices) = handle.output_port().ok_or(SummaryBlocker::WrongInstance)?;
-        if id != port.port() || indices != port.indices() {
-            return Err(SummaryBlocker::WrongInstance);
-        }
-        let instantiation = self.bind_instantiation(facts, call, &handle)?;
-        Ok(AppliedComponentPort { caller: caller.clone(), callee, handle, port, instantiation })
-    }
-
-    fn bind_instantiation(
-        &self,
-        facts: &AnalysisFacts<'_>,
-        call: &ReachableCall<'_>,
-        handle: &AccessHandle,
-    ) -> Result<NodeId, SummaryBlocker> {
-        let cfg = facts.cfg();
-        let mut count = 0;
-        let mut matched = None;
-        for id in cfg.nodes() {
-            let Some(CfgNodeKind::Instantiate { target, value }) =
-                cfg.node(*id).map(|node| &node.kind)
-            else {
-                continue;
-            };
-            if target.root != handle.path().root {
-                continue;
-            }
-            let relation = facts.instance_relation(handle, target);
-            if relation == InstanceRelation::Separate {
-                continue;
-            }
-            match facts.reachable_node(*id).certified() {
-                Some(false) => continue,
-                None => return Err(SummaryBlocker::ExternalSummary),
-                Some(true) => {}
-            }
-            if relation == InstanceRelation::Possible {
-                return Err(SummaryBlocker::SymbolicInstance);
-            }
-            count += 1;
-            if self.direct_call_expression(*value) == call.site().expression {
-                matched = Some(*id);
-            }
-        }
-        if count > 1 {
-            return Err(SummaryBlocker::DuplicateInstance);
-        }
-        matched.ok_or(SummaryBlocker::WrongInstance)
-    }
-
     fn child_output_equality(
         &self,
         child: parser::hir::TemplateId,
@@ -705,3 +612,7 @@ mod tests {
 #[cfg(test)]
 #[path = "component/path_tests.rs"]
 mod path_tests;
+
+#[cfg(test)]
+#[path = "component/binding_tests.rs"]
+mod binding_tests;

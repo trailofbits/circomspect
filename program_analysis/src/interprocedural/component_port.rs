@@ -4,8 +4,7 @@ use parser::hir::{AccessStep, ArrayIndex, DefinitionRef, PortId};
 
 use crate::hir_cfg::build_cfg;
 use crate::hir_facts::{AccessHandle, AnalysisFacts};
-use crate::interprocedural::output_enumeration::exact_instance_indices;
-use crate::interprocedural::template::port_summary;
+use crate::interprocedural::component::binding::CheckedCallContext;
 use crate::interprocedural::{
     AnalyzeEvidenceError, AppliedComponentPort, ContextEvidence, ProjectSummaries, ReachableCall,
     SummaryBlocker, SummaryFact,
@@ -30,14 +29,9 @@ impl ProjectSummaries<'_> {
         call: &ReachableCall<'_>,
         local: &AccessHandle,
     ) -> SummaryFact<AppliedComponentPort> {
-        let result = self.call_evidence(call, facts, caller).and_then(|callee| {
-            self.with_component_port_facts(&callee, |child| {
-                self.apply_local_port(
-                    facts,
-                    caller,
-                    call,
-                    LocalOutputPort { facts: child, handle: local },
-                )
+        let result = CheckedCallContext::new(self, facts, caller, call).and_then(|context| {
+            context.with_port_facts(|child| {
+                context.apply_local_port(LocalOutputPort { facts: child, handle: local })
             })
         });
         SummaryFact::from_result(result)
@@ -54,17 +48,12 @@ impl ProjectSummaries<'_> {
         call: &ReachableCall<'_>,
         output: PortId,
     ) -> SummaryFact<AppliedComponentPort> {
-        let result = self.call_evidence(call, facts, caller).and_then(|callee| {
-            self.with_component_port_facts(&callee, |child| {
+        let result = CheckedCallContext::new(self, facts, caller, call).and_then(|context| {
+            context.with_port_facts(|child| {
                 let handle = child
                     .port_handle(output, &[0])
                     .map_err(|_| SummaryBlocker::UnsupportedContext)?;
-                self.apply_local_port(
-                    facts,
-                    caller,
-                    call,
-                    LocalOutputPort { facts: child, handle: &handle },
-                )
+                context.apply_local_port(LocalOutputPort { facts: child, handle: &handle })
             })
         });
         SummaryFact::from_result(result)
@@ -96,24 +85,10 @@ impl ProjectSummaries<'_> {
         call: &ReachableCall<'_>,
         local: LocalOutputPort<'_, '_>,
     ) -> Result<AppliedComponentPort, SummaryBlocker> {
-        let callee = self.call_evidence(call, facts, caller)?;
-        self.check_facts_for_evidence(local.facts, &callee)?;
-        if !local.handle.matches_context(callee.context()) {
-            return Err(SummaryBlocker::WrongContext);
-        }
-        let (port, indices) = self.local_output_key(local.handle)?;
-        let summary = port_summary(local.facts, callee.context(), port, &indices)?;
-        let (component, target, _) = self.instantiated_component(facts, call)?;
-        let bounds =
-            facts.component_bounds(component).map_err(|_| SummaryBlocker::UnsupportedContext)?;
-        let indices = exact_instance_indices(facts, &target, &bounds)?;
-        let handle = facts
-            .component_output_from_local(component, &indices, local.handle)
-            .map_err(|_| SummaryBlocker::UnsupportedContext)?;
-        self.bind_local_output_summary(facts, caller, call, (handle, summary))
+        CheckedCallContext::new(self, facts, caller, call)?.apply_local_port(local)
     }
 
-    fn local_output_key(
+    pub(super) fn local_output_key(
         &self,
         handle: &AccessHandle,
     ) -> Result<(PortId, Vec<usize>), SummaryBlocker> {
