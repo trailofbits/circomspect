@@ -1,6 +1,6 @@
 //! Checked binding of a local template port summary to one component instance.
 
-use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 
 use abstract_interpretation::graph::{FlowGraph, NodeId};
 use parser::hir::{AccessPath, DefinitionRef, ExprId, ExprKind, PortId, PortSchema, SymbolId};
@@ -236,7 +236,7 @@ impl ProjectSummaries<'_> {
         if uncertain {
             return Err(SummaryBlocker::ExternalSummary);
         }
-        Self::linear_caller_path(facts)?;
+        Self::require_linear_caller_path(facts.cfg(), facts.cfg().entry(), facts.cfg().exit())?;
         Ok(())
     }
 
@@ -280,15 +280,15 @@ impl ProjectSummaries<'_> {
         })
     }
 
-    fn linear_caller_path(
-        facts: &AnalysisFacts<'_>,
-    ) -> Result<BTreeMap<NodeId, usize>, SummaryBlocker> {
-        let cfg = facts.cfg();
-        let mut positions = BTreeMap::new();
-        let mut current = cfg.entry();
-        while current != cfg.exit() {
-            let position = positions.len();
-            if positions.insert(current, position).is_some() {
+    fn require_linear_caller_path<G: FlowGraph<NodeId = NodeId>>(
+        cfg: &G,
+        entry: NodeId,
+        exit: NodeId,
+    ) -> Result<(), SummaryBlocker> {
+        let mut visited = BTreeSet::new();
+        let mut current = entry;
+        while current != exit {
+            if !visited.insert(current) {
                 return Err(SummaryBlocker::UnsupportedContext);
             }
             let mut next = None;
@@ -300,7 +300,7 @@ impl ProjectSummaries<'_> {
             }
             current = next.ok_or(SummaryBlocker::ExternalSummary)?;
         }
-        Ok(positions)
+        Ok(())
     }
 
     /// Bind one child output summary to a proved caller call and exact instance.
@@ -645,6 +645,37 @@ mod tests {
     }
 
     #[test]
+    fn local_no_read_path_requires_linear_source_control() {
+        let directory = std::env::temp_dir().join(format!(
+            "circomspect-linear-caller-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id(),
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let file = directory.join("case.circom");
+        for (source, expected) in [
+            ("template Parent(){var x=1;}", Ok(())),
+            ("template Parent(n){if(n){var y=1;}}", Err(SummaryBlocker::UnsupportedContext)),
+            ("template Parent(n){while(n){var y=1;}}", Err(SummaryBlocker::UnsupportedContext)),
+        ] {
+            std::fs::write(&file, source).unwrap();
+            let loaded = load_sources(
+                std::slice::from_ref(&file),
+                std::slice::from_ref(&directory),
+                VersionPolicy::new(Version::new(2, 2, 3)),
+            );
+            let lifted = lift_project(&loaded);
+            let cfg = build_cfg(&lifted.hir, lifted.hir.definition("Parent").unwrap()).unwrap();
+            let field = crate::hir_facts::FieldContext::for_curve(Curve::Bn254);
+            let facts = crate::hir_facts::analyze(&lifted.hir, &cfg, &field, None).unwrap();
+            assert_eq!(
+                ProjectSummaries::require_linear_caller_path(facts.cfg(), cfg.entry(), cfg.exit()),
+                expected
+            );
+        }
+    }
+
+    #[test]
     fn an_untouched_sibling_has_only_a_local_no_read_certificate() {
         let result = local_output_state(
             concat!(
@@ -670,3 +701,7 @@ mod tests {
         assert!(!matches!(result, Ok(LocalOutputUse::NoLocalRead)), "{result:?}");
     }
 }
+
+#[cfg(test)]
+#[path = "component/path_tests.rs"]
+mod path_tests;

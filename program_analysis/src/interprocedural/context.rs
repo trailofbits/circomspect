@@ -1203,15 +1203,7 @@ impl<'a> ProjectSummaries<'a> {
     }
 
     fn parameter_count(&self, definition: DefinitionRef) -> Option<usize> {
-        match definition {
-            DefinitionRef::Function(id) => {
-                self.hir().function(id).map(|item| item.parameters.len())
-            }
-            DefinitionRef::Template(id) => {
-                self.hir().template(id).map(|item| item.parameters.len())
-            }
-            DefinitionRef::Bus(id) => self.hir().bus(id).map(|item| item.parameters.len()),
-        }
+        self.parameters(definition).map(<[SymbolId]>::len)
     }
 
     fn parameters(&self, definition: DefinitionRef) -> Option<&[SymbolId]> {
@@ -1252,6 +1244,33 @@ mod tests {
     use crate::interprocedural::{
         ArgumentValue, CallOwner, CallReachability, ProjectSummaries, SummaryBlocker,
     };
+
+    #[test]
+    fn parameter_lookup_keeps_definition_kind_and_project_identity() {
+        let directory = std::env::temp_dir().join(format!(
+            "circomspect-parameter-lookup-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id(),
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let file = directory.join("case.circom");
+        std::fs::write(
+            &file,
+            "function F(a,b){return a;} template T(a,b,c){} bus B(a){signal out;}",
+        )
+        .unwrap();
+        let loaded = load_sources(&[file], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
+        let lifted = lift_project(&loaded);
+        let foreign = lift_project(&loaded);
+        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        for (name, count) in [("F", 2), ("T", 3), ("B", 1)] {
+            let definition = lifted.hir.definition(name).unwrap();
+            assert_eq!(provider.parameter_count(definition), Some(count));
+            assert_eq!(provider.parameters(definition).unwrap().len(), count);
+            assert_eq!(provider.parameter_count(foreign.hir.definition(name).unwrap()), None);
+            assert_eq!(provider.parameters(foreign.hir.definition(name).unwrap()), None);
+        }
+    }
 
     #[test]
     fn a_symbolic_scope_cannot_borrow_a_reachable_origin() {
