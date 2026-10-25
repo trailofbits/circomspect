@@ -186,8 +186,8 @@ fn symbolic_target_index_is_evaluated_before_witness_and_constraint() {
         .copied()
         .find(|id| {
             cfg.node(*id).is_some_and(|node| {
+                let CfgNodeKind::Witness { .. } = node.kind else { return false };
                 node.origin == Some(positions[2].2)
-                    && matches!(node.kind, CfgNodeKind::Witness { .. })
             })
         })
         .unwrap();
@@ -359,8 +359,11 @@ fn equality_constraint_keeps_source_operand_order() {
     let constraint = cfg
         .nodes()
         .iter()
-        .filter_map(|id| cfg.node(*id))
-        .find(|node| matches!(node.kind, CfgNodeKind::Constraint(_)))
+        .find_map(|id| {
+            let node = cfg.node(*id)?;
+            let CfgNodeKind::Constraint(_) = node.kind else { return None };
+            Some(node)
+        })
         .unwrap();
     let origin = constraint.origin.unwrap();
     let block = project.hir.block(origin.block).unwrap();

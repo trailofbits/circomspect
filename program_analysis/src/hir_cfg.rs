@@ -21,7 +21,7 @@ pub struct Origin {
     pub span: Span,
 }
 
-/// A generated assignment or a source equality, with operands in source order.
+/// A constraint with an explicit assignment target or two equality operands.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Constraint {
     Assignment { target: AccessPath, value: ExprId },
