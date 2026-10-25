@@ -12,6 +12,8 @@ mod forward;
 mod handles;
 mod liveness;
 mod purity;
+#[cfg(test)]
+mod ownership_tests;
 mod relations;
 mod source_assignment;
 mod use_queries;
@@ -197,7 +199,7 @@ pub enum AnalysisError {
 
 struct AnalysisOptions<'a> {
     values: BTreeMap<SymbolId, FieldValue>,
-    calls: Option<&'a ScalarExpressionEvidence>,
+    calls: Option<Cow<'a, ScalarExpressionEvidence>>,
     budget: Option<usize>,
 }
 
@@ -238,7 +240,7 @@ pub fn analyze<'a>(
 ) -> Result<AnalysisFacts<'a>, AnalysisError> {
     analyze_seeded(
         hir,
-        cfg,
+        Cow::Borrowed(cfg),
         field,
         AnalysisOptions { values: BTreeMap::new(), calls: None, budget },
     )
@@ -252,7 +254,7 @@ pub(crate) fn analyze_with_scalar_parameters<'a>(
     values: BTreeMap<SymbolId, FieldValue>,
     budget: Option<usize>,
 ) -> Result<AnalysisFacts<'a>, AnalysisError> {
-    analyze_seeded(hir, cfg, field, AnalysisOptions { values, calls: None, budget })
+    analyze_seeded(hir, Cow::Borrowed(cfg), field, AnalysisOptions { values, calls: None, budget })
 }
 
 pub(crate) fn analyze_owned_with_scalar_calls<'a>(
@@ -261,48 +263,21 @@ pub(crate) fn analyze_owned_with_scalar_calls<'a>(
     field: &'a FieldContext,
     options: OwnedAnalysisOptions,
 ) -> Result<AnalysisFacts<'a>, AnalysisError> {
-    let borrowed = analyze_seeded(
+    analyze_seeded(
         hir,
-        &cfg,
+        Cow::Owned(cfg),
         field,
         AnalysisOptions {
             values: options.values,
-            calls: Some(&options.calls),
+            calls: Some(Cow::Owned(options.calls)),
             budget: options.budget,
         },
-    )?;
-    let AnalysisFacts {
-        forward,
-        backward,
-        demand,
-        scalar_evaluation_safety,
-        specialized_parameters,
-        resolved_deferred,
-        evidence_binding,
-        ranges,
-        ..
-    } = borrowed;
-    Ok(AnalysisFacts {
-        hir,
-        cfg: Cow::Owned(cfg),
-        field,
-        calls: Some(Cow::Owned(options.calls)),
-        forward,
-        backward,
-        demand,
-        scalar_evaluation_safety,
-        specialized_parameters,
-        resolved_deferred,
-        evidence_binding,
-        ranges,
-        body_writes: OnceLock::new(),
-        deferred_branches: OnceLock::new(),
-    })
+    )
 }
 
 fn analyze_seeded<'a>(
     hir: &'a HirProject,
-    cfg: &'a DefinitionCfg,
+    cfg: Cow<'a, DefinitionCfg>,
     field: &'a FieldContext,
     options: AnalysisOptions<'a>,
 ) -> Result<AnalysisFacts<'a>, AnalysisError> {
@@ -315,7 +290,11 @@ fn analyze_seeded<'a>(
     if !owned {
         return Err(AnalysisError::ForeignProject);
     }
-    if options.calls.is_some_and(|calls| !calls.belongs_to(hir, cfg.definition(), field.curve())) {
+    if options
+        .calls
+        .as_deref()
+        .is_some_and(|calls| !calls.belongs_to(hir, cfg.definition(), field.curve()))
+    {
         return Err(AnalysisError::ForeignCallResults);
     }
     if cfg.scalar_seeds().is_some_and(|seeds| seeds != &options.values) {
@@ -324,37 +303,44 @@ fn analyze_seeded<'a>(
     let budget = Some(options.budget.unwrap_or(DEFAULT_UPDATE_BUDGET));
     let specialized_parameters = options.values.keys().copied().collect();
     let forward = solve::<_, _, Forward>(
-        cfg,
+        cfg.as_ref(),
         &ForwardAnalysis::with_scalar_parameters_and_calls(
             hir,
             field,
             options.values,
-            options.calls,
+            options.calls.as_deref(),
         ),
         budget,
     )
     .map_err(AnalysisError::InvalidGraph)?;
-    let resolved_deferred = resolved_deferred_nodes(hir, cfg, field, &forward, options.calls);
-    let pruned_edges = forward_pruned_edges(hir, cfg, field, &forward, options.calls);
+    let resolved_deferred =
+        resolved_deferred_nodes(hir, cfg.as_ref(), field, &forward, options.calls.as_deref());
+    let pruned_edges =
+        forward_pruned_edges(hir, cfg.as_ref(), field, &forward, options.calls.as_deref());
     let liveness = LivenessAnalysis::new(hir, field, cfg.definition())
         .with_pruned_edges(pruned_edges.clone())
         .with_resolved_deferred(resolved_deferred.clone())
-        .with_calls(options.calls);
-    let backward =
-        solve::<_, _, Backward>(cfg, &liveness, budget).map_err(AnalysisError::InvalidGraph)?;
-    let scalar_evaluation_safety =
-        ScalarEvaluationSafety::certify(hir, cfg, field, &forward, options.calls);
+        .with_calls(options.calls.as_deref());
+    let backward = solve::<_, _, Backward>(cfg.as_ref(), &liveness, budget)
+        .map_err(AnalysisError::InvalidGraph)?;
+    let scalar_evaluation_safety = ScalarEvaluationSafety::certify(
+        hir,
+        cfg.as_ref(),
+        field,
+        &forward,
+        options.calls.as_deref(),
+    );
     let demand_analysis = DemandAnalysis::new(hir, field, pruned_edges)
-        .with_calls(options.calls)
+        .with_calls(options.calls.as_deref())
         .with_scalar_evaluation_safety(scalar_evaluation_safety.clone())
         .with_resolved_deferred(resolved_deferred.clone());
-    let demand = solve::<_, _, Backward>(cfg, &demand_analysis, budget)
+    let demand = solve::<_, _, Backward>(cfg.as_ref(), &demand_analysis, budget)
         .map_err(AnalysisError::InvalidGraph)?;
     Ok(AnalysisFacts {
         hir,
-        cfg: Cow::Borrowed(cfg),
+        cfg,
         field,
-        calls: options.calls.map(Cow::Borrowed),
+        calls: options.calls,
         forward,
         backward,
         demand,
