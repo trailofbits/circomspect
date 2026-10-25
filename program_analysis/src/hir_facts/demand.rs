@@ -418,10 +418,10 @@ impl AnalysisFacts<'_> {
         evidence: &ContextEvidence,
     ) -> Fact<AssignmentDemand> {
         let reachable = self.reachable_node(id);
-        match reachable.certified() {
-            Some(true) => {}
-            Some(false) => return Fact::blocked(BTreeSet::from([FactBlocker::MissingExit])),
-            None => return Fact::blocked(reachable.unavailable().cloned().unwrap_or_default()),
+        match reachable.into_result() {
+            Ok(true) => {}
+            Ok(false) => return Fact::blocked(BTreeSet::from([FactBlocker::MissingExit])),
+            Err(blockers) => return Fact::blocked(blockers),
         }
         let forward = self.forward_completion_blockers();
         if !forward.is_empty() {

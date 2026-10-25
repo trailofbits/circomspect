@@ -149,23 +149,13 @@ impl AnalysisFacts<'_> {
         budget: &mut ProofBudget,
     ) -> Result<BitAmbiguityOutcome, BTreeSet<FactBlocker>> {
         let path = self.unique_generation_path(budget)?;
-        let Some(relation) = relation.certified() else {
-            return Err(relation
-                .unavailable()
-                .cloned()
-                .unwrap_or_else(|| BTreeSet::from([FactBlocker::ForeignQuery])));
-        };
+        let relation = relation.as_result().map_err(Clone::clone)?;
         let Some(relation) = relation else {
             return Ok(no_certificate(NoBitAmbiguityCertificate::NoMatchingDecomposition));
         };
         self.check_requested_model_keys(relation)?;
         let generated = self.generated_equation_sites(budget);
-        let Some(generated) = generated.certified() else {
-            return Err(generated
-                .unavailable()
-                .cloned()
-                .unwrap_or_else(|| BTreeSet::from([FactBlocker::ForeignQuery])));
-        };
+        let generated = generated.as_result().map_err(Clone::clone)?;
         if generated.evidence() != relation.context() {
             return Err(BTreeSet::from([FactBlocker::ForeignQuery]));
         }

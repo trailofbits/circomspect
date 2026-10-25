@@ -182,16 +182,10 @@ impl CallGraph {
             return CallReachability::Unavailable(CallBlocker::ForeignSite);
         }
         let reachable = facts.reachable_expression(expression);
-        if let Some(value) = reachable.certified() {
-            if *value {
-                CallReachability::Reachable(ReachableCall { site, callee })
-            } else {
-                CallReachability::Unreachable
-            }
-        } else {
-            CallReachability::Unavailable(CallBlocker::LocalFacts(
-                reachable.unavailable().cloned().unwrap_or_default(),
-            ))
+        match reachable.into_result() {
+            Ok(true) => CallReachability::Reachable(ReachableCall { site, callee }),
+            Ok(false) => CallReachability::Unreachable,
+            Err(blockers) => CallReachability::Unavailable(CallBlocker::LocalFacts(blockers)),
         }
     }
 

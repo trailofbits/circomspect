@@ -130,14 +130,10 @@ impl ProjectSummaries<'_> {
         facts: &AnalysisFacts<'_>,
     ) -> Result<(), SummaryBlocker> {
         let reachable = facts.reachable_expression(expression);
-        match reachable.certified() {
-            Some(true) => {}
-            Some(false) => return Err(SummaryBlocker::ExternalSummary),
-            None => {
-                return Err(SummaryBlocker::LocalFacts(
-                    reachable.unavailable().cloned().unwrap_or_default(),
-                ));
-            }
+        match reachable.into_result() {
+            Ok(true) => {}
+            Ok(false) => return Err(SummaryBlocker::ExternalSummary),
+            Err(blockers) => return Err(SummaryBlocker::LocalFacts(blockers)),
         }
         if facts.exact_call_value(expression).is_none() {
             return Err(SummaryBlocker::ExternalSummary);

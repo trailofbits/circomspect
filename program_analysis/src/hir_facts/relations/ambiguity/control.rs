@@ -73,19 +73,14 @@ impl AnalysisFacts<'_> {
                 return Err(BTreeSet::from([FactBlocker::Budget(edge.source)]));
             }
             let reachable = self.reachable_edge(*id);
-            match reachable.certified() {
-                Some(false) => {}
-                Some(true) => {
+            match reachable.into_result() {
+                Ok(false) => {}
+                Ok(true) => {
                     if successors.insert(edge.source, edge.target).is_some() {
                         return Err(BTreeSet::from([FactBlocker::DeferredControl(edge.source)]));
                     }
                 }
-                None => {
-                    return Err(reachable
-                        .unavailable()
-                        .cloned()
-                        .unwrap_or_else(|| BTreeSet::from([FactBlocker::ForeignQuery])));
-                }
+                Err(blockers) => return Err(blockers),
             }
         }
         Ok(successors)

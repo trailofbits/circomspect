@@ -155,7 +155,7 @@ impl AnalysisFacts<'_> {
     fn local_signal_key(&self, path: &AccessPath) -> Result<AccessKey, BTreeSet<FactBlocker>> {
         self.check_local_signal(path)?;
         let fact = self.exact_access_key(path);
-        fact.certified().cloned().ok_or_else(|| fact.unavailable().cloned().unwrap_or_default())
+        fact.into_result()
     }
 
     fn local_signal_handle_key(
@@ -164,7 +164,7 @@ impl AnalysisFacts<'_> {
     ) -> Result<AccessKey, BTreeSet<FactBlocker>> {
         self.check_local_signal(handle.path())?;
         let fact = self.exact_handle_key(handle);
-        fact.certified().cloned().ok_or_else(|| fact.unavailable().cloned().unwrap_or_default())
+        fact.into_result()
     }
 
     fn check_local_signal(&self, path: &AccessPath) -> Result<(), BTreeSet<FactBlocker>> {

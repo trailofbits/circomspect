@@ -995,14 +995,10 @@ impl<'a> ProjectSummaries<'a> {
         }
         let expression = site.expression.ok_or(SummaryBlocker::UnsupportedCallForm)?;
         let reachable = facts.reachable_expression(expression);
-        match reachable.certified() {
-            Some(true) => {}
-            Some(false) => return Err(SummaryBlocker::ForeignCall),
-            None => {
-                return Err(SummaryBlocker::LocalFacts(
-                    reachable.unavailable().cloned().unwrap_or_default(),
-                ));
-            }
+        match reachable.into_result() {
+            Ok(true) => {}
+            Ok(false) => return Err(SummaryBlocker::ForeignCall),
+            Err(blockers) => return Err(SummaryBlocker::LocalFacts(blockers)),
         }
         let Some(expr) = self.hir().expression(expression) else {
             return Err(SummaryBlocker::ForeignCall);
@@ -1198,11 +1194,8 @@ impl<'a> ProjectSummaries<'a> {
             return Ok(ArgumentValue::Scalar(value));
         };
         let range = facts.range(expression);
-        let Some(range) = range.certified() else {
-            return Err(SummaryBlocker::LocalFacts(
-                range.unavailable().cloned().unwrap_or_default(),
-            ));
-        };
+        let range =
+            range.as_result().map_err(|blockers| SummaryBlocker::LocalFacts(blockers.clone()))?;
         let Range::Exact(value) = range else {
             return Err(SummaryBlocker::UnprovenArgument(expression));
         };

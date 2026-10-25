@@ -180,10 +180,10 @@ impl AnalysisFacts<'_> {
             return Fact::known(None);
         };
         let must_execute = self.must_execute(witness);
-        match must_execute.certified() {
-            Some(true) => {}
-            Some(false) => return Fact::known(None),
-            None => return Fact::blocked(must_execute.unavailable().cloned().unwrap_or_default()),
+        match must_execute.into_result() {
+            Ok(true) => {}
+            Ok(false) => return Fact::known(None),
+            Err(blockers) => return Fact::blocked(blockers),
         }
         let readiness = self.body_signal_reads_ready();
         if let Some(blockers) = readiness.unavailable() {
@@ -195,17 +195,15 @@ impl AnalysisFacts<'_> {
             return Fact::blocked(blockers);
         }
         let write_status = self.body_write_status(target);
-        match write_status.certified() {
-            Some(BodyWriteStatus::NoRepeat(_)) => {}
-            Some(BodyWriteStatus::DefinitelyRepeated(_)) => {
+        match write_status.into_result() {
+            Ok(BodyWriteStatus::NoRepeat(_)) => {}
+            Ok(BodyWriteStatus::DefinitelyRepeated(_)) => {
                 return Fact::blocked(BTreeSet::from([FactBlocker::WitnessWrite(
                     witness,
                     WitnessWriteIssue::DefiniteRepeat,
                 )]));
             }
-            None => {
-                return Fact::blocked(write_status.unavailable().cloned().unwrap_or_default());
-            }
+            Err(blockers) => return Fact::blocked(blockers),
         }
         let Some(values) = state.variables() else { return Fact::known(None) };
         let Some(symbolic) = state.symbolic() else { return Fact::known(None) };

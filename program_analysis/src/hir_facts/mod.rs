@@ -1,5 +1,7 @@
 //! Constraint provenance and certified local facts over the checked HIR CFG.
 
+#[cfg(test)]
+mod availability_tests;
 mod access;
 mod access_query;
 mod domains;
@@ -94,6 +96,22 @@ impl<T> Fact<T> {
 
     fn blocked(blockers: BTreeSet<FactBlocker>) -> Self {
         Self(FactState::Unavailable(blockers))
+    }
+
+    /// Borrow the complete availability state without discarding certified absence.
+    pub(crate) fn as_result(&self) -> Result<&T, &BTreeSet<FactBlocker>> {
+        match &self.0 {
+            FactState::Certified(value) => Ok(value),
+            FactState::Unavailable(blockers) => Err(blockers),
+        }
+    }
+
+    /// Consume the fact, preserving either its value or its complete blocker set.
+    pub(crate) fn into_result(self) -> Result<T, BTreeSet<FactBlocker>> {
+        match self.0 {
+            FactState::Certified(value) => Ok(value),
+            FactState::Unavailable(blockers) => Err(blockers),
+        }
     }
 
     #[must_use]
@@ -493,8 +511,9 @@ impl AnalysisFacts<'_> {
 
     pub(crate) fn must_execute(&self, node: NodeId) -> Fact<bool> {
         let reachable = self.reachable_node(node);
-        let Some(reachable) = reachable.certified() else {
-            return Fact::blocked(reachable.unavailable().cloned().unwrap_or_default());
+        let reachable = match reachable.into_result() {
+            Ok(value) => value,
+            Err(blockers) => return Fact::blocked(blockers),
         };
         if !reachable {
             return Fact::known(false);
@@ -503,8 +522,9 @@ impl AnalysisFacts<'_> {
             return Fact::blocked(BTreeSet::from([FactBlocker::Budget(node)]));
         }
         let exit = self.reachable_node(self.cfg.exit());
-        let Some(exit_reachable) = exit.certified() else {
-            return Fact::blocked(exit.unavailable().cloned().unwrap_or_default());
+        let exit_reachable = match exit.into_result() {
+            Ok(value) => value,
+            Err(blockers) => return Fact::blocked(blockers),
         };
         if !exit_reachable {
             return Fact::blocked(BTreeSet::from([FactBlocker::MissingExit]));

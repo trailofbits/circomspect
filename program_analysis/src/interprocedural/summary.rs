@@ -63,8 +63,7 @@ impl<T> SummaryFact<T> {
 }
 
 pub(super) fn certified<T>(fact: &Fact<T>) -> Result<&T, SummaryBlocker> {
-    fact.certified()
-        .ok_or_else(|| SummaryBlocker::LocalFacts(fact.unavailable().cloned().unwrap_or_default()))
+    fact.as_result().map_err(|blockers| SummaryBlocker::LocalFacts(blockers.clone()))
 }
 
 /// A return value's proof scope, which callers must inspect explicitly.

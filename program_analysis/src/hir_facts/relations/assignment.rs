@@ -92,7 +92,7 @@ impl AnalysisFacts<'_> {
             Some(ports) => self.exact_closed_component_key(target, constraint.id, ports),
             None => self.exact_access_key_at(target, constraint.id),
         };
-        let key = key.certified().ok_or_else(|| key.unavailable().cloned().unwrap_or_default())?;
+        let key = key.as_result().map_err(Clone::clone)?;
         let equation = facts
             .get(&constraint.id)
             .and_then(|state| state.output.as_ref())

@@ -371,9 +371,12 @@ impl AnalysisFacts<'_> {
             return;
         }
         let key = self.exact_access_key_at(path, check.site);
-        let Some(key) = key.certified() else {
-            check.blockers.extend(key.unavailable().cloned().unwrap_or_default());
-            return;
+        let key = match key.as_result() {
+            Ok(key) => key,
+            Err(blockers) => {
+                check.blockers.extend(blockers.iter().cloned());
+                return;
+            }
         };
         if self.is_input_port(path) {
             return;
@@ -401,18 +404,18 @@ impl AnalysisFacts<'_> {
     /// Classify repeated body witness writes to one exact checked source target.
     pub fn body_write_status(&self, path: &AccessPath) -> Fact<BodyWriteStatus> {
         let key = self.exact_access_key(path);
-        let Some(key) = key.certified() else {
-            return Fact::blocked(key.unavailable().cloned().unwrap_or_default());
-        };
-        self.body_write_status_key(key)
+        match key.into_result() {
+            Ok(key) => self.body_write_status_key(&key),
+            Err(blockers) => Fact::blocked(blockers),
+        }
     }
 
     pub(crate) fn body_write_status_handle(&self, handle: &AccessHandle) -> Fact<BodyWriteStatus> {
         let key = self.exact_handle_key(handle);
-        let Some(key) = key.certified() else {
-            return Fact::blocked(key.unavailable().cloned().unwrap_or_default());
-        };
-        self.body_write_status_key(key)
+        match key.into_result() {
+            Ok(key) => self.body_write_status_key(&key),
+            Err(blockers) => Fact::blocked(blockers),
+        }
     }
 
     fn body_write_status_key(&self, key: &AccessKey) -> Fact<BodyWriteStatus> {
@@ -716,14 +719,15 @@ impl AnalysisFacts<'_> {
             | CfgNodeKind::Log => return,
         };
         let key = self.exact_access_key_at(path, site);
-        if let Some(key) = key.certified() {
-            exact.insert(site, key.clone());
-        } else {
-            uncertain.push(UncertainWrite {
+        match key.into_result() {
+            Ok(key) => {
+                exact.insert(site, key);
+            }
+            Err(blockers) => uncertain.push(UncertainWrite {
                 site,
                 may_target: Some(key_for_path(self.hir, self.field, path, &BTreeMap::new())),
-                blockers: key.unavailable().cloned().unwrap_or_default(),
-            });
+                blockers,
+            }),
         }
     }
 }

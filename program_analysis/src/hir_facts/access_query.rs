@@ -226,12 +226,15 @@ impl AnalysisFacts<'_> {
             match step {
                 AccessKeyStep::Index(IndexKey::Symbolic(expression)) => {
                     let fact = self.range(*expression);
-                    let Some(Range::Exact(value)) = fact.certified() else {
-                        return Err(fact.unavailable().cloned().unwrap_or_else(|| {
-                            BTreeSet::from([FactBlocker::OpaqueExpression(*expression)])
-                        }));
+                    let value = match fact.into_result()? {
+                        Range::Exact(value) => value,
+                        Range::Canonical | Range::Unreachable => {
+                            return Err(BTreeSet::from([FactBlocker::OpaqueExpression(
+                                *expression,
+                            )]));
+                        }
                     };
-                    *step = AccessKeyStep::Index(IndexKey::Exact(value.clone()));
+                    *step = AccessKeyStep::Index(IndexKey::Exact(value));
                 }
                 AccessKeyStep::Index(IndexKey::Unknown) => {
                     return Err(BTreeSet::from([FactBlocker::AggregateAccess]));

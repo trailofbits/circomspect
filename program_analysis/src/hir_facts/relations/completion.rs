@@ -132,10 +132,7 @@ impl AnalysisFacts<'_> {
             return Err(BTreeSet::from([FactBlocker::UnsupportedRelation(site.site())]));
         }
         let key = self.exact_access_key_at(target, site.site());
-        key.certified()
-            .cloned()
-            .map(Some)
-            .ok_or_else(|| key.unavailable().cloned().unwrap_or_else(foreign))
+        key.into_result().map(Some)
     }
 }
 
