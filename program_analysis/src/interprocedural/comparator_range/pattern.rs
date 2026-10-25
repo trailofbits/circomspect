@@ -4,7 +4,7 @@ use num_bigint::BigInt;
 
 use crate::hir_facts::{AccessKey, BitDecomposition, FieldContext, ProofBudget};
 use crate::interprocedural::comparator_range::source::bit_handles;
-use crate::interprocedural::comparator_range::ComparatorScope;
+use crate::interprocedural::comparator_range::closure::ComparatorScope;
 use crate::interprocedural::input_relation::ReadyGeneratedInputs;
 use crate::interprocedural::summary::certified;
 use crate::interprocedural::{AppliedComponentPort, SummaryBlocker};

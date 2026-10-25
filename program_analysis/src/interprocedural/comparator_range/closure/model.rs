@@ -8,9 +8,8 @@ use crate::hir_facts::{
     generated_models_satisfy, generated_seeds, AccessKey, BitRepresentation,
     DescribeSignalAssignment, FieldContext, SourceSignalAssignment, FieldValue, ProofBudget,
 };
-use crate::interprocedural::comparator_range::{
-    ComparatorClosure, ComparatorRangeViolation, ComparatorScope,
-};
+use crate::interprocedural::comparator_range::ComparatorRangeViolation;
+use crate::interprocedural::comparator_range::closure::{CheckedComparatorClosure, ComparatorScope};
 use crate::interprocedural::input_relation::ReadyGeneratedInputs;
 use crate::interprocedural::{AppliedComponentPort, SummaryBlocker};
 
@@ -23,11 +22,11 @@ struct ComparatorModels {
 }
 
 pub(super) fn validate_candidate(
-    field: &FieldContext,
-    applied: &AppliedComponentPort,
-    closure: &ComparatorClosure<'_>,
+    closure: &CheckedComparatorClosure<'_>,
     budget: &mut ProofBudget,
 ) -> Result<Vec<ComparatorRangeViolation>, SummaryBlocker> {
+    let field = closure.field;
+    let applied = closure.applied;
     let Some(main_seeds) =
         generated_seeds(field, closure.main.sites, budget).map_err(SummaryBlocker::LocalFacts)?
     else {
@@ -52,7 +51,7 @@ pub(super) fn validate_candidate(
 
 fn build_candidates(
     field: &FieldContext,
-    closure: &ComparatorClosure<'_>,
+    closure: &CheckedComparatorClosure<'_>,
     budget: &mut ProofBudget,
 ) -> Result<Option<ComparatorModels>, SummaryBlocker> {
     let Some(mut main) = seed_model(field, &closure.main, budget)? else { return Ok(None) };
@@ -81,7 +80,7 @@ fn build_candidates(
 
 fn install_bits(
     field: &FieldContext,
-    closure: &ComparatorClosure<'_>,
+    closure: &CheckedComparatorClosure<'_>,
     decomposition: &mut Model,
 ) -> Result<bool, SummaryBlocker> {
     let relation = &closure.pattern.relation;
@@ -99,7 +98,7 @@ fn install_bits(
 
 fn complete_candidates(
     field: &FieldContext,
-    closure: &ComparatorClosure<'_>,
+    closure: &CheckedComparatorClosure<'_>,
     models: &mut ComparatorModels,
     budget: &mut ProofBudget,
 ) -> Result<bool, SummaryBlocker> {
@@ -117,7 +116,7 @@ fn complete_candidates(
 
 fn check_candidates(
     field: &FieldContext,
-    closure: &ComparatorClosure<'_>,
+    closure: &CheckedComparatorClosure<'_>,
     models: &ComparatorModels,
     budget: &mut ProofBudget,
 ) -> Result<bool, SummaryBlocker> {
@@ -136,7 +135,7 @@ fn check_candidates(
     Ok(true)
 }
 
-fn constraint_origins(closure: &ComparatorClosure<'_>) -> Vec<crate::hir_cfg::Origin> {
+fn constraint_origins(closure: &CheckedComparatorClosure<'_>) -> Vec<crate::hir_cfg::Origin> {
     let mut origins = Vec::new();
     for scope in [&closure.main, &closure.comparison, &closure.decomposition] {
         for site in scope.sites.sites() {
@@ -149,7 +148,7 @@ fn constraint_origins(closure: &ComparatorClosure<'_>) -> Vec<crate::hir_cfg::Or
 fn fixed_violations(
     field: &FieldContext,
     applied: &AppliedComponentPort,
-    closure: &ComparatorClosure<'_>,
+    closure: &CheckedComparatorClosure<'_>,
     seeds: &Model,
     budget: &mut ProofBudget,
 ) -> Result<Vec<ComparatorRangeViolation>, SummaryBlocker> {

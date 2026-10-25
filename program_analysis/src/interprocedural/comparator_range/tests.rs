@@ -230,3 +230,64 @@ fn comparator_constraint_origins_keep_every_scope_in_order() {
         assert_eq!(violations[0].constraint_origins(), expected);
     });
 }
+
+#[test]
+fn comparator_closure_preserves_budget_outcomes_and_remaining_allowance() {
+    let cases = [
+        ("complete", SOURCE.to_string()),
+        ("near_pattern", SOURCE.replace("y<==1-e.y[2]", "y<==2-e.y[2]")),
+        ("main_equation", SOURCE.replace("y<==c.y;", "y<==c.y;y===1;")),
+        ("leaf_equation", SOURCE.replace("x===sum;", "x===sum;y[0]===1;")),
+        (
+            "free_input",
+            SOURCE.replace(
+                "signal output y;component c=Comparison();c.x[0]<==4;",
+                "signal input z;signal output y;component c=Comparison();c.x[0]<==z;",
+            ),
+        ),
+    ];
+    let mut records = Vec::new();
+    for (case, source) in cases {
+        with_query(&source, |provider, _, facts, applied| {
+            for limit in
+                [0, 1, 63, 64, 127, 128, 255, 256, 443, 444, 445, 511, 512, 1023, 1024, 4096, 8192]
+            {
+                let mut budget = ProofBudget::limited(4096, 262_144, 4096, limit);
+                let result = provider.comparator_range_result(facts, applied, &mut budget);
+                let result = match result {
+                    Ok(violations) => violation_contract(&violations),
+                    Err(blocker) => format!("{blocker:?}"),
+                };
+                let mut remaining = 0;
+                while budget.reserve_control_step() {
+                    remaining += 1;
+                }
+                records.push(format!("{case} {limit} {remaining} {result}"));
+            }
+        });
+    }
+    let records = records.join("\n") + "\n";
+    assert_eq!(records, include_str!("closure_contract.txt"));
+}
+
+fn violation_contract(
+    violations: &[crate::interprocedural::comparator_range::ComparatorRangeViolation],
+) -> String {
+    let mut records = Vec::new();
+    for violation in violations {
+        let span = violation.binding_span();
+        let mut origins = Vec::new();
+        for origin in violation.constraint_origins() {
+            origins.push(format!("{}..{}", origin.span.start(), origin.span.end()));
+        }
+        records.push(format!(
+            "{}<{}@{}..{} [{}]",
+            violation.value().as_bigint(),
+            violation.upper_bound(),
+            span.start(),
+            span.end(),
+            origins.join(","),
+        ));
+    }
+    format!("Ok({})", records.join(";"))
+}
