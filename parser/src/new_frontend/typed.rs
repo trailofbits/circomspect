@@ -1,6 +1,9 @@
 use super::ast::{DiagnosticKind, SourceId, Span, SyntaxDiagnostic, SyntaxKind, SyntaxNode, Version};
 use super::lexer::Trivia;
 
+#[cfg(test)]
+mod tests;
+
 /// A parsed file whose public nodes have structurally valid, named fields.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SourceAst {
@@ -1050,10 +1053,9 @@ fn statement(node: SyntaxNode) -> Result<Statement, SyntaxDiagnostic> {
         SyntaxKind::ExpressionStatement => {
             let call = one_child(node)?;
             if call.kind != SyntaxKind::AnonymousCall {
-                return Err(malformed(
-                    &call,
-                    "only anonymous calls are valid expression statements",
-                ));
+                // Recovery must not hide a malformed expression produced by the grammar.
+                expression(call)?;
+                return Ok(Statement::Error { span });
             }
             Ok(Statement::AnonymousCall { call: anonymous_call(call)?, span })
         }

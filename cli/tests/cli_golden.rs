@@ -27,6 +27,12 @@ const CASES: &[GoldenCase] = &[
         args: &[],
         status: 1,
     },
+    GoldenCase {
+        name: "expression_recovery",
+        source: "expression_recovery.circom",
+        args: &[],
+        status: 1,
+    },
     GoldenCase { name: "missing_include", source: "missing_include.circom", args: &[], status: 1 },
     GoldenCase {
         name: "secondary_location",

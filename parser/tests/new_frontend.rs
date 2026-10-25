@@ -28,6 +28,13 @@ fn has_definition(outcome: &circomspect_parser::new_frontend::ParseOutcome, name
     })
 }
 
+fn assert_missing_return(statement: &Statement) {
+    let Statement::Return { value: Expression::Call { name, .. }, .. } = statement else {
+        panic!("later return must retain its call");
+    };
+    assert_eq!(name.name, "Missing");
+}
+
 fn assert_spans(source: &str, outcome: &circomspect_parser::new_frontend::ParseOutcome) {
     outcome.ast.walk_syntax(None, &mut |_, span, parent| {
         assert!(source.is_char_boundary(span.start()));
@@ -220,6 +227,110 @@ fn rejects_illegal_top_level_order_and_expression_statements() {
         .diagnostics
         .iter()
         .any(|d| d.kind == DiagnosticKind::Syntax && d.message.contains("out of order")));
+}
+
+#[test]
+fn invalid_expression_statement_preserves_later_call_and_neighbor() {
+    for invalid in ["1;", "1 + 2;", "Rejected();"] {
+        let source = format!(
+            "function F() {{ {invalid} return Missing(); }} function Neighbor() {{ return 0; }}"
+        );
+        let outcome = parse(&source);
+        let Item::Definition(first) = &outcome.ast.items[0] else {
+            panic!("invalid statement must preserve F: {:?}", outcome.ast.items);
+        };
+        assert_eq!(first.name.name, "F");
+        assert_eq!(first.body.statements.len(), 2);
+        let Statement::Error { span } = first.body.statements[0] else {
+            panic!("invalid expression must become an error statement");
+        };
+        assert_eq!(&source[span.start()..span.end()], invalid);
+        assert_eq!(outcome.diagnostics.len(), 1, "{:?}", outcome.diagnostics);
+        let diagnostic = &outcome.diagnostics[0];
+        assert_eq!(diagnostic.kind, DiagnosticKind::Syntax);
+        assert_eq!(diagnostic.span(), Some(span));
+        assert_eq!(
+            diagnostic.message,
+            "only an anonymous component call may be used as an expression statement"
+        );
+        assert_missing_return(&first.body.statements[1]);
+        assert!(has_definition(&outcome, "Neighbor"));
+        assert_spans(&source, &outcome);
+    }
+}
+
+#[test]
+fn repeated_invalid_expression_statements_have_one_diagnostic_each() {
+    let source = "function F() { 1; Rejected(); return Missing(); }";
+    let outcome = parse(source);
+    let Item::Definition(first) = &outcome.ast.items[0] else {
+        panic!("invalid statements must preserve F");
+    };
+    assert_eq!(first.body.statements.len(), 3);
+    assert_eq!(outcome.diagnostics.len(), 2, "{:?}", outcome.diagnostics);
+    for (index, expected) in ["1;", "Rejected();"].iter().enumerate() {
+        let Statement::Error { span } = first.body.statements[index] else {
+            panic!("invalid expression must become an error statement");
+        };
+        assert_eq!(&source[span.start()..span.end()], *expected);
+        assert_eq!(outcome.diagnostics[index].span(), Some(span));
+        assert_eq!(outcome.diagnostics[index].kind, DiagnosticKind::Syntax);
+    }
+    assert_missing_return(&first.body.statements[2]);
+    assert_spans(source, &outcome);
+}
+
+#[test]
+fn invalid_expression_statement_preserves_enclosing_control_flow() {
+    let source = "function F() { { 1; } if (1) 2; while (1) 3; \
+                  for (var i = 0; i < 1; i++) 4; return Missing(); }";
+    let outcome = parse(source);
+    let Item::Definition(first) = &outcome.ast.items[0] else {
+        panic!("nested invalid statements must preserve F");
+    };
+    assert_eq!(first.body.statements.len(), 5);
+    assert_eq!(outcome.diagnostics.len(), 4, "{:?}", outcome.diagnostics);
+    let Statement::Block(block) = &first.body.statements[0] else {
+        panic!("nested block must survive");
+    };
+    let Statement::If { then_branch, .. } = &first.body.statements[1] else {
+        panic!("conditional must survive");
+    };
+    let Statement::While { body: while_body, .. } = &first.body.statements[2] else {
+        panic!("while loop must survive");
+    };
+    let Statement::For { body: for_body, .. } = &first.body.statements[3] else {
+        panic!("for loop must survive");
+    };
+    let nested = [&block.statements[0], then_branch.as_ref(), while_body.as_ref(), for_body];
+    for (index, (statement, expected)) in
+        nested.into_iter().zip(["1;", "2;", "3;", "4;"]).enumerate()
+    {
+        let Statement::Error { span } = statement else {
+            panic!("nested invalid expression must become an error statement");
+        };
+        assert_eq!(&source[span.start()..span.end()], expected);
+        assert_eq!(outcome.diagnostics[index].kind, DiagnosticKind::Syntax);
+        assert_eq!(outcome.diagnostics[index].span(), Some(*span));
+    }
+    assert_missing_return(&first.body.statements[4]);
+    assert_spans(source, &outcome);
+}
+
+#[test]
+fn valid_anonymous_expression_statement_remains_a_call() {
+    let source = "template Main() { Sink()(1); }";
+    let outcome = parse(source);
+    assert!(outcome.diagnostics.is_empty(), "{:?}", outcome.diagnostics);
+    let Item::Definition(definition) = &outcome.ast.items[0] else {
+        panic!("template must survive");
+    };
+    let Statement::AnonymousCall { call, span } = &definition.body.statements[0] else {
+        panic!("valid anonymous expression statement must remain a call");
+    };
+    assert_eq!(call.name.name, "Sink");
+    assert_eq!(&source[span.start()..span.end()], "Sink()(1);");
+    assert_spans(source, &outcome);
 }
 
 #[test]

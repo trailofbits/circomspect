@@ -111,6 +111,53 @@ fn standalone_bus_library_reports_incomplete_without_main() {
 }
 
 #[test]
+fn invalid_expression_statement_keeps_later_library_diagnostics() {
+    let path = fixture(
+        "expression-recovery",
+        "pragma circom 2.2.3;\nfunction F() {\n    1;\n    return Missing();\n}\n\
+         function Neighbor() { return 0; }\n",
+    );
+    for (name, args) in [
+        ("expression-recovery", &[][..]),
+        ("expression-recovery-errors", &["--level", "error"][..]),
+    ] {
+        let (status, stdout, sarif) = run(&path, args, name);
+        assert_eq!(status, 1, "{stdout}");
+        assert!(stdout.contains("analyzing function 'F'"), "{stdout}");
+        assert!(stdout.contains("analyzing function 'Neighbor'"), "{stdout}");
+        let results = sarif["runs"][0]["results"].as_array().unwrap();
+        let syntax: Vec<_> = results.iter().filter(|result| result["ruleId"] == "P1000").collect();
+        assert_eq!(syntax.len(), 1, "{stdout}");
+        assert_eq!(syntax[0]["level"], "error");
+        assert_eq!(
+            syntax[0]["message"]["text"],
+            "only an anonymous component call may be used as an expression statement"
+        );
+        assert_eq!(
+            syntax[0]["locations"][0]["physicalLocation"]["region"],
+            serde_json::json!({"startLine": 3, "startColumn": 5, "endLine": 3, "endColumn": 7})
+        );
+        let missing: Vec<_> =
+            results.iter().filter(|result| result["ruleId"] == "CS0019").collect();
+        assert_eq!(missing.len(), 1, "{stdout}");
+        assert_eq!(missing[0]["level"], "error");
+        assert_eq!(missing[0]["message"]["text"], "unresolved Function call `Missing`");
+        assert_eq!(
+            missing[0]["locations"][0]["physicalLocation"]["region"],
+            serde_json::json!({"startLine": 4, "startColumn": 12, "endLine": 4, "endColumn": 19})
+        );
+        if args.is_empty() {
+            let order: Vec<_> = results.iter().map(|result| &result["ruleId"]).collect();
+            assert_eq!(order, ["P1000", "CS0019", "CS0020"]);
+            assert!(stdout.contains("3 issues found."), "{stdout}");
+        } else {
+            assert_eq!(results.len(), 2, "{stdout}");
+            assert!(stdout.contains("2 issues found."), "{stdout}");
+        }
+    }
+}
+
+#[test]
 fn unsupported_library_definitions_have_scoped_incomplete_diagnostics() {
     for (name, declaration, column) in [
         ("standalone-bus", "bus Pair(){signal x;}", 5),
