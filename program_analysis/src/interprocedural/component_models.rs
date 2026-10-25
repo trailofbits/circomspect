@@ -11,8 +11,8 @@ use parser::new_frontend::PortDirection;
 
 use crate::hir_cfg::Origin;
 use crate::hir_facts::{
-    AccessHandle, AccessKey, AnalysisFacts, BitDecomposition, BitRepresentation, FieldValue,
-    NoBitAmbiguityCertificate, ProofBudget,
+    RankOnePortError, AccessHandle, AccessKey, AnalysisFacts, BitDecomposition, BitRepresentation,
+    FieldValue, NoBitAmbiguityCertificate, ProofBudget,
 };
 use crate::interprocedural::component_models::models::{prove_closure_models, ClosureEquations};
 use crate::interprocedural::summary::certified;
@@ -258,19 +258,12 @@ fn checked_bit_port_handles(
     }
     let input_handle =
         child.port_handle(input, &[]).map_err(|_| SummaryBlocker::UnsupportedContext)?;
-    let bounds = child
-        .checked_symbol_dimensions(bit_port.symbol)
-        .map_err(|_| SummaryBlocker::UnsupportedContext)?;
-    let [width] = bounds.as_slice() else { return Err(SummaryBlocker::UnsupportedContext) };
-    if *width == 0 || *width > 512 {
-        return Err(SummaryBlocker::ContextBudget);
-    }
-    let mut bit_handles = Vec::with_capacity(*width);
-    for index in 0..*width {
-        let handle =
-            child.port_handle(bits, &[index]).map_err(|_| SummaryBlocker::UnsupportedContext)?;
-        bit_handles.push(handle);
-    }
+    let bit_handles = child.rank_one_port_handles(bit_port, 512).map_err(|error| match error {
+        RankOnePortError::WidthLimit => SummaryBlocker::ContextBudget,
+        RankOnePortError::InvalidShape(_)
+        | RankOnePortError::InvalidRank
+        | RankOnePortError::InvalidHandle(_) => SummaryBlocker::UnsupportedContext,
+    })?;
     Ok((input_handle, bit_handles))
 }
 

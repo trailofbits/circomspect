@@ -23,3 +23,6 @@ pub mod hir_facts;
 pub mod interprocedural;
 pub mod new_rules;
 mod scalar_evidence;
+
+#[cfg(test)]
+mod test_fixtures;

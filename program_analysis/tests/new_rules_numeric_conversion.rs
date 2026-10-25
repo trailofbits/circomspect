@@ -220,3 +220,14 @@ fn incomplete_solver_and_failed_execution_cannot_emit_conversion_warning() {
         .iter()
         .any(|item| item.kind == RuleKind::NonstrictBinaryConversion));
 }
+
+#[test]
+fn conversion_candidates_exclude_scalar_and_rank_two_outputs() {
+    for shape in ["", "[2][3]", "[0][1]", "[513][1]"] {
+        let source =
+            format!("template Decompose(){{signal input value;signal output bits{shape};}}");
+        let (_, result) = inspect(&source, Curve::Goldilocks);
+        assert!(result.findings().is_empty(), "{shape}");
+        assert!(result.abstentions().is_empty(), "{shape}: {:?}", result.abstentions());
+    }
+}

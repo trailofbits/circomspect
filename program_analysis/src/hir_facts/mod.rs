@@ -1,5 +1,8 @@
 //! Constraint provenance and certified local facts over the checked HIR CFG.
 
+mod port_expansion;
+pub(crate) use crate::hir_facts::port_expansion::RankOnePortError;
+
 #[cfg(test)]
 mod availability_tests;
 mod access;

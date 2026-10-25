@@ -4,7 +4,10 @@ use parser::hir::{DefinitionRef, Port, PortSchema};
 use parser::new_frontend::{PortDirection, Span};
 
 use crate::hir_facts::NoBitAmbiguityCertificate;
-use crate::hir_facts::{AccessHandle, BitAmbiguity, BitAmbiguityOutcome, BitRepresentation, FieldValue};
+use crate::hir_facts::{
+    RankOnePortError, AccessHandle, BitAmbiguity, BitAmbiguityOutcome, BitRepresentation,
+    FieldValue,
+};
 use crate::interprocedural::{
     CallSite, ComponentBitAmbiguity, ComponentBitAmbiguityOutcome, SummaryBlocker, SummaryFact,
 };
@@ -163,23 +166,14 @@ fn bit_handles(
     context: &RuleContext<'_, '_, '_>,
     output: &Port,
 ) -> Result<Vec<AccessHandle>, AbstentionReason> {
-    let bounds = context
-        .facts()
-        .checked_symbol_dimensions(output.symbol)
-        .map_err(|_| AbstentionReason::UnsupportedConstruct)?;
-    let Some(&width) = bounds.first() else { return Err(AbstentionReason::UnsupportedConstruct) };
-    if width == 0 || width > MAX_BITS {
-        return Err(AbstentionReason::Summary(BTreeSet::from([SummaryBlocker::ContextBudget])));
-    }
-    let mut bits = Vec::with_capacity(width);
-    for index in 0..width {
-        let handle = context
-            .facts()
-            .port_handle(output.id, &[index])
-            .map_err(|_| AbstentionReason::UnsupportedConstruct)?;
-        bits.push(handle);
-    }
-    Ok(bits)
+    context.facts().rank_one_port_handles(output, MAX_BITS).map_err(|error| match error {
+        RankOnePortError::WidthLimit => {
+            AbstentionReason::Summary(BTreeSet::from([SummaryBlocker::ContextBudget]))
+        }
+        RankOnePortError::InvalidShape(_)
+        | RankOnePortError::InvalidRank
+        | RankOnePortError::InvalidHandle(_) => AbstentionReason::UnsupportedConstruct,
+    })
 }
 
 fn emit_or_abstain(
@@ -320,3 +314,6 @@ fn abstain_budget(
         AbstentionReason::Summary(BTreeSet::from([SummaryBlocker::ContextBudget])),
     ));
 }
+
+#[cfg(test)]
+mod tests;

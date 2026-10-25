@@ -75,18 +75,9 @@ fn ordered_output_handles(
     facts: &AnalysisFacts<'_>,
     port: PortId,
 ) -> Result<Vec<AccessHandle>, SummaryBlocker> {
-    let symbol = facts.hir().port(port).ok_or(SummaryBlocker::ForeignDefinition)?.symbol;
-    let dimensions =
-        facts.checked_symbol_dimensions(symbol).map_err(|_| SummaryBlocker::UnsupportedContext)?;
-    let [width] = dimensions.as_slice() else { return Err(SummaryBlocker::UnsupportedContext) };
-    if *width == 0 || *width > 512 {
-        return Err(SummaryBlocker::UnsupportedContext);
-    }
-    let mut handles = Vec::new();
-    for index in 0..*width {
-        handles.push(
-            facts.port_handle(port, &[index]).map_err(|_| SummaryBlocker::UnsupportedContext)?,
-        );
-    }
-    Ok(handles)
+    let port = facts.hir().port(port).ok_or(SummaryBlocker::ForeignDefinition)?;
+    facts.rank_one_port_handles(port, 512).map_err(|_| SummaryBlocker::UnsupportedContext)
 }
+
+#[cfg(test)]
+mod tests;
