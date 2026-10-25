@@ -357,7 +357,7 @@ fn failed_sarif_write_returns_a_visible_error_and_failure_exit() {
     let path = fixture("bad-sarif", "pragma circom 2.2.3;template Main(){}");
     let output = Command::new(env!("CARGO_BIN_EXE_circomspect"))
         .arg(&path)
-        .args(["--level", "error", "--sarif-file"])
+        .args(["--level", "error", "--allow", "T3001", "--sarif-file"])
         .arg(path.parent().unwrap())
         .output()
         .unwrap();
@@ -365,6 +365,16 @@ fn failed_sarif_write_returns_a_visible_error_and_failure_exit() {
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains("Cannot write SARIF"), "{stdout}");
     assert!(!stdout.contains("No issues found"));
+}
+
+#[test]
+fn empty_sarif_is_written_without_a_result_written_status() {
+    let path = fixture("empty-sarif", "pragma circom 2.2.3;template Main(){}");
+    let (status, stdout, sarif) = run(&path, &[], "empty-sarif");
+    assert_eq!(status, 0, "{stdout}");
+    assert_eq!(sarif["runs"][0]["results"].as_array().unwrap().len(), 0);
+    assert!(stdout.contains("No issues found"), "{stdout}");
+    assert!(!stdout.contains("Result written"), "{stdout}");
 }
 
 #[test]

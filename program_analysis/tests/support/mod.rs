@@ -1,26 +1,8 @@
-use std::collections::HashSet;
 use std::path::Path;
 
 use circomspect_program_analysis::new_rules::{Finding, RenderError, SourceMap};
-use program_structure::file_definition::FileID;
 use program_structure::report::{MessageCategory, Report};
-use program_structure::writers::{ReportFilter, ReportWriter, SarifWriter, StdoutWriter};
-
-#[derive(Clone)]
-struct Filter {
-    minimum: MessageCategory,
-    roots: HashSet<FileID>,
-    allow: HashSet<String>,
-}
-
-impl ReportFilter for Filter {
-    fn filter(&self, report: &Report) -> bool {
-        let visible_source = *report.category() == MessageCategory::Error
-            || report.primary_file_ids().is_empty()
-            || report.primary_file_ids().iter().any(|id| self.roots.contains(id));
-        visible_source && report.category() >= &self.minimum && !self.allow.contains(&report.id())
-    }
-}
+use program_structure::writers::{OutputPolicy, ReportWriter, SarifWriter, StdoutWriter};
 
 /// Exercise the same terminal and SARIF renderers with the CLI's report filters.
 pub fn render(
@@ -43,11 +25,11 @@ pub fn render_reports(
     allow: &[&str],
     sarif_path: &Path,
 ) -> (usize, usize) {
-    let filter = Filter {
+    let filter = OutputPolicy::new(
         minimum,
-        roots: sources.files().user_inputs().clone(),
-        allow: allow.iter().map(|id| (*id).to_string()).collect(),
-    };
+        sources.files().user_inputs().clone(),
+        allow.iter().map(|id| (*id).to_string()).collect(),
+    );
     let mut terminal = StdoutWriter::new(true).add_filter(filter.clone());
     let terminal_count =
         terminal.write_reports(reports, sources.files()).expect("terminal diagnostics");

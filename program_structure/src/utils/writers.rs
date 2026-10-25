@@ -12,6 +12,10 @@ use crate::{
     file_definition::FileLibrary,
 };
 
+mod policy;
+
+pub use crate::utils::writers::policy::OutputPolicy;
+
 pub trait ReportFilter {
     /// Returns true if the report should be included.
     fn filter(&self, report: &Report) -> bool;
@@ -21,6 +25,16 @@ impl<F: Fn(&Report) -> bool> ReportFilter for F {
     fn filter(&self, report: &Report) -> bool {
         self(report)
     }
+}
+
+fn select_reports(filters: &[Box<dyn ReportFilter>], reports: &[Report]) -> ReportCollection {
+    let mut selected = ReportCollection::new();
+    for report in reports {
+        if filters.iter().all(|filter| filter.filter(report)) {
+            selected.push(report.clone());
+        }
+    }
+    selected
 }
 
 /// A failure while rendering diagnostics or writing their output.
@@ -93,14 +107,6 @@ impl StdoutWriter {
         self.filters.push(Box::new(filter));
         self
     }
-
-    fn filter(&self, reports: &[Report]) -> ReportCollection {
-        reports
-            .iter()
-            .filter(|report| self.filters.iter().all(|f| f.filter(report)))
-            .cloned()
-            .collect()
-    }
 }
 
 impl LogWriter for StdoutWriter {
@@ -128,7 +134,7 @@ impl ReportWriter for StdoutWriter {
         reports: &[Report],
         file_library: &FileLibrary,
     ) -> Result<usize, ReportWriteError> {
-        let reports = self.filter(reports);
+        let reports = select_reports(&self.filters, reports);
 
         let mut config = term::Config::default();
         let mut diagnostics = Vec::new();
@@ -217,14 +223,6 @@ impl SarifWriter {
         self
     }
 
-    fn filter(&self, reports: &[Report]) -> ReportCollection {
-        reports
-            .iter()
-            .filter(|report| self.filters.iter().all(|f| f.filter(report)))
-            .cloned()
-            .collect()
-    }
-
     fn serialize_reports(
         &self,
         reports: &ReportCollection,
@@ -245,7 +243,7 @@ impl ReportWriter for SarifWriter {
         reports: &[Report],
         file_library: &FileLibrary,
     ) -> Result<usize, ReportWriteError> {
-        let reports = self.filter(reports);
+        let reports = select_reports(&self.filters, reports);
         self.serialize_reports(&reports, file_library)?;
         self.written += reports.len();
         Ok(reports.len())

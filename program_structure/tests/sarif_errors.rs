@@ -47,3 +47,19 @@ fn failed_sarif_write_preserves_the_error_and_does_not_count_reports() {
     assert_eq!(path, directory);
     assert_eq!(writer.reports_written(), 0);
 }
+
+#[test]
+fn stdout_cache_keeps_hidden_reports_without_counting_them() {
+    use circomspect_program_structure::writers::{CachedStdoutWriter, ReportWriter};
+
+    let mut writer = CachedStdoutWriter::new(false).add_filter(|_: &Report| false);
+    let reports = [
+        Report::warning("first".into(), ReportCode::IncompleteCoverage),
+        Report::error("second".into(), ReportCode::ParseFail),
+    ];
+    assert_eq!(writer.write_reports(&reports, &FileLibrary::new()).unwrap(), 0);
+    assert_eq!(writer.reports_written(), 0);
+    let messages: Vec<_> =
+        writer.reports().iter().map(|report| report.message().as_str()).collect();
+    assert_eq!(messages, ["first", "second"]);
+}

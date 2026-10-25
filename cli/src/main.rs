@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use clap::{CommandFactory, Parser};
@@ -9,12 +8,14 @@ use program_structure::file_definition::FileLibrary;
 use program_structure::report_code::ReportCode;
 
 use program_structure::constants::Curve;
-use program_structure::file_definition::FileID;
 use program_structure::report::Report;
 use program_structure::report::MessageCategory;
 use program_structure::writers::{
-    LogWriter, ReportWriter, ReportWriteError, SarifWriter, CachedStdoutWriter,
+    LogWriter, OutputPolicy, ReportWriter, ReportWriteError, SarifWriter, CachedStdoutWriter,
 };
+
+#[cfg(test)]
+mod tests;
 
 #[derive(Parser, Debug)]
 #[command(styles=cli_styles())]
@@ -61,25 +62,6 @@ fn cli_styles() -> clap::builder::Styles {
         .placeholder(AnsiColor::Green.on_default())
 }
 
-/// Keep errors, project-level reports, and reports located in a user input file.
-fn filter_by_file(report: &Report, user_inputs: &HashSet<FileID>) -> bool {
-    let file_ids = report.primary_file_ids();
-    *report.category() == MessageCategory::Error
-        || file_ids.is_empty()
-        || file_ids.iter().any(|file_id| user_inputs.contains(file_id))
-}
-
-/// Returns true if the report level is greater than or equal to the given
-/// level.
-fn filter_by_level(report: &Report, output_level: MessageCategory) -> bool {
-    *report.category() >= output_level
-}
-
-/// Returns true if the report ID is not in the given list.
-fn filter_by_id(report: &Report, allow_list: &[String]) -> bool {
-    !allow_list.contains(&report.id())
-}
-
 fn main() -> Result<ExitCode, String> {
     // Initialize logger and options.
     pretty_env_logger::init();
@@ -107,15 +89,15 @@ fn run(options: Cli) -> Result<ExitCode, ReportWriteError> {
     };
 
     // Set up writer and write reports to `stdout`.
-    let allow_list = options.allow_list.clone();
-    let user_inputs = output.files.user_inputs().clone();
-    let mut stdout_writer = CachedStdoutWriter::new(options.verbose)
-        .add_filter(move |report: &Report| filter_by_level(report, options.output_level))
-        .add_filter(move |report: &Report| filter_by_file(report, &user_inputs))
-        .add_filter(move |report: &Report| filter_by_id(report, &allow_list));
+    let policy = OutputPolicy::new(
+        options.output_level,
+        output.files.user_inputs().clone(),
+        options.allow_list.into_iter().collect(),
+    );
+    let mut stdout_writer = CachedStdoutWriter::new(options.verbose).add_filter(policy.clone());
     stdout_writer.write_reports(&output.diagnostics, &output.files)?;
 
-    // Analyze functions and templates in user provided input files.
+    // Render completed function and template analyses in input order.
     for scope in &output.scopes {
         stdout_writer.write_message(format!("analyzing {}", scope.description))?;
         stdout_writer.write_reports(&scope.reports, &output.files)?;
@@ -123,12 +105,7 @@ fn run(options: Cli) -> Result<ExitCode, ReportWriteError> {
 
     // If a Sarif file is passed to the program we write the reports to it.
     if let Some(sarif_file) = options.sarif_file {
-        let allow_list = options.allow_list.clone();
-        let user_inputs = output.files.user_inputs().clone();
-        let mut sarif_writer = SarifWriter::new(&sarif_file)
-            .add_filter(move |report: &Report| filter_by_level(report, options.output_level))
-            .add_filter(move |report: &Report| filter_by_file(report, &user_inputs))
-            .add_filter(move |report: &Report| filter_by_id(report, &allow_list));
+        let mut sarif_writer = SarifWriter::new(&sarif_file).add_filter(policy);
         match sarif_writer.write_reports(stdout_writer.reports(), &output.files) {
             Ok(count) if count > 0 => stdout_writer
                 .write_message(format!("Result written to `{}`.", sarif_file.display()))?,
