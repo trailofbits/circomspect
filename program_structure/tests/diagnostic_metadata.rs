@@ -64,7 +64,7 @@ fn diagnostic_metadata_matches_the_frozen_public_contract() {
         assert_eq!(fields[0], *variant);
         assert_eq!(code.id(), fields[1], "{variant} ID");
         assert_eq!(code.name(), fields[2], "{variant} name");
-        let url = if fields[3].is_empty() { None } else { Some(fields[3]) };
+        let url = if fields[3] == "<none>" { None } else { Some(fields[3]) };
         assert_eq!(code.url().as_deref(), url, "{variant} URL");
     }
 }
