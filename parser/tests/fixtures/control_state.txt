@@ -1,0 +1,256 @@
+then deferred: (
+    [],
+    [
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 28,
+                    end: 31,
+                },
+            ),
+            reason: UnknownType,
+        },
+    ],
+)
+else deferred: (
+    [],
+    [
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 38,
+                    end: 41,
+                },
+            ),
+            reason: UnknownType,
+        },
+    ],
+)
+absent else: (
+    [
+        SemanticDiagnostic {
+            code: NonConstantArrayLength,
+            severity: Error,
+            span: Span {
+                source: SourceId(
+                    0,
+                ),
+                start: 56,
+                end: 57,
+            },
+            message: "array dimension depends on a witness value",
+            expected_kind: None,
+            actual_kind: None,
+        },
+    ],
+    [
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 54,
+                    end: 58,
+                },
+            ),
+            reason: NonCompileTime,
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 56,
+                    end: 57,
+                },
+            ),
+            reason: NonCompileTime,
+        },
+    ],
+)
+body then overwrite: (
+    [
+        SemanticDiagnostic {
+            code: NonConstantArrayLength,
+            severity: Error,
+            span: Span {
+                source: SourceId(
+                    0,
+                ),
+                start: 71,
+                end: 72,
+            },
+            message: "array dimension depends on a witness value",
+            expected_kind: None,
+            actual_kind: None,
+        },
+    ],
+    [
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 69,
+                    end: 73,
+                },
+            ),
+            reason: NonCompileTime,
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 71,
+                    end: 72,
+                },
+            ),
+            reason: NonCompileTime,
+        },
+    ],
+)
+step only: (
+    [
+        SemanticDiagnostic {
+            code: NonConstantArrayLength,
+            severity: Error,
+            span: Span {
+                source: SourceId(
+                    0,
+                ),
+                start: 71,
+                end: 72,
+            },
+            message: "array dimension depends on a witness value",
+            expected_kind: None,
+            actual_kind: None,
+        },
+    ],
+    [
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 69,
+                    end: 73,
+                },
+            ),
+            reason: NonCompileTime,
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 71,
+                    end: 72,
+                },
+            ),
+            reason: NonCompileTime,
+        },
+    ],
+)
+while body: (
+    [
+        SemanticDiagnostic {
+            code: NonConstantArrayLength,
+            severity: Error,
+            span: Span {
+                source: SourceId(
+                    0,
+                ),
+                start: 59,
+                end: 60,
+            },
+            message: "array dimension depends on a witness value",
+            expected_kind: None,
+            actual_kind: None,
+        },
+    ],
+    [
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 57,
+                    end: 61,
+                },
+            ),
+            reason: NonCompileTime,
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 59,
+                    end: 60,
+                },
+            ),
+            reason: NonCompileTime,
+        },
+    ],
+)
+shadowed branches: (
+    [
+        SemanticDiagnostic {
+            code: Shadowing,
+            severity: Warning,
+            span: Span {
+                source: SourceId(
+                    0,
+                ),
+                start: 32,
+                end: 33,
+            },
+            message: "variable `x` shadows an outer declaration",
+            expected_kind: None,
+            actual_kind: None,
+        },
+        SemanticDiagnostic {
+            code: Shadowing,
+            severity: Warning,
+            span: Span {
+                source: SourceId(
+                    0,
+                ),
+                start: 46,
+                end: 47,
+            },
+            message: "variable `x` shadows an outer declaration",
+            expected_kind: None,
+            actual_kind: None,
+        },
+    ],
+    [
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 32,
+                    end: 35,
+                },
+            ),
+            reason: UnknownType,
+        },
+    ],
+)

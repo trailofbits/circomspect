@@ -3,7 +3,7 @@ use crate::hir::lift::{
     BlockId, BusTarget, CallTarget, ControlGuard, Declaration, DeclarationKind, DeclaredSymbol,
     DefinitionKind, DefinitionRef, DirectionSyntax, Effect, ExprId, ExprKind, Expression,
     Identifier, IncompleteReason, Knownness, Lifter, LogArgument, PortDirection, ScalarShape,
-    SemanticCode, Severity, ShapeCheck, Span, Statement, SymbolId, SymbolKind, SymbolState,
+    SemanticCode, Severity, ShapeCheck, Span, Statement, SymbolId, SymbolKind, SymbolSnapshot,
     ValueEvidence, ValueType, TemplateInvocation, ForLoop, PostfixOperator,
 };
 
@@ -328,13 +328,13 @@ impl Lifter<'_> {
         span: Span,
     ) -> Effect {
         let condition = self.lift_expression(condition);
-        let before = self.snapshot_symbol_state();
+        let before = SymbolSnapshot::capture(&self.hir);
         let then_block = self.lift_branch(then_branch);
-        let after_then = self.snapshot_symbol_state();
-        self.restore_symbol_state(&before);
+        let after_then = SymbolSnapshot::capture(&self.hir);
+        before.install(&mut self.hir);
         let else_block = else_branch.map(|branch| self.lift_branch(branch));
-        let after_else = self.snapshot_symbol_state();
-        self.join_symbol_state(&after_then, &after_else);
+        let after_else = SymbolSnapshot::capture(&self.hir);
+        after_then.join(&after_else).install(&mut self.hir);
         let guard = match self.control_guard(condition) {
             Ok(ControlGuard::WitnessOnly)
                 if !self.branch_is_witness_only(then_block)
@@ -353,13 +353,14 @@ impl Lifter<'_> {
         self.scopes.enter();
         let initializer_block = self.hir.add_block(initializer.span());
         self.lift_block_into(std::slice::from_ref(initializer), initializer_block, false);
-        let before_loop = self.snapshot_symbol_state();
+        let before_loop = SymbolSnapshot::capture(&self.hir);
         let condition = self.lift_expression(condition);
         let body = self.lift_branch(body);
-        let after_body = self.snapshot_symbol_state();
+        let after_body = SymbolSnapshot::capture(&self.hir);
         let step = self.lift_branch(step);
+        let after_step = SymbolSnapshot::capture(&self.hir);
         let stable_condition = self.loop_condition_is_stable(condition, &before_loop);
-        self.join_symbol_state(&before_loop, &after_body);
+        before_loop.join(&after_body).join(&after_step).install(&mut self.hir);
         self.scopes.leave();
         let guard = match self.control_guard(condition) {
             Ok(ControlGuard::WitnessOnly) => {
@@ -375,11 +376,12 @@ impl Lifter<'_> {
     }
 
     fn lift_while(&mut self, condition: &Expression, body: &Statement, span: Span) -> Effect {
-        let before = self.snapshot_symbol_state();
+        let before = SymbolSnapshot::capture(&self.hir);
         let condition = self.lift_expression(condition);
         let body = self.lift_branch(body);
+        let after_body = SymbolSnapshot::capture(&self.hir);
         let stable_condition = self.loop_condition_is_stable(condition, &before);
-        self.join_symbol_state(&before, &before);
+        before.join(&after_body).install(&mut self.hir);
         let guard = match self.control_guard(condition) {
             Ok(ControlGuard::WitnessOnly) => {
                 return self.opaque(span, IncompleteReason::NonCompileTime);
@@ -531,17 +533,6 @@ impl Lifter<'_> {
         }
     }
 
-    pub(super) fn snapshot_symbol_state(&self) -> Vec<SymbolState> {
-        self.hir
-            .symbols
-            .iter()
-            .map(|symbol| SymbolState {
-                knownness: symbol.knownness,
-                value_evidence: symbol.value_evidence,
-            })
-            .collect()
-    }
-
     pub(super) fn symbolic_indices(path: &AccessPath) -> impl Iterator<Item = ExprId> + '_ {
         path.steps.iter().filter_map(|step| match step {
             AccessStep::Index { index: ArrayIndex::Symbolic(id), .. } => Some(*id),
@@ -601,7 +592,7 @@ impl Lifter<'_> {
     pub(super) fn loop_condition_is_stable(
         &self,
         condition: ExprId,
-        before: &[SymbolState],
+        before: &SymbolSnapshot,
     ) -> bool {
         let mut pending = vec![condition];
         while let Some(id) = pending.pop() {
@@ -634,22 +625,6 @@ impl Lifter<'_> {
             }
         }
         true
-    }
-
-    pub(super) fn restore_symbol_state(&mut self, snapshot: &[SymbolState]) {
-        for (symbol, state) in self.hir.symbols.iter_mut().zip(snapshot) {
-            symbol.knownness = state.knownness;
-            symbol.value_evidence = state.value_evidence;
-        }
-    }
-
-    pub(super) fn join_symbol_state(&mut self, first: &[SymbolState], second: &[SymbolState]) {
-        for (index, (first, second)) in first.iter().zip(second).enumerate() {
-            let symbol = &mut self.hir.symbols[index];
-            symbol.knownness = symbol.knownness.join(first.knownness).join(second.knownness);
-            symbol.value_evidence =
-                symbol.value_evidence.join(first.value_evidence).join(second.value_evidence);
-        }
     }
 
     pub(super) fn opaque(&mut self, span: Span, reason: IncompleteReason) -> Effect {

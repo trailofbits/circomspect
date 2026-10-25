@@ -36,12 +36,6 @@ enum ScalarShape {
     Invalid,
 }
 
-#[derive(Clone, Copy)]
-struct SymbolState {
-    knownness: Knownness,
-    value_evidence: ValueEvidence,
-}
-
 impl ScalarShape {
     fn join(self, other: Self) -> Self {
         match (self, other) {
@@ -142,6 +136,9 @@ struct Lifter<'a> {
 mod index;
 mod statements;
 mod expressions;
+mod symbol_state;
+
+use crate::hir::lift::symbol_state::SymbolSnapshot;
 
 impl Lifter<'_> {
     fn diagnostic(&mut self, code: SemanticCode, severity: Severity, span: Span, message: String) {
