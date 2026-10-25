@@ -1,7 +1,7 @@
 use crate::new_frontend::ast::{
     DiagnosticKind, SourceId, Span, SyntaxDiagnostic, SyntaxKind, SyntaxNode,
 };
-use crate::new_frontend::typed::{item, statement};
+use crate::new_frontend::typed::{item, statement, BinaryOperator};
 
 fn syntax(kind: SyntaxKind, children: Vec<SyntaxNode>) -> SyntaxNode {
     SyntaxNode { kind, span: Span::from_lexer(SourceId::new(7), 0, 10), text: None, children }
@@ -25,8 +25,7 @@ fn expression_statement_requires_exactly_one_child() {
 
 #[test]
 fn invalid_expression_statement_does_not_hide_malformed_expressions() {
-    let mut binary = syntax(SyntaxKind::Binary, vec![identifier("a")]);
-    binary.text = Some("+".to_owned());
+    let binary = syntax(SyntaxKind::Binary(BinaryOperator::Add), vec![identifier("a")]);
     for expression in [syntax(SyntaxKind::Block, Vec::new()), binary] {
         let invalid = syntax(SyntaxKind::ExpressionStatement, vec![expression]);
         assert!(statement(invalid.clone()).is_err());

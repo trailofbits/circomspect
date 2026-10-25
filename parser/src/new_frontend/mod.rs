@@ -197,7 +197,7 @@ fn minimum_version(node: &SyntaxNode) -> Option<Version> {
         | SyntaxKind::AnonymousCall
         | SyntaxKind::Array => (2, 1, 0),
         SyntaxKind::Identifier if node.text.as_deref() == Some("_") => (2, 1, 0),
-        SyntaxKind::Inputs if node.text.is_some() => (2, 1, 1),
+        SyntaxKind::NamedInput(_) => (2, 1, 1),
         SyntaxKind::Bus
         | SyntaxKind::BusHeader
         | SyntaxKind::DirectionFirstBusHeader

@@ -1,0 +1,566 @@
+AST: SourceAst {
+    source: SourceId(
+        7,
+    ),
+    items: [
+        Error {
+            span: Span {
+                source: SourceId(
+                    7,
+                ),
+                start: 0,
+                end: 29,
+            },
+        },
+        Definition(
+            Definition {
+                kind: Function,
+                name: Identifier {
+                    name: "Broken",
+                    span: Span {
+                        source: SourceId(
+                            7,
+                        ),
+                        start: 39,
+                        end: 45,
+                    },
+                },
+                parameters: Parenthesized(
+                    [],
+                ),
+                body: Block {
+                    statements: [
+                        Error {
+                            span: Span {
+                                source: SourceId(
+                                    7,
+                                ),
+                                start: 50,
+                                end: 59,
+                            },
+                        },
+                        Return {
+                            value: Number {
+                                text: "9",
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 67,
+                                    end: 68,
+                                },
+                            },
+                            span: Span {
+                                source: SourceId(
+                                    7,
+                                ),
+                                start: 60,
+                                end: 69,
+                            },
+                        },
+                    ],
+                    span: Span {
+                        source: SourceId(
+                            7,
+                        ),
+                        start: 48,
+                        end: 71,
+                    },
+                },
+                span: Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 30,
+                    end: 71,
+                },
+            },
+        ),
+        Definition(
+            Definition {
+                kind: Template {
+                    custom: false,
+                    external: true,
+                    parallel: false,
+                },
+                name: Identifier {
+                    name: "Following",
+                    span: Span {
+                        source: SourceId(
+                            7,
+                        ),
+                        start: 90,
+                        end: 99,
+                    },
+                },
+                parameters: Omitted,
+                body: Block {
+                    statements: [
+                        Log {
+                            arguments: [
+                                Expression(
+                                    Number {
+                                        text: "1",
+                                        span: Span {
+                                            source: SourceId(
+                                                7,
+                                            ),
+                                            start: 106,
+                                            end: 107,
+                                        },
+                                    },
+                                ),
+                            ],
+                            span: Span {
+                                source: SourceId(
+                                    7,
+                                ),
+                                start: 102,
+                                end: 109,
+                            },
+                        },
+                    ],
+                    span: Span {
+                        source: SourceId(
+                            7,
+                        ),
+                        start: 100,
+                        end: 111,
+                    },
+                },
+                span: Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 72,
+                    end: 111,
+                },
+            },
+        ),
+        Pragma {
+            pragma: Version(
+                Version {
+                    major: 2,
+                    minor: 2,
+                    patch: 3,
+                },
+            ),
+            span: Span {
+                source: SourceId(
+                    7,
+                ),
+                start: 112,
+                end: 132,
+            },
+        },
+        Definition(
+            Definition {
+                kind: Function,
+                name: Identifier {
+                    name: "Last",
+                    span: Span {
+                        source: SourceId(
+                            7,
+                        ),
+                        start: 142,
+                        end: 146,
+                    },
+                },
+                parameters: Parenthesized(
+                    [],
+                ),
+                body: Block {
+                    statements: [
+                        Return {
+                            value: Array {
+                                elements: [
+                                    Number {
+                                        text: "1",
+                                        span: Span {
+                                            source: SourceId(
+                                                7,
+                                            ),
+                                            start: 159,
+                                            end: 160,
+                                        },
+                                    },
+                                    Number {
+                                        text: "2",
+                                        span: Span {
+                                            source: SourceId(
+                                                7,
+                                            ),
+                                            start: 161,
+                                            end: 162,
+                                        },
+                                    },
+                                ],
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 158,
+                                    end: 163,
+                                },
+                            },
+                            span: Span {
+                                source: SourceId(
+                                    7,
+                                ),
+                                start: 151,
+                                end: 164,
+                            },
+                        },
+                    ],
+                    span: Span {
+                        source: SourceId(
+                            7,
+                        ),
+                        start: 149,
+                        end: 166,
+                    },
+                },
+                span: Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 133,
+                    end: 166,
+                },
+            },
+        ),
+    ],
+    trivia: [],
+}
+Version { major: 2, minor: 0, patch: 5 }: (
+    [
+        SyntaxDiagnostic {
+            kind: InvalidNumber,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 0,
+                    end: 29,
+                },
+            ),
+            message: "Circom version contains an out-of-range component",
+        },
+        SyntaxDiagnostic {
+            kind: UnsupportedVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 112,
+                    end: 132,
+                },
+            ),
+            message: "source requires Circom 2.2.3, but the supported target is 2.0.5",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 81,
+                    end: 89,
+                },
+            ),
+            message: "feature requires Circom 2.2.3",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 102,
+                    end: 109,
+                },
+            ),
+            message: "feature requires Circom 2.0.7",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 158,
+                    end: 163,
+                },
+            ),
+            message: "feature requires Circom 2.1.0",
+        },
+        SyntaxDiagnostic {
+            kind: Syntax,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 50,
+                    end: 59,
+                },
+            ),
+            message: "invalid statement; parsing continued at the next statement or block boundary",
+        },
+        SyntaxDiagnostic {
+            kind: Syntax,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 112,
+                    end: 132,
+                },
+            ),
+            message: "pragma, include, definition, and main declarations are out of order",
+        },
+        SyntaxDiagnostic {
+            kind: InvalidNumber,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 0,
+                    end: 29,
+                },
+            ),
+            message: "Circom version contains an out-of-range component",
+        },
+    ],
+    [],
+)
+Version { major: 2, minor: 1, patch: 0 }: (
+    [
+        SyntaxDiagnostic {
+            kind: InvalidNumber,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 0,
+                    end: 29,
+                },
+            ),
+            message: "Circom version contains an out-of-range component",
+        },
+        SyntaxDiagnostic {
+            kind: UnsupportedVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 112,
+                    end: 132,
+                },
+            ),
+            message: "source requires Circom 2.2.3, but the supported target is 2.1.0",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 81,
+                    end: 89,
+                },
+            ),
+            message: "feature requires Circom 2.2.3",
+        },
+        SyntaxDiagnostic {
+            kind: Syntax,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 50,
+                    end: 59,
+                },
+            ),
+            message: "invalid statement; parsing continued at the next statement or block boundary",
+        },
+        SyntaxDiagnostic {
+            kind: Syntax,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 112,
+                    end: 132,
+                },
+            ),
+            message: "pragma, include, definition, and main declarations are out of order",
+        },
+        SyntaxDiagnostic {
+            kind: InvalidNumber,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 0,
+                    end: 29,
+                },
+            ),
+            message: "Circom version contains an out-of-range component",
+        },
+    ],
+    [],
+)
+Version { major: 2, minor: 2, patch: 2 }: (
+    [
+        SyntaxDiagnostic {
+            kind: InvalidNumber,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 0,
+                    end: 29,
+                },
+            ),
+            message: "Circom version contains an out-of-range component",
+        },
+        SyntaxDiagnostic {
+            kind: UnsupportedVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 112,
+                    end: 132,
+                },
+            ),
+            message: "source requires Circom 2.2.3, but the supported target is 2.2.2",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 81,
+                    end: 89,
+                },
+            ),
+            message: "feature requires Circom 2.2.3",
+        },
+        SyntaxDiagnostic {
+            kind: Syntax,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 50,
+                    end: 59,
+                },
+            ),
+            message: "invalid statement; parsing continued at the next statement or block boundary",
+        },
+        SyntaxDiagnostic {
+            kind: Syntax,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 112,
+                    end: 132,
+                },
+            ),
+            message: "pragma, include, definition, and main declarations are out of order",
+        },
+        SyntaxDiagnostic {
+            kind: InvalidNumber,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 0,
+                    end: 29,
+                },
+            ),
+            message: "Circom version contains an out-of-range component",
+        },
+    ],
+    [],
+)
+Version { major: 2, minor: 2, patch: 3 }: (
+    [
+        SyntaxDiagnostic {
+            kind: InvalidNumber,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 0,
+                    end: 29,
+                },
+            ),
+            message: "Circom version contains an out-of-range component",
+        },
+        SyntaxDiagnostic {
+            kind: Syntax,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 50,
+                    end: 59,
+                },
+            ),
+            message: "invalid statement; parsing continued at the next statement or block boundary",
+        },
+        SyntaxDiagnostic {
+            kind: Syntax,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 112,
+                    end: 132,
+                },
+            ),
+            message: "pragma, include, definition, and main declarations are out of order",
+        },
+        SyntaxDiagnostic {
+            kind: InvalidNumber,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 0,
+                    end: 29,
+                },
+            ),
+            message: "Circom version contains an out-of-range component",
+        },
+    ],
+    [],
+)

@@ -432,88 +432,11 @@ fn direction(node: &SyntaxNode) -> Result<SpannedDirection, SyntaxDiagnostic> {
     Ok(SpannedDirection { direction, span: node.span })
 }
 
-fn operator(node: &SyntaxNode) -> Result<AssignmentOperator, SyntaxDiagnostic> {
-    let value = match node.text.as_deref() {
-        Some("=") => AssignmentOperator::Assign,
-        Some("<--") => AssignmentOperator::Witness,
-        Some("<==") => AssignmentOperator::Constraint,
-        Some("-->") => AssignmentOperator::ReverseWitness,
-        Some("==>") => AssignmentOperator::ReverseConstraint,
-        Some("+=") => AssignmentOperator::Add,
-        Some("-=") => AssignmentOperator::Subtract,
-        Some("*=") => AssignmentOperator::Multiply,
-        Some("/=") => AssignmentOperator::Divide,
-        Some("\\=") => AssignmentOperator::IntegerDivide,
-        Some("%=") => AssignmentOperator::Modulo,
-        Some("**=") => AssignmentOperator::Power,
-        Some("<<=") => AssignmentOperator::ShiftLeft,
-        Some(">>=") => AssignmentOperator::ShiftRight,
-        Some("&=") => AssignmentOperator::BitAnd,
-        Some("|=") => AssignmentOperator::BitOr,
-        Some("^=") => AssignmentOperator::BitXor,
-        _ => return Err(malformed(node, "invalid assignment operator")),
-    };
-    Ok(value)
-}
-
-fn input_operator(node: &SyntaxNode) -> Result<InputAssignmentOperator, SyntaxDiagnostic> {
-    match node.text.as_deref() {
-        Some("=") => Ok(InputAssignmentOperator::Assign),
-        Some("<--") => Ok(InputAssignmentOperator::Witness),
-        Some("<==") => Ok(InputAssignmentOperator::Constraint),
-        _ => Err(malformed(node, "invalid anonymous input assignment operator")),
-    }
-}
-
-fn postfix_operator(node: &SyntaxNode) -> Result<PostfixOperator, SyntaxDiagnostic> {
-    match node.text.as_deref() {
-        Some("++") => Ok(PostfixOperator::Increment),
-        Some("--") => Ok(PostfixOperator::Decrement),
-        _ => Err(malformed(node, "invalid postfix operator")),
-    }
-}
-
 fn leading_identifier(node: &mut SyntaxNode) -> Result<Identifier, SyntaxDiagnostic> {
     if node.children.is_empty() {
         return Err(malformed(node, "missing identifier"));
     }
     identifier(node.children.remove(0))
-}
-
-fn unary_operator(node: &SyntaxNode) -> Result<UnaryOperator, SyntaxDiagnostic> {
-    match node.text.as_deref() {
-        Some("!") => Ok(UnaryOperator::BooleanNot),
-        Some("~") => Ok(UnaryOperator::Complement),
-        Some("-") => Ok(UnaryOperator::Negate),
-        _ => Err(malformed(node, "invalid unary operator")),
-    }
-}
-
-fn binary_operator(node: &SyntaxNode) -> Result<BinaryOperator, SyntaxDiagnostic> {
-    let value = match node.text.as_deref() {
-        Some("||") => BinaryOperator::BooleanOr,
-        Some("&&") => BinaryOperator::BooleanAnd,
-        Some("==") => BinaryOperator::Equal,
-        Some("!=") => BinaryOperator::NotEqual,
-        Some("<") => BinaryOperator::Less,
-        Some(">") => BinaryOperator::Greater,
-        Some("<=") => BinaryOperator::LessEqual,
-        Some(">=") => BinaryOperator::GreaterEqual,
-        Some("|") => BinaryOperator::BitOr,
-        Some("^") => BinaryOperator::BitXor,
-        Some("&") => BinaryOperator::BitAnd,
-        Some("<<") => BinaryOperator::ShiftLeft,
-        Some(">>") => BinaryOperator::ShiftRight,
-        Some("+") => BinaryOperator::Add,
-        Some("-") => BinaryOperator::Subtract,
-        Some("*") => BinaryOperator::Multiply,
-        Some("/") => BinaryOperator::Divide,
-        Some("\\") => BinaryOperator::IntegerDivide,
-        Some("%") => BinaryOperator::Modulo,
-        Some("**") => BinaryOperator::Power,
-        _ => return Err(malformed(node, "invalid binary operator")),
-    };
-    Ok(value)
 }
 
 fn access(node: SyntaxNode) -> Result<Access, SyntaxDiagnostic> {
@@ -529,11 +452,10 @@ fn access(node: SyntaxNode) -> Result<Access, SyntaxDiagnostic> {
 }
 
 fn anonymous_input(node: SyntaxNode) -> Result<AnonymousInput, SyntaxDiagnostic> {
-    if node.kind != SyntaxKind::Inputs || node.text.is_none() {
+    let SyntaxKind::NamedInput(operator) = node.kind else {
         return expression(node).map(AnonymousInput::Positional);
-    }
+    };
     let span = node.span;
-    let operator = input_operator(&node)?;
     let (name_node, value_node) = two_children(node)?;
     Ok(AnonymousInput::Named {
         name: identifier(name_node)?,
@@ -615,9 +537,20 @@ fn schedule_expression(
     work: &mut Vec<ExpressionFrame>,
     results: &mut Vec<Expression>,
 ) -> Result<(), SyntaxDiagnostic> {
-    if node.kind == SyntaxKind::Unary
-        || node.kind == SyntaxKind::Binary
-        || node.kind == SyntaxKind::Ternary
+    if let SyntaxKind::Unary(operator) = node.kind {
+        work.push(ExpressionFrame::Operator(OperatorFrame::Unary(operator, node.span)));
+        work.push(ExpressionFrame::Visit(one_child(node)?));
+        return Ok(());
+    }
+    if let SyntaxKind::Binary(operator) = node.kind {
+        let span = node.span;
+        let (left, right) = two_children(node)?;
+        work.push(ExpressionFrame::Operator(OperatorFrame::Binary(operator, span)));
+        work.push(ExpressionFrame::Visit(right));
+        work.push(ExpressionFrame::Visit(left));
+        return Ok(());
+    }
+    if node.kind == SyntaxKind::Ternary
         || node.kind == SyntaxKind::Parallel
         || node.kind == SyntaxKind::Group
     {
@@ -632,20 +565,6 @@ fn schedule_operator(
     work: &mut Vec<ExpressionFrame>,
 ) -> Result<(), SyntaxDiagnostic> {
     let span = node.span;
-    if node.kind == SyntaxKind::Unary {
-        let operator = unary_operator(&node)?;
-        work.push(ExpressionFrame::Operator(OperatorFrame::Unary(operator, span)));
-        work.push(ExpressionFrame::Visit(one_child(node)?));
-        return Ok(());
-    }
-    if node.kind == SyntaxKind::Binary {
-        let operator = binary_operator(&node)?;
-        let (left, right) = two_children(node)?;
-        work.push(ExpressionFrame::Operator(OperatorFrame::Binary(operator, span)));
-        work.push(ExpressionFrame::Visit(right));
-        work.push(ExpressionFrame::Visit(left));
-        return Ok(());
-    }
     if node.kind == SyntaxKind::Ternary {
         if node.children.len() != 3 {
             return Err(malformed(&node, "ternary expression needs three operands"));
@@ -802,8 +721,7 @@ fn assemble_collection(
 
 fn symbol(node: SyntaxNode) -> Result<DeclaredSymbol, SyntaxDiagnostic> {
     let span = node.span;
-    let (name_node, initialization) = if node.kind == SyntaxKind::Assignment {
-        let operator = operator(&node)?;
+    let (name_node, initialization) = if let SyntaxKind::Assignment(operator) = node.kind {
         let (name, value) = two_children(node)?;
         (name, Some((operator, expression(value)?)))
     } else {
@@ -908,8 +826,7 @@ fn declaration(node: SyntaxNode) -> Result<Declaration, SyntaxDiagnostic> {
     let mut symbols = Vec::new();
     let mut tuple_initialization = None;
     for child in children {
-        if child.kind == SyntaxKind::Assignment && child.children.len() == 1 {
-            let assignment = operator(&child)?;
+        if let SyntaxKind::TupleInitialization(assignment) = child.kind {
             let expression_node = one_child(child)?;
             tuple_initialization = Some((assignment, expression(expression_node)?));
         } else {
@@ -926,14 +843,11 @@ fn declaration(node: SyntaxNode) -> Result<Declaration, SyntaxDiagnostic> {
     Ok(Declaration { kind, symbol_syntax, symbols, tuple_initialization, span })
 }
 
-fn assignment(node: SyntaxNode) -> Result<Statement, SyntaxDiagnostic> {
+fn assignment(
+    node: SyntaxNode,
+    operator: AssignmentOperator,
+) -> Result<Statement, SyntaxDiagnostic> {
     let span = node.span;
-    if node.text.as_deref() == Some("++") || node.text.as_deref() == Some("--") {
-        let operator = postfix_operator(&node)?;
-        let target = expression(one_child(node)?)?;
-        return Ok(Statement::PostfixUpdate { target, operator, span });
-    }
-    let operator = operator(&node)?;
     let (left, right) = two_children(node)?;
     let (target, value) = if operator == AssignmentOperator::ReverseWitness
         || operator == AssignmentOperator::ReverseConstraint
@@ -971,41 +885,19 @@ fn conditional(node: SyntaxNode) -> Result<Statement, SyntaxDiagnostic> {
     })
 }
 
-fn loop_statement(node: SyntaxNode) -> Result<Statement, SyntaxDiagnostic> {
+fn for_statement(node: SyntaxNode) -> Result<Statement, SyntaxDiagnostic> {
     let span = node.span;
-    match node.children.len() {
-        2 => {
-            let (condition, body) = two_children(node)?;
-            Ok(Statement::While {
-                condition: expression(condition)?,
-                body: Box::new(statement(body)?),
-                span,
-            })
-        }
-        4 => {
-            let mut children = node.children.into_iter();
-            let initializer = children.next().ok_or_else(|| {
-                SyntaxDiagnostic::new(DiagnosticKind::Syntax, span, "missing for initializer")
-            })?;
-            let condition = children.next().ok_or_else(|| {
-                SyntaxDiagnostic::new(DiagnosticKind::Syntax, span, "missing for condition")
-            })?;
-            let step = children.next().ok_or_else(|| {
-                SyntaxDiagnostic::new(DiagnosticKind::Syntax, span, "missing for step")
-            })?;
-            let body = children.next().ok_or_else(|| {
-                SyntaxDiagnostic::new(DiagnosticKind::Syntax, span, "missing for body")
-            })?;
-            Ok(Statement::For {
-                initializer: Box::new(statement(initializer)?),
-                condition: expression(condition)?,
-                step: Box::new(statement(step)?),
-                body: Box::new(statement(body)?),
-                span,
-            })
-        }
-        _ => Err(malformed(&node, "invalid loop operands")),
-    }
+    let Ok([initializer, condition, step, body]) = <[SyntaxNode; 4]>::try_from(node.children)
+    else {
+        return Err(SyntaxDiagnostic::new(DiagnosticKind::Syntax, span, "invalid loop operands"));
+    };
+    Ok(Statement::For {
+        initializer: Box::new(statement(initializer)?),
+        condition: expression(condition)?,
+        step: Box::new(statement(step)?),
+        body: Box::new(statement(body)?),
+        span,
+    })
 }
 
 fn block(node: SyntaxNode) -> Result<Block, SyntaxDiagnostic> {
@@ -1025,13 +917,25 @@ fn statement(node: SyntaxNode) -> Result<Statement, SyntaxDiagnostic> {
         SyntaxKind::Declaration | SyntaxKind::TupleDeclaration => {
             Ok(Statement::Declaration(declaration(node)?))
         }
-        SyntaxKind::Assignment => assignment(node),
+        SyntaxKind::Assignment(operator) => assignment(node, operator),
+        SyntaxKind::Postfix(operator) => {
+            let target = expression(one_child(node)?)?;
+            Ok(Statement::PostfixUpdate { target, operator, span })
+        }
         SyntaxKind::Constraint => {
             let (left, right) = two_children(node)?;
             Ok(Statement::Constraint { left: expression(left)?, right: expression(right)?, span })
         }
         SyntaxKind::Conditional => conditional(node),
-        SyntaxKind::Loop => loop_statement(node),
+        SyntaxKind::For => for_statement(node),
+        SyntaxKind::While => {
+            let (condition, body) = two_children(node)?;
+            Ok(Statement::While {
+                condition: expression(condition)?,
+                body: Box::new(statement(body)?),
+                span,
+            })
+        }
         SyntaxKind::Return => Ok(Statement::Return { value: expression(one_child(node)?)?, span }),
         SyntaxKind::Assert => {
             Ok(Statement::Assert { condition: expression(one_child(node)?)?, span })

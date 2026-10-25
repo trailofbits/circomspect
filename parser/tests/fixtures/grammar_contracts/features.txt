@@ -1,0 +1,1550 @@
+AST: SourceAst {
+    source: SourceId(
+        7,
+    ),
+    items: [
+        Pragma {
+            pragma: Version(
+                Version {
+                    major: 2,
+                    minor: 0,
+                    patch: 5,
+                },
+            ),
+            span: Span {
+                source: SourceId(
+                    7,
+                ),
+                start: 0,
+                end: 20,
+            },
+        },
+        Pragma {
+            pragma: CustomTemplates,
+            span: Span {
+                source: SourceId(
+                    7,
+                ),
+                start: 21,
+                end: 45,
+            },
+        },
+        Definition(
+            Definition {
+                kind: Bus,
+                name: Identifier {
+                    name: "B",
+                    span: Span {
+                        source: SourceId(
+                            7,
+                        ),
+                        start: 50,
+                        end: 51,
+                    },
+                },
+                parameters: Omitted,
+                body: Block {
+                    statements: [
+                        Declaration(
+                            Declaration {
+                                kind: Signal {
+                                    direction: Unspecified,
+                                    tags: [],
+                                },
+                                symbol_syntax: List,
+                                symbols: [
+                                    DeclaredSymbol {
+                                        name: Identifier {
+                                            name: "value",
+                                            span: Span {
+                                                source: SourceId(
+                                                    7,
+                                                ),
+                                                start: 61,
+                                                end: 66,
+                                            },
+                                        },
+                                        dimensions: [],
+                                        initialization: None,
+                                        span: Span {
+                                            source: SourceId(
+                                                7,
+                                            ),
+                                            start: 61,
+                                            end: 66,
+                                        },
+                                    },
+                                ],
+                                tuple_initialization: None,
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 54,
+                                    end: 66,
+                                },
+                            },
+                        ),
+                    ],
+                    span: Span {
+                        source: SourceId(
+                            7,
+                        ),
+                        start: 52,
+                        end: 69,
+                    },
+                },
+                span: Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 46,
+                    end: 69,
+                },
+            },
+        ),
+        Definition(
+            Definition {
+                kind: Template {
+                    custom: true,
+                    external: true,
+                    parallel: true,
+                },
+                name: Identifier {
+                    name: "T",
+                    span: Span {
+                        source: SourceId(
+                            7,
+                        ),
+                        start: 104,
+                        end: 105,
+                    },
+                },
+                parameters: Omitted,
+                body: Block {
+                    statements: [
+                        Declaration(
+                            Declaration {
+                                kind: Signal {
+                                    direction: Before(
+                                        SpannedDirection {
+                                            direction: Input,
+                                            span: Span {
+                                                source: SourceId(
+                                                    7,
+                                                ),
+                                                start: 112,
+                                                end: 117,
+                                            },
+                                        },
+                                    ),
+                                    tags: [
+                                        Identifier {
+                                            name: "tag",
+                                            span: Span {
+                                                source: SourceId(
+                                                    7,
+                                                ),
+                                                start: 126,
+                                                end: 129,
+                                            },
+                                        },
+                                    ],
+                                },
+                                symbol_syntax: List,
+                                symbols: [
+                                    DeclaredSymbol {
+                                        name: Identifier {
+                                            name: "x",
+                                            span: Span {
+                                                source: SourceId(
+                                                    7,
+                                                ),
+                                                start: 131,
+                                                end: 132,
+                                            },
+                                        },
+                                        dimensions: [],
+                                        initialization: None,
+                                        span: Span {
+                                            source: SourceId(
+                                                7,
+                                            ),
+                                            start: 131,
+                                            end: 132,
+                                        },
+                                    },
+                                ],
+                                tuple_initialization: None,
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 112,
+                                    end: 132,
+                                },
+                            },
+                        ),
+                        Declaration(
+                            Declaration {
+                                kind: Bus {
+                                    type_name: Identifier {
+                                        name: "B",
+                                        span: Span {
+                                            source: SourceId(
+                                                7,
+                                            ),
+                                            start: 138,
+                                            end: 139,
+                                        },
+                                    },
+                                    arguments: Omitted,
+                                    direction: After(
+                                        SpannedDirection {
+                                            direction: Input,
+                                            span: Span {
+                                                source: SourceId(
+                                                    7,
+                                                ),
+                                                start: 140,
+                                                end: 145,
+                                            },
+                                        },
+                                    ),
+                                    tags: [],
+                                },
+                                symbol_syntax: List,
+                                symbols: [
+                                    DeclaredSymbol {
+                                        name: Identifier {
+                                            name: "y",
+                                            span: Span {
+                                                source: SourceId(
+                                                    7,
+                                                ),
+                                                start: 146,
+                                                end: 147,
+                                            },
+                                        },
+                                        dimensions: [],
+                                        initialization: None,
+                                        span: Span {
+                                            source: SourceId(
+                                                7,
+                                            ),
+                                            start: 146,
+                                            end: 147,
+                                        },
+                                    },
+                                ],
+                                tuple_initialization: None,
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 138,
+                                    end: 147,
+                                },
+                            },
+                        ),
+                        Declaration(
+                            Declaration {
+                                kind: Variable,
+                                symbol_syntax: Tuple,
+                                symbols: [
+                                    DeclaredSymbol {
+                                        name: Identifier {
+                                            name: "a",
+                                            span: Span {
+                                                source: SourceId(
+                                                    7,
+                                                ),
+                                                start: 158,
+                                                end: 159,
+                                            },
+                                        },
+                                        dimensions: [],
+                                        initialization: None,
+                                        span: Span {
+                                            source: SourceId(
+                                                7,
+                                            ),
+                                            start: 158,
+                                            end: 159,
+                                        },
+                                    },
+                                    DeclaredSymbol {
+                                        name: Identifier {
+                                            name: "b",
+                                            span: Span {
+                                                source: SourceId(
+                                                    7,
+                                                ),
+                                                start: 160,
+                                                end: 161,
+                                            },
+                                        },
+                                        dimensions: [],
+                                        initialization: None,
+                                        span: Span {
+                                            source: SourceId(
+                                                7,
+                                            ),
+                                            start: 160,
+                                            end: 161,
+                                        },
+                                    },
+                                ],
+                                tuple_initialization: Some(
+                                    (
+                                        Assign,
+                                        Tuple {
+                                            elements: [
+                                                Number {
+                                                    text: "1",
+                                                    span: Span {
+                                                        source: SourceId(
+                                                            7,
+                                                        ),
+                                                        start: 166,
+                                                        end: 167,
+                                                    },
+                                                },
+                                                Number {
+                                                    text: "2",
+                                                    span: Span {
+                                                        source: SourceId(
+                                                            7,
+                                                        ),
+                                                        start: 168,
+                                                        end: 169,
+                                                    },
+                                                },
+                                            ],
+                                            span: Span {
+                                                source: SourceId(
+                                                    7,
+                                                ),
+                                                start: 165,
+                                                end: 170,
+                                            },
+                                        },
+                                    ),
+                                ),
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 153,
+                                    end: 170,
+                                },
+                            },
+                        ),
+                        Declaration(
+                            Declaration {
+                                kind: Variable,
+                                symbol_syntax: List,
+                                symbols: [
+                                    DeclaredSymbol {
+                                        name: Identifier {
+                                            name: "plain",
+                                            span: Span {
+                                                source: SourceId(
+                                                    7,
+                                                ),
+                                                start: 180,
+                                                end: 185,
+                                            },
+                                        },
+                                        dimensions: [],
+                                        initialization: Some(
+                                            (
+                                                Assign,
+                                                Array {
+                                                    elements: [
+                                                        Number {
+                                                            text: "1",
+                                                            span: Span {
+                                                                source: SourceId(
+                                                                    7,
+                                                                ),
+                                                                start: 189,
+                                                                end: 190,
+                                                            },
+                                                        },
+                                                        Number {
+                                                            text: "2",
+                                                            span: Span {
+                                                                source: SourceId(
+                                                                    7,
+                                                                ),
+                                                                start: 191,
+                                                                end: 192,
+                                                            },
+                                                        },
+                                                    ],
+                                                    span: Span {
+                                                        source: SourceId(
+                                                            7,
+                                                        ),
+                                                        start: 188,
+                                                        end: 193,
+                                                    },
+                                                },
+                                            ),
+                                        ),
+                                        span: Span {
+                                            source: SourceId(
+                                                7,
+                                            ),
+                                            start: 180,
+                                            end: 193,
+                                        },
+                                    },
+                                    DeclaredSymbol {
+                                        name: Identifier {
+                                            name: "potential",
+                                            span: Span {
+                                                source: SourceId(
+                                                    7,
+                                                ),
+                                                start: 195,
+                                                end: 204,
+                                            },
+                                        },
+                                        dimensions: [],
+                                        initialization: Some(
+                                            (
+                                                Assign,
+                                                Array {
+                                                    elements: [
+                                                        Group {
+                                                            expression: Number {
+                                                                text: "1",
+                                                                span: Span {
+                                                                    source: SourceId(
+                                                                        7,
+                                                                    ),
+                                                                    start: 209,
+                                                                    end: 210,
+                                                                },
+                                                            },
+                                                            span: Span {
+                                                                source: SourceId(
+                                                                    7,
+                                                                ),
+                                                                start: 208,
+                                                                end: 211,
+                                                            },
+                                                        },
+                                                        Name {
+                                                            identifier: Identifier {
+                                                                name: "x",
+                                                                span: Span {
+                                                                    source: SourceId(
+                                                                        7,
+                                                                    ),
+                                                                    start: 212,
+                                                                    end: 213,
+                                                                },
+                                                            },
+                                                            access: [],
+                                                            span: Span {
+                                                                source: SourceId(
+                                                                    7,
+                                                                ),
+                                                                start: 212,
+                                                                end: 213,
+                                                            },
+                                                        },
+                                                        Ternary {
+                                                            condition: Number {
+                                                                text: "1",
+                                                                span: Span {
+                                                                    source: SourceId(
+                                                                        7,
+                                                                    ),
+                                                                    start: 214,
+                                                                    end: 215,
+                                                                },
+                                                            },
+                                                            yes: Number {
+                                                                text: "2",
+                                                                span: Span {
+                                                                    source: SourceId(
+                                                                        7,
+                                                                    ),
+                                                                    start: 216,
+                                                                    end: 217,
+                                                                },
+                                                            },
+                                                            no: Number {
+                                                                text: "3",
+                                                                span: Span {
+                                                                    source: SourceId(
+                                                                        7,
+                                                                    ),
+                                                                    start: 218,
+                                                                    end: 219,
+                                                                },
+                                                            },
+                                                            span: Span {
+                                                                source: SourceId(
+                                                                    7,
+                                                                ),
+                                                                start: 214,
+                                                                end: 219,
+                                                            },
+                                                        },
+                                                    ],
+                                                    span: Span {
+                                                        source: SourceId(
+                                                            7,
+                                                        ),
+                                                        start: 207,
+                                                        end: 220,
+                                                    },
+                                                },
+                                            ),
+                                        ),
+                                        span: Span {
+                                            source: SourceId(
+                                                7,
+                                            ),
+                                            start: 195,
+                                            end: 220,
+                                        },
+                                    },
+                                    DeclaredSymbol {
+                                        name: Identifier {
+                                            name: "calls",
+                                            span: Span {
+                                                source: SourceId(
+                                                    7,
+                                                ),
+                                                start: 222,
+                                                end: 227,
+                                            },
+                                        },
+                                        dimensions: [],
+                                        initialization: Some(
+                                            (
+                                                Assign,
+                                                Array {
+                                                    elements: [
+                                                        AnonymousCall(
+                                                            AnonymousCallExpr {
+                                                                name: Identifier {
+                                                                    name: "T",
+                                                                    span: Span {
+                                                                        source: SourceId(
+                                                                            7,
+                                                                        ),
+                                                                        start: 231,
+                                                                        end: 232,
+                                                                    },
+                                                                },
+                                                                parameters: [],
+                                                                inputs: [],
+                                                                span: Span {
+                                                                    source: SourceId(
+                                                                        7,
+                                                                    ),
+                                                                    start: 231,
+                                                                    end: 236,
+                                                                },
+                                                            },
+                                                        ),
+                                                    ],
+                                                    span: Span {
+                                                        source: SourceId(
+                                                            7,
+                                                        ),
+                                                        start: 230,
+                                                        end: 237,
+                                                    },
+                                                },
+                                            ),
+                                        ),
+                                        span: Span {
+                                            source: SourceId(
+                                                7,
+                                            ),
+                                            start: 222,
+                                            end: 237,
+                                        },
+                                    },
+                                ],
+                                tuple_initialization: None,
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 176,
+                                    end: 237,
+                                },
+                            },
+                        ),
+                        Declaration(
+                            Declaration {
+                                kind: Variable,
+                                symbol_syntax: List,
+                                symbols: [
+                                    DeclaredSymbol {
+                                        name: Identifier {
+                                            name: "nested",
+                                            span: Span {
+                                                source: SourceId(
+                                                    7,
+                                                ),
+                                                start: 247,
+                                                end: 253,
+                                            },
+                                        },
+                                        dimensions: [],
+                                        initialization: Some(
+                                            (
+                                                Assign,
+                                                Array {
+                                                    elements: [
+                                                        Array {
+                                                            elements: [
+                                                                AnonymousCall(
+                                                                    AnonymousCallExpr {
+                                                                        name: Identifier {
+                                                                            name: "T",
+                                                                            span: Span {
+                                                                                source: SourceId(
+                                                                                    7,
+                                                                                ),
+                                                                                start: 258,
+                                                                                end: 259,
+                                                                            },
+                                                                        },
+                                                                        parameters: [],
+                                                                        inputs: [],
+                                                                        span: Span {
+                                                                            source: SourceId(
+                                                                                7,
+                                                                            ),
+                                                                            start: 258,
+                                                                            end: 263,
+                                                                        },
+                                                                    },
+                                                                ),
+                                                            ],
+                                                            span: Span {
+                                                                source: SourceId(
+                                                                    7,
+                                                                ),
+                                                                start: 257,
+                                                                end: 264,
+                                                            },
+                                                        },
+                                                    ],
+                                                    span: Span {
+                                                        source: SourceId(
+                                                            7,
+                                                        ),
+                                                        start: 256,
+                                                        end: 265,
+                                                    },
+                                                },
+                                            ),
+                                        ),
+                                        span: Span {
+                                            source: SourceId(
+                                                7,
+                                            ),
+                                            start: 247,
+                                            end: 265,
+                                        },
+                                    },
+                                    DeclaredSymbol {
+                                        name: Identifier {
+                                            name: "hole",
+                                            span: Span {
+                                                source: SourceId(
+                                                    7,
+                                                ),
+                                                start: 267,
+                                                end: 271,
+                                            },
+                                        },
+                                        dimensions: [],
+                                        initialization: Some(
+                                            (
+                                                Assign,
+                                                Array {
+                                                    elements: [
+                                                        Name {
+                                                            identifier: Identifier {
+                                                                name: "_",
+                                                                span: Span {
+                                                                    source: SourceId(
+                                                                        7,
+                                                                    ),
+                                                                    start: 275,
+                                                                    end: 276,
+                                                                },
+                                                            },
+                                                            access: [],
+                                                            span: Span {
+                                                                source: SourceId(
+                                                                    7,
+                                                                ),
+                                                                start: 275,
+                                                                end: 276,
+                                                            },
+                                                        },
+                                                        Number {
+                                                            text: "1",
+                                                            span: Span {
+                                                                source: SourceId(
+                                                                    7,
+                                                                ),
+                                                                start: 277,
+                                                                end: 278,
+                                                            },
+                                                        },
+                                                    ],
+                                                    span: Span {
+                                                        source: SourceId(
+                                                            7,
+                                                        ),
+                                                        start: 274,
+                                                        end: 279,
+                                                    },
+                                                },
+                                            ),
+                                        ),
+                                        span: Span {
+                                            source: SourceId(
+                                                7,
+                                            ),
+                                            start: 267,
+                                            end: 279,
+                                        },
+                                    },
+                                    DeclaredSymbol {
+                                        name: Identifier {
+                                            name: "named",
+                                            span: Span {
+                                                source: SourceId(
+                                                    7,
+                                                ),
+                                                start: 281,
+                                                end: 286,
+                                            },
+                                        },
+                                        dimensions: [],
+                                        initialization: Some(
+                                            (
+                                                Assign,
+                                                AnonymousCall(
+                                                    AnonymousCallExpr {
+                                                        name: Identifier {
+                                                            name: "T",
+                                                            span: Span {
+                                                                source: SourceId(
+                                                                    7,
+                                                                ),
+                                                                start: 289,
+                                                                end: 290,
+                                                            },
+                                                        },
+                                                        parameters: [],
+                                                        inputs: [
+                                                            Named {
+                                                                name: Identifier {
+                                                                    name: "i",
+                                                                    span: Span {
+                                                                        source: SourceId(
+                                                                            7,
+                                                                        ),
+                                                                        start: 293,
+                                                                        end: 294,
+                                                                    },
+                                                                },
+                                                                operator: Constraint,
+                                                                value: Name {
+                                                                    identifier: Identifier {
+                                                                        name: "x",
+                                                                        span: Span {
+                                                                            source: SourceId(
+                                                                                7,
+                                                                            ),
+                                                                            start: 297,
+                                                                            end: 298,
+                                                                        },
+                                                                    },
+                                                                    access: [],
+                                                                    span: Span {
+                                                                        source: SourceId(
+                                                                            7,
+                                                                        ),
+                                                                        start: 297,
+                                                                        end: 298,
+                                                                    },
+                                                                },
+                                                                span: Span {
+                                                                    source: SourceId(
+                                                                        7,
+                                                                    ),
+                                                                    start: 293,
+                                                                    end: 298,
+                                                                },
+                                                            },
+                                                        ],
+                                                        span: Span {
+                                                            source: SourceId(
+                                                                7,
+                                                            ),
+                                                            start: 289,
+                                                            end: 299,
+                                                        },
+                                                    },
+                                                ),
+                                            ),
+                                        ),
+                                        span: Span {
+                                            source: SourceId(
+                                                7,
+                                            ),
+                                            start: 281,
+                                            end: 299,
+                                        },
+                                    },
+                                ],
+                                tuple_initialization: None,
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 243,
+                                    end: 299,
+                                },
+                            },
+                        ),
+                        Declaration(
+                            Declaration {
+                                kind: Variable,
+                                symbol_syntax: List,
+                                symbols: [
+                                    DeclaredSymbol {
+                                        name: Identifier {
+                                            name: "p",
+                                            span: Span {
+                                                source: SourceId(
+                                                    7,
+                                                ),
+                                                start: 309,
+                                                end: 310,
+                                            },
+                                        },
+                                        dimensions: [],
+                                        initialization: Some(
+                                            (
+                                                Assign,
+                                                Parallel {
+                                                    operand: Call {
+                                                        name: Identifier {
+                                                            name: "T",
+                                                            span: Span {
+                                                                source: SourceId(
+                                                                    7,
+                                                                ),
+                                                                start: 322,
+                                                                end: 323,
+                                                            },
+                                                        },
+                                                        arguments: [],
+                                                        span: Span {
+                                                            source: SourceId(
+                                                                7,
+                                                            ),
+                                                            start: 322,
+                                                            end: 325,
+                                                        },
+                                                    },
+                                                    span: Span {
+                                                        source: SourceId(
+                                                            7,
+                                                        ),
+                                                        start: 313,
+                                                        end: 325,
+                                                    },
+                                                },
+                                            ),
+                                        ),
+                                        span: Span {
+                                            source: SourceId(
+                                                7,
+                                            ),
+                                            start: 309,
+                                            end: 325,
+                                        },
+                                    },
+                                ],
+                                tuple_initialization: None,
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 305,
+                                    end: 325,
+                                },
+                            },
+                        ),
+                        Log {
+                            arguments: [
+                                String {
+                                    value: "λ",
+                                    span: Span {
+                                        source: SourceId(
+                                            7,
+                                        ),
+                                        start: 335,
+                                        end: 339,
+                                    },
+                                },
+                                Expression(
+                                    Name {
+                                        identifier: Identifier {
+                                            name: "x",
+                                            span: Span {
+                                                source: SourceId(
+                                                    7,
+                                                ),
+                                                start: 341,
+                                                end: 342,
+                                            },
+                                        },
+                                        access: [],
+                                        span: Span {
+                                            source: SourceId(
+                                                7,
+                                            ),
+                                            start: 341,
+                                            end: 342,
+                                        },
+                                    },
+                                ),
+                            ],
+                            span: Span {
+                                source: SourceId(
+                                    7,
+                                ),
+                                start: 331,
+                                end: 344,
+                            },
+                        },
+                    ],
+                    span: Span {
+                        source: SourceId(
+                            7,
+                        ),
+                        start: 106,
+                        end: 346,
+                    },
+                },
+                span: Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 70,
+                    end: 346,
+                },
+            },
+        ),
+    ],
+    trivia: [],
+}
+Version { major: 2, minor: 0, patch: 5 }: (
+    [
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 21,
+                    end: 45,
+                },
+            ),
+            message: "feature requires Circom 2.0.6",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 46,
+                    end: 69,
+                },
+            ),
+            message: "feature requires Circom 2.2.0",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 79,
+                    end: 85,
+                },
+            ),
+            message: "feature requires Circom 2.0.6",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 86,
+                    end: 94,
+                },
+            ),
+            message: "feature requires Circom 2.2.3",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 112,
+                    end: 130,
+                },
+            ),
+            message: "feature requires Circom 2.2.0",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 125,
+                    end: 130,
+                },
+            ),
+            message: "feature requires Circom 2.1.0",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 138,
+                    end: 145,
+                },
+            ),
+            message: "feature requires Circom 2.2.0",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 153,
+                    end: 170,
+                },
+            ),
+            message: "feature requires Circom 2.1.0",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 165,
+                    end: 170,
+                },
+            ),
+            message: "feature requires Circom 2.1.0",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 188,
+                    end: 193,
+                },
+            ),
+            message: "feature requires Circom 2.1.0",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 207,
+                    end: 220,
+                },
+            ),
+            message: "feature requires Circom 2.1.0",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 230,
+                    end: 237,
+                },
+            ),
+            message: "feature requires Circom 2.2.3",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 231,
+                    end: 236,
+                },
+            ),
+            message: "feature requires Circom 2.1.0",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 256,
+                    end: 265,
+                },
+            ),
+            message: "feature requires Circom 2.2.3",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 257,
+                    end: 264,
+                },
+            ),
+            message: "feature requires Circom 2.2.3",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 258,
+                    end: 263,
+                },
+            ),
+            message: "feature requires Circom 2.1.0",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 274,
+                    end: 279,
+                },
+            ),
+            message: "feature requires Circom 2.1.0",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 275,
+                    end: 276,
+                },
+            ),
+            message: "feature requires Circom 2.1.0",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 289,
+                    end: 299,
+                },
+            ),
+            message: "feature requires Circom 2.1.0",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 293,
+                    end: 298,
+                },
+            ),
+            message: "feature requires Circom 2.1.1",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 313,
+                    end: 325,
+                },
+            ),
+            message: "feature requires Circom 2.0.8",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 331,
+                    end: 344,
+                },
+            ),
+            message: "feature requires Circom 2.0.7",
+        },
+    ],
+    [
+        PendingFeatureCheck {
+            kind: InlineArrayElementType,
+            span: Span {
+                source: SourceId(
+                    7,
+                ),
+                start: 207,
+                end: 220,
+            },
+            required_version: Version {
+                major: 2,
+                minor: 2,
+                patch: 3,
+            },
+        },
+    ],
+)
+Version { major: 2, minor: 1, patch: 0 }: (
+    [
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 21,
+                    end: 45,
+                },
+            ),
+            message: "feature requires Circom 2.0.6",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 46,
+                    end: 69,
+                },
+            ),
+            message: "feature requires Circom 2.2.0",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 79,
+                    end: 85,
+                },
+            ),
+            message: "feature requires Circom 2.0.6",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 86,
+                    end: 94,
+                },
+            ),
+            message: "feature requires Circom 2.2.3",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 112,
+                    end: 130,
+                },
+            ),
+            message: "feature requires Circom 2.2.0",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 138,
+                    end: 145,
+                },
+            ),
+            message: "feature requires Circom 2.2.0",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 230,
+                    end: 237,
+                },
+            ),
+            message: "feature requires Circom 2.2.3",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 256,
+                    end: 265,
+                },
+            ),
+            message: "feature requires Circom 2.2.3",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 257,
+                    end: 264,
+                },
+            ),
+            message: "feature requires Circom 2.2.3",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 293,
+                    end: 298,
+                },
+            ),
+            message: "feature requires Circom 2.1.1",
+        },
+    ],
+    [
+        PendingFeatureCheck {
+            kind: InlineArrayElementType,
+            span: Span {
+                source: SourceId(
+                    7,
+                ),
+                start: 207,
+                end: 220,
+            },
+            required_version: Version {
+                major: 2,
+                minor: 2,
+                patch: 3,
+            },
+        },
+    ],
+)
+Version { major: 2, minor: 2, patch: 2 }: (
+    [
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 21,
+                    end: 45,
+                },
+            ),
+            message: "feature requires Circom 2.0.6",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 79,
+                    end: 85,
+                },
+            ),
+            message: "feature requires Circom 2.0.6",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 86,
+                    end: 94,
+                },
+            ),
+            message: "feature requires Circom 2.2.3",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 230,
+                    end: 237,
+                },
+            ),
+            message: "feature requires Circom 2.2.3",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 256,
+                    end: 265,
+                },
+            ),
+            message: "feature requires Circom 2.2.3",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 257,
+                    end: 264,
+                },
+            ),
+            message: "feature requires Circom 2.2.3",
+        },
+    ],
+    [
+        PendingFeatureCheck {
+            kind: InlineArrayElementType,
+            span: Span {
+                source: SourceId(
+                    7,
+                ),
+                start: 207,
+                end: 220,
+            },
+            required_version: Version {
+                major: 2,
+                minor: 2,
+                patch: 3,
+            },
+        },
+    ],
+)
+Version { major: 2, minor: 2, patch: 3 }: (
+    [
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 21,
+                    end: 45,
+                },
+            ),
+            message: "feature requires Circom 2.0.6",
+        },
+        SyntaxDiagnostic {
+            kind: FeatureVersion,
+            location: Source(
+                Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 79,
+                    end: 85,
+                },
+            ),
+            message: "feature requires Circom 2.0.6",
+        },
+    ],
+    [],
+)

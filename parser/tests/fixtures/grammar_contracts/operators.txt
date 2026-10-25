@@ -1,0 +1,1618 @@
+AST: SourceAst {
+    source: SourceId(
+        7,
+    ),
+    items: [
+        Definition(
+            Definition {
+                kind: Function,
+                name: Identifier {
+                    name: "Operators",
+                    span: Span {
+                        source: SourceId(
+                            7,
+                        ),
+                        start: 9,
+                        end: 18,
+                    },
+                },
+                parameters: Parenthesized(
+                    [
+                        Identifier {
+                            name: "a",
+                            span: Span {
+                                source: SourceId(
+                                    7,
+                                ),
+                                start: 19,
+                                end: 20,
+                            },
+                        },
+                        Identifier {
+                            name: "b",
+                            span: Span {
+                                source: SourceId(
+                                    7,
+                                ),
+                                start: 21,
+                                end: 22,
+                            },
+                        },
+                        Identifier {
+                            name: "c",
+                            span: Span {
+                                source: SourceId(
+                                    7,
+                                ),
+                                start: 23,
+                                end: 24,
+                            },
+                        },
+                    ],
+                ),
+                body: Block {
+                    statements: [
+                        Declaration(
+                            Declaration {
+                                kind: Variable,
+                                symbol_syntax: List,
+                                symbols: [
+                                    DeclaredSymbol {
+                                        name: Identifier {
+                                            name: "x",
+                                            span: Span {
+                                                source: SourceId(
+                                                    7,
+                                                ),
+                                                start: 36,
+                                                end: 37,
+                                            },
+                                        },
+                                        dimensions: [],
+                                        initialization: Some(
+                                            (
+                                                Assign,
+                                                Binary {
+                                                    operator: BitOr,
+                                                    left: Binary {
+                                                        operator: BitXor,
+                                                        left: Binary {
+                                                            operator: BitAnd,
+                                                            left: Binary {
+                                                                operator: ShiftRight,
+                                                                left: Binary {
+                                                                    operator: ShiftLeft,
+                                                                    left: Binary {
+                                                                        operator: Add,
+                                                                        left: Unary {
+                                                                            operator: Negate,
+                                                                            operand: Name {
+                                                                                identifier: Identifier {
+                                                                                    name: "a",
+                                                                                    span: Span {
+                                                                                        source: SourceId(
+                                                                                            7,
+                                                                                        ),
+                                                                                        start: 41,
+                                                                                        end: 42,
+                                                                                    },
+                                                                                },
+                                                                                access: [],
+                                                                                span: Span {
+                                                                                    source: SourceId(
+                                                                                        7,
+                                                                                    ),
+                                                                                    start: 41,
+                                                                                    end: 42,
+                                                                                },
+                                                                            },
+                                                                            span: Span {
+                                                                                source: SourceId(
+                                                                                    7,
+                                                                                ),
+                                                                                start: 40,
+                                                                                end: 42,
+                                                                            },
+                                                                        },
+                                                                        right: Binary {
+                                                                            operator: Modulo,
+                                                                            left: Binary {
+                                                                                operator: IntegerDivide,
+                                                                                left: Binary {
+                                                                                    operator: Divide,
+                                                                                    left: Binary {
+                                                                                        operator: Multiply,
+                                                                                        left: Unary {
+                                                                                            operator: Complement,
+                                                                                            operand: Name {
+                                                                                                identifier: Identifier {
+                                                                                                    name: "b",
+                                                                                                    span: Span {
+                                                                                                        source: SourceId(
+                                                                                                            7,
+                                                                                                        ),
+                                                                                                        start: 46,
+                                                                                                        end: 47,
+                                                                                                    },
+                                                                                                },
+                                                                                                access: [],
+                                                                                                span: Span {
+                                                                                                    source: SourceId(
+                                                                                                        7,
+                                                                                                    ),
+                                                                                                    start: 46,
+                                                                                                    end: 47,
+                                                                                                },
+                                                                                            },
+                                                                                            span: Span {
+                                                                                                source: SourceId(
+                                                                                                    7,
+                                                                                                ),
+                                                                                                start: 45,
+                                                                                                end: 47,
+                                                                                            },
+                                                                                        },
+                                                                                        right: Binary {
+                                                                                            operator: Power,
+                                                                                            left: Unary {
+                                                                                                operator: BooleanNot,
+                                                                                                operand: Name {
+                                                                                                    identifier: Identifier {
+                                                                                                        name: "c",
+                                                                                                        span: Span {
+                                                                                                            source: SourceId(
+                                                                                                                7,
+                                                                                                            ),
+                                                                                                            start: 51,
+                                                                                                            end: 52,
+                                                                                                        },
+                                                                                                    },
+                                                                                                    access: [],
+                                                                                                    span: Span {
+                                                                                                        source: SourceId(
+                                                                                                            7,
+                                                                                                        ),
+                                                                                                        start: 51,
+                                                                                                        end: 52,
+                                                                                                    },
+                                                                                                },
+                                                                                                span: Span {
+                                                                                                    source: SourceId(
+                                                                                                        7,
+                                                                                                    ),
+                                                                                                    start: 50,
+                                                                                                    end: 52,
+                                                                                                },
+                                                                                            },
+                                                                                            right: Number {
+                                                                                                text: "2",
+                                                                                                span: Span {
+                                                                                                    source: SourceId(
+                                                                                                        7,
+                                                                                                    ),
+                                                                                                    start: 56,
+                                                                                                    end: 57,
+                                                                                                },
+                                                                                            },
+                                                                                            span: Span {
+                                                                                                source: SourceId(
+                                                                                                    7,
+                                                                                                ),
+                                                                                                start: 50,
+                                                                                                end: 57,
+                                                                                            },
+                                                                                        },
+                                                                                        span: Span {
+                                                                                            source: SourceId(
+                                                                                                7,
+                                                                                            ),
+                                                                                            start: 45,
+                                                                                            end: 57,
+                                                                                        },
+                                                                                    },
+                                                                                    right: Number {
+                                                                                        text: "3",
+                                                                                        span: Span {
+                                                                                            source: SourceId(
+                                                                                                7,
+                                                                                            ),
+                                                                                            start: 60,
+                                                                                            end: 61,
+                                                                                        },
+                                                                                    },
+                                                                                    span: Span {
+                                                                                        source: SourceId(
+                                                                                            7,
+                                                                                        ),
+                                                                                        start: 45,
+                                                                                        end: 61,
+                                                                                    },
+                                                                                },
+                                                                                right: Number {
+                                                                                    text: "2",
+                                                                                    span: Span {
+                                                                                        source: SourceId(
+                                                                                            7,
+                                                                                        ),
+                                                                                        start: 64,
+                                                                                        end: 65,
+                                                                                    },
+                                                                                },
+                                                                                span: Span {
+                                                                                    source: SourceId(
+                                                                                        7,
+                                                                                    ),
+                                                                                    start: 45,
+                                                                                    end: 65,
+                                                                                },
+                                                                            },
+                                                                            right: Number {
+                                                                                text: "5",
+                                                                                span: Span {
+                                                                                    source: SourceId(
+                                                                                        7,
+                                                                                    ),
+                                                                                    start: 68,
+                                                                                    end: 69,
+                                                                                },
+                                                                            },
+                                                                            span: Span {
+                                                                                source: SourceId(
+                                                                                    7,
+                                                                                ),
+                                                                                start: 45,
+                                                                                end: 69,
+                                                                            },
+                                                                        },
+                                                                        span: Span {
+                                                                            source: SourceId(
+                                                                                7,
+                                                                            ),
+                                                                            start: 40,
+                                                                            end: 69,
+                                                                        },
+                                                                    },
+                                                                    right: Number {
+                                                                        text: "1",
+                                                                        span: Span {
+                                                                            source: SourceId(
+                                                                                7,
+                                                                            ),
+                                                                            start: 73,
+                                                                            end: 74,
+                                                                        },
+                                                                    },
+                                                                    span: Span {
+                                                                        source: SourceId(
+                                                                            7,
+                                                                        ),
+                                                                        start: 40,
+                                                                        end: 74,
+                                                                    },
+                                                                },
+                                                                right: Number {
+                                                                    text: "1",
+                                                                    span: Span {
+                                                                        source: SourceId(
+                                                                            7,
+                                                                        ),
+                                                                        start: 78,
+                                                                        end: 79,
+                                                                    },
+                                                                },
+                                                                span: Span {
+                                                                    source: SourceId(
+                                                                        7,
+                                                                    ),
+                                                                    start: 40,
+                                                                    end: 79,
+                                                                },
+                                                            },
+                                                            right: Name {
+                                                                identifier: Identifier {
+                                                                    name: "a",
+                                                                    span: Span {
+                                                                        source: SourceId(
+                                                                            7,
+                                                                        ),
+                                                                        start: 82,
+                                                                        end: 83,
+                                                                    },
+                                                                },
+                                                                access: [],
+                                                                span: Span {
+                                                                    source: SourceId(
+                                                                        7,
+                                                                    ),
+                                                                    start: 82,
+                                                                    end: 83,
+                                                                },
+                                                            },
+                                                            span: Span {
+                                                                source: SourceId(
+                                                                    7,
+                                                                ),
+                                                                start: 40,
+                                                                end: 83,
+                                                            },
+                                                        },
+                                                        right: Name {
+                                                            identifier: Identifier {
+                                                                name: "b",
+                                                                span: Span {
+                                                                    source: SourceId(
+                                                                        7,
+                                                                    ),
+                                                                    start: 86,
+                                                                    end: 87,
+                                                                },
+                                                            },
+                                                            access: [],
+                                                            span: Span {
+                                                                source: SourceId(
+                                                                    7,
+                                                                ),
+                                                                start: 86,
+                                                                end: 87,
+                                                            },
+                                                        },
+                                                        span: Span {
+                                                            source: SourceId(
+                                                                7,
+                                                            ),
+                                                            start: 40,
+                                                            end: 87,
+                                                        },
+                                                    },
+                                                    right: Name {
+                                                        identifier: Identifier {
+                                                            name: "c",
+                                                            span: Span {
+                                                                source: SourceId(
+                                                                    7,
+                                                                ),
+                                                                start: 90,
+                                                                end: 91,
+                                                            },
+                                                        },
+                                                        access: [],
+                                                        span: Span {
+                                                            source: SourceId(
+                                                                7,
+                                                            ),
+                                                            start: 90,
+                                                            end: 91,
+                                                        },
+                                                    },
+                                                    span: Span {
+                                                        source: SourceId(
+                                                            7,
+                                                        ),
+                                                        start: 40,
+                                                        end: 91,
+                                                    },
+                                                },
+                                            ),
+                                        ),
+                                        span: Span {
+                                            source: SourceId(
+                                                7,
+                                            ),
+                                            start: 36,
+                                            end: 91,
+                                        },
+                                    },
+                                ],
+                                tuple_initialization: None,
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 32,
+                                    end: 91,
+                                },
+                            },
+                        ),
+                        Assignment {
+                            target: Name {
+                                identifier: Identifier {
+                                    name: "x",
+                                    span: Span {
+                                        source: SourceId(
+                                            7,
+                                        ),
+                                        start: 97,
+                                        end: 98,
+                                    },
+                                },
+                                access: [],
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 97,
+                                    end: 98,
+                                },
+                            },
+                            operator: Assign,
+                            value: Binary {
+                                operator: BooleanOr,
+                                left: Binary {
+                                    operator: BooleanAnd,
+                                    left: Binary {
+                                        operator: GreaterEqual,
+                                        left: Binary {
+                                            operator: LessEqual,
+                                            left: Binary {
+                                                operator: Greater,
+                                                left: Binary {
+                                                    operator: Less,
+                                                    left: Binary {
+                                                        operator: NotEqual,
+                                                        left: Binary {
+                                                            operator: Equal,
+                                                            left: Name {
+                                                                identifier: Identifier {
+                                                                    name: "a",
+                                                                    span: Span {
+                                                                        source: SourceId(
+                                                                            7,
+                                                                        ),
+                                                                        start: 101,
+                                                                        end: 102,
+                                                                    },
+                                                                },
+                                                                access: [],
+                                                                span: Span {
+                                                                    source: SourceId(
+                                                                        7,
+                                                                    ),
+                                                                    start: 101,
+                                                                    end: 102,
+                                                                },
+                                                            },
+                                                            right: Name {
+                                                                identifier: Identifier {
+                                                                    name: "b",
+                                                                    span: Span {
+                                                                        source: SourceId(
+                                                                            7,
+                                                                        ),
+                                                                        start: 106,
+                                                                        end: 107,
+                                                                    },
+                                                                },
+                                                                access: [],
+                                                                span: Span {
+                                                                    source: SourceId(
+                                                                        7,
+                                                                    ),
+                                                                    start: 106,
+                                                                    end: 107,
+                                                                },
+                                                            },
+                                                            span: Span {
+                                                                source: SourceId(
+                                                                    7,
+                                                                ),
+                                                                start: 101,
+                                                                end: 107,
+                                                            },
+                                                        },
+                                                        right: Name {
+                                                            identifier: Identifier {
+                                                                name: "c",
+                                                                span: Span {
+                                                                    source: SourceId(
+                                                                        7,
+                                                                    ),
+                                                                    start: 111,
+                                                                    end: 112,
+                                                                },
+                                                            },
+                                                            access: [],
+                                                            span: Span {
+                                                                source: SourceId(
+                                                                    7,
+                                                                ),
+                                                                start: 111,
+                                                                end: 112,
+                                                            },
+                                                        },
+                                                        span: Span {
+                                                            source: SourceId(
+                                                                7,
+                                                            ),
+                                                            start: 101,
+                                                            end: 112,
+                                                        },
+                                                    },
+                                                    right: Number {
+                                                        text: "1",
+                                                        span: Span {
+                                                            source: SourceId(
+                                                                7,
+                                                            ),
+                                                            start: 115,
+                                                            end: 116,
+                                                        },
+                                                    },
+                                                    span: Span {
+                                                        source: SourceId(
+                                                            7,
+                                                        ),
+                                                        start: 101,
+                                                        end: 116,
+                                                    },
+                                                },
+                                                right: Number {
+                                                    text: "2",
+                                                    span: Span {
+                                                        source: SourceId(
+                                                            7,
+                                                        ),
+                                                        start: 119,
+                                                        end: 120,
+                                                    },
+                                                },
+                                                span: Span {
+                                                    source: SourceId(
+                                                        7,
+                                                    ),
+                                                    start: 101,
+                                                    end: 120,
+                                                },
+                                            },
+                                            right: Number {
+                                                text: "3",
+                                                span: Span {
+                                                    source: SourceId(
+                                                        7,
+                                                    ),
+                                                    start: 124,
+                                                    end: 125,
+                                                },
+                                            },
+                                            span: Span {
+                                                source: SourceId(
+                                                    7,
+                                                ),
+                                                start: 101,
+                                                end: 125,
+                                            },
+                                        },
+                                        right: Number {
+                                            text: "4",
+                                            span: Span {
+                                                source: SourceId(
+                                                    7,
+                                                ),
+                                                start: 129,
+                                                end: 130,
+                                            },
+                                        },
+                                        span: Span {
+                                            source: SourceId(
+                                                7,
+                                            ),
+                                            start: 101,
+                                            end: 130,
+                                        },
+                                    },
+                                    right: Name {
+                                        identifier: Identifier {
+                                            name: "a",
+                                            span: Span {
+                                                source: SourceId(
+                                                    7,
+                                                ),
+                                                start: 134,
+                                                end: 135,
+                                            },
+                                        },
+                                        access: [],
+                                        span: Span {
+                                            source: SourceId(
+                                                7,
+                                            ),
+                                            start: 134,
+                                            end: 135,
+                                        },
+                                    },
+                                    span: Span {
+                                        source: SourceId(
+                                            7,
+                                        ),
+                                        start: 101,
+                                        end: 135,
+                                    },
+                                },
+                                right: Name {
+                                    identifier: Identifier {
+                                        name: "b",
+                                        span: Span {
+                                            source: SourceId(
+                                                7,
+                                            ),
+                                            start: 139,
+                                            end: 140,
+                                        },
+                                    },
+                                    access: [],
+                                    span: Span {
+                                        source: SourceId(
+                                            7,
+                                        ),
+                                        start: 139,
+                                        end: 140,
+                                    },
+                                },
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 101,
+                                    end: 140,
+                                },
+                            },
+                            span: Span {
+                                source: SourceId(
+                                    7,
+                                ),
+                                start: 97,
+                                end: 140,
+                            },
+                        },
+                        Assignment {
+                            target: Name {
+                                identifier: Identifier {
+                                    name: "x",
+                                    span: Span {
+                                        source: SourceId(
+                                            7,
+                                        ),
+                                        start: 146,
+                                        end: 147,
+                                    },
+                                },
+                                access: [],
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 146,
+                                    end: 147,
+                                },
+                            },
+                            operator: Add,
+                            value: Name {
+                                identifier: Identifier {
+                                    name: "a",
+                                    span: Span {
+                                        source: SourceId(
+                                            7,
+                                        ),
+                                        start: 151,
+                                        end: 152,
+                                    },
+                                },
+                                access: [],
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 151,
+                                    end: 152,
+                                },
+                            },
+                            span: Span {
+                                source: SourceId(
+                                    7,
+                                ),
+                                start: 146,
+                                end: 152,
+                            },
+                        },
+                        Assignment {
+                            target: Name {
+                                identifier: Identifier {
+                                    name: "x",
+                                    span: Span {
+                                        source: SourceId(
+                                            7,
+                                        ),
+                                        start: 154,
+                                        end: 155,
+                                    },
+                                },
+                                access: [],
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 154,
+                                    end: 155,
+                                },
+                            },
+                            operator: Subtract,
+                            value: Name {
+                                identifier: Identifier {
+                                    name: "b",
+                                    span: Span {
+                                        source: SourceId(
+                                            7,
+                                        ),
+                                        start: 159,
+                                        end: 160,
+                                    },
+                                },
+                                access: [],
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 159,
+                                    end: 160,
+                                },
+                            },
+                            span: Span {
+                                source: SourceId(
+                                    7,
+                                ),
+                                start: 154,
+                                end: 160,
+                            },
+                        },
+                        Assignment {
+                            target: Name {
+                                identifier: Identifier {
+                                    name: "x",
+                                    span: Span {
+                                        source: SourceId(
+                                            7,
+                                        ),
+                                        start: 162,
+                                        end: 163,
+                                    },
+                                },
+                                access: [],
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 162,
+                                    end: 163,
+                                },
+                            },
+                            operator: Multiply,
+                            value: Name {
+                                identifier: Identifier {
+                                    name: "c",
+                                    span: Span {
+                                        source: SourceId(
+                                            7,
+                                        ),
+                                        start: 167,
+                                        end: 168,
+                                    },
+                                },
+                                access: [],
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 167,
+                                    end: 168,
+                                },
+                            },
+                            span: Span {
+                                source: SourceId(
+                                    7,
+                                ),
+                                start: 162,
+                                end: 168,
+                            },
+                        },
+                        Assignment {
+                            target: Name {
+                                identifier: Identifier {
+                                    name: "x",
+                                    span: Span {
+                                        source: SourceId(
+                                            7,
+                                        ),
+                                        start: 170,
+                                        end: 171,
+                                    },
+                                },
+                                access: [],
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 170,
+                                    end: 171,
+                                },
+                            },
+                            operator: Divide,
+                            value: Name {
+                                identifier: Identifier {
+                                    name: "a",
+                                    span: Span {
+                                        source: SourceId(
+                                            7,
+                                        ),
+                                        start: 175,
+                                        end: 176,
+                                    },
+                                },
+                                access: [],
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 175,
+                                    end: 176,
+                                },
+                            },
+                            span: Span {
+                                source: SourceId(
+                                    7,
+                                ),
+                                start: 170,
+                                end: 176,
+                            },
+                        },
+                        Assignment {
+                            target: Name {
+                                identifier: Identifier {
+                                    name: "x",
+                                    span: Span {
+                                        source: SourceId(
+                                            7,
+                                        ),
+                                        start: 178,
+                                        end: 179,
+                                    },
+                                },
+                                access: [],
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 178,
+                                    end: 179,
+                                },
+                            },
+                            operator: IntegerDivide,
+                            value: Name {
+                                identifier: Identifier {
+                                    name: "b",
+                                    span: Span {
+                                        source: SourceId(
+                                            7,
+                                        ),
+                                        start: 183,
+                                        end: 184,
+                                    },
+                                },
+                                access: [],
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 183,
+                                    end: 184,
+                                },
+                            },
+                            span: Span {
+                                source: SourceId(
+                                    7,
+                                ),
+                                start: 178,
+                                end: 184,
+                            },
+                        },
+                        Assignment {
+                            target: Name {
+                                identifier: Identifier {
+                                    name: "x",
+                                    span: Span {
+                                        source: SourceId(
+                                            7,
+                                        ),
+                                        start: 186,
+                                        end: 187,
+                                    },
+                                },
+                                access: [],
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 186,
+                                    end: 187,
+                                },
+                            },
+                            operator: Modulo,
+                            value: Name {
+                                identifier: Identifier {
+                                    name: "c",
+                                    span: Span {
+                                        source: SourceId(
+                                            7,
+                                        ),
+                                        start: 191,
+                                        end: 192,
+                                    },
+                                },
+                                access: [],
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 191,
+                                    end: 192,
+                                },
+                            },
+                            span: Span {
+                                source: SourceId(
+                                    7,
+                                ),
+                                start: 186,
+                                end: 192,
+                            },
+                        },
+                        Assignment {
+                            target: Name {
+                                identifier: Identifier {
+                                    name: "x",
+                                    span: Span {
+                                        source: SourceId(
+                                            7,
+                                        ),
+                                        start: 198,
+                                        end: 199,
+                                    },
+                                },
+                                access: [],
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 198,
+                                    end: 199,
+                                },
+                            },
+                            operator: Power,
+                            value: Name {
+                                identifier: Identifier {
+                                    name: "a",
+                                    span: Span {
+                                        source: SourceId(
+                                            7,
+                                        ),
+                                        start: 204,
+                                        end: 205,
+                                    },
+                                },
+                                access: [],
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 204,
+                                    end: 205,
+                                },
+                            },
+                            span: Span {
+                                source: SourceId(
+                                    7,
+                                ),
+                                start: 198,
+                                end: 205,
+                            },
+                        },
+                        Assignment {
+                            target: Name {
+                                identifier: Identifier {
+                                    name: "x",
+                                    span: Span {
+                                        source: SourceId(
+                                            7,
+                                        ),
+                                        start: 207,
+                                        end: 208,
+                                    },
+                                },
+                                access: [],
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 207,
+                                    end: 208,
+                                },
+                            },
+                            operator: ShiftLeft,
+                            value: Name {
+                                identifier: Identifier {
+                                    name: "b",
+                                    span: Span {
+                                        source: SourceId(
+                                            7,
+                                        ),
+                                        start: 213,
+                                        end: 214,
+                                    },
+                                },
+                                access: [],
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 213,
+                                    end: 214,
+                                },
+                            },
+                            span: Span {
+                                source: SourceId(
+                                    7,
+                                ),
+                                start: 207,
+                                end: 214,
+                            },
+                        },
+                        Assignment {
+                            target: Name {
+                                identifier: Identifier {
+                                    name: "x",
+                                    span: Span {
+                                        source: SourceId(
+                                            7,
+                                        ),
+                                        start: 216,
+                                        end: 217,
+                                    },
+                                },
+                                access: [],
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 216,
+                                    end: 217,
+                                },
+                            },
+                            operator: ShiftRight,
+                            value: Name {
+                                identifier: Identifier {
+                                    name: "c",
+                                    span: Span {
+                                        source: SourceId(
+                                            7,
+                                        ),
+                                        start: 222,
+                                        end: 223,
+                                    },
+                                },
+                                access: [],
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 222,
+                                    end: 223,
+                                },
+                            },
+                            span: Span {
+                                source: SourceId(
+                                    7,
+                                ),
+                                start: 216,
+                                end: 223,
+                            },
+                        },
+                        Assignment {
+                            target: Name {
+                                identifier: Identifier {
+                                    name: "x",
+                                    span: Span {
+                                        source: SourceId(
+                                            7,
+                                        ),
+                                        start: 225,
+                                        end: 226,
+                                    },
+                                },
+                                access: [],
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 225,
+                                    end: 226,
+                                },
+                            },
+                            operator: BitAnd,
+                            value: Name {
+                                identifier: Identifier {
+                                    name: "a",
+                                    span: Span {
+                                        source: SourceId(
+                                            7,
+                                        ),
+                                        start: 230,
+                                        end: 231,
+                                    },
+                                },
+                                access: [],
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 230,
+                                    end: 231,
+                                },
+                            },
+                            span: Span {
+                                source: SourceId(
+                                    7,
+                                ),
+                                start: 225,
+                                end: 231,
+                            },
+                        },
+                        Assignment {
+                            target: Name {
+                                identifier: Identifier {
+                                    name: "x",
+                                    span: Span {
+                                        source: SourceId(
+                                            7,
+                                        ),
+                                        start: 233,
+                                        end: 234,
+                                    },
+                                },
+                                access: [],
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 233,
+                                    end: 234,
+                                },
+                            },
+                            operator: BitOr,
+                            value: Name {
+                                identifier: Identifier {
+                                    name: "b",
+                                    span: Span {
+                                        source: SourceId(
+                                            7,
+                                        ),
+                                        start: 238,
+                                        end: 239,
+                                    },
+                                },
+                                access: [],
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 238,
+                                    end: 239,
+                                },
+                            },
+                            span: Span {
+                                source: SourceId(
+                                    7,
+                                ),
+                                start: 233,
+                                end: 239,
+                            },
+                        },
+                        Assignment {
+                            target: Name {
+                                identifier: Identifier {
+                                    name: "x",
+                                    span: Span {
+                                        source: SourceId(
+                                            7,
+                                        ),
+                                        start: 241,
+                                        end: 242,
+                                    },
+                                },
+                                access: [],
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 241,
+                                    end: 242,
+                                },
+                            },
+                            operator: BitXor,
+                            value: Name {
+                                identifier: Identifier {
+                                    name: "c",
+                                    span: Span {
+                                        source: SourceId(
+                                            7,
+                                        ),
+                                        start: 246,
+                                        end: 247,
+                                    },
+                                },
+                                access: [],
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 246,
+                                    end: 247,
+                                },
+                            },
+                            span: Span {
+                                source: SourceId(
+                                    7,
+                                ),
+                                start: 241,
+                                end: 247,
+                            },
+                        },
+                        Assignment {
+                            target: Name {
+                                identifier: Identifier {
+                                    name: "b",
+                                    span: Span {
+                                        source: SourceId(
+                                            7,
+                                        ),
+                                        start: 259,
+                                        end: 260,
+                                    },
+                                },
+                                access: [],
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 259,
+                                    end: 260,
+                                },
+                            },
+                            operator: ReverseWitness,
+                            value: Name {
+                                identifier: Identifier {
+                                    name: "a",
+                                    span: Span {
+                                        source: SourceId(
+                                            7,
+                                        ),
+                                        start: 253,
+                                        end: 254,
+                                    },
+                                },
+                                access: [],
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 253,
+                                    end: 254,
+                                },
+                            },
+                            span: Span {
+                                source: SourceId(
+                                    7,
+                                ),
+                                start: 253,
+                                end: 260,
+                            },
+                        },
+                        Assignment {
+                            target: Name {
+                                identifier: Identifier {
+                                    name: "c",
+                                    span: Span {
+                                        source: SourceId(
+                                            7,
+                                        ),
+                                        start: 268,
+                                        end: 269,
+                                    },
+                                },
+                                access: [],
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 268,
+                                    end: 269,
+                                },
+                            },
+                            operator: ReverseConstraint,
+                            value: Name {
+                                identifier: Identifier {
+                                    name: "a",
+                                    span: Span {
+                                        source: SourceId(
+                                            7,
+                                        ),
+                                        start: 262,
+                                        end: 263,
+                                    },
+                                },
+                                access: [],
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 262,
+                                    end: 263,
+                                },
+                            },
+                            span: Span {
+                                source: SourceId(
+                                    7,
+                                ),
+                                start: 262,
+                                end: 269,
+                            },
+                        },
+                        PostfixUpdate {
+                            target: Name {
+                                identifier: Identifier {
+                                    name: "a",
+                                    span: Span {
+                                        source: SourceId(
+                                            7,
+                                        ),
+                                        start: 271,
+                                        end: 272,
+                                    },
+                                },
+                                access: [],
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 271,
+                                    end: 272,
+                                },
+                            },
+                            operator: Increment,
+                            span: Span {
+                                source: SourceId(
+                                    7,
+                                ),
+                                start: 271,
+                                end: 274,
+                            },
+                        },
+                        PostfixUpdate {
+                            target: Name {
+                                identifier: Identifier {
+                                    name: "b",
+                                    span: Span {
+                                        source: SourceId(
+                                            7,
+                                        ),
+                                        start: 276,
+                                        end: 277,
+                                    },
+                                },
+                                access: [],
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 276,
+                                    end: 277,
+                                },
+                            },
+                            operator: Decrement,
+                            span: Span {
+                                source: SourceId(
+                                    7,
+                                ),
+                                start: 276,
+                                end: 279,
+                            },
+                        },
+                        Return {
+                            value: Ternary {
+                                condition: Name {
+                                    identifier: Identifier {
+                                        name: "a",
+                                        span: Span {
+                                            source: SourceId(
+                                                7,
+                                            ),
+                                            start: 292,
+                                            end: 293,
+                                        },
+                                    },
+                                    access: [],
+                                    span: Span {
+                                        source: SourceId(
+                                            7,
+                                        ),
+                                        start: 292,
+                                        end: 293,
+                                    },
+                                },
+                                yes: Group {
+                                    expression: Binary {
+                                        operator: Add,
+                                        left: Name {
+                                            identifier: Identifier {
+                                                name: "b",
+                                                span: Span {
+                                                    source: SourceId(
+                                                        7,
+                                                    ),
+                                                    start: 297,
+                                                    end: 298,
+                                                },
+                                            },
+                                            access: [],
+                                            span: Span {
+                                                source: SourceId(
+                                                    7,
+                                                ),
+                                                start: 297,
+                                                end: 298,
+                                            },
+                                        },
+                                        right: Name {
+                                            identifier: Identifier {
+                                                name: "c",
+                                                span: Span {
+                                                    source: SourceId(
+                                                        7,
+                                                    ),
+                                                    start: 299,
+                                                    end: 300,
+                                                },
+                                            },
+                                            access: [],
+                                            span: Span {
+                                                source: SourceId(
+                                                    7,
+                                                ),
+                                                start: 299,
+                                                end: 300,
+                                            },
+                                        },
+                                        span: Span {
+                                            source: SourceId(
+                                                7,
+                                            ),
+                                            start: 297,
+                                            end: 300,
+                                        },
+                                    },
+                                    span: Span {
+                                        source: SourceId(
+                                            7,
+                                        ),
+                                        start: 296,
+                                        end: 301,
+                                    },
+                                },
+                                no: Group {
+                                    expression: Binary {
+                                        operator: Multiply,
+                                        left: Name {
+                                            identifier: Identifier {
+                                                name: "a",
+                                                span: Span {
+                                                    source: SourceId(
+                                                        7,
+                                                    ),
+                                                    start: 305,
+                                                    end: 306,
+                                                },
+                                            },
+                                            access: [],
+                                            span: Span {
+                                                source: SourceId(
+                                                    7,
+                                                ),
+                                                start: 305,
+                                                end: 306,
+                                            },
+                                        },
+                                        right: Name {
+                                            identifier: Identifier {
+                                                name: "c",
+                                                span: Span {
+                                                    source: SourceId(
+                                                        7,
+                                                    ),
+                                                    start: 307,
+                                                    end: 308,
+                                                },
+                                            },
+                                            access: [],
+                                            span: Span {
+                                                source: SourceId(
+                                                    7,
+                                                ),
+                                                start: 307,
+                                                end: 308,
+                                            },
+                                        },
+                                        span: Span {
+                                            source: SourceId(
+                                                7,
+                                            ),
+                                            start: 305,
+                                            end: 308,
+                                        },
+                                    },
+                                    span: Span {
+                                        source: SourceId(
+                                            7,
+                                        ),
+                                        start: 304,
+                                        end: 309,
+                                    },
+                                },
+                                span: Span {
+                                    source: SourceId(
+                                        7,
+                                    ),
+                                    start: 292,
+                                    end: 309,
+                                },
+                            },
+                            span: Span {
+                                source: SourceId(
+                                    7,
+                                ),
+                                start: 285,
+                                end: 310,
+                            },
+                        },
+                    ],
+                    span: Span {
+                        source: SourceId(
+                            7,
+                        ),
+                        start: 26,
+                        end: 312,
+                    },
+                },
+                span: Span {
+                    source: SourceId(
+                        7,
+                    ),
+                    start: 0,
+                    end: 312,
+                },
+            },
+        ),
+    ],
+    trivia: [],
+}
+Version { major: 2, minor: 0, patch: 5 }: (
+    [],
+    [],
+)
+Version { major: 2, minor: 1, patch: 0 }: (
+    [],
+    [],
+)
+Version { major: 2, minor: 2, patch: 2 }: (
+    [],
+    [],
+)
+Version { major: 2, minor: 2, patch: 3 }: (
+    [],
+    [],
+)

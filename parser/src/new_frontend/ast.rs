@@ -1,3 +1,7 @@
+use crate::new_frontend::typed::{
+    AssignmentOperator, BinaryOperator, InputAssignmentOperator, PostfixOperator, UnaryOperator,
+};
+
 use std::ops::Range;
 use std::path::PathBuf;
 
@@ -79,10 +83,14 @@ pub enum SyntaxKind {
     Direction,
     Tags,
     Modifier,
-    Assignment,
+    Assignment(AssignmentOperator),
+    TupleInitialization(AssignmentOperator),
+    Postfix(PostfixOperator),
+    NamedInput(InputAssignmentOperator),
     Constraint,
     Conditional,
-    Loop,
+    For,
+    While,
     Return,
     Assert,
     Log,
@@ -97,15 +105,15 @@ pub enum SyntaxKind {
     Access,
     Array,
     Tuple,
-    Unary,
-    Binary,
+    Unary(UnaryOperator),
+    Binary(BinaryOperator),
     Ternary,
     Parallel,
     Group,
     Error,
 }
 
-/// A source-preserving syntax node; `text` stores names, literals, and operators.
+/// A source-preserving syntax node; `text` stores names and literals.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SyntaxNode {
     pub kind: SyntaxKind,

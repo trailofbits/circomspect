@@ -1,3 +1,6 @@
+use crate::new_frontend::typed::{
+    AssignmentOperator, BinaryOperator, InputAssignmentOperator, PostfixOperator, UnaryOperator,
+};
 use super::ast::{SourceId, SyntaxKind, SyntaxNode};
 use super::{node, labelled};
 use super::lexer::TokenKind;
@@ -137,16 +140,17 @@ SimpleSymbol: SyntaxNode = {
 Symbol: SyntaxNode = {
     <base:SimpleSymbol> => base,
     <s:@L> <base:SimpleSymbol> "=" <expr:Expr> <e:@R>
-        => labelled(SyntaxKind::Assignment, source, s, e, "=".into(), vec![base, expr]),
+        => node(SyntaxKind::Assignment(AssignmentOperator::Assign),
+            source, s, e, vec![base, expr]),
 };
 SignalSymbol: SyntaxNode = {
     <base:SimpleSymbol> => base,
     <s:@L> <base:SimpleSymbol> <op:SignalAssignOp> <expr:Expr> <e:@R>
-        => labelled(SyntaxKind::Assignment, source, s, e, op, vec![base, expr]),
+        => node(SyntaxKind::Assignment(op), source, s, e, vec![base, expr]),
 };
 TupleInit: SyntaxNode = {
     <s:@L> <op:AssignOp> <expr:Expr> <e:@R>
-        => labelled(SyntaxKind::Assignment, source, s, e, op, vec![expr]),
+        => node(SyntaxKind::TupleInitialization(op), source, s, e, vec![expr]),
 };
 SignalHeader: SyntaxNode = {
     <s:@L> "signal" <direction:Direction?> <tags:Tags?> <e:@R>
@@ -205,11 +209,11 @@ Statement1: SyntaxNode = {
 };
 Statement2: SyntaxNode = {
     <s:@L> "for" "(" <init:Declaration> ";" <cond:Expr> ";" <step:Substitution> ")" <body:Statement2> <e:@R>
-        => node(SyntaxKind::Loop, source, s, e, vec![init, cond, step, body]),
+        => node(SyntaxKind::For, source, s, e, vec![init, cond, step, body]),
     <s:@L> "for" "(" <init:Substitution> ";" <cond:Expr> ";" <step:Substitution> ")" <body:Statement2> <e:@R>
-        => node(SyntaxKind::Loop, source, s, e, vec![init, cond, step, body]),
+        => node(SyntaxKind::For, source, s, e, vec![init, cond, step, body]),
     <s:@L> "while" "(" <cond:Expr> ")" <body:Statement2> <e:@R>
-        => node(SyntaxKind::Loop, source, s, e, vec![cond, body]),
+        => node(SyntaxKind::While, source, s, e, vec![cond, body]),
     <s:@L> "return" <expr:Expr> ";" <e:@R>
         => node(SyntaxKind::Return, source, s, e, vec![expr]),
     <sub:Substitution> ";" => sub,
@@ -233,24 +237,50 @@ LogArgument: SyntaxNode = {
 
 Substitution: SyntaxNode = {
     <s:@L> <left:Expr> <op:AssignOp> <right:Expr> <e:@R>
-        => labelled(SyntaxKind::Assignment, source, s, e, op, vec![left, right]),
+        => node(SyntaxKind::Assignment(op), source, s, e, vec![left, right]),
     <s:@L> <left:Expr> <op:ReverseAssignOp> <right:Expr> <e:@R>
-        => labelled(SyntaxKind::Assignment, source, s, e, op, vec![left, right]),
+        => node(SyntaxKind::Assignment(op), source, s, e, vec![left, right]),
     <s:@L> <left:Variable> <op:CompoundAssignOp> <right:Expr> <e:@R>
-        => labelled(SyntaxKind::Assignment, source, s, e, op, vec![left, right]),
+        => node(SyntaxKind::Assignment(op), source, s, e, vec![left, right]),
     <s:@L> <left:Variable> <op:PostfixOp> <e:@R>
-        => labelled(SyntaxKind::Assignment, source, s, e, op, vec![left]),
+        => node(SyntaxKind::Postfix(op), source, s, e, vec![left]),
 };
-AssignOp: String = { "=" => "=".into(), "<--" => "<--".into(), "<==" => "<==".into() };
-SignalAssignOp: String = { "<--" => "<--".into(), "<==" => "<==".into() };
-ReverseAssignOp: String = { "-->" => "-->".into(), "==>" => "==>".into() };
-CompoundAssignOp: String = {
-    "+=" => "+=".into(), "-=" => "-=".into(), "*=" => "*=".into(),
-    "/=" => "/=".into(), "\\=" => "\\=".into(), "%=" => "%=".into(),
-    "**=" => "**=".into(), "<<=" => "<<=".into(), ">>=" => ">>=".into(),
-    "&=" => "&=".into(), "|=" => "|=".into(), "^=" => "^=".into(),
+AssignOp: AssignmentOperator = {
+    "=" => AssignmentOperator::Assign,
+    "<--" => AssignmentOperator::Witness,
+    "<==" => AssignmentOperator::Constraint,
 };
-PostfixOp: String = { "++" => "++".into(), "--" => "--".into() };
+InputAssignOp: InputAssignmentOperator = {
+    "=" => InputAssignmentOperator::Assign,
+    "<--" => InputAssignmentOperator::Witness,
+    "<==" => InputAssignmentOperator::Constraint,
+};
+SignalAssignOp: AssignmentOperator = {
+    "<--" => AssignmentOperator::Witness,
+    "<==" => AssignmentOperator::Constraint,
+};
+ReverseAssignOp: AssignmentOperator = {
+    "-->" => AssignmentOperator::ReverseWitness,
+    "==>" => AssignmentOperator::ReverseConstraint,
+};
+CompoundAssignOp: AssignmentOperator = {
+    "+=" => AssignmentOperator::Add,
+    "-=" => AssignmentOperator::Subtract,
+    "*=" => AssignmentOperator::Multiply,
+    "/=" => AssignmentOperator::Divide,
+    "\\=" => AssignmentOperator::IntegerDivide,
+    "%=" => AssignmentOperator::Modulo,
+    "**=" => AssignmentOperator::Power,
+    "<<=" => AssignmentOperator::ShiftLeft,
+    ">>=" => AssignmentOperator::ShiftRight,
+    "&=" => AssignmentOperator::BitAnd,
+    "|=" => AssignmentOperator::BitOr,
+    "^=" => AssignmentOperator::BitXor,
+};
+PostfixOp: PostfixOperator = {
+    "++" => PostfixOperator::Increment,
+    "--" => PostfixOperator::Decrement,
+};
 
 Variable: SyntaxNode = {
     <s:@L> <name:Name> <access:Access*> <e:@R>
@@ -281,8 +311,8 @@ NamedInputs: Vec<SyntaxNode> = {
     <mut xs:(<NamedInput> ",")*> <x:NamedInput> => { xs.push(x); xs },
 };
 NamedInput: SyntaxNode = {
-    <s:@L> <name:Name> <op:AssignOp> <expr:Expr> <e:@R>
-        => labelled(SyntaxKind::Inputs, source, s, e, op, vec![name, expr]),
+    <s:@L> <name:Name> <op:InputAssignOp> <expr:Expr> <e:@R>
+        => node(SyntaxKind::NamedInput(op), source, s, e, vec![name, expr]),
 };
 AnonymousInputs: Vec<SyntaxNode> = { ExpressionList, NamedInputs };
 
@@ -298,12 +328,12 @@ Expression13: SyntaxNode = {
 };
 Infix<Op, Next>: SyntaxNode = {
     <s:@L> <left:Infix<Op, Next>> <op:Op> <right:Next> <e:@R>
-        => labelled(SyntaxKind::Binary, source, s, e, op, vec![left, right]),
+        => node(SyntaxKind::Binary(op), source, s, e, vec![left, right]),
     Next,
 };
 Prefix<Op, Next>: SyntaxNode = {
     <s:@L> <op:Op> <expr:Next> <e:@R>
-        => labelled(SyntaxKind::Unary, source, s, e, op, vec![expr]),
+        => node(SyntaxKind::Unary(op), source, s, e, vec![expr]),
     Next,
 };
 Expression12 = Infix<BoolOrOp, Expression11>;
@@ -347,22 +377,51 @@ Primary: SyntaxNode = {
         => node(SyntaxKind::Group, source, s, e, vec![expr]),
 };
 
-UnaryOp: String = { "!" => "!".into(), "~" => "~".into(), "-" => "-".into() };
-BoolOrOp: String = { "||" => "||".into() };
-BoolAndOp: String = { "&&" => "&&".into() };
-CompareOp: String = {
-    "==" => "==".into(), "!=" => "!=".into(), "<" => "<".into(),
-    ">" => ">".into(), "<=" => "<=".into(), ">=" => ">=".into(),
+UnaryOp: UnaryOperator = {
+    "!" => UnaryOperator::BooleanNot,
+    "~" => UnaryOperator::Complement,
+    "-" => UnaryOperator::Negate,
 };
-BitOrOp: String = { "|" => "|".into() };
-BitXorOp: String = { "^" => "^".into() };
-BitAndOp: String = { "&" => "&".into() };
-ShiftOp: String = { "<<" => "<<".into(), ">>" => ">>".into() };
-AddOp: String = { "+" => "+".into(), "-" => "-".into() };
-MulOp: String = {
-    "*" => "*".into(), "/" => "/".into(), "\\" => "\\".into(), "%" => "%".into(),
+BoolOrOp: BinaryOperator = {
+    "||" => BinaryOperator::BooleanOr,
 };
-PowOp: String = { "**" => "**".into() };
+BoolAndOp: BinaryOperator = {
+    "&&" => BinaryOperator::BooleanAnd,
+};
+CompareOp: BinaryOperator = {
+    "==" => BinaryOperator::Equal,
+    "!=" => BinaryOperator::NotEqual,
+    "<" => BinaryOperator::Less,
+    ">" => BinaryOperator::Greater,
+    "<=" => BinaryOperator::LessEqual,
+    ">=" => BinaryOperator::GreaterEqual,
+};
+BitOrOp: BinaryOperator = {
+    "|" => BinaryOperator::BitOr,
+};
+BitXorOp: BinaryOperator = {
+    "^" => BinaryOperator::BitXor,
+};
+BitAndOp: BinaryOperator = {
+    "&" => BinaryOperator::BitAnd,
+};
+ShiftOp: BinaryOperator = {
+    "<<" => BinaryOperator::ShiftLeft,
+    ">>" => BinaryOperator::ShiftRight,
+};
+AddOp: BinaryOperator = {
+    "+" => BinaryOperator::Add,
+    "-" => BinaryOperator::Subtract,
+};
+MulOp: BinaryOperator = {
+    "*" => BinaryOperator::Multiply,
+    "/" => BinaryOperator::Divide,
+    "\\" => BinaryOperator::IntegerDivide,
+    "%" => BinaryOperator::Modulo,
+};
+PowOp: BinaryOperator = {
+    "**" => BinaryOperator::Power,
+};
 Id: String = { "ident" => <> };
 Num: String = { "number" => <> };
 Str: String = { "string" => <> };
