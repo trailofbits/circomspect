@@ -77,7 +77,16 @@ fn inspect(binding: &str, dimension: &str) -> Result<Vec<GeneratedInputEquation>
     for (element, binding) in ready.bindings() {
         assert_eq!(element.indices().len(), 1);
         assert_eq!(binding.target, *binding.value.target());
-        assert!(ready.ports().input_key(element).is_some());
+        let local = child.port_handle(element.port(), element.indices()).unwrap();
+        let parent = facts
+            .component_input_from_local(instance.component, &instance.indices, &local)
+            .unwrap();
+        let caller_key = facts.component_handle_key(&parent);
+        let child_key = child.exact_handle_key(&local);
+        assert_eq!(Some(&binding.target), caller_key.certified());
+        assert_eq!(ready.ports().input_key(element), child_key.certified());
+        assert_eq!(ready.ports().input_element(caller_key.certified().unwrap()), Some(element));
+        assert_ne!(caller_key.certified(), child_key.certified());
         assert_eq!(binding.origins.len(), 1);
         let origin = binding.origins[0];
         let mut paired = Vec::new();

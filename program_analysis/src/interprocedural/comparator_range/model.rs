@@ -16,6 +16,12 @@ use crate::interprocedural::{AppliedComponentPort, SummaryBlocker};
 
 type Model = BTreeMap<AccessKey, FieldValue>;
 
+struct ComparatorModels {
+    main: Model,
+    comparison: Model,
+    decomposition: Model,
+}
+
 pub(super) fn validate_candidate(
     field: &FieldContext,
     applied: &AppliedComponentPort,
@@ -48,7 +54,7 @@ fn build_candidates(
     field: &FieldContext,
     closure: &ComparatorClosure<'_>,
     budget: &mut ProofBudget,
-) -> Result<Option<[Model; 3]>, SummaryBlocker> {
+) -> Result<Option<ComparatorModels>, SummaryBlocker> {
     let Some(mut main) = seed_model(field, &closure.main, budget)? else { return Ok(None) };
     let Some(mut comparison) = seed_model(field, &closure.comparison, budget)? else {
         return Ok(None);
@@ -56,11 +62,12 @@ fn build_candidates(
     let Some(mut decomposition) = seed_model(field, &closure.decomposition, budget)? else {
         return Ok(None);
     };
-    if !complete_inputs(field, closure.main_ready, (&mut main, &mut comparison), budget)?
+    if !complete_inputs(field, closure.main_ready, &mut main, &mut comparison, budget)?
         || !complete_inputs(
             field,
             closure.comparison_ready,
-            (&mut comparison, &mut decomposition),
+            &mut comparison,
+            &mut decomposition,
             budget,
         )?
     {
@@ -69,7 +76,7 @@ fn build_candidates(
     if !install_bits(field, closure, &mut decomposition)? {
         return Ok(None);
     }
-    Ok(Some([main, comparison, decomposition]))
+    Ok(Some(ComparatorModels { main, comparison, decomposition }))
 }
 
 fn install_bits(
@@ -93,10 +100,10 @@ fn install_bits(
 fn complete_candidates(
     field: &FieldContext,
     closure: &ComparatorClosure<'_>,
-    models: &mut [Model; 3],
+    models: &mut ComparatorModels,
     budget: &mut ProofBudget,
 ) -> Result<bool, SummaryBlocker> {
-    let [main, comparison, decomposition] = models;
+    let ComparatorModels { main, comparison, decomposition } = models;
     mirror_outputs(closure.comparison_ready, decomposition, comparison)?;
     if !complete_outputs(field, &closure.comparison, comparison, budget)? {
         return Ok(false);
@@ -111,10 +118,10 @@ fn complete_candidates(
 fn check_candidates(
     field: &FieldContext,
     closure: &ComparatorClosure<'_>,
-    models: &[Model; 3],
+    models: &ComparatorModels,
     budget: &mut ProofBudget,
 ) -> Result<bool, SummaryBlocker> {
-    let [main, comparison, decomposition] = models;
+    let ComparatorModels { main, comparison, decomposition } = models;
     for (scope, model) in [
         (&closure.main, main),
         (&closure.comparison, comparison),
@@ -222,10 +229,10 @@ fn seed_model(
 fn complete_inputs(
     field: &FieldContext,
     ready: &ReadyGeneratedInputs,
-    models: (&mut Model, &mut Model),
+    parent: &mut Model,
+    child: &mut Model,
     budget: &mut ProofBudget,
 ) -> Result<bool, SummaryBlocker> {
-    let (parent, child) = models;
     for (element, binding) in ready.bindings() {
         let equation = binding.value.equation();
         if !budget.reserve_evaluation(equation) || !budget.reserve_evaluation(equation) {

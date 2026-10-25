@@ -1,10 +1,10 @@
 use std::fs;
 
-use parser::hir::lift_project;
+use parser::hir::{lift_project, Effect};
 use parser::new_frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
 
-use crate::hir_cfg::build_cfg;
+use crate::hir_cfg::{build_cfg, Origin};
 use crate::hir_facts::{AnalysisFacts, ProofBudget};
 use crate::interprocedural::{AppliedComponentPort, CallOwner, CallReachability, ProjectSummaries};
 
@@ -178,5 +178,55 @@ fn array_outputs_are_refused_before_any_comparator_proof_work() {
                 .unwrap()
                 .contains(&crate::interprocedural::SummaryBlocker::UnsupportedContext));
         });
+    });
+}
+
+#[test]
+fn comparator_constraint_origins_keep_every_scope_in_order() {
+    with_query(SOURCE, |provider, _, facts, applied| {
+        let result = provider.component_comparator_range(facts, applied);
+        let violations = result.certified().unwrap();
+        assert_eq!(violations.len(), 1);
+        let mut expected = Vec::new();
+        for marker in [
+            "c.x[0]<==4",
+            "c.x[1]<==1",
+            "y<==c.y",
+            "e.x<==x[0]+4-x[1]",
+            "y<==1-e.y[2]",
+            "y[i]*(y[i]-1)===0;",
+            "y[i]*(y[i]-1)===0;",
+            "y[i]*(y[i]-1)===0;",
+            "x===sum;",
+        ] {
+            let mut origins = Vec::new();
+            for block in facts.hir().blocks() {
+                for (effect_index, effect) in block.effects.iter().enumerate() {
+                    let (expression, span) =
+                        if let Effect::ConstraintAssignment { value, span, .. }
+                        | Effect::OpaqueAssignment { value, span, .. } = effect
+                        {
+                            (*value, *span)
+                        } else if let Effect::EqualityConstraint { left, span, .. }
+                        | Effect::OpaqueEquality { left, span, .. } = effect
+                        {
+                            (*left, *span)
+                        } else {
+                            continue;
+                        };
+                    if &SOURCE[span.start()..span.end()] == marker {
+                        origins.push(Origin {
+                            block: block.id,
+                            effect_index,
+                            expression: Some(expression),
+                            span,
+                        });
+                    }
+                }
+            }
+            assert_eq!(origins.len(), 1, "{marker}");
+            expected.push(origins[0]);
+        }
+        assert_eq!(violations[0].constraint_origins(), expected);
     });
 }

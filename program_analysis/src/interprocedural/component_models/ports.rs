@@ -51,9 +51,9 @@ impl ValidatedComponentPorts {
         let (evidence, outputs) = checked_outputs(caller, child, instance)?;
         let mut ports =
             Self { evidence, outputs, inputs: BTreeMap::new(), input_aliases: BTreeMap::new() };
-        for (element, (parent, local)) in inputs {
-            ports.inputs.insert(element, local.clone());
-            ports.input_aliases.insert(parent, local);
+        for (element, alias) in inputs {
+            ports.inputs.insert(element, alias.callee.clone());
+            ports.input_aliases.insert(alias.caller, alias.callee);
         }
         Ok(ports)
     }

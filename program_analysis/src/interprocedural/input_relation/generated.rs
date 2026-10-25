@@ -18,11 +18,16 @@ use crate::interprocedural::{
     CallReachability, ContextEvidence, ProjectSummaries, SummaryBlocker, ValidatedComponentPorts,
 };
 
+pub(in crate::interprocedural) struct PortAlias {
+    pub(in crate::interprocedural) caller: AccessKey,
+    pub(in crate::interprocedural) callee: AccessKey,
+}
+
 /// Port identities issued only after source call and both parameter contexts match.
 pub(in crate::interprocedural) struct CheckedInputSchema {
     caller: ContextEvidence,
     instance: EnumeratedComponentInstance,
-    elements: BTreeMap<InputPortElement, (AccessKey, AccessKey)>,
+    elements: BTreeMap<InputPortElement, PortAlias>,
 }
 
 impl CheckedInputSchema {
@@ -31,7 +36,7 @@ impl CheckedInputSchema {
         facts: &AnalysisFacts<'_>,
         child: &AnalysisFacts<'_>,
         instance: &EnumeratedComponentInstance,
-    ) -> Result<BTreeMap<InputPortElement, (AccessKey, AccessKey)>, SummaryBlocker> {
+    ) -> Result<BTreeMap<InputPortElement, PortAlias>, SummaryBlocker> {
         if self.instance != *instance
             || !facts.matches_evidence(&self.caller)
             || !child.matches_evidence(&instance.callee)
@@ -188,10 +193,10 @@ impl ProjectSummaries<'_> {
                 let parent = facts
                     .component_input_from_local(instance.component, &instance.indices, &local)
                     .map_err(|_| SummaryBlocker::UnsupportedContext)?;
-                let keys = (
-                    certified(&facts.component_handle_key(&parent))?.clone(),
-                    certified(&child.exact_handle_key(&local))?.clone(),
-                );
+                let keys = PortAlias {
+                    caller: certified(&facts.component_handle_key(&parent))?.clone(),
+                    callee: certified(&child.exact_handle_key(&local))?.clone(),
+                };
                 inputs.insert(InputPortElement { port: *id, indices }, keys);
             }
         }
