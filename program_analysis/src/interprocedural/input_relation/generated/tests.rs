@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 
 use abstract_interpretation::graph::FlowGraph;
@@ -204,12 +204,54 @@ fn generated_input_refusals_preserve_the_first_blocker() {
 
 #[test]
 fn a_symbolic_input_index_retains_its_expression_blocker() {
-    let result = inspect("c.values[x]<==7;c.values[1]<==8;", "n");
-    let Err(SummaryBlocker::LocalFacts(blockers)) = result else {
-        panic!("symbolic target index must remain a local fact failure");
+    let directory = std::env::temp_dir().join(format!(
+        "circomspect-symbolic-readiness-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id(),
+    ));
+    fs::create_dir_all(&directory).unwrap();
+    let path = directory.join("case.circom");
+    let source = "template Child(){signal input values[2];signal output out;out<==values[0];}\
+        template Parent(){signal input x;component c=Child();c.values[x]<==7;c.values[1]<==8;}\
+        component main=Parent();";
+    fs::write(&path, source).unwrap();
+    let project = lift_project(&load_sources(
+        &[path],
+        &[directory],
+        VersionPolicy::new(Version::new(2, 2, 3)),
+    ));
+    let provider = ProjectSummaries::build(&project, Curve::Goldilocks).unwrap();
+    let site = provider.graph().calls_from(CallOwner::Main(0))[0];
+    let CallReachability::Reachable(call) =
+        provider.graph().reachable_main_call(site.id(), &project.hir)
+    else {
+        panic!("main must be reachable");
     };
-    assert_eq!(blockers.len(), 1);
-    let FactBlocker::OpaqueExpression(_expression) = blockers.first().unwrap() else {
-        panic!("the symbolic expression must be reported");
+    let caller = provider.main_evidence(&call).unwrap();
+    let definition = project.hir.definition("Parent").unwrap();
+    let cfg = build_cfg(&project.hir, definition).unwrap();
+    let facts = provider.analyze_for_evidence(&cfg, &caller, None).unwrap();
+    let site = provider.graph().calls_from(CallOwner::Definition(definition))[0];
+    let CallReachability::Reachable(call) = provider.graph().reachable_call(site.id(), &facts)
+    else {
+        panic!("child must be reachable");
     };
+    let instance = provider.enumerate_call(&facts, &caller, &call, 4).unwrap();
+    let cfg = build_cfg(&project.hir, call.callee()).unwrap();
+    let child = provider.analyze_for_evidence(&cfg, &instance.callee, None).unwrap();
+    let offset = source.find("values[x]").unwrap() + "values[".len();
+    let expression = project
+        .hir
+        .expressions()
+        .iter()
+        .find(|expression| expression.span.start() == offset && expression.span.end() == offset + 1)
+        .unwrap();
+    let result =
+        provider.ready_generated_instance(&facts, &child, &instance, &mut ProofBudget::default());
+    assert_eq!(
+        result.err(),
+        Some(SummaryBlocker::LocalFacts(BTreeSet::from([FactBlocker::OpaqueExpression(
+            expression.id
+        ),])))
+    );
 }
