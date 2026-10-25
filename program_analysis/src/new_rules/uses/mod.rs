@@ -9,9 +9,8 @@ use std::collections::BTreeSet;
 use parser::hir::DefinitionRef;
 use parser::new_frontend::Span;
 
-use crate::hir_facts::Fact;
 use crate::interprocedural::{SummaryBlocker, SummaryFact};
-use crate::new_rules::{AbstentionReason, Rule, RuleContext, RuleKind, RuleResult, ScopedAbstention};
+use crate::new_rules::{AbstentionReason, Rule, RuleContext, RuleKind, RuleResult};
 
 pub const KINDS: &[RuleKind] = &[
     RuleKind::UnusedVariableValue,
@@ -67,7 +66,7 @@ fn validated(context: &RuleContext<'_, '_, '_>, kind: RuleKind, result: &mut Rul
         context.validated_definition().and_then(|_| context.check_warning_execution_scope());
     let Err(blocker) = validation else { return true };
     if let Some(span) = definition_span(context) {
-        abstain(result, context, kind, span, summary_reason(blocker));
+        result.add_abstention(context.abstention(kind, span, summary_reason(blocker)));
     }
     false
 }
@@ -78,21 +77,6 @@ fn definition_span(context: &RuleContext<'_, '_, '_>) -> Option<Span> {
         DefinitionRef::Template(id) => context.hir().template(id).map(|item| item.name_span),
         DefinitionRef::Bus(id) => context.hir().bus(id).map(|item| item.name_span),
     }
-}
-
-fn abstain(
-    result: &mut RuleResult,
-    context: &RuleContext<'_, '_, '_>,
-    kind: RuleKind,
-    span: Span,
-    reason: AbstentionReason,
-) {
-    result.add_abstention(ScopedAbstention {
-        kind,
-        context: context.call_context().clone(),
-        span,
-        reason,
-    });
 }
 
 fn summary_reason(blocker: SummaryBlocker) -> AbstentionReason {
@@ -122,18 +106,6 @@ fn summary_reason(blocker: SummaryBlocker) -> AbstentionReason {
     }
 }
 
-fn local_abstain<T>(
-    context: &RuleContext<'_, '_, '_>,
-    kind: RuleKind,
-    span: Span,
-    fact: &Fact<T>,
-    result: &mut RuleResult,
-) {
-    if let Some(blockers) = fact.unavailable() {
-        abstain(result, context, kind, span, AbstentionReason::LocalFacts(blockers.clone()));
-    }
-}
-
 fn summary_abstain<T>(
     context: &RuleContext<'_, '_, '_>,
     kind: RuleKind,
@@ -142,6 +114,10 @@ fn summary_abstain<T>(
     result: &mut RuleResult,
 ) {
     if let Some(blockers) = fact.unavailable() {
-        abstain(result, context, kind, span, AbstentionReason::Summary(blockers.clone()));
+        result.add_abstention(context.abstention(
+            kind,
+            span,
+            AbstentionReason::Summary(blockers.clone()),
+        ));
     }
 }

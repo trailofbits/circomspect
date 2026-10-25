@@ -8,7 +8,7 @@ use crate::hir_cfg::{CfgNode, CfgNodeKind};
 use crate::hir_facts::{AccessKey, GeneratedEquation};
 use crate::interprocedural::GeneratedEquationQueries;
 use crate::new_rules::{AbstentionReason, Rule, RuleContext, RuleKind, RuleResult};
-use crate::new_rules::constraints::{abstain, opaque_assignment, witness_only};
+use crate::new_rules::constraints::{opaque_assignment, witness_only};
 
 pub(super) struct RedundantWitness;
 
@@ -47,7 +47,11 @@ fn is_candidate(
     let kind = RuleKind::RedundantWitnessAssignment;
     if opaque_assignment(node) {
         if context.facts().reachable_node(node.id).certified() != Some(&false) {
-            abstain(context, result, kind, origin.span, AbstentionReason::UnsupportedConstruct);
+            result.add_abstention(context.abstention(
+                kind,
+                origin.span,
+                AbstentionReason::UnsupportedConstruct,
+            ));
         }
         return false;
     }
@@ -69,16 +73,19 @@ fn inspect_equation(
     let equation = equations.for_witness(node.id);
     let Some(equation) = equation.certified() else {
         let reason = AbstentionReason::Summary(equation.unavailable().cloned().unwrap_or_default());
-        abstain(context, result, kind, origin.span, reason);
+        result.add_abstention(context.abstention(kind, origin.span, reason));
         return;
     };
     let Some(equation) = equation else { return };
     let CfgNodeKind::Witness { target, .. } = &node.kind else { return };
     let key = context.facts().exact_access_key(target);
-    let Some(key) = key.certified() else {
-        let reason = AbstentionReason::LocalFacts(key.unavailable().cloned().unwrap_or_default());
-        abstain(context, result, kind, origin.span, reason);
-        return;
+    let key = match key.as_result() {
+        Ok(key) => key,
+        Err(blockers) => {
+            let reason = AbstentionReason::LocalFacts(blockers.clone());
+            result.add_abstention(context.abstention(kind, origin.span, reason));
+            return;
+        }
     };
     if emitted.insert(key.clone()) {
         report_equation(context, equation, result);

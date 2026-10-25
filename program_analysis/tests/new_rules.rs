@@ -737,3 +737,63 @@ fn unknown_roots_and_duplicate_sources_fail_before_rendering() {
         Some(RenderError::DuplicateSource(source.id))
     );
 }
+
+#[test]
+fn registered_rule_order_matches_each_declared_family() {
+    let declared: Vec<_> = [numeric::KINDS, constraints::KINDS, uses::KINDS, direct::KINDS]
+        .into_iter()
+        .flatten()
+        .copied()
+        .collect();
+    let registered: Vec<_> = circomspect_program_analysis::new_rules::registered_rules()
+        .map(circomspect_program_analysis::new_rules::Rule::kind)
+        .collect();
+    assert_eq!(registered, declared);
+}
+
+#[test]
+fn rule_guards_preserve_complete_findings_and_abstentions() {
+    let cases = [
+        ("partial-body", "template Check(a,b,c,d,e,f,g,h){var value=Missing();}"),
+        ("failed-function", "function Check(a,b,c,d,e,f,g,h){assert(0);return 0;}"),
+        ("bus", "bus Check(){signal x;}"),
+        ("witness", "template Check(){signal output y;y<--1;}"),
+    ];
+    let mut records = Vec::new();
+    for (name, source) in cases {
+        records.push(format!("CASE {name}"));
+        let loaded = load_fixture(name, source);
+        let lifted = lift_project(&loaded);
+        let definition = lifted.hir.definition("Check").unwrap();
+        let cfg = build_cfg(&lifted.hir, definition).unwrap();
+        let summaries = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let evidence = summaries.symbolic_root(definition).unwrap();
+        let facts = summaries.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+        let context = RuleContext::new(&facts, &summaries, &evidence).unwrap();
+        let result = circomspect_program_analysis::new_rules::run_registered(&context).unwrap();
+        let sources = SourceMap::from_loaded(&loaded, &[loaded.files[0].id]).unwrap();
+        for finding in result.findings() {
+            assert_eq!(finding.context(), context.call_context());
+            let report = finding.to_report(&sources).unwrap();
+            records.push(format!(
+                "F {:?} {:?} {:?} {:?}",
+                finding.kind(),
+                report.message(),
+                report.primary(),
+                report.secondary()
+            ));
+        }
+        for abstention in result.abstentions() {
+            assert_eq!(&abstention.context, context.call_context());
+            records.push(format!(
+                "A {:?} {}..{} {:?}",
+                abstention.kind,
+                abstention.span.start(),
+                abstention.span.end(),
+                abstention.reason
+            ));
+        }
+    }
+    let fingerprint = records.join("\n") + "\n";
+    assert_eq!(fingerprint, include_str!("fixtures/rule_guard_contract.txt"));
+}

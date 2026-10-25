@@ -6,10 +6,10 @@ mod redundant_witness;
 mod signal_assignment;
 
 use parser::hir::Effect;
-use parser::new_frontend::{AssignmentOperator, Span};
+use parser::new_frontend::AssignmentOperator;
 
 use crate::hir_cfg::{CfgNode, CfgNodeKind};
-use crate::new_rules::{AbstentionReason, Rule, RuleContext, RuleKind, RuleResult, ScopedAbstention};
+use crate::new_rules::{Rule, RuleKind};
 use crate::new_rules::constraints::internal_signal::UnconstrainedSignal;
 use crate::new_rules::constraints::redundant_witness::RedundantWitness;
 use crate::new_rules::constraints::signal_assignment::SignalAssignment;
@@ -46,19 +46,4 @@ fn opaque_assignment(node: &CfgNode) -> bool {
     }
     let CfgNodeKind::OpaqueAssignment { operator, .. } = &node.kind else { return false };
     *operator == AssignmentOperator::Witness || *operator == AssignmentOperator::ReverseWitness
-}
-
-fn abstain(
-    context: &RuleContext<'_, '_, '_>,
-    result: &mut RuleResult,
-    kind: RuleKind,
-    span: Span,
-    reason: AbstentionReason,
-) {
-    result.add_abstention(ScopedAbstention {
-        kind,
-        context: context.call_context().clone(),
-        span,
-        reason,
-    });
 }

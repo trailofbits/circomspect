@@ -1,0 +1,40 @@
+CASE partial-body
+F TooManyArguments "`Check` declares 8 parameters (limit 7)." [Label { style: Primary, file_id: 0, range: 9..14, message: "This declaration has 8 parameters." }] []
+A BitwiseComplement 0..53 Summary({IncompleteDefinition})
+A Bn254SpecificCircuit 0..53 Summary({IncompleteDefinition})
+A ConstantConditional 0..53 Summary({IncompleteDefinition})
+A FieldArithmetic 0..53 Summary({IncompleteDefinition})
+A FieldComparison 0..53 Summary({IncompleteDefinition})
+A NonstrictBinaryConversion 0..53 Summary({IncompleteDefinition})
+A UnconstrainedDivision 0..53 Summary({IncompleteDefinition})
+A UnconstrainedLessThan 9..14 Summary({IncompleteDefinition})
+A UnusedVariableValue 9..14 IncompleteDefinition
+A UnusedParameterValue 9..14 IncompleteDefinition
+A SideEffectFreeAssignment 9..14 IncompleteDefinition
+A UnusedOutputSignal 9..14 Summary({IncompleteDefinition})
+A Complexity 9..14 Summary({IncompleteDefinition})
+CASE failed-function
+F TooManyArguments "`Check` declares 8 parameters (limit 7)." [Label { style: Primary, file_id: 0, range: 9..14, message: "This declaration has 8 parameters." }] []
+A BitwiseComplement 0..52 Summary({UnsupportedContext})
+A Bn254SpecificCircuit 0..52 Summary({UnsupportedContext})
+A ConstantConditional 0..52 Summary({UnsupportedContext})
+A FieldArithmetic 0..52 Summary({UnsupportedContext})
+A FieldComparison 0..52 Summary({UnsupportedContext})
+A NonstrictBinaryConversion 0..52 Summary({UnsupportedContext})
+A UnconstrainedDivision 0..52 Summary({UnsupportedContext})
+A UnusedVariableValue 9..14 Summary({UnsupportedContext})
+A UnusedParameterValue 9..14 Summary({UnsupportedContext})
+A SideEffectFreeAssignment 9..14 Summary({UnsupportedContext})
+CASE bus
+A BitwiseComplement 0..22 Summary({UnsupportedContext})
+A Bn254SpecificCircuit 0..22 Summary({UnsupportedContext})
+A ConstantConditional 0..22 Summary({UnsupportedContext})
+A FieldArithmetic 0..22 Summary({UnsupportedContext})
+A FieldComparison 0..22 Summary({UnsupportedContext})
+A NonstrictBinaryConversion 0..22 Summary({UnsupportedContext})
+A UnconstrainedDivision 0..22 Summary({UnsupportedContext})
+A UnusedVariableValue 4..9 Summary({UnsupportedContext})
+A UnusedParameterValue 4..9 Summary({UnsupportedContext})
+A SideEffectFreeAssignment 4..9 Summary({UnsupportedContext})
+CASE witness
+F SignalAssignment "This witness assignment does not constrain the signal. No generated constraint depends on this exact output path." [Label { style: Primary, file_id: 0, range: 33..38, message: "Witness-only assignment to an output with zero constraint incidence" }] []

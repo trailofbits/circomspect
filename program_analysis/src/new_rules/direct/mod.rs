@@ -9,7 +9,7 @@ use parser::new_frontend::Span;
 use crate::hir_cfg::{CfgNodeKind, DefinitionCfg, EdgeKind};
 use crate::hir_facts::{AnalysisFacts, FactBlocker};
 use crate::interprocedural::SummaryBlocker;
-use crate::new_rules::{AbstentionReason, Rule, RuleContext, RuleKind, RuleResult, ScopedAbstention};
+use crate::new_rules::{AbstentionReason, Rule, RuleContext, RuleKind, RuleResult};
 
 const MAX_COMPLEXITY: usize = 20;
 const MAX_PARAMETERS: usize = 7;
@@ -105,12 +105,7 @@ fn abstain(
     reason: AbstentionReason,
 ) -> RuleResult {
     let mut result = RuleResult::default();
-    result.add_abstention(ScopedAbstention {
-        kind,
-        context: context.call_context().clone(),
-        span,
-        reason,
-    });
+    result.add_abstention(context.abstention(kind, span, reason));
     result
 }
 
@@ -149,10 +144,10 @@ fn reachable_node_count(facts: &AnalysisFacts<'_>, blockers: &mut BTreeSet<FactB
     let mut nodes = 0_usize;
     for id in facts.cfg().nodes() {
         let reachability = facts.reachable_node(*id);
-        match reachability.certified() {
-            Some(true) => nodes += 1,
-            Some(false) => {}
-            None => blockers.extend(reachability.unavailable().into_iter().flatten().cloned()),
+        match reachability.into_result() {
+            Ok(true) => nodes += 1,
+            Ok(false) => {}
+            Err(reasons) => blockers.extend(reasons),
         }
     }
     nodes
@@ -166,13 +161,13 @@ fn reachable_edge_count(
     let mut active_edges = BTreeSet::new();
     for id in facts.cfg().edges() {
         let reachability = facts.reachable_edge(*id);
-        match reachability.certified() {
-            Some(true) => {
+        match reachability.into_result() {
+            Ok(true) => {
                 edges += 1;
                 active_edges.insert(*id);
             }
-            Some(false) => {}
-            None => blockers.extend(reachability.unavailable().into_iter().flatten().cloned()),
+            Ok(false) => {}
+            Err(reasons) => blockers.extend(reasons),
         }
     }
     (edges, active_edges)

@@ -3,7 +3,6 @@
 use std::collections::BTreeSet;
 
 use crate::interprocedural::ComparatorRangeViolation;
-use crate::new_rules::constraints::abstain;
 use crate::new_rules::{AbstentionReason, Rule, RuleContext, RuleKind, RuleResult};
 
 pub(super) struct Comparator;
@@ -18,13 +17,11 @@ impl Rule for Comparator {
         let outputs = context.exact_component_outputs();
         let Some(outputs) = outputs.certified() else {
             if let Ok(header) = context.validated_header() {
-                abstain(
-                    context,
-                    &mut result,
+                result.add_abstention(context.abstention(
                     self.kind(),
                     header.name_span(),
                     AbstentionReason::Summary(outputs.unavailable().cloned().unwrap_or_default()),
-                );
+                ));
             }
             return result;
         };
@@ -32,15 +29,13 @@ impl Rule for Comparator {
         for output in outputs {
             let violations = context.component_comparator_range(output.applied_port());
             let Some(violations) = violations.certified() else {
-                abstain(
-                    context,
-                    &mut result,
+                result.add_abstention(context.abstention(
                     self.kind(),
                     output.source_span(),
                     AbstentionReason::Summary(
                         violations.unavailable().cloned().unwrap_or_default(),
                     ),
-                );
+                ));
                 continue;
             };
             for violation in violations {

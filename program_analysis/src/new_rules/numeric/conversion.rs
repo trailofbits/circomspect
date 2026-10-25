@@ -8,7 +8,6 @@ use crate::hir_facts::{AccessHandle, BitAmbiguity, BitAmbiguityOutcome, BitRepre
 use crate::interprocedural::{
     CallSite, ComponentBitAmbiguity, ComponentBitAmbiguityOutcome, SummaryBlocker, SummaryFact,
 };
-use crate::new_rules::numeric::abstain;
 use crate::new_rules::{AbstentionReason, RuleContext, RuleKind, RuleResult};
 
 const MAX_BITS: usize = 512;
@@ -99,19 +98,21 @@ fn inspect_called_output(
         Ok(None) => return,
         Ok(Some(summary)) => summary,
         Err(blocker) => {
-            abstain(
-                context,
-                result,
+            result.add_abstention(context.abstention(
                 RuleKind::NonstrictBinaryConversion,
                 site.span,
                 AbstentionReason::Call(BTreeSet::from([blocker])),
-            );
+            ));
             return;
         }
     };
     let Some(applied) = applied.certified() else {
         let reason = AbstentionReason::Summary(applied.unavailable().cloned().unwrap_or_default());
-        abstain(context, result, RuleKind::NonstrictBinaryConversion, site.span, reason);
+        result.add_abstention(context.abstention(
+            RuleKind::NonstrictBinaryConversion,
+            site.span,
+            reason,
+        ));
         return;
     };
     for input in inputs {
@@ -133,19 +134,21 @@ fn inspect_output(
     let bits = match bit_handles(context, output) {
         Ok(bits) => bits,
         Err(reason) => {
-            abstain(context, result, RuleKind::NonstrictBinaryConversion, output.span, reason);
+            result.add_abstention(context.abstention(
+                RuleKind::NonstrictBinaryConversion,
+                output.span,
+                reason,
+            ));
             return;
         }
     };
     for input in inputs {
         let Ok(input_handle) = context.facts().port_handle(input.id, &[]) else {
-            abstain(
-                context,
-                result,
+            result.add_abstention(context.abstention(
                 RuleKind::NonstrictBinaryConversion,
                 input.span,
                 AbstentionReason::UnsupportedConstruct,
-            );
+            ));
             continue;
         };
         let summary = context.template_bit_ambiguity_handles(&input_handle, &bits);
@@ -188,7 +191,11 @@ fn emit_or_abstain(
 ) -> CandidateDecision {
     let Some(outcome) = summary.certified() else {
         let reason = AbstentionReason::Summary(summary.unavailable().cloned().unwrap_or_default());
-        abstain(context, result, RuleKind::NonstrictBinaryConversion, output.span, reason);
+        result.add_abstention(context.abstention(
+            RuleKind::NonstrictBinaryConversion,
+            output.span,
+            reason,
+        ));
         return CandidateDecision::Continue;
     };
     match outcome {
@@ -212,7 +219,11 @@ fn emit_called_or_abstain(
 ) -> CandidateDecision {
     let Some(outcome) = summary.certified() else {
         let reason = AbstentionReason::Summary(summary.unavailable().cloned().unwrap_or_default());
-        abstain(context, result, RuleKind::NonstrictBinaryConversion, candidate.span, reason);
+        result.add_abstention(context.abstention(
+            RuleKind::NonstrictBinaryConversion,
+            candidate.span,
+            reason,
+        ));
         return CandidateDecision::Continue;
     };
     match outcome {
@@ -303,11 +314,9 @@ fn abstain_budget(
     result: &mut RuleResult,
     span: parser::new_frontend::Span,
 ) {
-    abstain(
-        context,
-        result,
+    result.add_abstention(context.abstention(
         RuleKind::NonstrictBinaryConversion,
         span,
         AbstentionReason::Summary(BTreeSet::from([SummaryBlocker::ContextBudget])),
-    );
+    ));
 }

@@ -5,7 +5,7 @@ use parser::hir::{Effect, ExprId, ExprKind};
 
 use crate::new_rules::{RuleContext, RuleKind, RuleResult};
 
-use super::{abstain, contained, definition_span, exact_value, expressions, reachable};
+use super::{contained, definition_span, exact_value, expressions, reachable};
 
 fn condition_ids(context: &RuleContext<'_, '_, '_>) -> BTreeSet<ExprId> {
     let Some(span) = definition_span(context) else { return BTreeSet::new() };
@@ -41,13 +41,11 @@ pub(super) fn constant_conditional(context: &RuleContext<'_, '_, '_>) -> RuleRes
         let value = match exact_value(context, id) {
             Ok(value) => value,
             Err(reason) => {
-                abstain(
-                    context,
-                    &mut result,
+                result.add_abstention(context.abstention(
                     RuleKind::ConstantConditional,
                     expression.span,
                     reason,
-                );
+                ));
                 continue;
             }
         };

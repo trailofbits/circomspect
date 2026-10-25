@@ -4,8 +4,8 @@ use parser::new_frontend::AssignmentOperator;
 
 use crate::hir_cfg::{CfgNode, CfgNodeKind};
 use crate::hir_facts::{AssignmentDemand, Incidence};
-use crate::new_rules::{RuleContext, RuleKind, RuleResult};
-use crate::new_rules::uses::{abstain, local_abstain, summary_abstain, summary_reason, validated};
+use crate::new_rules::{AbstentionReason, RuleContext, RuleKind, RuleResult};
+use crate::new_rules::uses::{summary_abstain, summary_reason, validated};
 
 pub(super) fn side_effect_free(context: &RuleContext<'_, '_, '_>, result: &mut RuleResult) {
     let kind = RuleKind::SideEffectFreeAssignment;
@@ -44,8 +44,8 @@ fn report_removable_assignment(
     }
     let kind = RuleKind::SideEffectFreeAssignment;
     match context.assignment_demand(node.id, target) {
-        Ok(fact) => match fact.certified() {
-            Some(AssignmentDemand::Unobserved(proof)) => {
+        Ok(fact) => match fact.into_result() {
+            Ok(AssignmentDemand::Unobserved(proof)) => {
                 let Some(symbol) = context.hir().symbol(target.root) else { return };
                 let message = format!(
                     "Assignment to `{}` has no observable effect; its value is unused",
@@ -58,11 +58,15 @@ fn report_removable_assignment(
                     "unused value".into(),
                 ));
             }
-            Some(AssignmentDemand::MayBeObserved) => {}
-            None => local_abstain(context, kind, target.span, &fact, result),
+            Ok(AssignmentDemand::MayBeObserved) => {}
+            Err(blockers) => result.add_abstention(context.abstention(
+                kind,
+                target.span,
+                AbstentionReason::LocalFacts(blockers),
+            )),
         },
         Err(blocker) => {
-            abstain(result, context, kind, target.span, summary_reason(blocker));
+            result.add_abstention(context.abstention(kind, target.span, summary_reason(blocker)));
         }
     }
 }
@@ -74,17 +78,14 @@ fn assignment_reachable(
     result: &mut RuleResult,
 ) -> bool {
     let reachable = context.facts().reachable_node(node.id);
-    match reachable.certified() {
-        Some(true) => true,
-        Some(false) => false,
-        None => {
-            local_abstain(
-                context,
+    match reachable.into_result() {
+        Ok(value) => value,
+        Err(blockers) => {
+            result.add_abstention(context.abstention(
                 RuleKind::SideEffectFreeAssignment,
                 target.span,
-                &reachable,
-                result,
-            );
+                AbstentionReason::LocalFacts(blockers),
+            ));
             false
         }
     }
@@ -126,19 +127,31 @@ fn report_unused_value(
 ) {
     let kind = RuleKind::UnusedVariableValue;
     let reachable = context.facts().reachable_node(node.id);
-    if reachable.certified() != Some(&true) {
-        local_abstain(context, kind, target.span, &reachable, result);
-        return;
+    match reachable.into_result() {
+        Ok(true) => {}
+        Ok(false) => return,
+        Err(blockers) => {
+            result.add_abstention(context.abstention(
+                kind,
+                target.span,
+                AbstentionReason::LocalFacts(blockers),
+            ));
+            return;
+        }
     }
     let live = context.facts().live_after(node.id, target);
-    match live.certified() {
-        Some(false) => {
+    match live.into_result() {
+        Ok(false) => {
             let Some(symbol) = context.hir().symbol(target.root) else { return };
             let message = format!("Assigned value of `{}` is never read", symbol.name);
             result.add_finding(context.finding(kind, message, target.span, "unused value".into()));
         }
-        Some(true) => {}
-        None => local_abstain(context, kind, target.span, &live, result),
+        Ok(true) => {}
+        Err(blockers) => result.add_abstention(context.abstention(
+            kind,
+            target.span,
+            AbstentionReason::LocalFacts(blockers),
+        )),
     }
 }
 

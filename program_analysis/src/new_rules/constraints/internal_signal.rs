@@ -9,7 +9,6 @@ use parser::new_frontend::Span;
 use crate::hir_cfg::{Constraint, CfgNode, CfgNodeKind};
 use crate::hir_facts::{AccessKey, Incidence, VisitAccesses};
 use crate::new_rules::{AbstentionReason, Rule, RuleContext, RuleKind, RuleResult};
-use crate::new_rules::constraints::abstain;
 
 pub(super) struct UnconstrainedSignal;
 
@@ -105,10 +104,17 @@ fn inspect(
         return;
     }
     let key = context.facts().exact_access_key(path);
-    let Some(key) = key.certified() else {
-        let reason = AbstentionReason::LocalFacts(key.unavailable().cloned().unwrap_or_default());
-        abstain(context, result, RuleKind::UnconstrainedSignal, path.span, reason);
-        return;
+    let key = match key.as_result() {
+        Ok(key) => key,
+        Err(blockers) => {
+            let reason = AbstentionReason::LocalFacts(blockers.clone());
+            result.add_abstention(context.abstention(
+                RuleKind::UnconstrainedSignal,
+                path.span,
+                reason,
+            ));
+            return;
+        }
     };
     let incidence = context.template_internal_signal_incidence(path);
     match incidence.certified() {
@@ -123,17 +129,19 @@ fn inspect(
             }
         }
         Some(Incidence::Must) => {}
-        Some(Incidence::May) => abstain(
-            context,
-            result,
+        Some(Incidence::May) => result.add_abstention(context.abstention(
             RuleKind::UnconstrainedSignal,
             path.span,
             AbstentionReason::UnsupportedConstruct,
-        ),
+        )),
         None => {
             let reason =
                 AbstentionReason::Summary(incidence.unavailable().cloned().unwrap_or_default());
-            abstain(context, result, RuleKind::UnconstrainedSignal, path.span, reason);
+            result.add_abstention(context.abstention(
+                RuleKind::UnconstrainedSignal,
+                path.span,
+                reason,
+            ));
         }
     }
 }
@@ -145,12 +153,15 @@ fn reachable(
     result: &mut RuleResult,
 ) -> bool {
     let reachable = context.facts().reachable_node(node.id);
-    if let Some(value) = reachable.certified() {
-        *value
-    } else {
-        let reason =
-            AbstentionReason::LocalFacts(reachable.unavailable().cloned().unwrap_or_default());
-        abstain(context, result, RuleKind::UnconstrainedSignal, span, reason);
-        false
+    match reachable.into_result() {
+        Ok(value) => value,
+        Err(blockers) => {
+            result.add_abstention(context.abstention(
+                RuleKind::UnconstrainedSignal,
+                span,
+                AbstentionReason::LocalFacts(blockers),
+            ));
+            false
+        }
     }
 }

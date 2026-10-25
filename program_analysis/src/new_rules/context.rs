@@ -12,7 +12,7 @@ use crate::interprocedural::{
     SummaryFact, ValidatedDefinition, ValidatedHeader, WitnessSite,
 };
 
-use crate::new_rules::{Finding, RuleKind};
+use crate::new_rules::{AbstentionReason, Finding, RuleKind, ScopedAbstention};
 
 /// Validated local facts and summary scope for one definition and selected curve.
 /// A hypothetical specialization key cannot authorize a rule run.
@@ -382,6 +382,16 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
     pub fn template_port_witnesses(&self, port: PortId) -> Option<SummaryFact<Vec<WitnessSite>>> {
         let DefinitionRef::Template(id) = self.call_context().definition() else { return None };
         Some(self.summaries.template_port_witnesses(id, self.call_context(), port))
+    }
+
+    /// Record an undecided predicate in this validated scope without changing its reason or span.
+    pub(super) fn abstention(
+        &self,
+        kind: RuleKind,
+        span: Span,
+        reason: AbstentionReason,
+    ) -> ScopedAbstention {
+        ScopedAbstention { kind, context: self.call_context().clone(), span, reason }
     }
 
     /// Create a finding in this validated scope after the rule proves its predicate.

@@ -12,7 +12,7 @@ use parser::new_frontend::Span;
 
 use crate::hir_facts::{FieldValue, Range};
 use crate::interprocedural::ContextOrigin;
-use crate::new_rules::{AbstentionReason, Rule, RuleContext, RuleKind, RuleResult, ScopedAbstention};
+use crate::new_rules::{AbstentionReason, Rule, RuleContext, RuleKind, RuleResult};
 
 pub const KINDS: &[RuleKind] = &[
     RuleKind::BitwiseComplement,
@@ -24,57 +24,60 @@ pub const KINDS: &[RuleKind] = &[
     RuleKind::UnconstrainedDivision,
 ];
 
-struct NumericRule(RuleKind);
+enum NumericRule {
+    BitwiseComplement,
+    Bn254SpecificCircuit,
+    ConstantConditional,
+    FieldArithmetic,
+    FieldComparison,
+    NonstrictBinaryConversion,
+    UnconstrainedDivision,
+}
 
 impl Rule for NumericRule {
     fn kind(&self) -> RuleKind {
-        self.0
+        match self {
+            Self::BitwiseComplement => RuleKind::BitwiseComplement,
+            Self::Bn254SpecificCircuit => RuleKind::Bn254SpecificCircuit,
+            Self::ConstantConditional => RuleKind::ConstantConditional,
+            Self::FieldArithmetic => RuleKind::FieldArithmetic,
+            Self::FieldComparison => RuleKind::FieldComparison,
+            Self::NonstrictBinaryConversion => RuleKind::NonstrictBinaryConversion,
+            Self::UnconstrainedDivision => RuleKind::UnconstrainedDivision,
+        }
     }
 
     fn run(&self, context: &RuleContext<'_, '_, '_>) -> RuleResult {
         if let Err(blocker) = context.check_warning_execution_scope() {
             let mut result = RuleResult::default();
             if let Some(span) = definition_span(context) {
-                abstain(
-                    context,
-                    &mut result,
-                    self.0,
+                result.add_abstention(context.abstention(
+                    self.kind(),
                     span,
                     AbstentionReason::Summary(BTreeSet::from([blocker])),
-                );
+                ));
             }
             return result;
         }
-        match self.0 {
-            RuleKind::BitwiseComplement => expression::complement(context),
-            RuleKind::Bn254SpecificCircuit => expression::bn254_constant(context),
-            RuleKind::ConstantConditional => control::constant_conditional(context),
-            RuleKind::FieldArithmetic => expression::field_arithmetic(context),
-            RuleKind::FieldComparison => expression::field_comparison(context),
-            RuleKind::UnconstrainedDivision => division::unconstrained_division(context),
-            RuleKind::NonstrictBinaryConversion => conversion::nonstrict_binary_conversion(context),
-            RuleKind::SignalAssignment
-            | RuleKind::RedundantWitnessAssignment
-            | RuleKind::UnconstrainedSignal
-            | RuleKind::UnconstrainedLessThan
-            | RuleKind::UnusedVariableValue
-            | RuleKind::UnusedParameterValue
-            | RuleKind::SideEffectFreeAssignment
-            | RuleKind::UnusedOutputSignal
-            | RuleKind::Complexity
-            | RuleKind::TooManyArguments
-            | RuleKind::IncompleteCoverage => RuleResult::default(),
+        match self {
+            Self::BitwiseComplement => expression::complement(context),
+            Self::Bn254SpecificCircuit => expression::bn254_constant(context),
+            Self::ConstantConditional => control::constant_conditional(context),
+            Self::FieldArithmetic => expression::field_arithmetic(context),
+            Self::FieldComparison => expression::field_comparison(context),
+            Self::UnconstrainedDivision => division::unconstrained_division(context),
+            Self::NonstrictBinaryConversion => conversion::nonstrict_binary_conversion(context),
         }
     }
 }
 
-static COMPLEMENT: NumericRule = NumericRule(RuleKind::BitwiseComplement);
-static BN254: NumericRule = NumericRule(RuleKind::Bn254SpecificCircuit);
-static CONDITIONAL: NumericRule = NumericRule(RuleKind::ConstantConditional);
-static ARITHMETIC: NumericRule = NumericRule(RuleKind::FieldArithmetic);
-static COMPARISON: NumericRule = NumericRule(RuleKind::FieldComparison);
-static CONVERSION: NumericRule = NumericRule(RuleKind::NonstrictBinaryConversion);
-static DIVISION: NumericRule = NumericRule(RuleKind::UnconstrainedDivision);
+static COMPLEMENT: NumericRule = NumericRule::BitwiseComplement;
+static BN254: NumericRule = NumericRule::Bn254SpecificCircuit;
+static CONDITIONAL: NumericRule = NumericRule::ConstantConditional;
+static ARITHMETIC: NumericRule = NumericRule::FieldArithmetic;
+static COMPARISON: NumericRule = NumericRule::FieldComparison;
+static CONVERSION: NumericRule = NumericRule::NonstrictBinaryConversion;
+static DIVISION: NumericRule = NumericRule::UnconstrainedDivision;
 static RULES: [&dyn Rule; 7] =
     [&COMPLEMENT, &BN254, &CONDITIONAL, &ARITHMETIC, &COMPARISON, &CONVERSION, &DIVISION];
 
@@ -107,21 +110,6 @@ pub(super) fn expressions<'a>(
         .filter(move |expression| span.is_some_and(|span| contained(expression.span, span)))
 }
 
-pub(super) fn abstain(
-    context: &RuleContext<'_, '_, '_>,
-    result: &mut RuleResult,
-    kind: RuleKind,
-    span: Span,
-    reason: AbstentionReason,
-) {
-    result.add_abstention(ScopedAbstention {
-        kind,
-        context: context.call_context().clone(),
-        span,
-        reason,
-    });
-}
-
 pub(super) fn reachable(
     context: &RuleContext<'_, '_, '_>,
     result: &mut RuleResult,
@@ -129,12 +117,17 @@ pub(super) fn reachable(
     expression: &Expr,
 ) -> bool {
     let fact = context.facts().reachable_expression(expression.id);
-    if let Some(value) = fact.certified() {
-        return *value;
+    match fact.into_result() {
+        Ok(value) => value,
+        Err(blockers) => {
+            result.add_abstention(context.abstention(
+                kind,
+                expression.span,
+                AbstentionReason::LocalFacts(blockers),
+            ));
+            false
+        }
     }
-    let reason = AbstentionReason::LocalFacts(fact.unavailable().cloned().unwrap_or_default());
-    abstain(context, result, kind, expression.span, reason);
-    false
 }
 
 pub(super) fn exact_value(
@@ -142,15 +135,15 @@ pub(super) fn exact_value(
     expression: ExprId,
 ) -> Result<FieldValue, AbstentionReason> {
     let fact = context.facts().range(expression);
-    match fact.certified() {
-        Some(Range::Exact(value)) => Ok(value.clone()),
-        Some(Range::Unreachable | Range::Canonical) => match context.origin() {
+    match fact.into_result() {
+        Ok(Range::Exact(value)) => Ok(value),
+        Ok(Range::Unreachable | Range::Canonical) => match context.origin() {
             ContextOrigin::SymbolicRoot => Err(AbstentionReason::SymbolicParameters),
             ContextOrigin::Main(_) | ContextOrigin::Call(_) => {
                 Err(AbstentionReason::UnsupportedConstruct)
             }
         },
-        None => Err(AbstentionReason::LocalFacts(fact.unavailable().cloned().unwrap_or_default())),
+        Err(blockers) => Err(AbstentionReason::LocalFacts(blockers)),
     }
 }
 

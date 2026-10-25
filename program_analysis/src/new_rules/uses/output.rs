@@ -2,7 +2,7 @@ use parser::hir::DefinitionRef;
 use parser::new_frontend::Span;
 
 use crate::interprocedural::{ContextOrigin, ProjectOutputStatus, ProjectOutputUse, SummaryBlocker};
-use crate::new_rules::uses::{abstain, definition_span, summary_abstain, summary_reason};
+use crate::new_rules::uses::{definition_span, summary_abstain, summary_reason};
 use crate::new_rules::{AbstentionReason, RuleContext, RuleKind, RuleResult};
 
 pub(super) fn unused_outputs(context: &RuleContext<'_, '_, '_>, result: &mut RuleResult) {
@@ -49,13 +49,11 @@ fn symbolic_outputs(context: &RuleContext<'_, '_, '_>, result: &mut RuleResult) 
         return;
     };
     for output in outputs {
-        abstain(
-            result,
-            context,
+        result.add_abstention(context.abstention(
             kind,
             output.source_span(),
             summary_reason(SummaryBlocker::UnsupportedContext),
-        );
+        ));
     }
 }
 
@@ -67,7 +65,11 @@ fn report_output(
     let kind = RuleKind::UnusedOutputSignal;
     let span = use_proof.source_span();
     let Some(path) = output_path(context, use_proof) else {
-        abstain(result, context, kind, span, AbstentionReason::UnsupportedConstruct);
+        result.add_abstention(context.abstention(
+            kind,
+            span,
+            AbstentionReason::UnsupportedConstruct,
+        ));
         return;
     };
     let message = format!("Component output `{}` is never read", path.name);

@@ -3,7 +3,7 @@ use parser::new_frontend::{BinaryOperator, PortDirection, Span};
 
 use crate::hir_facts::Incidence;
 use crate::new_rules::{AbstentionReason, RuleContext, RuleKind, RuleResult};
-use crate::new_rules::numeric::{abstain, contained, definition_span, expressions, reachable};
+use crate::new_rules::numeric::{contained, definition_span, expressions, reachable};
 
 fn witness_values(context: &RuleContext<'_, '_, '_>) -> (Vec<ExprId>, Vec<Span>) {
     let Some(span) = definition_span(context) else { return (Vec::new(), Vec::new()) };
@@ -50,27 +50,42 @@ fn inspect_divisor(
 ) {
     let kind = RuleKind::UnconstrainedDivision;
     let Some(Expr { kind: ExprKind::Access(path), .. }) = context.hir().expression(divisor) else {
-        abstain(context, result, kind, expression.span, AbstentionReason::UnsupportedConstruct);
+        result.add_abstention(context.abstention(
+            kind,
+            expression.span,
+            AbstentionReason::UnsupportedConstruct,
+        ));
         return;
     };
     let Some(port) = declared_input(context, path) else {
-        abstain(context, result, kind, expression.span, AbstentionReason::UnsupportedConstruct);
+        result.add_abstention(context.abstention(
+            kind,
+            expression.span,
+            AbstentionReason::UnsupportedConstruct,
+        ));
         return;
     };
     let key = context.facts().exact_access_key(path);
-    let Some(key) = key.certified() else {
-        let reason = AbstentionReason::LocalFacts(key.unavailable().cloned().unwrap_or_default());
-        abstain(context, result, kind, expression.span, reason);
-        return;
+    let key = match key.as_result() {
+        Ok(key) => key,
+        Err(blockers) => {
+            let reason = AbstentionReason::LocalFacts(blockers.clone());
+            result.add_abstention(context.abstention(kind, expression.span, reason));
+            return;
+        }
     };
     let Some(indices) = key.local_array_indices() else {
-        abstain(context, result, kind, expression.span, AbstentionReason::UnsupportedConstruct);
+        result.add_abstention(context.abstention(
+            kind,
+            expression.span,
+            AbstentionReason::UnsupportedConstruct,
+        ));
         return;
     };
     let Some(summary) = context.template_port(port, &indices) else { return };
     let Some(summary) = summary.certified() else {
         let reason = AbstentionReason::Summary(summary.unavailable().cloned().unwrap_or_default());
-        abstain(context, result, kind, expression.span, reason);
+        result.add_abstention(context.abstention(kind, expression.span, reason));
         return;
     };
     match summary.incidence() {
@@ -97,24 +112,20 @@ pub(super) fn unconstrained_division(context: &RuleContext<'_, '_, '_>) -> RuleR
     let mut result = RuleResult::default();
     let (witnesses, opaque) = witness_values(context);
     for span in opaque {
-        abstain(
-            context,
-            &mut result,
+        result.add_abstention(context.abstention(
             RuleKind::UnconstrainedDivision,
             span,
             AbstentionReason::UnsupportedConstruct,
-        );
+        ));
     }
     for value in &witnesses {
         if let Some(Expr { kind: ExprKind::Opaque(_), span, .. }) = context.hir().expression(*value)
         {
-            abstain(
-                context,
-                &mut result,
+            result.add_abstention(context.abstention(
                 RuleKind::UnconstrainedDivision,
                 *span,
                 AbstentionReason::UnsupportedConstruct,
-            );
+            ));
         }
     }
     for expression in expressions(context) {

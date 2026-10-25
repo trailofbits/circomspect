@@ -9,7 +9,7 @@ use program_structure::utils::constants::{Curve, UsefulConstants};
 use crate::hir_facts::FieldContext;
 use crate::interprocedural::CallOwner;
 use crate::new_rules::{RuleContext, RuleKind, RuleResult};
-use crate::new_rules::numeric::{abstain, exact_pair, expressions, reachable};
+use crate::new_rules::numeric::{exact_pair, expressions, reachable};
 
 pub(super) fn complement(context: &RuleContext<'_, '_, '_>) -> RuleResult {
     let mut result = RuleResult::default();
@@ -104,7 +104,11 @@ pub(super) fn field_arithmetic(context: &RuleContext<'_, '_, '_>) -> RuleResult 
         let (left, right) = match exact_pair(context, *left, *right) {
             Ok(values) => values,
             Err(reason) => {
-                abstain(context, &mut result, RuleKind::FieldArithmetic, expression.span, reason);
+                result.add_abstention(context.abstention(
+                    RuleKind::FieldArithmetic,
+                    expression.span,
+                    reason,
+                ));
                 continue;
             }
         };
@@ -153,7 +157,11 @@ pub(super) fn field_comparison(context: &RuleContext<'_, '_, '_>) -> RuleResult 
         let (left, right) = match exact_pair(context, *left, *right) {
             Ok(values) => values,
             Err(reason) => {
-                abstain(context, &mut result, RuleKind::FieldComparison, expression.span, reason);
+                result.add_abstention(context.abstention(
+                    RuleKind::FieldComparison,
+                    expression.span,
+                    reason,
+                ));
                 continue;
             }
         };

@@ -10,7 +10,7 @@ use crate::hir_cfg::{CfgNode, CfgNodeKind};
 use crate::hir_facts::{AccessKey, Incidence};
 use crate::interprocedural::{ContextOrigin, SummaryBlocker};
 use crate::new_rules::{AbstentionReason, Rule, RuleContext, RuleKind, RuleResult};
-use crate::new_rules::constraints::{abstain, opaque_assignment, witness_only};
+use crate::new_rules::constraints::{opaque_assignment, witness_only};
 
 pub(super) struct SignalAssignment;
 
@@ -39,13 +39,11 @@ fn inspect_node(
     let Some(origin) = node.origin else { return };
     if opaque_assignment(node) {
         if context.facts().reachable_node(node.id).certified() != Some(&false) {
-            abstain(
-                context,
-                result,
+            result.add_abstention(context.abstention(
                 RuleKind::SignalAssignment,
                 origin.span,
                 AbstentionReason::UnsupportedConstruct,
-            );
+            ));
         }
         return;
     }
@@ -56,13 +54,16 @@ fn inspect_node(
         return;
     }
     let reachable = context.facts().reachable_node(node.id);
-    match reachable.certified() {
-        Some(false) => return,
-        Some(true) => {}
-        None => {
-            let reason =
-                AbstentionReason::LocalFacts(reachable.unavailable().cloned().unwrap_or_default());
-            abstain(context, result, RuleKind::SignalAssignment, origin.span, reason);
+    match reachable.into_result() {
+        Ok(false) => return,
+        Ok(true) => {}
+        Err(blockers) => {
+            let reason = AbstentionReason::LocalFacts(blockers);
+            result.add_abstention(context.abstention(
+                RuleKind::SignalAssignment,
+                origin.span,
+                reason,
+            ));
             return;
         }
     }
@@ -77,38 +78,37 @@ fn inspect_output(
     emitted: &mut BTreeSet<AccessKey>,
 ) {
     let Some(port) = declared_output(context, path) else {
-        abstain(
-            context,
-            result,
+        result.add_abstention(context.abstention(
             RuleKind::SignalAssignment,
             span,
             AbstentionReason::UnsupportedConstruct,
-        );
+        ));
         return;
     };
     let key = context.facts().exact_access_key(path);
-    let Some(key) = key.certified() else {
-        let reason = AbstentionReason::LocalFacts(key.unavailable().cloned().unwrap_or_default());
-        abstain(context, result, RuleKind::SignalAssignment, span, reason);
-        return;
+    let key = match key.as_result() {
+        Ok(key) => key,
+        Err(blockers) => {
+            let reason = AbstentionReason::LocalFacts(blockers.clone());
+            result.add_abstention(context.abstention(RuleKind::SignalAssignment, span, reason));
+            return;
+        }
     };
     let Some(indices) = key.local_array_indices() else { return };
     let Some(summary) = context.template_port(port, &indices) else { return };
     let Some(summary) = summary.certified() else {
         let reason = AbstentionReason::Summary(summary.unavailable().cloned().unwrap_or_default());
-        abstain(context, result, RuleKind::SignalAssignment, span, reason);
+        result.add_abstention(context.abstention(RuleKind::SignalAssignment, span, reason));
         return;
     };
     match summary.incidence() {
         Incidence::Zero => report_zero(context, key, span, result, emitted),
         Incidence::Must => {}
-        Incidence::May => abstain(
-            context,
-            result,
+        Incidence::May => result.add_abstention(context.abstention(
             RuleKind::SignalAssignment,
             span,
             AbstentionReason::UnsupportedConstruct,
-        ),
+        )),
     }
 }
 
@@ -137,7 +137,7 @@ fn report_zero(
         ContextOrigin::Call(_) => {
             let reason =
                 AbstentionReason::Summary(BTreeSet::from([SummaryBlocker::ExternalSummary]));
-            abstain(context, result, RuleKind::SignalAssignment, span, reason);
+            result.add_abstention(context.abstention(RuleKind::SignalAssignment, span, reason));
         }
         ContextOrigin::SymbolicRoot | ContextOrigin::Main(_) => {
             if emitted.insert(key.clone()) {
