@@ -100,3 +100,10 @@ fn control_state_preserves_complete_diagnostics_and_incomplete_records() {
     }
     assert_eq!(records, include_str!("fixtures/control_state.txt"));
 }
+
+#[test]
+fn expression_properties_preserve_all_diagnostics_and_incomplete_records() {
+    let result = lift(include_str!("fixtures/expression_properties.circom"));
+    let records = format!("{:#?}\n", (&result.diagnostics, &result.incomplete));
+    assert_eq!(records, include_str!("fixtures/expression_properties.txt"));
+}

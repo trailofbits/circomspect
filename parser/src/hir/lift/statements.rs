@@ -1,10 +1,11 @@
+use crate::hir::lift::properties::{symbolic_indices, ExpressionChildren};
 use crate::hir::lift::{
-    AccessPath, AccessStep, AnonymousInputTarget, ArrayIndex, AssignmentOperator, BTreeSet,
-    BlockId, BusTarget, CallTarget, ControlGuard, Declaration, DeclarationKind, DeclaredSymbol,
-    DefinitionKind, DefinitionRef, DirectionSyntax, Effect, ExprId, ExprKind, Expression,
-    Identifier, IncompleteReason, Knownness, Lifter, LogArgument, PortDirection, ScalarShape,
-    SemanticCode, Severity, ShapeCheck, Span, Statement, SymbolId, SymbolKind, SymbolSnapshot,
-    ValueEvidence, ValueType, TemplateInvocation, ForLoop, PostfixOperator,
+    AccessPath, AccessStep, ArrayIndex, AssignmentOperator, BTreeSet, BlockId, BusTarget,
+    CallTarget, ControlGuard, Declaration, DeclarationKind, DeclaredSymbol, DefinitionKind,
+    DefinitionRef, DirectionSyntax, Effect, ExprId, ExprKind, Expression, Identifier,
+    IncompleteReason, Knownness, Lifter, LogArgument, PortDirection, ScalarShape, SemanticCode,
+    Severity, ShapeCheck, Span, Statement, SymbolId, SymbolKind, SymbolSnapshot, ValueEvidence,
+    ValueType, TemplateInvocation, ForLoop, PostfixOperator,
 };
 
 impl Lifter<'_> {
@@ -29,28 +30,14 @@ impl Lifter<'_> {
         symbols: &BTreeSet<SymbolId>,
         expressions: &BTreeSet<ExprId>,
     ) -> bool {
-        match expression {
-            ExprKind::Access(path) => Self::path_depends_on_invalid(path, symbols, expressions),
-            ExprKind::Call { arguments, .. }
-            | ExprKind::Array(arguments)
-            | ExprKind::Tuple(arguments) => arguments.iter().any(|id| expressions.contains(id)),
-            ExprKind::AnonymousComponent { arguments, inputs, .. } => {
-                arguments.iter().any(|id| expressions.contains(id))
-                    || inputs.iter().any(|input| expressions.contains(&input.value))
+        if let ExprKind::Access(path) = expression {
+            if symbols.contains(&path.root) {
+                return true;
             }
-            ExprKind::Unary { operand, .. } | ExprKind::Parallel(operand) => {
-                expressions.contains(operand)
-            }
-            ExprKind::Binary { left, right, .. } => {
-                expressions.contains(left) || expressions.contains(right)
-            }
-            ExprKind::Ternary { condition, yes, no } => {
-                expressions.contains(condition)
-                    || expressions.contains(yes)
-                    || expressions.contains(no)
-            }
-            ExprKind::Number(_) | ExprKind::Opaque(_) => false,
         }
+        let mut invalid = false;
+        expression.for_each_child(|id| invalid |= expressions.contains(&id));
+        invalid
     }
 
     fn invalid_component_dependencies(
@@ -419,7 +406,8 @@ impl Lifter<'_> {
     }
 
     fn control_guard(&self, condition: ExprId) -> Result<ControlGuard, IncompleteReason> {
-        let shape = self.scalar_shape(condition);
+        let properties = self.expression_properties(condition);
+        let shape = properties.scalar;
         if shape == ScalarShape::Invalid {
             return Err(IncompleteReason::UnknownType);
         }
@@ -432,44 +420,15 @@ impl Lifter<'_> {
             Knownness::WitnessDependent if shape == ScalarShape::Checked => {
                 Ok(ControlGuard::WitnessOnly)
             }
-            Knownness::Opaque
-                if shape == ScalarShape::Deferred && self.provisionally_compile_time(condition) =>
-            {
+            Knownness::Opaque if shape == ScalarShape::Deferred && properties.compile_time => {
                 Ok(ControlGuard::DeferredScalar)
             }
             Knownness::WitnessDependent | Knownness::Opaque => Err(IncompleteReason::UnknownType),
         }
     }
 
-    fn provisionally_compile_time(&self, id: ExprId) -> bool {
-        let Some(expression) = self.hir.expression(id) else { return false };
-        match &expression.kind {
-            ExprKind::Number(_) => true,
-            ExprKind::Access(path) => {
-                expression.knownness.is_compile_time()
-                    && Self::symbolic_indices(path)
-                        .all(|index| self.provisionally_compile_time(index))
-            }
-            ExprKind::Call { target: CallTarget::Function(_), arguments } => {
-                arguments.iter().all(|id| self.provisionally_compile_time(*id))
-            }
-            ExprKind::Array(values) | ExprKind::Tuple(values) => {
-                values.iter().all(|id| self.provisionally_compile_time(*id))
-            }
-            ExprKind::Unary { operand, .. } => self.provisionally_compile_time(*operand),
-            ExprKind::Binary { left, right, .. } => {
-                self.provisionally_compile_time(*left) && self.provisionally_compile_time(*right)
-            }
-            ExprKind::Ternary { condition, yes, no } => {
-                self.provisionally_compile_time(*condition)
-                    && self.provisionally_compile_time(*yes)
-                    && self.provisionally_compile_time(*no)
-            }
-            ExprKind::Call { .. }
-            | ExprKind::AnonymousComponent { .. }
-            | ExprKind::Parallel(_)
-            | ExprKind::Opaque(_) => false,
-        }
+    pub(super) fn provisionally_compile_time(&self, id: ExprId) -> bool {
+        self.expression_properties(id).compile_time
     }
 
     fn branch_is_witness_only(&self, block: BlockId) -> bool {
@@ -507,39 +466,12 @@ impl Lifter<'_> {
         })
     }
 
-    fn expression_is_witness_only(&self, id: ExprId) -> bool {
-        let Some(expression) = self.hir.expression(id) else { return false };
-        match &expression.kind {
-            ExprKind::Number(_) => true,
-            ExprKind::Access(path) => {
-                Self::symbolic_indices(path).all(|index| self.expression_is_witness_only(index))
-            }
-            ExprKind::Array(values) | ExprKind::Tuple(values) => {
-                values.iter().all(|id| self.expression_is_witness_only(*id))
-            }
-            ExprKind::Unary { operand, .. } => self.expression_is_witness_only(*operand),
-            ExprKind::Binary { left, right, .. } => {
-                self.expression_is_witness_only(*left) && self.expression_is_witness_only(*right)
-            }
-            ExprKind::Ternary { condition, yes, no } => {
-                self.expression_is_witness_only(*condition)
-                    && self.expression_is_witness_only(*yes)
-                    && self.expression_is_witness_only(*no)
-            }
-            ExprKind::Call { .. }
-            | ExprKind::AnonymousComponent { .. }
-            | ExprKind::Parallel(_)
-            | ExprKind::Opaque(_) => false,
-        }
+    pub(super) fn expression_is_witness_only(&self, id: ExprId) -> bool {
+        self.expression_properties(id).witness_only
     }
 
     pub(super) fn symbolic_indices(path: &AccessPath) -> impl Iterator<Item = ExprId> + '_ {
-        path.steps.iter().filter_map(|step| match step {
-            AccessStep::Index { index: ArrayIndex::Symbolic(id), .. } => Some(*id),
-            AccessStep::Index { index: ArrayIndex::Constant(_), .. }
-            | AccessStep::Port { .. }
-            | AccessStep::Tag { .. } => None,
-        })
+        symbolic_indices(path)
     }
 
     pub(super) fn access_knownness(&self, path: &AccessPath) -> Knownness {
@@ -551,42 +483,7 @@ impl Lifter<'_> {
     }
 
     pub(super) fn expression_is_checked(&self, id: ExprId) -> bool {
-        let Some(expression) = self.hir.expression(id) else { return false };
-        match &expression.kind {
-            ExprKind::Number(_) => true,
-            ExprKind::Access(path) => {
-                Self::symbolic_indices(path).all(|id| self.expression_is_checked(id))
-            }
-            ExprKind::Call { target, arguments } => {
-                matches!(target, CallTarget::Function(_) | CallTarget::Template(_))
-                    && arguments.iter().all(|id| self.expression_is_checked(*id))
-            }
-            ExprKind::AnonymousComponent { component, arguments, inputs } => {
-                let target = self.hir.components[component.index].target.as_ref();
-                expression.knownness != Knownness::Opaque
-                    && matches!(target, Some(CallTarget::Template(_)))
-                    && arguments.iter().all(|id| self.expression_is_checked(*id))
-                    && inputs.iter().all(|input| {
-                        matches!(input.target, AnonymousInputTarget::Port(_))
-                            && self.expression_is_checked(input.value)
-                    })
-            }
-            ExprKind::Array(values) | ExprKind::Tuple(values) => {
-                values.iter().all(|id| self.expression_is_checked(*id))
-            }
-            ExprKind::Unary { operand, .. } | ExprKind::Parallel(operand) => {
-                self.expression_is_checked(*operand)
-            }
-            ExprKind::Binary { left, right, .. } => {
-                self.expression_is_checked(*left) && self.expression_is_checked(*right)
-            }
-            ExprKind::Ternary { condition, yes, no } => {
-                self.expression_is_checked(*condition)
-                    && self.expression_is_checked(*yes)
-                    && self.expression_is_checked(*no)
-            }
-            ExprKind::Opaque(_) => false,
-        }
+        self.expression_properties(id).checked
     }
 
     pub(super) fn loop_condition_is_stable(
@@ -606,23 +503,19 @@ impl Lifter<'_> {
                     {
                         return false;
                     }
-                    pending.extend(Self::symbolic_indices(path));
                 }
-                ExprKind::Unary { operand, .. } | ExprKind::Parallel(operand) => {
-                    pending.push(*operand);
-                }
-                ExprKind::Binary { left, right, .. } => pending.extend([*left, *right]),
-                ExprKind::Ternary { condition, yes, no } => {
-                    pending.extend([*condition, *yes, *no]);
-                }
-                ExprKind::Array(elements) | ExprKind::Tuple(elements) => {
-                    pending.extend(elements.iter().copied());
-                }
-                ExprKind::Number(_) => {}
+                ExprKind::Unary { .. }
+                | ExprKind::Parallel(_)
+                | ExprKind::Binary { .. }
+                | ExprKind::Ternary { .. }
+                | ExprKind::Array(_)
+                | ExprKind::Tuple(_)
+                | ExprKind::Number(_) => {}
                 ExprKind::Call { .. }
                 | ExprKind::AnonymousComponent { .. }
                 | ExprKind::Opaque(_) => return false,
             }
+            expression.kind.for_each_child(|child| pending.push(child));
         }
         true
     }

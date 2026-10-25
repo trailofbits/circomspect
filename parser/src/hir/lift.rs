@@ -137,6 +137,7 @@ mod index;
 mod statements;
 mod expressions;
 mod symbol_state;
+mod properties;
 
 use crate::hir::lift::symbol_state::SymbolSnapshot;
 
@@ -280,3 +281,8 @@ pub fn lift_project(source: &LoadedProject) -> LiftedProject {
         incomplete: lifter.incomplete,
     }
 }
+
+#[cfg(test)]
+mod property_reference;
+#[cfg(test)]
+mod property_tests;

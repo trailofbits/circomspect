@@ -1,10 +1,12 @@
+use crate::hir::ValueEvidence;
+use crate::hir::lift::properties::{ExpressionProperties, ExpressionQuery};
 use crate::hir::lift::{
     Access, AccessPath, AccessState, AccessStep, AnonymousCallExpr, AnonymousInput,
     AnonymousInputEffect, AnonymousInputTarget, ArrayIndex, BTreeSet, BusTarget, CallTarget,
     DefinitionKind, ExprId, ExprKind, Expression, Identifier, IncompleteReason,
     InputAssignmentOperator, Item, Knownness, Lifter, Main, PortDirection, PortSchema, ScalarShape,
-    SemanticCode, Severity, ShapeCheck, Span, SymbolId, SymbolKind, TemplateId, ValueEvidence,
-    ValueType, TemplateInvocation, ResolvedField,
+    SemanticCode, Severity, ShapeCheck, Span, SymbolId, SymbolKind, TemplateId, ValueType,
+    TemplateInvocation, ResolvedField,
 };
 
 impl Lifter<'_> {
@@ -93,11 +95,12 @@ impl Lifter<'_> {
     }
 
     fn valid_index_expression(&mut self, id: ExprId, span: Span) -> bool {
-        if !self.expression_is_checked(id) {
+        let properties = self.expression_properties(id);
+        if !properties.checked {
             self.incomplete(span, IncompleteReason::UnknownType);
             return false;
         }
-        match (self.expression_type(id), self.expression_rank(id)) {
+        match (self.expression_type(id), properties.rank) {
             (ValueType::Plain, Some(0)) => true,
             (ValueType::Bus(_), _) => {
                 self.diagnostic(
@@ -121,7 +124,7 @@ impl Lifter<'_> {
             }
             (ValueType::Plain | ValueType::Component(_) | ValueType::Unknown, None)
             | (ValueType::Unknown, Some(_)) => {
-                if self.scalar_shape(id) == ScalarShape::Deferred {
+                if properties.scalar == ScalarShape::Deferred {
                     return true;
                 }
                 self.incomplete(span, IncompleteReason::UnknownType);
@@ -467,10 +470,11 @@ impl Lifter<'_> {
                 let condition = self.lift_expression(condition);
                 let yes = self.lift_expression(yes);
                 let no = self.lift_expression(no);
-                if self.scalar_shape(condition) == ScalarShape::Invalid {
+                let shape = self.scalar_shape(condition);
+                if shape == ScalarShape::Invalid {
                     return self.opaque_expression(span);
                 }
-                let ty = if self.scalar_shape(condition) == ScalarShape::Deferred {
+                let ty = if shape == ScalarShape::Deferred {
                     ValueType::Unknown
                 } else if self.expression_type(yes) == self.expression_type(no) {
                     self.expression_type(yes)
@@ -537,44 +541,32 @@ impl Lifter<'_> {
         Some(symbol.rank)
     }
 
-    pub(super) fn expression_rank(&self, id: ExprId) -> Option<usize> {
-        let expression = self.hir.expression(id)?;
-        match &expression.kind {
-            ExprKind::Number(_) | ExprKind::Unary { .. } | ExprKind::Binary { .. } => Some(0),
-            ExprKind::Access(path) => self.access_rank(path),
-            ExprKind::Array(elements) => {
-                let Some(first) = elements.first() else { return Some(1) };
-                let rank = self.expression_rank(*first)?;
-                elements
-                    .iter()
-                    .all(|id| self.expression_rank(*id) == Some(rank))
-                    .then_some(rank + 1)
-            }
-            ExprKind::Ternary { yes, no, .. } => {
-                let rank = self.expression_rank(*yes)?;
-                (self.expression_rank(*no) == Some(rank)).then_some(rank)
-            }
-            ExprKind::Parallel(operand) => self.expression_rank(*operand),
-            ExprKind::AnonymousComponent { component, .. } => {
-                let target = self.hir.components[component.index].target.as_ref()?;
-                let CallTarget::Template(template) = target else { return None };
-                self.anonymous_output_shape(*template).map(|(_, rank)| rank)
-            }
-            ExprKind::Call { .. } | ExprKind::Tuple(_) | ExprKind::Opaque(_) => None,
-        }
-    }
-
     pub(super) fn check_value_shape(
         &self,
         expected_type: ValueType,
         expected_rank: usize,
         value: ExprId,
     ) -> ShapeCheck {
-        if self.deferred_value_shape(value) {
+        self.check_value_properties(
+            expected_type,
+            expected_rank,
+            value,
+            self.expression_properties(value),
+        )
+    }
+
+    fn check_value_properties(
+        &self,
+        expected_type: ValueType,
+        expected_rank: usize,
+        value: ExprId,
+        properties: ExpressionProperties,
+    ) -> ShapeCheck {
+        if properties.value_evidence == ValueEvidence::Deferred {
             return ShapeCheck::Unknown;
         }
         let actual_type = self.expression_type(value);
-        let actual_rank = self.expression_rank(value);
+        let actual_rank = properties.rank;
         if expected_type == ValueType::Unknown || actual_type == ValueType::Unknown {
             return ShapeCheck::Unknown;
         }
@@ -596,88 +588,22 @@ impl Lifter<'_> {
         ShapeCheck::Valid
     }
 
-    fn deferred_value_shape(&self, id: ExprId) -> bool {
-        let Some(expression) = self.hir.expression(id) else { return false };
-        match &expression.kind {
-            ExprKind::Number(_) | ExprKind::Opaque(_) => false,
-            ExprKind::Access(path) => {
-                let symbol = &self.hir.symbols[path.terminal.index];
-                symbol.value_evidence == ValueEvidence::Deferred
-                    || symbol.kind == SymbolKind::Parameter
-                    || Self::symbolic_indices(path).any(|index| self.deferred_value_shape(index))
-            }
-            ExprKind::Call { target: CallTarget::Function(_), .. } => true,
-            ExprKind::Call { arguments, .. } => {
-                arguments.iter().any(|id| self.deferred_value_shape(*id))
-            }
-            ExprKind::AnonymousComponent { arguments, inputs, .. } => {
-                arguments.iter().any(|id| self.deferred_value_shape(*id))
-                    || inputs.iter().any(|input| self.deferred_value_shape(input.value))
-            }
-            ExprKind::Array(values) | ExprKind::Tuple(values) => {
-                values.iter().any(|id| self.deferred_value_shape(*id))
-            }
-            ExprKind::Unary { operand, .. } | ExprKind::Parallel(operand) => {
-                self.deferred_value_shape(*operand)
-            }
-            ExprKind::Binary { left, right, .. } => {
-                self.deferred_value_shape(*left) || self.deferred_value_shape(*right)
-            }
-            ExprKind::Ternary { condition, yes, no } => {
-                self.deferred_value_shape(*condition)
-                    || self.deferred_value_shape(*yes)
-                    || self.deferred_value_shape(*no)
-            }
-        }
-    }
-
     pub(super) fn scalar_shape(&self, id: ExprId) -> ScalarShape {
-        if !self.expression_is_checked(id) {
-            return ScalarShape::Invalid;
-        }
-        let Some(expression) = self.hir.expression(id) else {
-            return ScalarShape::Invalid;
-        };
-        match &expression.kind {
-            ExprKind::Access(path)
-                if self.hir.symbols[path.terminal.index].kind == SymbolKind::Variable
-                    && self.hir.symbols[path.terminal.index].value_evidence
-                        == ValueEvidence::Deferred =>
-            {
-                ScalarShape::Deferred
-            }
-            ExprKind::Access(path)
-                if self.hir.symbols[path.terminal.index].kind == SymbolKind::Parameter =>
-            {
-                ScalarShape::Deferred
-            }
-            ExprKind::Call { target: CallTarget::Function(_), .. } => ScalarShape::Deferred,
-            ExprKind::Unary { operand, .. } => self.scalar_shape(*operand),
-            ExprKind::Binary { left, right, .. } => {
-                self.scalar_shape(*left).join(self.scalar_shape(*right))
-            }
-            ExprKind::Ternary { condition, yes, no } => self
-                .scalar_shape(*condition)
-                .join(self.scalar_shape(*yes))
-                .join(self.scalar_shape(*no)),
-            _ if self.expression_type(id) == ValueType::Plain
-                && self.expression_rank(id) == Some(0) =>
-            {
-                ScalarShape::Checked
-            }
-            _ => ScalarShape::Invalid,
-        }
+        self.expression_properties(id).scalar
     }
 
     pub(super) fn equality_shape(&self, left: ExprId, right: ExprId) -> ShapeCheck {
-        if !self.expression_is_checked(left) || !self.expression_is_checked(right) {
+        let mut query = ExpressionQuery::new(self);
+        let left_properties = query.get(left);
+        let right_properties = query.get(right);
+        if !left_properties.checked || !right_properties.checked {
             return ShapeCheck::Invalid(SemanticCode::WrongAssignmentExpression);
         }
         let ty = self.expression_type(left);
         match ty {
             ValueType::Plain | ValueType::Bus(_) => {
-                let Some(rank) = self.expression_rank(left) else { return ShapeCheck::Unknown };
-                self.check_value_shape(ty, rank, right)
+                let Some(rank) = left_properties.rank else { return ShapeCheck::Unknown };
+                self.check_value_properties(ty, rank, right, right_properties)
             }
             ValueType::Unknown => ShapeCheck::Unknown,
             ValueType::Component(_) => ShapeCheck::Invalid(SemanticCode::WrongAssignmentExpression),
@@ -694,7 +620,10 @@ impl Lifter<'_> {
         )
     }
 
-    fn anonymous_output_shape(&self, template: TemplateId) -> Option<(ValueType, usize)> {
+    pub(super) fn anonymous_output_shape(
+        &self,
+        template: TemplateId,
+    ) -> Option<(ValueType, usize)> {
         let mut outputs = self.hir.templates[template.index]
             .ports
             .iter()
