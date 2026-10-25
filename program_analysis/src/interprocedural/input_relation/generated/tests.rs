@@ -1,12 +1,13 @@
 use std::collections::BTreeMap;
 use std::fs;
 
+use abstract_interpretation::graph::FlowGraph;
 use parser::hir::lift_project;
 use parser::new_frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
 
-use crate::hir_cfg::build_cfg;
-use crate::hir_facts::{AnalysisFacts, GeneratedInputEquation, ProofBudget};
+use crate::hir_cfg::{build_cfg, CfgNodeKind, Constraint};
+use crate::hir_facts::{AnalysisFacts, FactBlocker, GeneratedInputEquation, ProofBudget};
 use crate::interprocedural::input_relation::ReadyGeneratedInputs;
 use crate::interprocedural::output_enumeration::EnumeratedComponentInstance;
 use crate::interprocedural::{CallOwner, CallReachability, ProjectSummaries, SummaryBlocker};
@@ -77,6 +78,19 @@ fn inspect(binding: &str, dimension: &str) -> Result<Vec<GeneratedInputEquation>
         assert_eq!(element.indices().len(), 1);
         assert_eq!(binding.target, *binding.value.target());
         assert!(ready.ports().input_key(element).is_some());
+        assert_eq!(binding.origins.len(), 1);
+        let origin = binding.origins[0];
+        let mut paired = Vec::new();
+        for id in facts.cfg().nodes() {
+            let node = facts.cfg().node(*id).unwrap();
+            if let CfgNodeKind::Constraint(Constraint::Assignment { target, .. }) = &node.kind {
+                let key = facts.exact_closed_component_key(target, *id, ready.ports());
+                if node.origin == Some(origin) && key.certified() == Some(&binding.target) {
+                    paired.push(*id);
+                }
+            }
+        }
+        assert_eq!(paired.len(), 1, "binding retains its generated constraint origin");
         equations.push(binding.value.clone());
     }
     check_refusals(&provider, &facts, &child, &instance, &ready);
@@ -170,4 +184,32 @@ fn generated_array_readiness_rejects_incomplete_opaque_and_witness_bindings() {
     ] {
         assert!(inspect(binding, "n").is_err(), "{binding}");
     }
+}
+
+#[test]
+fn generated_input_refusals_preserve_the_first_blocker() {
+    for (binding, expected) in [
+        ("c.values[0]<==7;", SummaryBlocker::MissingInputBinding),
+        ("c.values[0]<==7;c.values[0]<==8;c.values[1]<==9;", SummaryBlocker::DuplicateInputBinding),
+        ("c.values[0]<--7;c.values[1]<==8;", SummaryBlocker::WitnessOnlyInput),
+        ("c.values[0]<--7;c.values[0]<==9;c.values[1]<==8;", SummaryBlocker::WitnessOnlyInput),
+        (
+            "signal out;out<--c.out;c.values[0]<==7;c.values[1]<==8;",
+            SummaryBlocker::ExternalSummary,
+        ),
+    ] {
+        assert_eq!(inspect(binding, "n").err(), Some(expected), "{binding}");
+    }
+}
+
+#[test]
+fn a_symbolic_input_index_retains_its_expression_blocker() {
+    let result = inspect("c.values[x]<==7;c.values[1]<==8;", "n");
+    let Err(SummaryBlocker::LocalFacts(blockers)) = result else {
+        panic!("symbolic target index must remain a local fact failure");
+    };
+    assert_eq!(blockers.len(), 1);
+    let FactBlocker::OpaqueExpression(_expression) = blockers.first().unwrap() else {
+        panic!("the symbolic expression must be reported");
+    };
 }

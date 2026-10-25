@@ -98,8 +98,7 @@ impl ProjectSummaries<'_> {
             instance: &exact,
             instantiation: instance.instantiation,
             inputs: ports.input_elements().cloned().collect(),
-            policy: BindingPolicy::GeneratedExpressions,
-            ports: Some(&ports),
+            policy: BindingPolicy::GeneratedExpressions(&ports),
         };
         let bindings = solve_inputs(&analysis)?.into_bindings()?;
         Ok(ReadyGeneratedInputs { caller, instance: instance.clone(), bindings, ports })

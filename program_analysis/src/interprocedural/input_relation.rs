@@ -58,11 +58,11 @@ pub(super) enum GeneratedInputValue {
 }
 
 #[derive(Clone, Copy)]
-enum BindingPolicy {
+enum BindingPolicy<'a> {
     FixedOutput,
     CompleteModels,
     WitnessInputs,
-    GeneratedExpressions,
+    GeneratedExpressions(&'a ValidatedComponentPorts),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -342,8 +342,7 @@ struct RelationAnalysis<'a> {
     instance: &'a AccessPath,
     instantiation: NodeId,
     inputs: Vec<InputPortElement>,
-    policy: BindingPolicy,
-    ports: Option<&'a ValidatedComponentPorts>,
+    policy: BindingPolicy<'a>,
 }
 
 impl DataflowAnalysis<crate::hir_cfg::DefinitionCfg> for RelationAnalysis<'_> {
@@ -463,18 +462,23 @@ impl RelationAnalysis<'_> {
         if relation == InstanceRelation::Separate {
             return Ok(());
         }
-        let port = if let Some(ports) = self.ports {
-            let key = self.facts.exact_closed_component_key(target, node.id, ports);
-            ports
-                .input_element(certified(&key)?)
-                .cloned()
-                .ok_or(SummaryBlocker::UnsupportedContext)?
-        } else {
-            let (port, indices) = self
-                .facts
-                .source_component_port_indices(target)
-                .map_err(|_| SummaryBlocker::UnsupportedContext)?;
-            InputPortElement { port, indices }
+        let port = match self.policy {
+            BindingPolicy::GeneratedExpressions(ports) => {
+                let key = self.facts.exact_closed_component_key(target, node.id, ports);
+                ports
+                    .input_element(certified(&key)?)
+                    .cloned()
+                    .ok_or(SummaryBlocker::UnsupportedContext)?
+            }
+            BindingPolicy::FixedOutput
+            | BindingPolicy::CompleteModels
+            | BindingPolicy::WitnessInputs => {
+                let (port, indices) = self
+                    .facts
+                    .source_component_port_indices(target)
+                    .map_err(|_| SummaryBlocker::UnsupportedContext)?;
+                InputPortElement { port, indices }
+            }
         };
         self.bind_input(node, &port, relation, state)
     }
@@ -526,8 +530,7 @@ impl RelationAnalysis<'_> {
             (BindingPolicy::WitnessInputs, BindingSource::Witness) => {
                 return self.checked_witness_value(value).map(BindingValue::Witness);
             }
-            (BindingPolicy::GeneratedExpressions, BindingSource::Generated) => {
-                let ports = self.ports.ok_or(SummaryBlocker::WrongContext)?;
+            (BindingPolicy::GeneratedExpressions(ports), BindingSource::Generated) => {
                 let equation = self.facts.generated_assignment_equation(node.id, ports);
                 return Ok(BindingValue::Equation(certified(&equation)?.clone()));
             }
@@ -537,7 +540,7 @@ impl RelationAnalysis<'_> {
             (
                 BindingPolicy::FixedOutput
                 | BindingPolicy::CompleteModels
-                | BindingPolicy::GeneratedExpressions,
+                | BindingPolicy::GeneratedExpressions(_),
                 BindingSource::Witness,
             ) => {
                 return Err(SummaryBlocker::WitnessOnlyInput);
@@ -651,7 +654,8 @@ impl RelationAnalysis<'_> {
         right: parser::hir::ExprId,
         state: &mut RelationState,
     ) -> Result<(), SummaryBlocker> {
-        if let BindingPolicy::CompleteModels | BindingPolicy::GeneratedExpressions = self.policy {
+        if let BindingPolicy::CompleteModels | BindingPolicy::GeneratedExpressions(_) = self.policy
+        {
             return Ok(());
         }
         for expression in [left, right] {
@@ -732,7 +736,7 @@ pub(super) fn ready_witness_instance(
 fn ready_enumerated_inputs(
     facts: &AnalysisFacts<'_>,
     instance: &EnumeratedComponentInstance,
-    policy: BindingPolicy,
+    policy: BindingPolicy<'_>,
 ) -> Result<ReadyInputs, SummaryBlocker> {
     let parser::hir::DefinitionRef::Template(child) = instance.callee.context().definition() else {
         return Err(SummaryBlocker::WrongInstance);
@@ -762,10 +766,10 @@ fn ready_inputs(
     instance: &AccessPath,
     instantiation: NodeId,
     child: parser::hir::TemplateId,
-    policy: BindingPolicy,
+    policy: BindingPolicy<'_>,
 ) -> Result<ReadyInputs, SummaryBlocker> {
     let inputs = input_ports(facts, child)?;
-    let analysis = RelationAnalysis { facts, instance, instantiation, inputs, policy, ports: None };
+    let analysis = RelationAnalysis { facts, instance, instantiation, inputs, policy };
     solve_inputs(&analysis)
 }
 
@@ -794,7 +798,7 @@ fn solve_inputs(analysis: &RelationAnalysis<'_>) -> Result<ReadyInputs, SummaryB
     };
     let mut bindings = BTreeMap::new();
     for (port, binding) in inputs {
-        bindings.insert(port.clone(), checked_binding(facts, binding, analysis.ports)?);
+        bindings.insert(port.clone(), checked_binding(facts, binding, analysis.policy)?);
     }
     Ok(ReadyInputs { bindings })
 }
@@ -822,7 +826,7 @@ fn input_ports(
 fn checked_binding(
     facts: &AnalysisFacts<'_>,
     binding: &InputState,
-    ports: Option<&ValidatedComponentPorts>,
+    policy: BindingPolicy<'_>,
 ) -> Result<CheckedInputBinding<BindingValue>, SummaryBlocker> {
     let InputState::Bound { value, sites } = binding else {
         return Err(SummaryBlocker::MissingInputBinding);
@@ -835,9 +839,13 @@ fn checked_binding(
         else {
             return Err(SummaryBlocker::ExternalSummary);
         };
-        let key = match ports {
-            Some(ports) => facts.exact_closed_component_key(target, *id, ports),
-            None => facts.exact_access_key(target),
+        let key = match policy {
+            BindingPolicy::GeneratedExpressions(ports) => {
+                facts.exact_closed_component_key(target, *id, ports)
+            }
+            BindingPolicy::FixedOutput
+            | BindingPolicy::CompleteModels
+            | BindingPolicy::WitnessInputs => facts.exact_access_key(target),
         };
         let key = certified(&key)?.clone();
         if target_key.as_ref().is_some_and(|previous| previous != &key) {
@@ -1011,21 +1019,14 @@ mod tests {
             BindingPolicy::FixedOutput,
             BindingPolicy::CompleteModels,
             BindingPolicy::WitnessInputs,
-            BindingPolicy::GeneratedExpressions,
+            BindingPolicy::GeneratedExpressions(ready.ports()),
         ] {
-            let checked_ports = match policy {
-                BindingPolicy::GeneratedExpressions => Some(ready.ports()),
-                BindingPolicy::FixedOutput
-                | BindingPolicy::CompleteModels
-                | BindingPolicy::WitnessInputs => None,
-            };
             let analysis = RelationAnalysis {
                 facts: &facts,
                 instance: target,
                 instantiation: applied.instantiation(),
                 inputs: vec![ports[0].into()],
                 policy,
-                ports: checked_ports,
             };
             check_transfer_monotonicity(facts.cfg(), &analysis, &states);
         }
