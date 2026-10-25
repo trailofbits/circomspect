@@ -136,6 +136,7 @@ pub struct CfgEdge {
 pub struct DefinitionCfg {
     graph: IndexedGraph<CfgNode, CfgEdge>,
     topology: TopologyIndex,
+    evaluations: BTreeMap<ExprId, Vec<NodeId>>,
     local_symbols: BTreeSet<SymbolId>,
     checked_paths: Vec<AccessPath>,
     scalar_seeds: Option<BTreeMap<SymbolId, FieldValue>>,
@@ -158,6 +159,10 @@ impl DefinitionCfg {
     #[must_use]
     pub fn exit(&self) -> NodeId {
         self.exit
+    }
+
+    pub(crate) fn evaluation_sites(&self, expression: ExprId) -> &[NodeId] {
+        self.evaluations.get(&expression).map_or(&[], Vec::as_slice)
     }
 
     pub(crate) fn path_exists(
@@ -1361,9 +1366,16 @@ fn build_cfg_inner<'a>(
     let graph = IndexedGraph::new(builder.nodes, builder.edges, vec![entry], vec![exit])
         .map_err(BuildError::InvalidGraph)?;
     let topology = TopologyIndex::new(&graph);
+    let mut evaluations: BTreeMap<ExprId, Vec<NodeId>> = BTreeMap::new();
+    for id in graph.nodes() {
+        if let Some(CfgNodeKind::Evaluate(expression)) = graph.node(*id).map(|node| &node.kind) {
+            evaluations.entry(*expression).or_default().push(*id);
+        }
+    }
     Ok(DefinitionCfg {
         graph,
         topology,
+        evaluations,
         local_symbols,
         checked_paths,
         scalar_seeds: scalar_seeds.cloned(),

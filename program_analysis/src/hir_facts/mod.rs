@@ -14,6 +14,8 @@ mod field;
 mod forward;
 mod handles;
 mod liveness;
+#[cfg(test)]
+mod occurrence_tests;
 mod purity;
 #[cfg(test)]
 mod ownership_tests;
@@ -589,18 +591,7 @@ impl AnalysisFacts<'_> {
         if self.hir.expression(expression).is_none() {
             return Fact::blocked(BTreeSet::from([FactBlocker::ForeignQuery]));
         }
-        let sites: BTreeSet<_> = self
-            .cfg
-            .nodes()
-            .iter()
-            .copied()
-            .filter(|id| {
-                matches!(
-                    self.cfg.node(*id).map(|node| &node.kind),
-                    Some(CfgNodeKind::Evaluate(value)) if *value == expression
-                )
-            })
-            .collect();
+        let sites: BTreeSet<_> = self.cfg.evaluation_sites(expression).iter().copied().collect();
         if sites.is_empty() {
             return Fact::blocked(BTreeSet::from([FactBlocker::MissingExit]));
         }
@@ -674,14 +665,7 @@ impl AnalysisFacts<'_> {
         }
         let mut result = FieldRange::Unreachable;
         let mut observed = false;
-        for node in self.cfg.nodes() {
-            let Some(CfgNodeKind::Evaluate(id)) = self.cfg.node(*node).map(|item| &item.kind)
-            else {
-                continue;
-            };
-            if *id != expression {
-                continue;
-            }
+        for node in self.cfg.evaluation_sites(expression) {
             let Some(variables) = self.site_state(*node).and_then(ForwardState::variables) else {
                 continue;
             };
@@ -711,14 +695,7 @@ impl AnalysisFacts<'_> {
         let analysis = self.forward_analysis();
         let mut result = DegreeUpper::Unreachable;
         let mut observed = false;
-        for id in self.cfg.nodes() {
-            let Some(CfgNodeKind::Evaluate(value)) = self.cfg.node(*id).map(|node| &node.kind)
-            else {
-                continue;
-            };
-            if *value != expression {
-                continue;
-            }
+        for id in self.cfg.evaluation_sites(expression) {
             let Some(state) = self.site_state(*id) else { continue };
             let (Some(values), Some(degrees)) = (state.variables(), state.degrees()) else {
                 continue;
@@ -741,14 +718,7 @@ impl AnalysisFacts<'_> {
         let mut result = BTreeSet::new();
         let mut observed = false;
         let analysis = self.forward_analysis();
-        for id in self.cfg.nodes() {
-            let Some(CfgNodeKind::Evaluate(value)) = self.cfg.node(*id).map(|node| &node.kind)
-            else {
-                continue;
-            };
-            if *value != expression {
-                continue;
-            }
+        for id in self.cfg.evaluation_sites(expression) {
             let Some(state) = self.site_state(*id) else { continue };
             let (Some(values), Some(variables)) = (state.variables(), state.dependencies()) else {
                 continue;
@@ -777,16 +747,8 @@ impl AnalysisFacts<'_> {
         ) {
             blockers.insert(FactBlocker::OpaqueExpression(expression));
         }
-        let mut sites: BTreeSet<_> = self
-            .cfg
-            .nodes()
-            .iter()
-            .copied()
-            .filter(|node| match self.cfg.node(*node).map(|item| &item.kind) {
-                Some(CfgNodeKind::Evaluate(id)) => *id == expression,
-                _ => false,
-            })
-            .collect();
+        let mut sites: BTreeSet<_> =
+            self.cfg.evaluation_sites(expression).iter().copied().collect();
         let mut seen = BTreeSet::new();
         for path in &uses {
             if self
