@@ -19,6 +19,8 @@ mod purity;
 mod ownership_tests;
 mod relations;
 mod source_assignment;
+#[cfg(test)]
+mod topology_tests;
 mod use_queries;
 mod walk;
 mod write_validity;
@@ -529,27 +531,12 @@ impl AnalysisFacts<'_> {
     }
 
     fn path_bypasses(&self, node: NodeId, pruned: &BTreeSet<EdgeId>) -> bool {
-        let mut visited = BTreeSet::new();
-        let mut pending = vec![self.cfg.entry()];
-        while let Some(current) = pending.pop() {
-            if current == node || !visited.insert(current) {
-                continue;
-            }
-            if current == self.cfg.exit() {
-                return true;
-            }
-            for id in self.cfg.edges() {
-                if pruned.contains(id) {
-                    continue;
-                }
-                if let Some(edge) = self.cfg.edge(*id) {
-                    if edge.source == current {
-                        pending.push(edge.target);
-                    }
-                }
-            }
-        }
-        false
+        self.cfg.path_exists(
+            self.cfg.entry(),
+            &BTreeSet::from([self.cfg.exit()]),
+            Some(node),
+            pruned,
+        )
     }
 
     pub(crate) fn resolved_deferred_assignment(&self, node: NodeId) -> bool {
@@ -1366,24 +1353,7 @@ impl AnalysisFacts<'_> {
     }
 
     fn can_reach_any(&self, start: NodeId, targets: &BTreeSet<NodeId>) -> bool {
-        let mut visited = BTreeSet::new();
-        let mut queue = vec![start];
-        while let Some(node) = queue.pop() {
-            if !visited.insert(node) {
-                continue;
-            }
-            if targets.contains(&node) {
-                return true;
-            }
-            for edge in self.cfg.edges() {
-                if let Some(item) = self.cfg.edge(*edge) {
-                    if item.source == node {
-                        queue.push(item.target);
-                    }
-                }
-            }
-        }
-        false
+        self.cfg.path_exists(start, targets, None, &BTreeSet::new())
     }
 
     fn deferred_control_blockers(&self, sites: &BTreeSet<NodeId>) -> BTreeSet<FactBlocker> {
@@ -1449,24 +1419,12 @@ impl AnalysisFacts<'_> {
     }
 
     fn can_reach_exit_avoiding(&self, start: NodeId, excluded: NodeId) -> bool {
-        let mut visited = BTreeSet::new();
-        let mut queue = vec![start];
-        while let Some(node) = queue.pop() {
-            if node == excluded || !visited.insert(node) {
-                continue;
-            }
-            if node == self.cfg.exit() {
-                return true;
-            }
-            for edge in self.cfg.edges() {
-                if let Some(item) = self.cfg.edge(*edge) {
-                    if item.source == node {
-                        queue.push(item.target);
-                    }
-                }
-            }
-        }
-        false
+        self.cfg.path_exists(
+            start,
+            &BTreeSet::from([self.cfg.exit()]),
+            Some(excluded),
+            &BTreeSet::new(),
+        )
     }
 
     fn is_opaque_node(&self, id: NodeId) -> bool {

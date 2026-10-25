@@ -1,6 +1,10 @@
 //! Immutable control flow graphs over the checked HIR.
 
+mod index;
+
 use std::collections::{BTreeMap, BTreeSet};
+
+use crate::hir_cfg::index::TopologyIndex;
 
 use abstract_interpretation::graph::{EdgeId, EdgeRef, FlowGraph, GraphError, IndexedGraph, NodeId};
 use num_traits::ToPrimitive;
@@ -131,6 +135,7 @@ pub struct CfgEdge {
 #[derive(Clone)]
 pub struct DefinitionCfg {
     graph: IndexedGraph<CfgNode, CfgEdge>,
+    topology: TopologyIndex,
     local_symbols: BTreeSet<SymbolId>,
     checked_paths: Vec<AccessPath>,
     scalar_seeds: Option<BTreeMap<SymbolId, FieldValue>>,
@@ -153,6 +158,16 @@ impl DefinitionCfg {
     #[must_use]
     pub fn exit(&self) -> NodeId {
         self.exit
+    }
+
+    pub(crate) fn path_exists(
+        &self,
+        start: NodeId,
+        targets: &BTreeSet<NodeId>,
+        excluded: Option<NodeId>,
+        pruned: &BTreeSet<EdgeId>,
+    ) -> bool {
+        self.topology.reaches(start, targets, excluded, pruned)
     }
 
     pub(crate) fn owns_symbol(&self, symbol: SymbolId) -> bool {
@@ -1345,8 +1360,10 @@ fn build_cfg_inner<'a>(
     let checked_paths = builder.checked_paths;
     let graph = IndexedGraph::new(builder.nodes, builder.edges, vec![entry], vec![exit])
         .map_err(BuildError::InvalidGraph)?;
+    let topology = TopologyIndex::new(&graph);
     Ok(DefinitionCfg {
         graph,
+        topology,
         local_symbols,
         checked_paths,
         scalar_seeds: scalar_seeds.cloned(),
