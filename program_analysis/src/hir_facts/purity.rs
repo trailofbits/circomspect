@@ -7,7 +7,7 @@ use abstract_interpretation::solver::SolveResult;
 use parser::hir::{AccessPath, ExprId, ExprKind, HirProject, SymbolKind};
 
 use crate::hir_cfg::{CfgNodeKind, DefinitionCfg};
-use crate::hir_facts::forward::{eval_expression_with_calls, ForwardState};
+use crate::hir_facts::forward::eval_expression_with_calls;
 use crate::hir_facts::{AnalysisFacts, FieldContext, ForwardResult};
 use crate::scalar_evidence::ScalarExpressionEvidence;
 
@@ -37,7 +37,7 @@ impl ScalarEvaluationSafety {
                 unsafe_expressions.insert(*expression);
                 continue;
             };
-            let ForwardState::Reached { variables, .. } = state else { continue };
+            let Some(variables) = state.variables() else { continue };
             if removable_structure(hir, *expression, calls)
                 && eval_expression_with_calls(hir, field, *expression, variables, calls).is_some()
             {

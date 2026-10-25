@@ -22,17 +22,30 @@ use crate::hir_facts::relations::{
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ForwardState {
     Unreachable,
-    Reached {
-        variables: BTreeMap<SymbolId, FieldValue>,
-        symbolic: Arc<MustSymbolicVariables>,
-        dependencies: BTreeMap<SymbolId, MayAccessSet>,
-        degrees: BTreeMap<SymbolId, DegreeUpper>,
-        may_constraints: BTreeSet<NodeId>,
-        must_constraints: BTreeSet<NodeId>,
-        must_touches: BTreeSet<AccessKey>,
-        must_fixed: BTreeSet<(AccessKey, FieldValue)>,
-        must_equations: Arc<MustEquations>,
-    },
+    Reached(ReachedFacts),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReachedFacts {
+    locals: LocalValueFacts,
+    constraints: ConstraintFacts,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct LocalValueFacts {
+    variables: BTreeMap<SymbolId, FieldValue>,
+    symbolic: Arc<MustSymbolicVariables>,
+    dependencies: BTreeMap<SymbolId, MayAccessSet>,
+    degrees: BTreeMap<SymbolId, DegreeUpper>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ConstraintFacts {
+    may_constraints: BTreeSet<NodeId>,
+    must_constraints: BTreeSet<NodeId>,
+    must_touches: BTreeSet<AccessKey>,
+    must_fixed: BTreeSet<(AccessKey, FieldValue)>,
+    must_equations: Arc<MustEquations>,
 }
 
 // The CFG fixes the finite set of constraint-site IDs. Each variable maps to
@@ -40,13 +53,66 @@ pub enum ForwardState {
 // May-sites grow by union; must-sites shrink by intersection. Thus this
 // product domain has finite height for each definition.
 
-impl ForwardState {
-    pub fn boundary() -> Self {
-        Self::Reached {
+impl ReachedFacts {
+    fn boundary() -> Self {
+        Self { locals: LocalValueFacts::boundary(), constraints: ConstraintFacts::boundary() }
+    }
+
+    fn leq(&self, other: &Self) -> bool {
+        self.locals.leq(&other.locals) && self.constraints.leq(&other.constraints)
+    }
+
+    fn join_assign(&mut self, other: &Self) -> bool {
+        let locals_changed = self.locals.join_assign(&other.locals);
+        let constraints_changed = self.constraints.join_assign(&other.constraints);
+        locals_changed || constraints_changed
+    }
+}
+
+impl LocalValueFacts {
+    fn boundary() -> Self {
+        Self {
             variables: BTreeMap::new(),
             symbolic: Arc::new(MustSymbolicVariables::reachable_empty()),
             dependencies: BTreeMap::new(),
             degrees: BTreeMap::new(),
+        }
+    }
+
+    fn leq(&self, other: &Self) -> bool {
+        other.variables.iter().all(|(key, value)| self.variables.get(key) == Some(value))
+            && self.symbolic.leq(&other.symbolic)
+            && other
+                .dependencies
+                .iter()
+                .all(|(key, right)| self.dependencies.get(key).is_some_and(|left| left.leq(right)))
+            && other
+                .degrees
+                .iter()
+                .all(|(key, right)| self.degrees.get(key).is_some_and(|left| left <= right))
+    }
+
+    fn join_assign(&mut self, other: &Self) -> bool {
+        let old = self.clone();
+        self.variables.retain(|key, value| other.variables.get(key) == Some(value));
+        self.symbolic.join_assign(&other.symbolic);
+        self.dependencies.retain(|key, left| {
+            let Some(right) = other.dependencies.get(key) else { return false };
+            left.join_assign(right);
+            true
+        });
+        self.degrees.retain(|key, left| {
+            let Some(right) = other.degrees.get(key) else { return false };
+            *left = (*left).max(*right);
+            *left != DegreeUpper::Unbounded
+        });
+        *self != old
+    }
+}
+
+impl ConstraintFacts {
+    fn boundary() -> Self {
+        Self {
             may_constraints: BTreeSet::new(),
             must_constraints: BTreeSet::new(),
             must_touches: BTreeSet::new(),
@@ -55,53 +121,80 @@ impl ForwardState {
         }
     }
 
+    fn leq(&self, other: &Self) -> bool {
+        self.may_constraints.is_subset(&other.may_constraints)
+            && self.must_constraints.is_superset(&other.must_constraints)
+            && self.must_touches.is_superset(&other.must_touches)
+            && self.must_fixed.is_superset(&other.must_fixed)
+            && self.must_equations.leq(&other.must_equations)
+    }
+
+    fn join_assign(&mut self, other: &Self) -> bool {
+        let old = self.clone();
+        self.may_constraints.extend(&other.may_constraints);
+        self.must_constraints.retain(|site| other.must_constraints.contains(site));
+        self.must_touches.retain(|key| other.must_touches.contains(key));
+        self.must_fixed.retain(|equation| other.must_fixed.contains(equation));
+        self.must_equations.join_assign(&other.must_equations);
+        *self != old
+    }
+}
+
+impl ForwardState {
+    pub fn boundary() -> Self {
+        Self::Reached(ReachedFacts::boundary())
+    }
+
     pub fn with_scalar_parameters(values: &BTreeMap<SymbolId, FieldValue>) -> Self {
         let mut state = Self::boundary();
-        if let Self::Reached { variables, .. } = &mut state {
-            variables.extend(values.iter().map(|(symbol, value)| (*symbol, value.clone())));
+        if let Self::Reached(facts) = &mut state {
+            facts
+                .locals
+                .variables
+                .extend(values.iter().map(|(symbol, value)| (*symbol, value.clone())));
         }
         state
     }
 
     pub fn variables(&self) -> Option<&BTreeMap<SymbolId, FieldValue>> {
-        let Self::Reached { variables, .. } = self else { return None };
-        Some(variables)
+        let Self::Reached(facts) = self else { return None };
+        Some(&facts.locals.variables)
     }
 
     pub(crate) fn symbolic(&self) -> Option<&MustSymbolicVariables> {
-        let Self::Reached { symbolic, .. } = self else { return None };
-        Some(symbolic)
+        let Self::Reached(facts) = self else { return None };
+        Some(&facts.locals.symbolic)
     }
 
     pub fn dependencies(&self) -> Option<&BTreeMap<SymbolId, MayAccessSet>> {
-        let Self::Reached { dependencies, .. } = self else { return None };
-        Some(dependencies)
+        let Self::Reached(facts) = self else { return None };
+        Some(&facts.locals.dependencies)
     }
 
     pub fn degrees(&self) -> Option<&BTreeMap<SymbolId, DegreeUpper>> {
-        let Self::Reached { degrees, .. } = self else { return None };
-        Some(degrees)
+        let Self::Reached(facts) = self else { return None };
+        Some(&facts.locals.degrees)
     }
 
     pub fn constraints(&self) -> Option<(&BTreeSet<NodeId>, &BTreeSet<NodeId>)> {
-        let Self::Reached { may_constraints, must_constraints, .. } = self else { return None };
-        Some((may_constraints, must_constraints))
+        let Self::Reached(facts) = self else { return None };
+        Some((&facts.constraints.may_constraints, &facts.constraints.must_constraints))
     }
 
     pub fn fixed_equations(&self) -> Option<&BTreeSet<(AccessKey, FieldValue)>> {
-        let Self::Reached { must_fixed, .. } = self else { return None };
-        Some(must_fixed)
+        let Self::Reached(facts) = self else { return None };
+        Some(&facts.constraints.must_fixed)
     }
 
     pub fn must_touches(&self) -> Option<&BTreeSet<AccessKey>> {
-        let Self::Reached { must_touches, .. } = self else { return None };
-        Some(must_touches)
+        let Self::Reached(facts) = self else { return None };
+        Some(&facts.constraints.must_touches)
     }
 
     pub(crate) fn must_equations(&self) -> &MustEquations {
         match self {
             Self::Unreachable => &MustEquations::Unreachable,
-            Self::Reached { must_equations, .. } => must_equations,
+            Self::Reached(facts) => &facts.constraints.must_equations,
         }
     }
 }
@@ -113,103 +206,19 @@ impl Lattice for ForwardState {
 
     fn leq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::Unreachable, _) => true,
-            (Self::Reached { .. }, Self::Unreachable) => false,
-            (
-                Self::Reached {
-                    variables: left,
-                    symbolic: left_symbolic,
-                    dependencies: left_dependencies,
-                    degrees: left_degrees,
-                    may_constraints: left_may,
-                    must_constraints: left_must,
-                    must_touches: left_touches,
-                    must_fixed: left_fixed,
-                    must_equations: left_equations,
-                },
-                Self::Reached {
-                    variables: right,
-                    symbolic: right_symbolic,
-                    dependencies: right_dependencies,
-                    degrees: right_degrees,
-                    may_constraints: right_may,
-                    must_constraints: right_must,
-                    must_touches: right_touches,
-                    must_fixed: right_fixed,
-                    must_equations: right_equations,
-                },
-            ) => {
-                right.iter().all(|(key, value)| left.get(key) == Some(value))
-                    && left_symbolic.leq(right_symbolic)
-                    && right_dependencies.iter().all(|(key, right)| {
-                        left_dependencies.get(key).is_some_and(|left| left.leq(right))
-                    })
-                    && right_degrees
-                        .iter()
-                        .all(|(key, right)| left_degrees.get(key).is_some_and(|left| left <= right))
-                    && left_may.is_subset(right_may)
-                    && left_must.is_superset(right_must)
-                    && left_touches.is_superset(right_touches)
-                    && left_fixed.is_superset(right_fixed)
-                    && left_equations.leq(right_equations)
-            }
+            (Self::Unreachable, Self::Unreachable | Self::Reached(_)) => true,
+            (Self::Reached(_), Self::Unreachable) => false,
+            (Self::Reached(left), Self::Reached(right)) => left.leq(right),
         }
     }
 
     fn join_assign(&mut self, other: &Self) -> bool {
-        if let Self::Unreachable = other {
-            return false;
-        }
-        if let Self::Unreachable = self {
+        let Self::Reached(right) = other else { return false };
+        let Self::Reached(left) = self else {
             *self = other.clone();
             return true;
-        }
-        let old = self.clone();
-        let (
-            Self::Reached {
-                variables: left,
-                symbolic: left_symbolic,
-                dependencies: left_dependencies,
-                degrees: left_degrees,
-                may_constraints: left_may,
-                must_constraints: left_must,
-                must_touches: left_touches,
-                must_fixed: left_fixed,
-                must_equations: left_equations,
-            },
-            Self::Reached {
-                variables: right,
-                symbolic: right_symbolic,
-                dependencies: right_dependencies,
-                degrees: right_degrees,
-                may_constraints: right_may,
-                must_constraints: right_must,
-                must_touches: right_touches,
-                must_fixed: right_fixed,
-                must_equations: right_equations,
-            },
-        ) = (&mut *self, other)
-        else {
-            return false;
         };
-        left.retain(|key, value| right.get(key) == Some(value));
-        left_symbolic.join_assign(right_symbolic);
-        left_dependencies.retain(|key, left| {
-            let Some(right) = right_dependencies.get(key) else { return false };
-            left.join_assign(right);
-            true
-        });
-        left_degrees.retain(|key, left| {
-            let Some(right) = right_degrees.get(key) else { return false };
-            *left = (*left).max(*right);
-            *left != DegreeUpper::Unbounded
-        });
-        left_may.extend(right_may);
-        left_must.retain(|site| right_must.contains(site));
-        left_touches.retain(|key| right_touches.contains(key));
-        left_fixed.retain(|equation| right_fixed.contains(equation));
-        left_equations.join_assign(right_equations);
-        *self != old
+        left.join_assign(right)
     }
 }
 
@@ -768,7 +777,7 @@ fn accumulate_degree(
     degrees.remove(&target.root);
 }
 
-impl ForwardState {
+impl LocalValueFacts {
     fn apply_assignment(
         &mut self,
         analysis: &ForwardAnalysis<'_>,
@@ -776,9 +785,6 @@ impl ForwardState {
         value: ExprId,
         operator: AssignmentOperator,
     ) -> Result<(), String> {
-        let Self::Reached { variables, symbolic, dependencies, degrees, .. } = self else {
-            return Ok(());
-        };
         let scalar_variable = target.steps.is_empty()
             && analysis.hir.symbol(target.root).is_some_and(|symbol| {
                 symbol.kind == SymbolKind::Variable && symbol.rank == 0 && symbol.shape_checked
@@ -786,26 +792,17 @@ impl ForwardState {
         if operator != AssignmentOperator::Assign
             && (operator != AssignmentOperator::Add || !scalar_variable)
         {
-            variables.remove(&target.root);
-            Arc::make_mut(symbolic).remove(target.root);
-            dependencies.remove(&target.root);
-            degrees.remove(&target.root);
+            self.forget_local(target.root);
             return Err(format!("unsupported compound assignment {operator:?}"));
         }
         if scalar_variable && operator == AssignmentOperator::Add {
-            accumulate_symbolic(analysis, target, value, variables, symbolic);
-            accumulate_degree(analysis, target, value, variables, degrees);
-            accumulate_dependencies(analysis, target, value, variables, dependencies);
-            accumulate_value(analysis, target, value, variables);
+            self.accumulate(analysis, target, value);
         } else if analysis
             .hir
             .symbol(target.root)
             .is_some_and(|symbol| symbol.kind == SymbolKind::Variable)
         {
-            replace_symbolic(analysis, target, value, variables, symbolic);
-            assign_degree(analysis, target, value, variables, degrees);
-            assign_dependencies(analysis, target, value, variables, dependencies);
-            assign_value(analysis, target, value, variables);
+            self.replace(analysis, target, value);
         }
         Ok(())
     }
@@ -817,9 +814,7 @@ impl ForwardState {
         value: ExprId,
         operator: AssignmentOperator,
     ) -> Result<(), String> {
-        let Self::Reached { variables, symbolic, dependencies, degrees, .. } = self else {
-            return Ok(());
-        };
+        let Self { variables, symbolic, dependencies, degrees } = self;
         Arc::make_mut(symbolic).remove(target.root);
         if operator != AssignmentOperator::Assign {
             variables.remove(&target.root);
@@ -836,9 +831,7 @@ impl ForwardState {
         if !scalar {
             return Err("deferred assignment shape".into());
         }
-        assign_degree(analysis, target, value, variables, degrees);
-        assign_dependencies(analysis, target, value, variables, dependencies);
-        assign_value(analysis, target, value, variables);
+        self.assign_evaluated(analysis, target, value);
         Ok(())
     }
 
@@ -847,9 +840,7 @@ impl ForwardState {
         analysis: &ForwardAnalysis<'_>,
         symbol: SymbolId,
     ) -> Result<(), String> {
-        let Self::Reached { variables, symbolic, dependencies, degrees, .. } = self else {
-            return Ok(());
-        };
+        let Self { variables, symbolic, dependencies, degrees } = self;
         let Some(declared) = analysis.hir.symbol(symbol) else {
             return Err("missing declaration symbol".into());
         };
@@ -876,7 +867,7 @@ impl ForwardState {
         target: &AccessPath,
         operator: PostfixOperator,
     ) -> Result<(), String> {
-        let Self::Reached { variables, symbolic, degrees, .. } = self else { return Ok(()) };
+        let Self { variables, symbolic, degrees, .. } = self;
         let previous = symbolic.get(target.root).cloned();
         if let Err(reason) = apply_update(analysis, target, operator, variables) {
             Arc::make_mut(symbolic).remove(target.root);
@@ -897,24 +888,69 @@ impl ForwardState {
         Ok(())
     }
 
-    fn apply_constraint(
+    fn apply_opaque_assignment(
+        &mut self,
+        analysis: &ForwardAnalysis<'_>,
+        target: &AccessPath,
+        value: ExprId,
+    ) {
+        let Self { symbolic, .. } = self;
+        Arc::make_mut(symbolic).remove(target.root);
+        if analysis
+            .hir
+            .symbol(target.root)
+            .is_some_and(|symbol| symbol.kind == SymbolKind::Variable)
+        {
+            self.assign_evaluated(analysis, target, value);
+        }
+    }
+
+    fn forget_local(&mut self, symbol: SymbolId) {
+        self.variables.remove(&symbol);
+        Arc::make_mut(&mut self.symbolic).remove(symbol);
+        self.dependencies.remove(&symbol);
+        self.degrees.remove(&symbol);
+    }
+
+    fn replace(&mut self, analysis: &ForwardAnalysis<'_>, target: &AccessPath, value: ExprId) {
+        let Self { variables, symbolic, dependencies, degrees } = self;
+        replace_symbolic(analysis, target, value, variables, symbolic);
+        assign_degree(analysis, target, value, variables, degrees);
+        assign_dependencies(analysis, target, value, variables, dependencies);
+        assign_value(analysis, target, value, variables);
+    }
+
+    fn accumulate(&mut self, analysis: &ForwardAnalysis<'_>, target: &AccessPath, value: ExprId) {
+        let Self { variables, symbolic, dependencies, degrees } = self;
+        accumulate_symbolic(analysis, target, value, variables, symbolic);
+        accumulate_degree(analysis, target, value, variables, degrees);
+        accumulate_dependencies(analysis, target, value, variables, dependencies);
+        accumulate_value(analysis, target, value, variables);
+    }
+
+    fn assign_evaluated(
+        &mut self,
+        analysis: &ForwardAnalysis<'_>,
+        target: &AccessPath,
+        value: ExprId,
+    ) {
+        let Self { variables, dependencies, degrees, .. } = self;
+        assign_degree(analysis, target, value, variables, degrees);
+        assign_dependencies(analysis, target, value, variables, dependencies);
+        assign_value(analysis, target, value, variables);
+    }
+}
+
+impl ConstraintFacts {
+    fn apply(
         &mut self,
         analysis: &ForwardAnalysis<'_>,
         node: &CfgNode,
+        locals: &LocalValueFacts,
     ) -> Result<(), String> {
-        let Self::Reached {
-            variables,
-            symbolic,
-            may_constraints,
-            must_constraints,
-            must_touches,
-            must_fixed,
-            must_equations,
-            ..
-        } = self
-        else {
-            return Ok(());
-        };
+        let Self { may_constraints, must_constraints, must_touches, must_fixed, must_equations } =
+            self;
+        let LocalValueFacts { variables, symbolic, .. } = locals;
         let CfgNodeKind::Constraint(constraint) = &node.kind else {
             return Err("expected constraint node".into());
         };
@@ -937,28 +973,9 @@ impl ForwardState {
         }
         Ok(())
     }
+}
 
-    fn apply_opaque_assignment(
-        &mut self,
-        analysis: &ForwardAnalysis<'_>,
-        target: &AccessPath,
-        value: ExprId,
-    ) {
-        let Self::Reached { variables, symbolic, dependencies, degrees, .. } = self else {
-            return;
-        };
-        Arc::make_mut(symbolic).remove(target.root);
-        if analysis
-            .hir
-            .symbol(target.root)
-            .is_some_and(|symbol| symbol.kind == SymbolKind::Variable)
-        {
-            assign_degree(analysis, target, value, variables, degrees);
-            assign_dependencies(analysis, target, value, variables, dependencies);
-            assign_value(analysis, target, value, variables);
-        }
-    }
-
+impl ForwardState {
     fn check_evaluate(analysis: &ForwardAnalysis<'_>, expression: ExprId) -> Result<(), String> {
         let Some(expression) = analysis.hir.expression(expression) else {
             return Err("missing expression".into());
@@ -973,32 +990,31 @@ impl ForwardState {
     }
 
     fn apply_node(&mut self, analysis: &ForwardAnalysis<'_>, node: &CfgNode) -> Result<(), String> {
-        if let Self::Unreachable = self {
-            return Ok(());
-        }
+        let Self::Reached(facts) = self else { return Ok(()) };
         match &node.kind {
             CfgNodeKind::Evaluate(id) => Self::check_evaluate(analysis, *id),
             CfgNodeKind::Assignment { target, value, operator } => {
-                self.apply_assignment(analysis, target, *value, *operator)
+                facts.locals.apply_assignment(analysis, target, *value, *operator)
             }
             CfgNodeKind::DeferredAssignment { target, value, operator } => {
-                self.apply_deferred_assignment(analysis, target, *value, *operator)
+                facts.locals.apply_deferred_assignment(analysis, target, *value, *operator)
             }
-            CfgNodeKind::Declaration { symbol } => self.apply_declaration(analysis, *symbol),
+            CfgNodeKind::Declaration { symbol } => {
+                facts.locals.apply_declaration(analysis, *symbol)
+            }
             CfgNodeKind::Update { target, operator } => {
-                self.apply_update(analysis, target, *operator)
+                facts.locals.apply_update(analysis, target, *operator)
             }
-            CfgNodeKind::Constraint(_) => self.apply_constraint(analysis, node),
+            CfgNodeKind::Constraint(_) => facts.constraints.apply(analysis, node, &facts.locals),
             CfgNodeKind::Opaque(reason) | CfgNodeKind::OpaqueEquality { reason, .. } => {
                 Err(format!("{reason:?}"))
             }
             CfgNodeKind::OpaqueAssignment { target, value, reason, .. } => {
-                self.apply_opaque_assignment(analysis, target, *value);
+                facts.locals.apply_opaque_assignment(analysis, target, *value);
                 Err(format!("{reason:?}"))
             }
             CfgNodeKind::DeferredAssert { condition } => {
-                let Some(variables) = self.variables() else { return Ok(()) };
-                if analysis.evaluate(*condition, variables).is_none() {
+                if analysis.evaluate(*condition, &facts.locals.variables).is_none() {
                     return Err("deferred assertion shape".into());
                 }
                 Ok(())
@@ -1222,13 +1238,20 @@ mod tests {
         let zero = field.canonical(0.into());
         let one = field.canonical(1.into());
         let mut precise = ForwardState::boundary();
-        let ForwardState::Reached { variables, symbolic, .. } = &mut precise else {
+        let ForwardState::Reached(ReachedFacts {
+            locals: LocalValueFacts { variables, symbolic, .. },
+            ..
+        }) = &mut precise
+        else {
             panic!("reached boundary")
         };
         variables.insert(i, zero.clone());
         Arc::make_mut(symbolic).insert(i, ExpressionPolynomial::constant(&field, zero.clone()));
         let mut broad = ForwardState::boundary();
-        let ForwardState::Reached { variables, .. } = &mut broad else {
+        let ForwardState::Reached(ReachedFacts {
+            locals: LocalValueFacts { variables, .. }, ..
+        }) = &mut broad
+        else {
             panic!("reached boundary")
         };
         variables.insert(i, zero);
@@ -1312,7 +1335,12 @@ mod tests {
         let mut precise =
             ForwardState::with_scalar_parameters(&BTreeMap::from([(parameter, one.clone())]));
         let broad = precise.clone();
-        let ForwardState::Reached { variables, .. } = &mut precise else { panic!("reached") };
+        let ForwardState::Reached(ReachedFacts {
+            locals: LocalValueFacts { variables, .. }, ..
+        }) = &mut precise
+        else {
+            panic!("reached")
+        };
         variables.insert(local, field.canonical(0.into()));
         assert!(precise.leq(&broad));
         let analysis = ForwardAnalysis::new(&hir, &field);
@@ -1445,13 +1473,20 @@ mod tests {
         let inputs = NormalizationInputs::new(&hir, &field, &values, None, &symbolic);
         let x_polynomial = variable_polynomial(&inputs, x_value.unwrap()).unwrap();
         let mut precise = ForwardState::boundary();
-        let ForwardState::Reached { variables, symbolic, .. } = &mut precise else {
+        let ForwardState::Reached(ReachedFacts {
+            locals: LocalValueFacts { variables, symbolic, .. },
+            ..
+        }) = &mut precise
+        else {
             panic!("reached boundary")
         };
         variables.insert(x, field.canonical(1.into()));
         Arc::make_mut(symbolic).insert(x, x_polynomial);
         let mut broad = ForwardState::boundary();
-        let ForwardState::Reached { variables, .. } = &mut broad else {
+        let ForwardState::Reached(ReachedFacts {
+            locals: LocalValueFacts { variables, .. }, ..
+        }) = &mut broad
+        else {
             panic!("reached boundary")
         };
         variables.insert(x, field.canonical(1.into()));
@@ -1542,7 +1577,13 @@ mod tests {
         let mut states = vec![ForwardState::Unreachable, ForwardState::boundary()];
         for equations in fixed {
             let mut state = ForwardState::boundary();
-            let ForwardState::Reached { must_fixed, .. } = &mut state else { panic!("reached") };
+            let ForwardState::Reached(ReachedFacts {
+                constraints: ConstraintFacts { must_fixed, .. },
+                ..
+            }) = &mut state
+            else {
+                panic!("reached")
+            };
             *must_fixed = equations;
             states.push(state);
         }
@@ -1605,17 +1646,21 @@ mod tests {
                     (0..2).filter(|bit| may_bits & (1 << bit) != 0).map(NodeId::new).collect();
                 let must_constraints =
                     (0..2).filter(|bit| must_bits & (1 << bit) != 0).map(NodeId::new).collect();
-                values.push(ForwardState::Reached {
-                    variables: BTreeMap::new(),
-                    symbolic: Arc::new(MustSymbolicVariables::reachable_empty()),
-                    dependencies: BTreeMap::new(),
-                    degrees: BTreeMap::new(),
-                    may_constraints,
-                    must_constraints,
-                    must_touches: BTreeSet::new(),
-                    must_fixed: BTreeSet::new(),
-                    must_equations: Arc::new(MustEquations::reachable_empty()),
-                });
+                values.push(ForwardState::Reached(ReachedFacts {
+                    locals: LocalValueFacts {
+                        variables: BTreeMap::new(),
+                        symbolic: Arc::new(MustSymbolicVariables::reachable_empty()),
+                        dependencies: BTreeMap::new(),
+                        degrees: BTreeMap::new(),
+                    },
+                    constraints: ConstraintFacts {
+                        may_constraints,
+                        must_constraints,
+                        must_touches: BTreeSet::new(),
+                        must_fixed: BTreeSet::new(),
+                        must_equations: Arc::new(MustEquations::reachable_empty()),
+                    },
+                }));
             }
         }
         values
@@ -1676,13 +1721,23 @@ mod tests {
             })
             .unwrap();
         let mut precise = ForwardState::boundary();
-        let ForwardState::Reached { variables, dependencies, .. } = &mut precise else {
+        let ForwardState::Reached(ReachedFacts {
+            locals: LocalValueFacts { variables, dependencies, .. },
+            ..
+        }) = &mut precise
+        else {
             panic!("reached")
         };
         variables.insert(i, field.canonical(0.into()));
         dependencies.insert(i, MayAccessSet::default());
         let mut unknown = ForwardState::boundary();
-        let ForwardState::Reached { dependencies, .. } = &mut unknown else { panic!("reached") };
+        let ForwardState::Reached(ReachedFacts {
+            locals: LocalValueFacts { dependencies, .. },
+            ..
+        }) = &mut unknown
+        else {
+            panic!("reached")
+        };
         dependencies.insert(i, MayAccessSet::default());
         assert!(precise.leq(&unknown));
         let analysis = ForwardAnalysis::new(&hir, &field);
@@ -1731,7 +1786,13 @@ mod tests {
         let analysis = ForwardAnalysis::new(&hir, &field);
         check_transfer_order(node, &analysis, &variable_states(u, &key, &field));
         let mut state = ForwardState::boundary();
-        let ForwardState::Reached { dependencies, .. } = &mut state else { panic!("reached") };
+        let ForwardState::Reached(ReachedFacts {
+            locals: LocalValueFacts { dependencies, .. },
+            ..
+        }) = &mut state
+        else {
+            panic!("reached")
+        };
         dependencies.insert(u, MayAccessSet::from_keys(BTreeSet::from([key.clone()])));
         let outcome = node.apply(&analysis, &state);
         assert!(matches!(outcome, TransferOutcome::Opaque { .. }));
@@ -1778,8 +1839,10 @@ mod tests {
             {
                 for degree in [None, Some(DegreeUpper::Constant), Some(DegreeUpper::Linear)] {
                     let mut state = ForwardState::boundary();
-                    let ForwardState::Reached { variables, dependencies: facts, degrees, .. } =
-                        &mut state
+                    let ForwardState::Reached(ReachedFacts {
+                        locals: LocalValueFacts { variables, dependencies: facts, degrees, .. },
+                        ..
+                    }) = &mut state
                     else {
                         panic!("reached")
                     };
@@ -1859,7 +1922,13 @@ mod tests {
                 (1, edge.payload.kind == EdgeKind::True),
             ] {
                 let mut state = ForwardState::boundary();
-                let ForwardState::Reached { variables, .. } = &mut state else { panic!("reached") };
+                let ForwardState::Reached(ReachedFacts {
+                    locals: LocalValueFacts { variables, .. },
+                    ..
+                }) = &mut state
+                else {
+                    panic!("reached")
+                };
                 variables.insert(t, field.canonical(value.into()));
                 let result = transfer_state(edge.payload.apply(&analysis, &state));
                 assert_eq!(result != ForwardState::Unreachable, taken);
@@ -1897,3 +1966,6 @@ mod tests {
         check_transfer_order(constraint, &analysis, &states);
     }
 }
+
+#[cfg(test)]
+mod state_tests;
