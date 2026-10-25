@@ -1184,6 +1184,34 @@ fn external_component_input_tag_has_its_own_diagnostic_code() {
 }
 
 #[test]
+fn field_access_preserves_competing_error_precedence() {
+    let cases = [
+        (
+            "bus collision before indexed tag",
+            "bus B(){signal x;} template T(){B {x} b[2]; var value=b[0].x;}",
+        ),
+        (
+            "indexed tag before external input tag",
+            "template Child(){signal input {binary} x[2];} \
+             template T(){component c=Child(); var value=c.x[0].binary;}",
+        ),
+        ("array rank before unknown field", "template T(){signal x[2]; var value=x.missing;}"),
+        (
+            "array rank before ambiguous port",
+            "template Child(){signal input x;signal input x;} \
+             template T(){component c[2];c[0]=Child();var value=c.x;}",
+        ),
+    ];
+    let mut records = String::new();
+    for (name, source) in cases {
+        let result = lift(&[("fields.circom", source)], Version::new(2, 2, 3));
+        assert!(result.syntax_diagnostics.is_empty(), "{name}: {:?}", result.syntax_diagnostics);
+        records.push_str(&format!("{name}: {:#?}\n", (&result.diagnostics, &result.incomplete)));
+    }
+    assert_eq!(records, include_str!("fixtures/field_resolution.txt"));
+}
+
+#[test]
 fn invalid_dimension_makes_local_declaration_and_access_opaque() {
     let source =
         concat!("template T(){signal input x; signal a[x]; signal output o; ", "o<==a[0];}");

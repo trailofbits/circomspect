@@ -1,0 +1,191 @@
+bus collision before indexed tag: (
+    [],
+    [
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 48,
+                    end: 60,
+                },
+            ),
+            reason: UnknownType,
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 58,
+                    end: 60,
+                },
+            ),
+            reason: AmbiguousReference(
+                "x",
+            ),
+        },
+    ],
+)
+indexed tag before external input tag: (
+    [
+        SemanticDiagnostic {
+            code: InvalidTagAfterArray,
+            severity: Error,
+            span: Span {
+                source: SourceId(
+                    0,
+                ),
+                start: 96,
+                end: 103,
+            },
+            message: "tag access after array indexing is invalid",
+            expected_kind: None,
+            actual_kind: None,
+        },
+    ],
+    [
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 84,
+                    end: 103,
+                },
+            ),
+            reason: UnknownType,
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 96,
+                    end: 103,
+                },
+            ),
+            reason: InvalidAssignment,
+        },
+    ],
+)
+array rank before unknown field: (
+    [
+        SemanticDiagnostic {
+            code: InvalidArrayAccess,
+            severity: Error,
+            span: Span {
+                source: SourceId(
+                    0,
+                ),
+                start: 37,
+                end: 45,
+            },
+            message: "field access requires a fully indexed array",
+            expected_kind: None,
+            actual_kind: None,
+        },
+    ],
+    [
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 30,
+                    end: 45,
+                },
+            ),
+            reason: UnknownType,
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 37,
+                    end: 45,
+                },
+            ),
+            reason: InvalidAssignment,
+        },
+    ],
+)
+array rank before ambiguous port: (
+    [
+        SemanticDiagnostic {
+            code: DuplicateSymbol,
+            severity: Error,
+            span: Span {
+                source: SourceId(
+                    0,
+                ),
+                start: 45,
+                end: 46,
+            },
+            message: "duplicate local symbol `x`",
+            expected_kind: None,
+            actual_kind: None,
+        },
+        SemanticDiagnostic {
+            code: InvalidArrayAccess,
+            severity: Error,
+            span: Span {
+                source: SourceId(
+                    0,
+                ),
+                start: 101,
+                end: 103,
+            },
+            message: "field access requires a fully indexed array",
+            expected_kind: None,
+            actual_kind: None,
+        },
+    ],
+    [
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 45,
+                    end: 46,
+                },
+            ),
+            reason: AmbiguousReference(
+                "x",
+            ),
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 94,
+                    end: 103,
+                },
+            ),
+            reason: UnknownType,
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 101,
+                    end: 103,
+                },
+            ),
+            reason: InvalidAssignment,
+        },
+    ],
+)

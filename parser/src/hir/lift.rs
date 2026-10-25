@@ -4,7 +4,7 @@ use crate::hir::{
     AccessPath, AccessStep, AnonymousInputEffect, AnonymousInputTarget, ArrayIndex, BlockId, Bus,
     BusId, BusTarget, CallTarget, ComponentId, ControlGuard, DefinitionKind, DefinitionRef, Effect,
     ExprId, ExprKind, HirProject, IncompleteLocation, IncompleteReason, IncompleteRegion,
-    Knownness, LiftedProject, Main, PortSchema, SemanticCode, SemanticDiagnostic, Severity,
+    Knownness, LiftedProject, Main, PortId, PortSchema, SemanticCode, SemanticDiagnostic, Severity,
     SymbolId, SymbolKind, Template, TemplateId, ValueEvidence, Function, FunctionId,
 };
 use crate::new_frontend::{
@@ -88,6 +88,11 @@ struct AccessState {
     component_output: bool,
     indexed_current: bool,
     steps: Vec<AccessStep>,
+}
+
+enum ResolvedField {
+    Port { port: PortId, symbol: SymbolId, ty: ValueType },
+    Tag { symbol: SymbolId },
 }
 
 struct TemplateInvocation<'a> {

@@ -4,7 +4,7 @@ use crate::hir::lift::{
     DefinitionKind, ExprId, ExprKind, Expression, Identifier, IncompleteReason,
     InputAssignmentOperator, Item, Knownness, Lifter, Main, PortDirection, PortSchema, ScalarShape,
     SemanticCode, Severity, ShapeCheck, Span, SymbolId, SymbolKind, TemplateId, ValueEvidence,
-    ValueType, TemplateInvocation,
+    ValueType, TemplateInvocation, ResolvedField,
 };
 
 impl Lifter<'_> {
@@ -136,33 +136,16 @@ impl Lifter<'_> {
         field: &Identifier,
         span: Span,
     ) -> bool {
-        let is_tag = self.hir.symbols[state.terminal.index]
+        let tag = self.hir.symbols[state.terminal.index]
             .tags
             .iter()
-            .any(|tag| self.hir.symbols[tag.index].name == field.name);
-        if is_tag {
-            if let ValueType::Bus(id) = state.ty {
-                let collides = self.hir.buses[id.index].ports.iter().any(|port| {
-                    let symbol = self.hir.ports[port.index].symbol;
-                    self.hir.symbols[symbol.index].name == field.name
-                });
-                if collides {
-                    self.incomplete(span, IncompleteReason::AmbiguousReference(field.name.clone()));
-                    return false;
-                }
+            .find(|tag| self.hir.symbols[tag.index].name == field.name)
+            .copied();
+        if tag.is_some() {
+            if !self.check_tag_access(state, field, span) {
+                return false;
             }
-        }
-        if is_tag && state.indexed_current {
-            self.diagnostic(
-                SemanticCode::InvalidTagAfterArray,
-                Severity::Error,
-                span,
-                "tag access after array indexing is invalid".into(),
-            );
-            self.incomplete(span, IncompleteReason::InvalidAssignment);
-            return false;
-        }
-        if state.remaining_dimensions.is_some_and(|rank| rank != 0) && !is_tag {
+        } else if state.remaining_dimensions.is_some_and(|rank| rank != 0) {
             self.diagnostic(
                 SemanticCode::InvalidArrayAccess,
                 Severity::Error,
@@ -172,29 +155,62 @@ impl Lifter<'_> {
             self.incomplete(span, IncompleteReason::InvalidAssignment);
             return false;
         }
-        let from_component = matches!(state.ty, ValueType::Component(_));
-        let Some((step, symbol, next)) =
-            self.resolve_field(state.ty, state.terminal, field, state.component_input)
-        else {
+        let Some(resolved) = self.resolve_field(state.ty, state.terminal, field, tag) else {
             return false;
         };
-        if from_component {
-            if let AccessStep::Port { port, .. } = &step {
-                state.component_input |=
-                    self.hir.ports[port.index].direction == Some(PortDirection::Input);
-                state.component_output |=
-                    self.hir.ports[port.index].direction == Some(PortDirection::Output);
+        let (symbol, next, step) = match resolved {
+            ResolvedField::Port { port, symbol, ty } => {
+                if let ValueType::Component(_) = state.ty {
+                    state.component_input |=
+                        self.hir.ports[port.index].direction == Some(PortDirection::Input);
+                    state.component_output |=
+                        self.hir.ports[port.index].direction == Some(PortDirection::Output);
+                }
+                (symbol, ty, AccessStep::Port { port, span })
             }
-        }
-        state.steps.push(match step {
-            AccessStep::Port { port, .. } => AccessStep::Port { port, span },
-            AccessStep::Tag { symbol, .. } => AccessStep::Tag { symbol, span },
-            AccessStep::Index { .. } => return false,
-        });
+            ResolvedField::Tag { symbol } => {
+                (symbol, ValueType::Plain, AccessStep::Tag { symbol, span })
+            }
+        };
+        state.steps.push(step);
         state.terminal = symbol;
         state.ty = next;
         state.remaining_dimensions = self.symbol_rank(symbol);
         state.indexed_current = false;
+        true
+    }
+
+    fn check_tag_access(&mut self, state: &AccessState, field: &Identifier, span: Span) -> bool {
+        if let ValueType::Bus(id) = state.ty {
+            let collides = self.hir.buses[id.index].ports.iter().any(|port| {
+                let symbol = self.hir.ports[port.index].symbol;
+                self.hir.symbols[symbol.index].name == field.name
+            });
+            if collides {
+                self.incomplete(span, IncompleteReason::AmbiguousReference(field.name.clone()));
+                return false;
+            }
+        }
+        if state.indexed_current {
+            self.diagnostic(
+                SemanticCode::InvalidTagAfterArray,
+                Severity::Error,
+                span,
+                "tag access after array indexing is invalid".into(),
+            );
+            self.incomplete(span, IncompleteReason::InvalidAssignment);
+            return false;
+        }
+        if state.component_input {
+            self.diagnostic(
+                SemanticCode::InputTagAccess,
+                Severity::Error,
+                field.span,
+                format!("tag `{}` cannot be accessed here", field.name),
+            );
+            self.incomplete(field.span, IncompleteReason::InvalidAssignment);
+            return false;
+        }
         true
     }
 
@@ -223,25 +239,10 @@ impl Lifter<'_> {
         ty: ValueType,
         current: SymbolId,
         field: &Identifier,
-        external_input: bool,
-    ) -> Option<(AccessStep, SymbolId, ValueType)> {
-        let tag = self.hir.symbols[current.index]
-            .tags
-            .iter()
-            .find(|tag| self.hir.symbols[tag.index].name == field.name)
-            .copied();
+        tag: Option<SymbolId>,
+    ) -> Option<ResolvedField> {
         if let Some(symbol) = tag {
-            if external_input {
-                self.diagnostic(
-                    SemanticCode::InputTagAccess,
-                    Severity::Error,
-                    field.span,
-                    format!("tag `{}` cannot be accessed here", field.name),
-                );
-                self.incomplete(field.span, IncompleteReason::InvalidAssignment);
-                return None;
-            }
-            return Some((AccessStep::Tag { symbol, span: field.span }, symbol, ValueType::Plain));
+            return Some(ResolvedField::Tag { symbol });
         }
         let ports = match ty {
             ValueType::Bus(id) => Some(self.hir.buses[id.index].ports.as_slice()),
@@ -273,7 +274,7 @@ impl Lifter<'_> {
                         return None;
                     }
                 };
-                return Some((AccessStep::Port { port, span: field.span }, symbol, next));
+                return Some(ResolvedField::Port { port, symbol, ty: next });
             }
             self.diagnostic(
                 SemanticCode::InvalidSignalAccess,
