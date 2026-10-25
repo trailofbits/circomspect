@@ -102,7 +102,7 @@ impl ProjectSummaries<'_> {
         self.check_facts_for_evidence(facts, evidence)?;
         self.validated_definition(facts)?;
         self.check_warning_execution_scope(facts, evidence)?;
-        self.check_template_execution(facts.cfg(), facts)?;
+        self.check_complete_template_execution(facts.cfg(), facts)?;
         self.check_parent_components_complete(facts)?;
         let mut children = Vec::new();
         self.visit_component_calls(facts, evidence, |call| {

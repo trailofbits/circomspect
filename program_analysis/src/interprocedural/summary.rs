@@ -6,13 +6,14 @@ use abstract_interpretation::lattice::Lattice;
 use abstract_interpretation::solver::{
     solve, Blocker, DataflowAnalysis, Forward, SolveResult, Transfer, TransferOutcome,
 };
-use parser::hir::{CallTarget, DefinitionRef, ExprId, ExprKind, Function, FunctionId};
-use parser::new_frontend::{AssignmentOperator, BinaryOperator};
+use parser::hir::{DefinitionRef, ExprId, ExprKind, Function, FunctionId};
 
 use crate::hir_cfg::{CfgNodeKind, DefinitionCfg};
 use crate::hir_facts::{exact_compile_time, AnalysisFacts, Fact, FieldContext, Range};
 
-use super::{CallContext, CallOwner, CallReachability, ProjectSummaries, SummaryBlocker};
+use crate::interprocedural::{
+    CallContext, CallOwner, CallReachability, ProjectSummaries, SummaryBlocker,
+};
 
 /// Provider-owned evidence for a scoped summary; value-specific coverage remains explicit.
 ///
@@ -302,121 +303,6 @@ impl ProjectSummaries<'_> {
         })
     }
 
-    fn may_fail_before_return(
-        &self,
-        id: FunctionId,
-        cfg: &DefinitionCfg,
-        facts: &AnalysisFacts<'_>,
-    ) -> bool {
-        let owner = CallOwner::Definition(DefinitionRef::Function(id));
-        for site in self.graph().calls_from(owner) {
-            if let Some(DefinitionRef::Function(_)) = site.resolved() {
-                continue;
-            }
-            let Some(expression) = site.expression else { return true };
-            if facts.reachable_expression(expression).certified() != Some(&false) {
-                return true;
-            }
-        }
-        let field = FieldContext::for_curve(self.curve().clone());
-        for id in cfg.nodes() {
-            let Some(node) = cfg.node(*id) else { return true };
-            match facts.reachable_node(*id).certified() {
-                Some(false) => continue,
-                None => return true,
-                Some(true) => {}
-            }
-            if self.node_may_fail(*id, &node.kind, facts, &field) {
-                return true;
-            }
-        }
-        false
-    }
-
-    fn node_may_fail(
-        &self,
-        id: NodeId,
-        kind: &CfgNodeKind,
-        facts: &AnalysisFacts<'_>,
-        field: &FieldContext,
-    ) -> bool {
-        match kind {
-            CfgNodeKind::Assert { condition } | CfgNodeKind::DeferredAssert { condition } => {
-                !is_proven_nonzero(facts.range(*condition).certified(), field)
-            }
-            CfgNodeKind::Opaque(_)
-            | CfgNodeKind::OpaqueAssignment { .. }
-            | CfgNodeKind::OpaqueEquality { .. }
-            | CfgNodeKind::Instantiate { .. }
-            | CfgNodeKind::Witness { .. }
-            | CfgNodeKind::Constraint(_) => true,
-            CfgNodeKind::Assignment { target, operator, .. } => {
-                *operator != AssignmentOperator::Assign
-                    || facts.checked_access_bounds(target).is_err()
-            }
-            CfgNodeKind::DeferredAssignment { target, operator, .. } => {
-                *operator != AssignmentOperator::Assign
-                    || !facts.resolved_deferred_assignment(id)
-                    || facts.checked_access_bounds(target).is_err()
-            }
-            CfgNodeKind::Update { target, .. } => facts.checked_access_bounds(target).is_err(),
-            CfgNodeKind::Evaluate(expression) => {
-                self.expression_may_fail(*expression, facts, field)
-            }
-            CfgNodeKind::Declaration { symbol } => self.declaration_may_fail(*symbol, facts),
-            CfgNodeKind::Entry
-            | CfgNodeKind::Exit
-            | CfgNodeKind::LoopHeader
-            | CfgNodeKind::Branch { .. }
-            | CfgNodeKind::Return(_)
-            | CfgNodeKind::Log => false,
-        }
-    }
-
-    pub(super) fn expression_may_fail(
-        &self,
-        id: ExprId,
-        facts: &AnalysisFacts<'_>,
-        field: &FieldContext,
-    ) -> bool {
-        let Some(expression) = self.hir().expression(id) else { return true };
-        match &expression.kind {
-            ExprKind::Call { target: CallTarget::Function(_), .. }
-            | ExprKind::Number(_)
-            | ExprKind::Array(_)
-            | ExprKind::Tuple(_)
-            | ExprKind::Unary { .. }
-            | ExprKind::Ternary { .. }
-            | ExprKind::Parallel(_) => false,
-            ExprKind::Opaque(_) | ExprKind::AnonymousComponent { .. } | ExprKind::Call { .. } => {
-                true
-            }
-            ExprKind::Access(path) => facts.checked_access_bounds(path).is_err(),
-            ExprKind::Binary { operator, right, .. } => match operator {
-                BinaryOperator::Divide | BinaryOperator::IntegerDivide | BinaryOperator::Modulo => {
-                    !is_proven_nonzero(facts.range(*right).certified(), field)
-                }
-                BinaryOperator::Power | BinaryOperator::ShiftLeft | BinaryOperator::ShiftRight => {
-                    true
-                }
-                BinaryOperator::BooleanOr
-                | BinaryOperator::BooleanAnd
-                | BinaryOperator::Equal
-                | BinaryOperator::NotEqual
-                | BinaryOperator::Less
-                | BinaryOperator::Greater
-                | BinaryOperator::LessEqual
-                | BinaryOperator::GreaterEqual
-                | BinaryOperator::BitOr
-                | BinaryOperator::BitXor
-                | BinaryOperator::BitAnd
-                | BinaryOperator::Add
-                | BinaryOperator::Subtract
-                | BinaryOperator::Multiply => false,
-            },
-        }
-    }
-
     fn closed_constant_return(&self, cfg: &DefinitionCfg) -> Option<FunctionSummary> {
         let field = FieldContext::for_curve(self.curve().clone());
         let mut value = None;
@@ -584,13 +470,6 @@ impl ProjectSummaries<'_> {
             return Err(SummaryBlocker::MissingReturn);
         }
         Ok((local, return_calls))
-    }
-}
-
-pub(super) fn is_proven_nonzero(value: Option<&Range>, field: &FieldContext) -> bool {
-    match value {
-        Some(Range::Exact(value)) => !field.is_zero(value),
-        Some(Range::Canonical | Range::Unreachable) | None => false,
     }
 }
 

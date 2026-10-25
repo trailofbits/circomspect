@@ -182,3 +182,26 @@ fn valid_execution_and_unrelated_opacity_preserve_independent_port_facts() {
         );
     }
 }
+
+#[test]
+fn unproved_access_bounds_do_not_invalidate_independent_port_facts() {
+    for (index, available) in [("n", true), ("0", true), ("1", false)] {
+        let source = format!(
+            "template T(n){{var values[1]=[2];var value=values[{index}];signal output y;y<==1;}}"
+        );
+        let lifted = fixture(&source);
+        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let definition = lifted.hir.definition("T").unwrap();
+        let DefinitionRef::Template(template) = definition else { panic!("template T") };
+        let context = provider.symbolic_context_for(definition).unwrap();
+        let output = lifted.hir.template(template).unwrap().ports[0];
+        let summary = provider.template_port(template, &context, output);
+        assert_eq!(
+            summary
+                .certified()
+                .map(circomspect_program_analysis::interprocedural::PortSummary::incidence),
+            if available { Some(Incidence::Must) } else { None },
+            "index {index}: {summary:?}"
+        );
+    }
+}

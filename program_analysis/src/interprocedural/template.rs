@@ -273,7 +273,7 @@ impl ProjectSummaries<'_> {
                 return Err(failure.summary_blocker());
             }
 
-            if self.template_definitely_fails(facts)? {
+            if self.definition_definitely_fails(facts)? {
                 return Err(SummaryBlocker::UnsupportedContext);
             }
             work(template, cfg, facts)

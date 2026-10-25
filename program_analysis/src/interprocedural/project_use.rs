@@ -2,17 +2,14 @@
 
 use std::collections::BTreeSet;
 
-use abstract_interpretation::graph::{FlowGraph, NodeId};
-use parser::hir::{
-    AccessPath, AccessStep, ArrayIndex, BusTarget, CallTarget, ControlGuard, DefinitionRef, ExprId,
-    ExprKind, PortSchema, Symbol, SymbolId, SymbolKind,
-};
-use parser::new_frontend::{AssignmentOperator, PortDirection, Span};
+use abstract_interpretation::graph::FlowGraph;
+use parser::hir::{AccessPath, AccessStep, ArrayIndex, DefinitionRef, PortSchema};
+use parser::new_frontend::{PortDirection, Span};
 
-use crate::hir_cfg::{Constraint, build_cfg, CfgNodeKind, DefinitionCfg, Origin};
-use crate::hir_facts::{AccessHandle, AnalysisFacts, FieldContext, Range};
+use crate::hir_cfg::{CfgNodeKind, Origin};
+use crate::hir_facts::{AccessHandle, AnalysisFacts};
 use crate::interprocedural::component::LocalOutputUse;
-use crate::interprocedural::summary::{certified, is_proven_nonzero};
+use crate::interprocedural::summary::certified;
 use crate::interprocedural::{
     AppliedComponentPort, CallOwner, CallSiteId, ContextEvidence, ContextOrigin, ProjectSummaries,
     SummaryBlocker, SummaryFact,
@@ -226,147 +223,6 @@ impl ProjectSummaries<'_> {
             }
             _ => Err(SummaryBlocker::UnsupportedContext),
         }
-    }
-
-    pub(super) fn check_template_execution(
-        &self,
-        cfg: &DefinitionCfg,
-        facts: &AnalysisFacts<'_>,
-    ) -> Result<(), SummaryBlocker> {
-        let field = FieldContext::for_curve(self.curve().clone());
-        for id in cfg.nodes() {
-            let node = cfg.node(*id).ok_or(SummaryBlocker::ExternalSummary)?;
-            if !*certified(&facts.reachable_node(*id))? {
-                continue;
-            }
-            if self.template_node_may_fail(*id, &node.kind, facts, &field) {
-                return Err(SummaryBlocker::UnsupportedContext);
-            }
-        }
-        Ok(())
-    }
-
-    fn template_node_may_fail(
-        &self,
-        id: NodeId,
-        kind: &CfgNodeKind,
-        facts: &AnalysisFacts<'_>,
-        field: &FieldContext,
-    ) -> bool {
-        match kind {
-            CfgNodeKind::Assert { condition } | CfgNodeKind::DeferredAssert { condition } => {
-                !is_proven_nonzero(facts.range(*condition).certified(), field)
-            }
-            CfgNodeKind::Evaluate(expression) => {
-                self.template_expression_may_fail(*expression, facts.cfg(), facts, field)
-            }
-            CfgNodeKind::Witness { target, .. }
-            | CfgNodeKind::Instantiate { target, .. }
-            | CfgNodeKind::Update { target, .. } => facts.checked_access_bounds(target).is_err(),
-            CfgNodeKind::Constraint(Constraint::Assignment { target, .. }) => {
-                facts.checked_access_bounds(target).is_err()
-            }
-            CfgNodeKind::Assignment { target, operator, .. } => {
-                *operator != AssignmentOperator::Assign
-                    || facts.checked_access_bounds(target).is_err()
-            }
-            CfgNodeKind::DeferredAssignment { target, operator, .. } => {
-                *operator != AssignmentOperator::Assign
-                    || !facts.resolved_deferred_assignment(id)
-                    || facts.checked_access_bounds(target).is_err()
-            }
-            CfgNodeKind::Branch { condition, guard } => match guard {
-                ControlGuard::CheckedCompileTime => {
-                    let range = facts.range(*condition);
-                    let Some(Range::Exact(_)) = range.certified() else { return true };
-                    false
-                }
-                ControlGuard::DeferredScalar | ControlGuard::WitnessOnly => true,
-            },
-            CfgNodeKind::Opaque(_)
-            | CfgNodeKind::OpaqueAssignment { .. }
-            | CfgNodeKind::OpaqueEquality { .. }
-            | CfgNodeKind::LoopHeader => true,
-            CfgNodeKind::Declaration { symbol } => self.declaration_may_fail(*symbol, facts),
-            CfgNodeKind::Constraint(Constraint::Equality { .. })
-            | CfgNodeKind::Entry
-            | CfgNodeKind::Exit
-            | CfgNodeKind::Return(_)
-            | CfgNodeKind::Log => false,
-        }
-    }
-
-    pub(super) fn declaration_may_fail(&self, id: SymbolId, facts: &AnalysisFacts<'_>) -> bool {
-        let Some(symbol) = self.hir().symbol(id) else { return true };
-        if facts.checked_symbol_dimensions(id).is_err() {
-            return true;
-        }
-        if let SymbolKind::Bus = symbol.kind {
-            return self.bus_schema_may_fail(symbol);
-        }
-        false
-    }
-
-    fn bus_schema_may_fail(&self, symbol: &Symbol) -> bool {
-        let Some(BusTarget::Bus(id)) = &symbol.bus_type else { return true };
-        let Some(bus) = self.hir().bus(*id) else { return true };
-        if !bus.parameters.is_empty() || !symbol.bus_arguments.is_empty() {
-            return true;
-        }
-        let definition = DefinitionRef::Bus(*id);
-        let Ok(cfg) = build_cfg(self.hir(), definition) else { return true };
-        let Ok(evidence) = self.symbolic_root(definition) else { return true };
-        let Ok(facts) = self.analyze_for_evidence(&cfg, &evidence, None) else { return true };
-        let field = FieldContext::for_curve(self.curve().clone());
-        for id in cfg.nodes() {
-            let Some(node) = cfg.node(*id) else { return true };
-            if facts.reachable_node(*id).certified() != Some(&true) {
-                return true;
-            }
-            match node.kind {
-                CfgNodeKind::Entry | CfgNodeKind::Exit => {}
-                CfgNodeKind::Evaluate(expression) => {
-                    if self.expression_may_fail(expression, &facts, &field) {
-                        return true;
-                    }
-                }
-                CfgNodeKind::Declaration { symbol } => {
-                    let Some(field) = self.hir().symbol(symbol) else { return true };
-                    if field.kind == SymbolKind::Bus
-                        || facts.checked_symbol_dimensions(symbol).is_err()
-                    {
-                        return true;
-                    }
-                }
-                _ => return true,
-            }
-        }
-        false
-    }
-
-    fn template_expression_may_fail(
-        &self,
-        id: ExprId,
-        cfg: &DefinitionCfg,
-        facts: &AnalysisFacts<'_>,
-        field: &FieldContext,
-    ) -> bool {
-        let Some(expression) = self.hir().expression(id) else { return true };
-        if let ExprKind::Call { target: CallTarget::Template(_), .. } = &expression.kind {
-            return !cfg.nodes().iter().any(|node| {
-                if let Some(CfgNodeKind::Instantiate { value, .. }) =
-                    cfg.node(*node).map(|node| &node.kind)
-                {
-                    *value == id
-                } else {
-                    false
-                }
-            });
-        }
-        if let ExprKind::Call { .. } = &expression.kind {
-            return true;
-        }
-        self.expression_may_fail(id, facts, field)
     }
 
     pub(super) fn child_output_use(
