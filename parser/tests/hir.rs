@@ -1484,6 +1484,103 @@ fn checked_variable_assignments_keep_their_operator() {
 }
 
 #[test]
+fn statement_dispatch_preserves_effect_order_and_nested_scope() {
+    let source = concat!(
+        "template Child(){} template T(){var a=1,b=2;a++;a+=b;",
+        "{var a=3;log(a);}if(1){a=4;}else{a=5;}while(0){a+=1;}",
+        "for(var i=0;i<1;i++){a+=i;}signal out;out<--a;out<==b;out===b;",
+        "assert(a);log(\"values\",a,b);Child()();}"
+    );
+    let result = lift(&[("statements.circom", source)], Version::new(2, 2, 3));
+    let [Effect::Declaration { .. }, Effect::VariableAssignment { target: a, .. }, Effect::Declaration { .. }, Effect::VariableAssignment { target: b, .. }, Effect::Update { .. }, Effect::VariableAssignment { .. }, Effect::Block(block), Effect::If { .. }, Effect::While { .. }, Effect::For { .. }, Effect::Declaration { .. }, Effect::WitnessAssignment { .. }, Effect::ConstraintAssignment { .. }, Effect::EqualityConstraint { .. }, Effect::Assert { .. }, Effect::Log { values, .. }, Effect::AnonymousComponent { .. }] =
+        effect_for(&result, "T")
+    else {
+        panic!("unexpected statement effect order: {:?}", effect_for(&result, "T"));
+    };
+    let nested = &result.hir.block(*block).unwrap().effects;
+    let [Effect::Declaration { .. }, Effect::VariableAssignment { target: shadowed, .. }, Effect::Log { .. }] =
+        nested.as_slice()
+    else {
+        panic!("unexpected nested effects: {nested:?}");
+    };
+    assert_ne!(shadowed.root, a.root);
+    assert_eq!(values.len(), 2);
+    for (id, expected) in values.iter().zip([a.root, b.root]) {
+        let ExprKind::Access(path) = &result.hir.expression(*id).unwrap().kind else {
+            panic!("expected ordered log access");
+        };
+        assert_eq!(path.root, expected);
+    }
+}
+
+#[test]
+fn prohibited_statements_reject_before_lifting_operands() {
+    use circomspect_parser::hir::{IncompleteRegion, SemanticDiagnostic};
+    use circomspect_parser::new_frontend::{SourceId, Span};
+
+    let source = "function F(){Missing()===Other();return 1;}template T(){return Another();}";
+    let result = lift(&[("prohibited.circom", source)], Version::new(2, 2, 3));
+    let mut diagnostics = Vec::new();
+    let mut incomplete = Vec::new();
+    for (statement, code, message, reason) in [
+        (
+            "Missing()===Other();",
+            SemanticCode::ConstraintInFunction,
+            "a function cannot generate constraints",
+            "constraint in function",
+        ),
+        (
+            "return Another();",
+            SemanticCode::TemplateReturn,
+            "return is only valid in a function",
+            "return outside function",
+        ),
+    ] {
+        let start = source.find(statement).unwrap();
+        let span = Span::checked(SourceId::new(0), start..start + statement.len(), source).unwrap();
+        diagnostics.push(SemanticDiagnostic {
+            code,
+            severity: Severity::Error,
+            span,
+            message: message.into(),
+            expected_kind: None,
+            actual_kind: None,
+        });
+        incomplete.push(IncompleteRegion {
+            location: IncompleteLocation::Source(span),
+            reason: IncompleteReason::Unsupported(reason.into()),
+        });
+    }
+    assert_eq!(result.diagnostics, diagnostics);
+    assert_eq!(result.incomplete, incomplete);
+}
+
+#[test]
+fn assignment_knownness_distinguishes_whole_indexed_and_compound_writes() {
+    for (header, input, dependent, evidence) in [
+        ("template T(){signal input x;", "x", Knownness::WitnessDependent, ValueEvidence::Checked),
+        ("function F(n){", "n", Knownness::ParameterDependent, ValueEvidence::Deferred),
+    ] {
+        let source = format!(
+            "{header}var whole={input};whole=1;var compound={input};compound+=1;\
+             var indexed[2]=[0,0];indexed[0]={input};indexed[1]=1;\
+             var symbolic[2]=[0,0];symbolic[{input}]=1;}}"
+        );
+        let result = lift(&[("knownness.circom", &source)], Version::new(2, 2, 3));
+        let expected = [
+            ("whole", Knownness::Constant, evidence),
+            ("compound", dependent, evidence),
+            ("indexed", dependent, evidence),
+            ("symbolic", dependent, ValueEvidence::Checked),
+        ];
+        for (name, knownness, evidence) in expected {
+            let symbol = result.hir.symbols().iter().find(|symbol| symbol.name == name).unwrap();
+            assert_eq!((symbol.knownness, symbol.value_evidence), (knownness, evidence), "{name}");
+        }
+    }
+}
+
+#[test]
 fn compound_assignment_after_deferred_write_retains_prior_dependency() {
     let source = "function F(n){var x=n;x+=1;return x;}";
     let result = lift(&[("deferred_compound.circom", source)], Version::new(2, 2, 3));

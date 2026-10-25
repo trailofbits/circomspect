@@ -11,7 +11,7 @@ use crate::new_frontend::{
     Access, AnonymousCallExpr, AnonymousInput, AssignmentOperator, Declaration, DeclarationKind,
     DeclaredSymbol, Definition, DefinitionKind as SourceDefinitionKind, DirectionSyntax,
     Expression, Identifier, Item, LoadedProject, LogArgument, PortDirection, Span, Statement,
-    DiagnosticKind, InputAssignmentOperator,
+    DiagnosticKind, InputAssignmentOperator, PostfixOperator,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -100,6 +100,15 @@ struct TemplateInvocation<'a> {
     arguments: &'a [Expression],
     span: Span,
     parallel_span: Option<Span>,
+}
+
+#[derive(Clone, Copy)]
+struct ForLoop<'a> {
+    initializer: &'a Statement,
+    condition: &'a Expression,
+    step: &'a Statement,
+    body: &'a Statement,
+    span: Span,
 }
 
 impl<'a> TemplateInvocation<'a> {

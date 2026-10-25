@@ -4,7 +4,7 @@ use crate::hir::lift::{
     DefinitionKind, DefinitionRef, DirectionSyntax, Effect, ExprId, ExprKind, Expression,
     Identifier, IncompleteReason, Knownness, Lifter, LogArgument, PortDirection, ScalarShape,
     SemanticCode, Severity, ShapeCheck, Span, Statement, SymbolId, SymbolKind, SymbolState,
-    ValueEvidence, ValueType, TemplateInvocation,
+    ValueEvidence, ValueType, TemplateInvocation, ForLoop, PostfixOperator,
 };
 
 impl Lifter<'_> {
@@ -229,162 +229,190 @@ impl Lifter<'_> {
     }
 
     pub(super) fn lift_statement(&mut self, statement: &Statement) -> Vec<Effect> {
-        match statement {
-            Statement::Block(_)
-            | Statement::Declaration(_)
-            | Statement::Assignment { .. }
-            | Statement::PostfixUpdate { .. }
-            | Statement::Constraint { .. } => self.lift_local_statement(statement),
-            Statement::If { .. } | Statement::For { .. } | Statement::While { .. } => {
-                self.lift_control_statement(statement)
-            }
-            Statement::Return { .. }
-            | Statement::Assert { .. }
-            | Statement::Log { .. }
-            | Statement::AnonymousCall { .. }
-            | Statement::Error { .. } => self.lift_terminal_statement(statement),
-        }
-    }
-
-    pub(super) fn lift_local_statement(&mut self, statement: &Statement) -> Vec<Effect> {
         let span = statement.span();
-        match statement {
-            Statement::Block(_) => vec![Effect::Block(self.lift_branch(statement))],
-            Statement::Declaration(declaration) => self.lift_declaration(declaration),
+        let effect = match statement {
+            Statement::Block(body) => {
+                let block = self.hir.add_block(body.span);
+                self.lift_block_into(&body.statements, block, true);
+                Effect::Block(block)
+            }
+            Statement::Declaration(declaration) => return self.lift_declaration(declaration),
             Statement::Assignment { target, operator, value, .. } => {
-                vec![self.lift_assignment(target, *operator, value, span)]
+                self.lift_assignment(target, *operator, value, span)
             }
             Statement::PostfixUpdate { target, operator, .. } => {
-                let Some(path) = self.lift_access(target) else {
-                    return vec![self.opaque(span, IncompleteReason::InvalidAssignment)];
-                };
-                let kind = self.hir.symbols[path.root.index].kind;
-                if !Self::local_value_target(kind) {
-                    return vec![
-                        self.invalid_assignment(span, "postfix update requires a variable")
-                    ];
-                }
-                if !Self::symbolic_indices(&path).all(|id| self.expression_is_checked(id)) {
-                    return vec![self.opaque(span, IncompleteReason::UnknownType)];
-                }
-                if kind == SymbolKind::Parameter {
-                    self.incomplete(span, IncompleteReason::UnknownType);
-                }
-                let knownness = self.access_knownness(&path);
-                self.hir.symbols[path.terminal.index].knownness = knownness;
-                vec![Effect::Update { target: path, operator: *operator, span }]
+                self.lift_postfix_update(target, *operator, span)
             }
-            Statement::Constraint { left, right, .. } => {
-                if matches!(self.current_definition, Some(DefinitionRef::Function(_))) {
-                    self.diagnostic(
-                        SemanticCode::ConstraintInFunction,
-                        Severity::Error,
-                        span,
-                        "a function cannot generate constraints".into(),
-                    );
-                    return vec![self.opaque(
-                        span,
-                        IncompleteReason::Unsupported("constraint in function".into()),
-                    )];
-                }
-                let left = self.lift_expression(left);
-                let right = self.lift_expression(right);
-                match self.equality_shape(left, right) {
-                    ShapeCheck::Valid => vec![Effect::EqualityConstraint { left, right, span }],
-                    ShapeCheck::Unknown => {
-                        let reason = IncompleteReason::UnknownType;
-                        self.incomplete(span, reason.clone());
-                        vec![Effect::OpaqueEquality { left, right, reason, span }]
-                    }
-                    ShapeCheck::Invalid(_) => {
-                        vec![self.opaque(span, IncompleteReason::UnknownType)]
+            Statement::Constraint { left, right, .. } => self.lift_equality(left, right, span),
+            Statement::If { condition, then_branch, else_branch, .. } => {
+                self.lift_if(condition, then_branch, else_branch.as_deref(), span)
+            }
+            Statement::For { initializer, condition, step, body, .. } => {
+                self.lift_for(ForLoop { initializer, condition, step, body, span })
+            }
+            Statement::While { condition, body, .. } => self.lift_while(condition, body, span),
+            Statement::Return { value, .. } => self.lift_return(value, span),
+            Statement::Assert { condition, .. } => self.lift_assert(condition, span),
+            Statement::Log { arguments, .. } => {
+                let mut values = Vec::new();
+                for argument in arguments {
+                    match argument {
+                        LogArgument::String { .. } => {}
+                        LogArgument::Expression(value) => values.push(self.lift_expression(value)),
                     }
                 }
+                Effect::Log { values, span }
             }
-            _ => {
-                let reason = IncompleteReason::Unsupported("local statement form".into());
-                vec![self.opaque(span, reason)]
+            Statement::AnonymousCall { call, .. } => {
+                let expression = self.lift_anonymous(call);
+                Effect::AnonymousComponent { expression, span }
             }
+            Statement::Error { .. } => self.opaque(span, IncompleteReason::Syntax),
+        };
+        vec![effect]
+    }
+
+    fn lift_postfix_update(
+        &mut self,
+        target: &Expression,
+        operator: PostfixOperator,
+        span: Span,
+    ) -> Effect {
+        let Some(path) = self.lift_access(target) else {
+            return self.opaque(span, IncompleteReason::InvalidAssignment);
+        };
+        let kind = self.hir.symbols[path.root.index].kind;
+        if !Self::local_value_target(kind) {
+            return self.invalid_assignment(span, "postfix update requires a variable");
+        }
+        if !Self::symbolic_indices(&path).all(|id| self.expression_is_checked(id)) {
+            return self.opaque(span, IncompleteReason::UnknownType);
+        }
+        if kind == SymbolKind::Parameter {
+            self.incomplete(span, IncompleteReason::UnknownType);
+        }
+        let knownness = self.access_knownness(&path);
+        self.hir.symbols[path.terminal.index].knownness = knownness;
+        Effect::Update { target: path, operator, span }
+    }
+
+    fn lift_equality(&mut self, left: &Expression, right: &Expression, span: Span) -> Effect {
+        if let Some(DefinitionRef::Function(_)) = self.current_definition {
+            self.diagnostic(
+                SemanticCode::ConstraintInFunction,
+                Severity::Error,
+                span,
+                "a function cannot generate constraints".into(),
+            );
+            return self
+                .opaque(span, IncompleteReason::Unsupported("constraint in function".into()));
+        }
+        let left = self.lift_expression(left);
+        let right = self.lift_expression(right);
+        match self.equality_shape(left, right) {
+            ShapeCheck::Valid => Effect::EqualityConstraint { left, right, span },
+            ShapeCheck::Unknown => {
+                let reason = IncompleteReason::UnknownType;
+                self.incomplete(span, reason.clone());
+                Effect::OpaqueEquality { left, right, reason, span }
+            }
+            ShapeCheck::Invalid(_) => self.opaque(span, IncompleteReason::UnknownType),
         }
     }
 
-    pub(super) fn lift_control_statement(&mut self, statement: &Statement) -> Vec<Effect> {
-        let span = statement.span();
-        match statement {
-            Statement::If { condition, then_branch, else_branch, .. } => {
-                let condition = self.lift_expression(condition);
-                let before = self.snapshot_symbol_state();
-                let then_block = self.lift_branch(then_branch);
-                let after_then = self.snapshot_symbol_state();
-                self.restore_symbol_state(&before);
-                let else_block = else_branch.as_ref().map(|branch| self.lift_branch(branch));
-                let after_else = self.snapshot_symbol_state();
-                self.join_symbol_state(&after_then, &after_else);
-                let guard = match self.control_guard(condition) {
-                    Ok(ControlGuard::WitnessOnly)
-                        if !self.branch_is_witness_only(then_block)
-                            || else_block.is_some_and(|id| !self.branch_is_witness_only(id)) =>
-                    {
-                        return vec![self.opaque(span, IncompleteReason::NonCompileTime)];
-                    }
-                    Ok(guard) => guard,
-                    Err(reason) => return vec![self.opaque(span, reason)],
-                };
-                vec![Effect::If { condition, guard, then_block, else_block, span }]
+    fn lift_if(
+        &mut self,
+        condition: &Expression,
+        then_branch: &Statement,
+        else_branch: Option<&Statement>,
+        span: Span,
+    ) -> Effect {
+        let condition = self.lift_expression(condition);
+        let before = self.snapshot_symbol_state();
+        let then_block = self.lift_branch(then_branch);
+        let after_then = self.snapshot_symbol_state();
+        self.restore_symbol_state(&before);
+        let else_block = else_branch.map(|branch| self.lift_branch(branch));
+        let after_else = self.snapshot_symbol_state();
+        self.join_symbol_state(&after_then, &after_else);
+        let guard = match self.control_guard(condition) {
+            Ok(ControlGuard::WitnessOnly)
+                if !self.branch_is_witness_only(then_block)
+                    || else_block.is_some_and(|id| !self.branch_is_witness_only(id)) =>
+            {
+                return self.opaque(span, IncompleteReason::NonCompileTime);
             }
-            Statement::For { initializer, condition, step, body, .. } => {
-                self.scopes.enter();
-                let initializer_block = self.hir.add_block(initializer.span());
-                self.lift_block_into(std::slice::from_ref(initializer), initializer_block, false);
-                let before_loop = self.snapshot_symbol_state();
-                let condition = self.lift_expression(condition);
-                let body = self.lift_branch(body);
-                let after_body = self.snapshot_symbol_state();
-                let step = self.lift_branch(step);
-                let stable_condition = self.loop_condition_is_stable(condition, &before_loop);
-                self.join_symbol_state(&before_loop, &after_body);
-                self.scopes.leave();
-                let guard = match self.control_guard(condition) {
-                    Ok(ControlGuard::WitnessOnly) => {
-                        return vec![self.opaque(span, IncompleteReason::NonCompileTime)];
-                    }
-                    Ok(guard) => guard,
-                    Err(reason) => return vec![self.opaque(span, reason)],
-                };
-                if !stable_condition {
-                    return vec![self.opaque(span, IncompleteReason::NonCompileTime)];
-                }
-                vec![Effect::For {
-                    initializer: initializer_block,
-                    condition,
-                    guard,
-                    step,
-                    body,
-                    span,
-                }]
+            Ok(guard) => guard,
+            Err(reason) => return self.opaque(span, reason),
+        };
+        Effect::If { condition, guard, then_block, else_block, span }
+    }
+
+    fn lift_for(&mut self, for_loop: ForLoop<'_>) -> Effect {
+        let ForLoop { initializer, condition, step, body, span } = for_loop;
+        self.scopes.enter();
+        let initializer_block = self.hir.add_block(initializer.span());
+        self.lift_block_into(std::slice::from_ref(initializer), initializer_block, false);
+        let before_loop = self.snapshot_symbol_state();
+        let condition = self.lift_expression(condition);
+        let body = self.lift_branch(body);
+        let after_body = self.snapshot_symbol_state();
+        let step = self.lift_branch(step);
+        let stable_condition = self.loop_condition_is_stable(condition, &before_loop);
+        self.join_symbol_state(&before_loop, &after_body);
+        self.scopes.leave();
+        let guard = match self.control_guard(condition) {
+            Ok(ControlGuard::WitnessOnly) => {
+                return self.opaque(span, IncompleteReason::NonCompileTime);
             }
-            Statement::While { condition, body, .. } => {
-                let before = self.snapshot_symbol_state();
-                let condition = self.lift_expression(condition);
-                let body = self.lift_branch(body);
-                let stable_condition = self.loop_condition_is_stable(condition, &before);
-                self.join_symbol_state(&before, &before);
-                let guard = match self.control_guard(condition) {
-                    Ok(ControlGuard::WitnessOnly) => {
-                        return vec![self.opaque(span, IncompleteReason::NonCompileTime)];
-                    }
-                    Ok(guard) => guard,
-                    Err(reason) => return vec![self.opaque(span, reason)],
-                };
-                if !stable_condition {
-                    return vec![self.opaque(span, IncompleteReason::NonCompileTime)];
-                }
-                vec![Effect::While { condition, guard, body, span }]
+            Ok(guard) => guard,
+            Err(reason) => return self.opaque(span, reason),
+        };
+        if !stable_condition {
+            return self.opaque(span, IncompleteReason::NonCompileTime);
+        }
+        Effect::For { initializer: initializer_block, condition, guard, step, body, span }
+    }
+
+    fn lift_while(&mut self, condition: &Expression, body: &Statement, span: Span) -> Effect {
+        let before = self.snapshot_symbol_state();
+        let condition = self.lift_expression(condition);
+        let body = self.lift_branch(body);
+        let stable_condition = self.loop_condition_is_stable(condition, &before);
+        self.join_symbol_state(&before, &before);
+        let guard = match self.control_guard(condition) {
+            Ok(ControlGuard::WitnessOnly) => {
+                return self.opaque(span, IncompleteReason::NonCompileTime);
             }
-            _ => {
-                vec![self
-                    .opaque(span, IncompleteReason::Unsupported("control statement form".into()))]
-            }
+            Ok(guard) => guard,
+            Err(reason) => return self.opaque(span, reason),
+        };
+        if !stable_condition {
+            return self.opaque(span, IncompleteReason::NonCompileTime);
+        }
+        Effect::While { condition, guard, body, span }
+    }
+
+    fn lift_return(&mut self, value: &Expression, span: Span) -> Effect {
+        let Some(DefinitionRef::Function(_)) = self.current_definition else {
+            self.diagnostic(
+                SemanticCode::TemplateReturn,
+                Severity::Error,
+                span,
+                "return is only valid in a function".into(),
+            );
+            return self
+                .opaque(span, IncompleteReason::Unsupported("return outside function".into()));
+        };
+        Effect::Return { value: self.lift_expression(value), span }
+    }
+
+    fn lift_assert(&mut self, condition: &Expression, span: Span) -> Effect {
+        let condition = self.lift_expression(condition);
+        match self.scalar_shape(condition) {
+            ScalarShape::Checked => Effect::Assert { condition, span },
+            ScalarShape::Deferred => Effect::DeferredAssert { condition, span },
+            ScalarShape::Invalid => self.opaque(span, IncompleteReason::UnknownType),
         }
     }
 
@@ -500,56 +528,6 @@ impl Lifter<'_> {
             | ExprKind::AnonymousComponent { .. }
             | ExprKind::Parallel(_)
             | ExprKind::Opaque(_) => false,
-        }
-    }
-
-    pub(super) fn lift_terminal_statement(&mut self, statement: &Statement) -> Vec<Effect> {
-        let span = statement.span();
-        match statement {
-            Statement::Return { value, .. } => {
-                if !matches!(self.current_definition, Some(DefinitionRef::Function(_))) {
-                    self.diagnostic(
-                        SemanticCode::TemplateReturn,
-                        Severity::Error,
-                        span,
-                        "return is only valid in a function".into(),
-                    );
-                    return vec![self.opaque(
-                        span,
-                        IncompleteReason::Unsupported("return outside function".into()),
-                    )];
-                }
-                vec![Effect::Return { value: self.lift_expression(value), span }]
-            }
-            Statement::Assert { condition, .. } => {
-                let condition = self.lift_expression(condition);
-                match self.scalar_shape(condition) {
-                    ScalarShape::Checked => vec![Effect::Assert { condition, span }],
-                    ScalarShape::Deferred => vec![Effect::DeferredAssert { condition, span }],
-                    ScalarShape::Invalid => {
-                        vec![self.opaque(span, IncompleteReason::UnknownType)]
-                    }
-                }
-            }
-            Statement::Log { arguments, .. } => {
-                let values = arguments
-                    .iter()
-                    .filter_map(|argument| match argument {
-                        LogArgument::String { .. } => None,
-                        LogArgument::Expression(value) => Some(self.lift_expression(value)),
-                    })
-                    .collect();
-                vec![Effect::Log { values, span }]
-            }
-            Statement::AnonymousCall { call, .. } => {
-                let expression = self.lift_anonymous(call);
-                vec![Effect::AnonymousComponent { expression, span }]
-            }
-            Statement::Error { .. } => vec![self.opaque(span, IncompleteReason::Syntax)],
-            _ => {
-                vec![self
-                    .opaque(span, IncompleteReason::Unsupported("terminal statement form".into()))]
-            }
         }
     }
 
@@ -1029,15 +1007,8 @@ impl Lifter<'_> {
                 | AssignmentOperator::BitOr
                 | AssignmentOperator::BitXor,
             ) => {
-                if matches!(kind, SymbolKind::Variable | SymbolKind::Tag) {
-                    let current = self.hir.symbols[path.terminal.index].knownness;
-                    let next = self.knownness(value);
-                    self.hir.symbols[path.terminal.index].knownness =
-                        if operator == AssignmentOperator::Assign && path.steps.is_empty() {
-                            next
-                        } else {
-                            current.join(next).join(self.access_knownness(&path))
-                        };
+                if let SymbolKind::Variable | SymbolKind::Tag = kind {
+                    self.update_assignment_knownness(&path, operator, value);
                 }
                 if kind == SymbolKind::Component
                     && self.expression_type(value) == ValueType::Unknown
@@ -1101,14 +1072,7 @@ impl Lifter<'_> {
             && self.provisionally_compile_time(value)
             && Self::symbolic_indices(&path).all(|index| self.provisionally_compile_time(index))
         {
-            let current = self.hir.symbols[path.terminal.index].knownness;
-            let next = self.knownness(value);
-            self.hir.symbols[path.terminal.index].knownness =
-                if operator == AssignmentOperator::Assign && path.steps.is_empty() {
-                    next
-                } else {
-                    current.join(next).join(self.access_knownness(&path))
-                };
+            self.update_assignment_knownness(&path, operator, value);
             self.hir.symbols[path.terminal.index].value_evidence = ValueEvidence::Deferred;
             return Effect::DeferredVariableAssignment { target: path, value, operator, span };
         }
@@ -1119,6 +1083,22 @@ impl Lifter<'_> {
             reason: IncompleteReason::UnknownType,
             span,
         }
+    }
+
+    fn update_assignment_knownness(
+        &mut self,
+        path: &AccessPath,
+        operator: AssignmentOperator,
+        value: ExprId,
+    ) {
+        let current = self.hir.symbols[path.terminal.index].knownness;
+        let next = self.knownness(value);
+        self.hir.symbols[path.terminal.index].knownness =
+            if operator == AssignmentOperator::Assign && path.steps.is_empty() {
+                next
+            } else {
+                current.join(next).join(self.access_knownness(path))
+            };
     }
 
     fn local_value_target(kind: SymbolKind) -> bool {
