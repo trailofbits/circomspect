@@ -90,6 +90,26 @@ struct AccessState {
     steps: Vec<AccessStep>,
 }
 
+struct TemplateInvocation<'a> {
+    name: &'a Identifier,
+    arguments: &'a [Expression],
+    span: Span,
+    parallel_span: Option<Span>,
+}
+
+impl<'a> TemplateInvocation<'a> {
+    fn from_expression(expression: &'a Expression) -> Option<Self> {
+        let (expression, parallel_span) = if let Expression::Parallel { operand, span } = expression
+        {
+            (operand.as_ref(), Some(*span))
+        } else {
+            (expression, None)
+        };
+        let Expression::Call { name, arguments, span } = expression else { return None };
+        Some(Self { name, arguments, span: *span, parallel_span })
+    }
+}
+
 struct Lifter<'a> {
     source: &'a LoadedProject,
     hir: HirProject,

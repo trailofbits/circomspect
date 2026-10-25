@@ -4,7 +4,7 @@ use crate::hir::lift::{
     DefinitionKind, DefinitionRef, DirectionSyntax, Effect, ExprId, ExprKind, Expression,
     Identifier, IncompleteReason, Knownness, Lifter, LogArgument, PortDirection, ScalarShape,
     SemanticCode, Severity, ShapeCheck, Span, Statement, SymbolId, SymbolKind, SymbolState,
-    ValueEvidence, ValueType,
+    ValueEvidence, ValueType, TemplateInvocation,
 };
 
 impl Lifter<'_> {
@@ -1129,19 +1129,7 @@ impl Lifter<'_> {
     }
 
     pub(super) fn lift_component_value(&mut self, symbol: SymbolId, value: &Expression) -> ExprId {
-        let call = match value {
-            Expression::Call { name, arguments, span } => {
-                Some((name, arguments.as_slice(), *span, false))
-            }
-            Expression::Parallel { operand, .. } => match operand.as_ref() {
-                Expression::Call { name, arguments, span } => {
-                    Some((name, arguments.as_slice(), *span, true))
-                }
-                _ => None,
-            },
-            _ => None,
-        };
-        let Some((name, arguments, span, parallel)) = call else {
+        let Some(invocation) = TemplateInvocation::from_expression(value) else {
             self.diagnostic(
                 SemanticCode::InvalidAssignment,
                 Severity::Error,
@@ -1156,17 +1144,11 @@ impl Lifter<'_> {
                 ValueType::Unknown,
             );
         };
-        let arguments: Vec<_> = arguments.iter().map(|value| self.lift_expression(value)).collect();
-        let mut target = self.resolve_call(name, DefinitionKind::Template);
-        let valid_arity = self.check_arity(&target, arguments.len(), span);
-        let valid_arguments = self.check_template_arguments(&arguments, span);
-        if !valid_arity {
-            target = CallTarget::Opaque {
-                reason: IncompleteReason::Unsupported("wrong argument arity".into()),
-            };
-        } else if !valid_arguments {
-            target = CallTarget::Opaque { reason: IncompleteReason::NonCompileTime };
-        }
+        let span = invocation.span;
+        let arguments: Vec<_> =
+            invocation.arguments.iter().map(|value| self.lift_expression(value)).collect();
+        let target = self.resolve_call(invocation.name, DefinitionKind::Template);
+        let mut target = self.check_template_invocation(target, &arguments, span);
         if let Some(component) = self.components.get(&symbol).copied() {
             let previous = self.hir.components[component.index].target.as_ref();
             let already_invalid = match previous {
@@ -1194,8 +1176,8 @@ impl Lifter<'_> {
         };
         let call =
             self.add_expression(ExprKind::Call { target, arguments }, Knownness::Opaque, span, ty);
-        if parallel {
-            self.add_expression(ExprKind::Parallel(call), Knownness::Opaque, value.span(), ty)
+        if let Some(span) = invocation.parallel_span {
+            self.add_expression(ExprKind::Parallel(call), Knownness::Opaque, span, ty)
         } else {
             call
         }

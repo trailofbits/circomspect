@@ -4,7 +4,7 @@ use crate::hir::lift::{
     DefinitionKind, ExprId, ExprKind, Expression, Identifier, IncompleteReason,
     InputAssignmentOperator, Item, Knownness, Lifter, Main, PortDirection, PortSchema, ScalarShape,
     SemanticCode, Severity, ShapeCheck, Span, SymbolId, SymbolKind, TemplateId, ValueEvidence,
-    ValueType,
+    ValueType, TemplateInvocation,
 };
 
 impl Lifter<'_> {
@@ -729,18 +729,10 @@ impl Lifter<'_> {
     }
 
     pub(super) fn lift_anonymous(&mut self, call: &AnonymousCallExpr) -> ExprId {
-        let mut target = self.resolve_call(&call.name, DefinitionKind::Template);
+        let target = self.resolve_call(&call.name, DefinitionKind::Template);
         let arguments: Vec<_> =
             call.parameters.iter().map(|value| self.lift_expression(value)).collect();
-        let valid_arity = self.check_arity(&target, arguments.len(), call.span);
-        let valid_arguments = self.check_template_arguments(&arguments, call.span);
-        if !valid_arity {
-            target = CallTarget::Opaque {
-                reason: IncompleteReason::Unsupported("wrong argument arity".into()),
-            };
-        } else if !valid_arguments {
-            target = CallTarget::Opaque { reason: IncompleteReason::NonCompileTime };
-        }
+        let target = self.check_template_invocation(target, &arguments, call.span);
         let template = if let CallTarget::Template(id) = target { Some(id) } else { None };
         let mut inputs: Vec<_> = call
             .inputs
@@ -953,33 +945,17 @@ impl Lifter<'_> {
         for file in &self.source.files {
             for item in &file.outcome.ast.items {
                 let Item::Main { instance, span, .. } = item else { continue };
-                let call = match instance {
-                    Expression::Call { name, arguments, .. } => {
-                        Some((name, arguments.as_slice(), false))
-                    }
-                    Expression::Parallel { operand, .. } => match operand.as_ref() {
-                        Expression::Call { name, arguments, .. } => {
-                            Some((name, arguments.as_slice(), true))
-                        }
-                        _ => None,
-                    },
-                    _ => None,
-                };
-                if let Some((name, arguments, parallel)) = call {
+                if let Some(invocation) = TemplateInvocation::from_expression(instance) {
                     self.scopes.enter();
-                    let arguments: Vec<_> =
-                        arguments.iter().map(|value| self.lift_expression(value)).collect();
+                    let arguments: Vec<_> = invocation
+                        .arguments
+                        .iter()
+                        .map(|value| self.lift_expression(value))
+                        .collect();
                     self.scopes.leave();
-                    let mut target = self.resolve_call(name, DefinitionKind::Template);
-                    let valid_arity = self.check_arity(&target, arguments.len(), *span);
-                    let valid_arguments = self.check_template_arguments(&arguments, *span);
-                    if !valid_arity {
-                        target = CallTarget::Opaque {
-                            reason: IncompleteReason::Unsupported("wrong argument arity".into()),
-                        };
-                    } else if !valid_arguments {
-                        target = CallTarget::Opaque { reason: IncompleteReason::NonCompileTime };
-                    }
+                    let target = self.resolve_call(invocation.name, DefinitionKind::Template);
+                    let target = self.check_template_invocation(target, &arguments, *span);
+                    let parallel = invocation.parallel_span.is_some();
                     self.hir.mains.push(Main { target, arguments, parallel, span: *span });
                 } else {
                     self.diagnostic(

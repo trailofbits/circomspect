@@ -1,0 +1,686 @@
+component: (
+    [
+        SemanticDiagnostic {
+            code: WrongArity,
+            severity: Error,
+            span: Span {
+                source: SourceId(
+                    0,
+                ),
+                start: 61,
+                end: 71,
+            },
+            message: "expected 1 arguments, found 2",
+            expected_kind: None,
+            actual_kind: None,
+        },
+        SemanticDiagnostic {
+            code: NonComputableExpression,
+            severity: Error,
+            span: Span {
+                source: SourceId(
+                    0,
+                ),
+                start: 61,
+                end: 71,
+            },
+            message: "template arguments depend on witness values",
+            expected_kind: None,
+            actual_kind: None,
+        },
+    ],
+    [
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 59,
+                    end: 71,
+                },
+            ),
+            reason: UnknownType,
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 61,
+                    end: 71,
+                },
+            ),
+            reason: Unsupported(
+                "wrong argument arity",
+            ),
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 61,
+                    end: 71,
+                },
+            ),
+            reason: NonCompileTime,
+        },
+    ],
+)
+parallel component: (
+    [
+        SemanticDiagnostic {
+            code: WrongArity,
+            severity: Error,
+            span: Span {
+                source: SourceId(
+                    0,
+                ),
+                start: 70,
+                end: 80,
+            },
+            message: "expected 1 arguments, found 2",
+            expected_kind: None,
+            actual_kind: None,
+        },
+        SemanticDiagnostic {
+            code: NonComputableExpression,
+            severity: Error,
+            span: Span {
+                source: SourceId(
+                    0,
+                ),
+                start: 70,
+                end: 80,
+            },
+            message: "template arguments depend on witness values",
+            expected_kind: None,
+            actual_kind: None,
+        },
+    ],
+    [
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 59,
+                    end: 80,
+                },
+            ),
+            reason: UnknownType,
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 70,
+                    end: 80,
+                },
+            ),
+            reason: Unsupported(
+                "wrong argument arity",
+            ),
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 70,
+                    end: 80,
+                },
+            ),
+            reason: NonCompileTime,
+        },
+    ],
+)
+anonymous: (
+    [
+        SemanticDiagnostic {
+            code: WrongArity,
+            severity: Error,
+            span: Span {
+                source: SourceId(
+                    0,
+                ),
+                start: 64,
+                end: 77,
+            },
+            message: "expected 1 arguments, found 2",
+            expected_kind: None,
+            actual_kind: None,
+        },
+        SemanticDiagnostic {
+            code: NonComputableExpression,
+            severity: Error,
+            span: Span {
+                source: SourceId(
+                    0,
+                ),
+                start: 64,
+                end: 77,
+            },
+            message: "template arguments depend on witness values",
+            expected_kind: None,
+            actual_kind: None,
+        },
+    ],
+    [
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 64,
+                    end: 77,
+                },
+            ),
+            reason: Unsupported(
+                "wrong argument arity",
+            ),
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 64,
+                    end: 77,
+                },
+            ),
+            reason: NonCompileTime,
+        },
+    ],
+)
+main: (
+    [
+        SemanticDiagnostic {
+            code: WrongArity,
+            severity: Error,
+            span: Span {
+                source: SourceId(
+                    0,
+                ),
+                start: 20,
+                end: 63,
+            },
+            message: "expected 1 arguments, found 2",
+            expected_kind: None,
+            actual_kind: None,
+        },
+        SemanticDiagnostic {
+            code: MissingCall,
+            severity: Error,
+            span: Span {
+                source: SourceId(
+                    0,
+                ),
+                start: 50,
+                end: 57,
+            },
+            message: "unresolved Function call `Missing`",
+            expected_kind: None,
+            actual_kind: None,
+        },
+    ],
+    [
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 20,
+                    end: 63,
+                },
+            ),
+            reason: Unsupported(
+                "wrong argument arity",
+            ),
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 20,
+                    end: 63,
+                },
+            ),
+            reason: NonCompileTime,
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 50,
+                    end: 57,
+                },
+            ),
+            reason: MissingReference(
+                "Missing",
+            ),
+        },
+    ],
+)
+nested missing: (
+    [
+        SemanticDiagnostic {
+            code: MissingCall,
+            severity: Error,
+            span: Span {
+                source: SourceId(
+                    0,
+                ),
+                start: 25,
+                end: 32,
+            },
+            message: "unresolved Template call `Missing`",
+            expected_kind: None,
+            actual_kind: None,
+        },
+        SemanticDiagnostic {
+            code: MissingCall,
+            severity: Error,
+            span: Span {
+                source: SourceId(
+                    0,
+                ),
+                start: 33,
+                end: 38,
+            },
+            message: "unresolved Function call `First`",
+            expected_kind: None,
+            actual_kind: None,
+        },
+        SemanticDiagnostic {
+            code: MissingCall,
+            severity: Error,
+            span: Span {
+                source: SourceId(
+                    0,
+                ),
+                start: 43,
+                end: 54,
+            },
+            message: "unresolved Template call `MissingAnon`",
+            expected_kind: None,
+            actual_kind: None,
+        },
+        SemanticDiagnostic {
+            code: MissingCall,
+            severity: Error,
+            span: Span {
+                source: SourceId(
+                    0,
+                ),
+                start: 55,
+                end: 61,
+            },
+            message: "unresolved Function call `Second`",
+            expected_kind: None,
+            actual_kind: None,
+        },
+        SemanticDiagnostic {
+            code: MissingCall,
+            severity: Error,
+            span: Span {
+                source: SourceId(
+                    0,
+                ),
+                start: 84,
+                end: 95,
+            },
+            message: "unresolved Template call `MissingMain`",
+            expected_kind: None,
+            actual_kind: None,
+        },
+        SemanticDiagnostic {
+            code: MissingCall,
+            severity: Error,
+            span: Span {
+                source: SourceId(
+                    0,
+                ),
+                start: 96,
+                end: 101,
+            },
+            message: "unresolved Function call `Third`",
+            expected_kind: None,
+            actual_kind: None,
+        },
+    ],
+    [
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 23,
+                    end: 41,
+                },
+            ),
+            reason: UnknownType,
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 25,
+                    end: 32,
+                },
+            ),
+            reason: MissingReference(
+                "Missing",
+            ),
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 25,
+                    end: 41,
+                },
+            ),
+            reason: NonCompileTime,
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 33,
+                    end: 38,
+                },
+            ),
+            reason: MissingReference(
+                "First",
+            ),
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 43,
+                    end: 54,
+                },
+            ),
+            reason: MissingReference(
+                "MissingAnon",
+            ),
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 43,
+                    end: 66,
+                },
+            ),
+            reason: NonCompileTime,
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 55,
+                    end: 61,
+                },
+            ),
+            reason: MissingReference(
+                "Second",
+            ),
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 69,
+                    end: 105,
+                },
+            ),
+            reason: NonCompileTime,
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 84,
+                    end: 95,
+                },
+            ),
+            reason: MissingReference(
+                "MissingMain",
+            ),
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 96,
+                    end: 101,
+                },
+            ),
+            reason: MissingReference(
+                "Third",
+            ),
+        },
+    ],
+)
+wrong kind: (
+    [
+        SemanticDiagnostic {
+            code: WrongTemplate,
+            severity: Error,
+            span: Span {
+                source: SourceId(
+                    0,
+                ),
+                start: 50,
+                end: 51,
+            },
+            message: "`F` is a Function, expected Template",
+            expected_kind: Some(
+                Template,
+            ),
+            actual_kind: Some(
+                Function,
+            ),
+        },
+        SemanticDiagnostic {
+            code: WrongTemplate,
+            severity: Error,
+            span: Span {
+                source: SourceId(
+                    0,
+                ),
+                start: 56,
+                end: 57,
+            },
+            message: "`F` is a Function, expected Template",
+            expected_kind: Some(
+                Template,
+            ),
+            actual_kind: Some(
+                Function,
+            ),
+        },
+        SemanticDiagnostic {
+            code: WrongTemplate,
+            severity: Error,
+            span: Span {
+                source: SourceId(
+                    0,
+                ),
+                start: 80,
+                end: 81,
+            },
+            message: "`F` is a Function, expected Template",
+            expected_kind: Some(
+                Template,
+            ),
+            actual_kind: Some(
+                Function,
+            ),
+        },
+    ],
+    [
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 48,
+                    end: 54,
+                },
+            ),
+            reason: UnknownType,
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 50,
+                    end: 51,
+                },
+            ),
+            reason: WrongKind(
+                "F",
+            ),
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 56,
+                    end: 57,
+                },
+            ),
+            reason: WrongKind(
+                "F",
+            ),
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 80,
+                    end: 81,
+                },
+            ),
+            reason: WrongKind(
+                "F",
+            ),
+        },
+    ],
+)
+grouped calls: (
+    [
+        SemanticDiagnostic {
+            code: InvalidAssignment,
+            severity: Error,
+            span: Span {
+                source: SourceId(
+                    0,
+                ),
+                start: 44,
+                end: 53,
+            },
+            message: "component requires a template call",
+            expected_kind: None,
+            actual_kind: None,
+        },
+        SemanticDiagnostic {
+            code: WrongTemplate,
+            severity: Error,
+            span: Span {
+                source: SourceId(
+                    0,
+                ),
+                start: 56,
+                end: 81,
+            },
+            message: "main requires a template call",
+            expected_kind: None,
+            actual_kind: None,
+        },
+    ],
+    [
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 42,
+                    end: 53,
+                },
+            ),
+            reason: UnknownType,
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 44,
+                    end: 53,
+                },
+            ),
+            reason: InvalidAssignment,
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 56,
+                    end: 81,
+                },
+            ),
+            reason: Unsupported(
+                "main expression",
+            ),
+        },
+    ],
+)

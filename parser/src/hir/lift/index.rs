@@ -482,7 +482,7 @@ impl Lifter<'_> {
         true
     }
 
-    pub(super) fn check_template_arguments(&mut self, arguments: &[ExprId], span: Span) -> bool {
+    fn check_template_arguments(&mut self, arguments: &[ExprId], span: Span) -> bool {
         let knownness =
             arguments.iter().fold(Knownness::Constant, |acc, id| acc.join(self.knownness(*id)));
         if knownness == Knownness::WitnessDependent {
@@ -498,6 +498,25 @@ impl Lifter<'_> {
             return false;
         }
         true
+    }
+
+    pub(super) fn check_template_invocation(
+        &mut self,
+        target: CallTarget,
+        arguments: &[ExprId],
+        span: Span,
+    ) -> CallTarget {
+        let valid_arity = self.check_arity(&target, arguments.len(), span);
+        let valid_arguments = self.check_template_arguments(arguments, span);
+        if !valid_arity {
+            CallTarget::Opaque {
+                reason: IncompleteReason::Unsupported("wrong argument arity".into()),
+            }
+        } else if !valid_arguments {
+            CallTarget::Opaque { reason: IncompleteReason::NonCompileTime }
+        } else {
+            target
+        }
     }
 
     pub(super) fn lift_definitions(&mut self) {
