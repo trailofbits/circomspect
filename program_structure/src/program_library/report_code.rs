@@ -56,180 +56,120 @@ pub enum ReportCode {
     MissingBusType,
 }
 
+struct DiagnosticDescriptor {
+    id: &'static str,
+    name: &'static str,
+    anchor: Option<&'static str>,
+}
+
 impl ReportCode {
+    fn descriptor(self) -> DiagnosticDescriptor {
+        let (id, name, anchor) = match self {
+            Self::ParseFail => ("P1000", "parse-fail", None),
+            Self::CompilerVersionError => ("P1003", "compiler-version-error", None),
+            Self::WrongTypesInAssignOperation => ("T2000", "wrong-types-in-assign-operation", None),
+            Self::WrongArityUnspecified => ("T20465", "wrong-number-of-arguments", None),
+            Self::UndefinedFunction => ("T2001", "undefined-function", None),
+            Self::UndefinedTemplate => ("T2002", "undefined-template", None),
+            Self::SameFunctionDeclaredTwice => ("T2006", "same-function-declared-twice", None),
+            Self::SameTemplateDeclaredTwice => ("T2007", "same-template-declared-twice", None),
+            Self::SameSymbolDeclaredTwice => ("T2008", "same-symbol-declared-twice", None),
+            Self::ForbiddenDeclarationInFunction => {
+                ("T2016", "forbidden-declaration-in-function", None)
+            }
+            Self::NonExistentSymbol => ("T2021", "non-existent-symbol", None),
+            Self::NoCompilerVersionWarning => ("P1004", "no-compiler-version-warning", None),
+            Self::MultipleMainInComponent => ("P1002", "multiple-main-in-component", None),
+            Self::TemplateWithReturnStatement => ("T2024", "template-with-return-statement", None),
+            Self::InvalidArgumentInCall => ("T2029", "invalid-argument-in-call", None),
+            Self::InvalidArrayAccess => ("T2032", "invalid-array-access", None),
+            Self::InvalidSignalAccess => ("T2046", "invalid-signal-access", None),
+            Self::InvalidTag => ("T2048", "invalid-tag", None),
+            Self::InputTagAccess => ("T2048-C", "input-tag-access", None),
+            Self::InvalidTagAfterArray => ("T2049", "invalid-tag-after-array", None),
+            Self::InvalidArraySize => ("T2033", "invalid-array-size", None),
+            Self::InvalidArrayIndexBus => ("T2053", "invalid-array-index-bus", None),
+            Self::ConstraintGeneratorInFunction => {
+                ("T2039", "constraint-generator-in-function", None)
+            }
+            Self::RuntimeError => ("T3001", "runtime-error", None),
+            Self::NonConstantArrayLength => ("T20463", "non-constant-array-length", None),
+            Self::NonComputableExpression => ("T20464", "non-computable-expression", None),
+            Self::WrongBusAssignment => ("T2059", "wrong-bus-assignment", None),
+            Self::WrongAssignmentExpression => ("T2060", "wrong-assignment-expression", None),
+            Self::WrongAssignmentRank => ("T2061", "wrong-assignment-rank", None),
+            Self::AnonymousComponentError => ("TAC01", "anonymous-component-error", None),
+            Self::UnconstrainedSignal => {
+                ("CA01", "unconstrained-signal", Some("unconstrained-signal"))
+            }
+            Self::ShadowingVariable => ("CS0001", "shadowing-variable", Some("shadowing-variable")),
+            Self::ParameterNameCollision => ("CS0002", "parameter-name-collision", None),
+            Self::FieldElementComparison => {
+                ("CS0003", "field-element-comparison", Some("field-element-comparison"))
+            }
+            Self::FieldElementArithmetic => {
+                ("CS0004", "field-element-arithmetic", Some("field-element-arithmetic"))
+            }
+            Self::SignalAssignmentStatement => {
+                ("CS0005", "signal-assignment-statement", Some("signal-assignment"))
+            }
+            Self::UnusedVariableValue => {
+                ("CS0006", "unused-variable-value", Some("unused-variable-or-parameter"))
+            }
+            Self::UnusedParameterValue => {
+                ("CS0007", "unused-parameter-value", Some("unused-variable-or-parameter"))
+            }
+            Self::VariableWithoutSideEffect => {
+                ("CS0008", "variable-without-side-effect", Some("side-effect-free-assignment"))
+            }
+            Self::ConstantBranchCondition => {
+                ("CS0009", "constant-branch-condition", Some("constant-branch-condition"))
+            }
+            Self::NonStrictBinaryConversion => {
+                ("CS0010", "non-strict-binary-conversion", Some("non-strict-binary-conversion"))
+            }
+            Self::CyclomaticComplexity => {
+                ("CS0011", "cyclomatic-complexity", Some("overly-complex-function-or-template"))
+            }
+            Self::TooManyArguments => {
+                ("CS0012", "too-many-arguments", Some("overly-complex-function-or-template"))
+            }
+            Self::UnconstrainedLessThan => {
+                ("CS0014", "unconstrained-less-than", Some("unconstrained-less-than"))
+            }
+            Self::UnconstrainedDivision => {
+                ("CS0015", "unconstrained-division", Some("unconstrained-division"))
+            }
+            Self::Bn254SpecificCircuit => {
+                ("CS0016", "bn254-specific-circuit", Some("bn254-specific-circuit"))
+            }
+            Self::UnusedOutputSignal => {
+                ("CS0018", "unused-output-signal", Some("unused-output-signal"))
+            }
+            Self::UnresolvedCall => ("CS0019", "unresolved-call", None),
+            Self::IncompleteCoverage => {
+                ("CS0020", "incomplete-analysis", Some("incomplete-analysis"))
+            }
+            Self::RedundantWitnessAssignment => {
+                ("CS0021", "redundant-witness-assignment", Some("redundant-witness-assignment"))
+            }
+            Self::MissingBusType => ("CS0022", "missing-bus-type", None),
+        };
+        DiagnosticDescriptor { id, name, anchor }
+    }
+
     #[must_use]
     pub fn id(&self) -> String {
-        match self {
-            Self::ParseFail => "P1000",
-            Self::CompilerVersionError => "P1003",
-            Self::WrongTypesInAssignOperation => "T2000",
-            Self::WrongArityUnspecified => "T20465",
-            Self::UndefinedFunction => "T2001",
-            Self::UndefinedTemplate => "T2002",
-            Self::SameFunctionDeclaredTwice => "T2006",
-            Self::SameTemplateDeclaredTwice => "T2007",
-            Self::SameSymbolDeclaredTwice => "T2008",
-            Self::ForbiddenDeclarationInFunction => "T2016",
-            Self::NonExistentSymbol => "T2021",
-            Self::NoCompilerVersionWarning => "P1004",
-            Self::MultipleMainInComponent => "P1002",
-            Self::TemplateWithReturnStatement => "T2024",
-            Self::InvalidArgumentInCall => "T2029",
-            Self::InvalidArrayAccess => "T2032",
-            Self::InvalidSignalAccess => "T2046",
-            Self::InvalidTag => "T2048",
-            Self::InputTagAccess => "T2048-C",
-            Self::InvalidTagAfterArray => "T2049",
-            Self::InvalidArraySize => "T2033",
-            Self::InvalidArrayIndexBus => "T2053",
-            Self::ConstraintGeneratorInFunction => "T2039",
-            Self::RuntimeError => "T3001",
-            Self::NonConstantArrayLength => "T20463",
-            Self::NonComputableExpression => "T20464",
-            Self::WrongBusAssignment => "T2059",
-            Self::WrongAssignmentExpression => "T2060",
-            Self::WrongAssignmentRank => "T2061",
-            Self::AnonymousComponentError => "TAC01",
-            Self::UnconstrainedSignal => "CA01",
-            Self::ShadowingVariable => "CS0001",
-            Self::ParameterNameCollision => "CS0002",
-            Self::FieldElementComparison => "CS0003",
-            Self::FieldElementArithmetic => "CS0004",
-            Self::SignalAssignmentStatement => "CS0005",
-            Self::UnusedVariableValue => "CS0006",
-            Self::UnusedParameterValue => "CS0007",
-            Self::VariableWithoutSideEffect => "CS0008",
-            Self::ConstantBranchCondition => "CS0009",
-            Self::NonStrictBinaryConversion => "CS0010",
-            Self::CyclomaticComplexity => "CS0011",
-            Self::TooManyArguments => "CS0012",
-            Self::UnconstrainedLessThan => "CS0014",
-            Self::UnconstrainedDivision => "CS0015",
-            Self::Bn254SpecificCircuit => "CS0016",
-            Self::UnusedOutputSignal => "CS0018",
-            Self::UnresolvedCall => "CS0019",
-            Self::IncompleteCoverage => "CS0020",
-            Self::RedundantWitnessAssignment => "CS0021",
-            Self::MissingBusType => "CS0022",
-        }
-        .to_string()
+        self.descriptor().id.to_owned()
     }
 
     #[must_use]
     pub fn name(&self) -> String {
-        match self {
-            Self::ParseFail => "parse-fail",
-            Self::CompilerVersionError => "compiler-version-error",
-            Self::WrongTypesInAssignOperation => "wrong-types-in-assign-operation",
-            Self::WrongArityUnspecified => "wrong-number-of-arguments",
-            Self::UndefinedFunction => "undefined-function",
-            Self::UndefinedTemplate => "undefined-template",
-            Self::SameFunctionDeclaredTwice => "same-function-declared-twice",
-            Self::SameTemplateDeclaredTwice => "same-template-declared-twice",
-            Self::SameSymbolDeclaredTwice => "same-symbol-declared-twice",
-            Self::ForbiddenDeclarationInFunction => "forbidden-declaration-in-function",
-            Self::NonExistentSymbol => "non-existent-symbol",
-            Self::NoCompilerVersionWarning => "no-compiler-version-warning",
-            Self::MultipleMainInComponent => "multiple-main-in-component",
-            Self::TemplateWithReturnStatement => "template-with-return-statement",
-            Self::InvalidArgumentInCall => "invalid-argument-in-call",
-            Self::InvalidArrayAccess => "invalid-array-access",
-            Self::InvalidSignalAccess => "invalid-signal-access",
-            Self::InvalidTag => "invalid-tag",
-            Self::InputTagAccess => "input-tag-access",
-            Self::InvalidTagAfterArray => "invalid-tag-after-array",
-            Self::InvalidArraySize => "invalid-array-size",
-            Self::InvalidArrayIndexBus => "invalid-array-index-bus",
-            Self::ConstraintGeneratorInFunction => "constraint-generator-in-function",
-            Self::RuntimeError => "runtime-error",
-            Self::NonConstantArrayLength => "non-constant-array-length",
-            Self::NonComputableExpression => "non-computable-expression",
-            Self::WrongBusAssignment => "wrong-bus-assignment",
-            Self::WrongAssignmentExpression => "wrong-assignment-expression",
-            Self::WrongAssignmentRank => "wrong-assignment-rank",
-            Self::AnonymousComponentError => "anonymous-component-error",
-            Self::UnconstrainedSignal => "unconstrained-signal",
-            Self::ShadowingVariable => "shadowing-variable",
-            Self::ParameterNameCollision => "parameter-name-collision",
-            Self::FieldElementComparison => "field-element-comparison",
-            Self::FieldElementArithmetic => "field-element-arithmetic",
-            Self::SignalAssignmentStatement => "signal-assignment-statement",
-            Self::UnusedVariableValue => "unused-variable-value",
-            Self::UnusedParameterValue => "unused-parameter-value",
-            Self::VariableWithoutSideEffect => "variable-without-side-effect",
-            Self::ConstantBranchCondition => "constant-branch-condition",
-            Self::NonStrictBinaryConversion => "non-strict-binary-conversion",
-            Self::CyclomaticComplexity => "cyclomatic-complexity",
-            Self::TooManyArguments => "too-many-arguments",
-            Self::UnconstrainedLessThan => "unconstrained-less-than",
-            Self::UnconstrainedDivision => "unconstrained-division",
-            Self::Bn254SpecificCircuit => "bn254-specific-circuit",
-            Self::UnusedOutputSignal => "unused-output-signal",
-            Self::UnresolvedCall => "unresolved-call",
-            Self::IncompleteCoverage => "incomplete-analysis",
-            Self::RedundantWitnessAssignment => "redundant-witness-assignment",
-            Self::MissingBusType => "missing-bus-type",
-        }
-        .to_string()
+        self.descriptor().name.to_owned()
     }
 
     #[must_use]
     pub fn url(&self) -> Option<String> {
-        match self {
-            Self::ParseFail
-            | Self::CompilerVersionError
-            | Self::WrongTypesInAssignOperation
-            | Self::WrongArityUnspecified
-            | Self::UndefinedFunction
-            | Self::UndefinedTemplate
-            | Self::SameFunctionDeclaredTwice
-            | Self::SameTemplateDeclaredTwice
-            | Self::SameSymbolDeclaredTwice
-            | Self::ForbiddenDeclarationInFunction
-            | Self::NonExistentSymbol
-            | Self::NoCompilerVersionWarning
-            | Self::MultipleMainInComponent
-            | Self::TemplateWithReturnStatement
-            | Self::InvalidArgumentInCall
-            | Self::InvalidArrayAccess
-            | Self::InvalidSignalAccess
-            | Self::InvalidTag
-            | Self::InputTagAccess
-            | Self::InvalidTagAfterArray
-            | Self::InvalidArraySize
-            | Self::InvalidArrayIndexBus
-            | Self::ConstraintGeneratorInFunction
-            | Self::RuntimeError
-            | Self::NonConstantArrayLength
-            | Self::NonComputableExpression
-            | Self::WrongBusAssignment
-            | Self::WrongAssignmentExpression
-            | Self::WrongAssignmentRank
-            | Self::AnonymousComponentError
-            | Self::ParameterNameCollision
-            | Self::UnresolvedCall
-            | Self::MissingBusType => None,
-            Self::UnconstrainedSignal => Some("unconstrained-signal"),
-            Self::ShadowingVariable => Some("shadowing-variable"),
-            Self::FieldElementComparison => Some("field-element-comparison"),
-            Self::FieldElementArithmetic => Some("field-element-arithmetic"),
-            Self::SignalAssignmentStatement => Some("signal-assignment"),
-            Self::UnusedVariableValue | Self::UnusedParameterValue => {
-                Some("unused-variable-or-parameter")
-            }
-            Self::VariableWithoutSideEffect => Some("side-effect-free-assignment"),
-            Self::ConstantBranchCondition => Some("constant-branch-condition"),
-            Self::NonStrictBinaryConversion => Some("non-strict-binary-conversion"),
-            Self::CyclomaticComplexity | Self::TooManyArguments => {
-                Some("overly-complex-function-or-template")
-            }
-            Self::UnconstrainedLessThan => Some("unconstrained-less-than"),
-            Self::UnconstrainedDivision => Some("unconstrained-division"),
-            Self::Bn254SpecificCircuit => Some("bn254-specific-circuit"),
-            Self::UnusedOutputSignal => Some("unused-output-signal"),
-            Self::IncompleteCoverage => Some("incomplete-analysis"),
-            Self::RedundantWitnessAssignment => Some("redundant-witness-assignment"),
-        }
-        .map(|section| format!("{DOC_URL}#{section}"))
+        self.descriptor().anchor.map(|section| format!("{DOC_URL}#{section}"))
     }
 }

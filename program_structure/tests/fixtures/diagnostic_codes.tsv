@@ -1,0 +1,51 @@
+ParseFail	P1000	parse-fail	
+CompilerVersionError	P1003	compiler-version-error	
+WrongTypesInAssignOperation	T2000	wrong-types-in-assign-operation	
+WrongArityUnspecified	T20465	wrong-number-of-arguments	
+UndefinedFunction	T2001	undefined-function	
+UndefinedTemplate	T2002	undefined-template	
+SameFunctionDeclaredTwice	T2006	same-function-declared-twice	
+SameTemplateDeclaredTwice	T2007	same-template-declared-twice	
+SameSymbolDeclaredTwice	T2008	same-symbol-declared-twice	
+ForbiddenDeclarationInFunction	T2016	forbidden-declaration-in-function	
+NonExistentSymbol	T2021	non-existent-symbol	
+NoCompilerVersionWarning	P1004	no-compiler-version-warning	
+MultipleMainInComponent	P1002	multiple-main-in-component	
+TemplateWithReturnStatement	T2024	template-with-return-statement	
+InvalidArgumentInCall	T2029	invalid-argument-in-call	
+InvalidArrayAccess	T2032	invalid-array-access	
+InvalidSignalAccess	T2046	invalid-signal-access	
+InvalidTag	T2048	invalid-tag	
+InputTagAccess	T2048-C	input-tag-access	
+InvalidTagAfterArray	T2049	invalid-tag-after-array	
+InvalidArraySize	T2033	invalid-array-size	
+InvalidArrayIndexBus	T2053	invalid-array-index-bus	
+ConstraintGeneratorInFunction	T2039	constraint-generator-in-function	
+RuntimeError	T3001	runtime-error	
+NonConstantArrayLength	T20463	non-constant-array-length	
+NonComputableExpression	T20464	non-computable-expression	
+WrongBusAssignment	T2059	wrong-bus-assignment	
+WrongAssignmentExpression	T2060	wrong-assignment-expression	
+WrongAssignmentRank	T2061	wrong-assignment-rank	
+AnonymousComponentError	TAC01	anonymous-component-error	
+UnconstrainedSignal	CA01	unconstrained-signal	https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md#unconstrained-signal
+ShadowingVariable	CS0001	shadowing-variable	https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md#shadowing-variable
+ParameterNameCollision	CS0002	parameter-name-collision	
+FieldElementComparison	CS0003	field-element-comparison	https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md#field-element-comparison
+FieldElementArithmetic	CS0004	field-element-arithmetic	https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md#field-element-arithmetic
+SignalAssignmentStatement	CS0005	signal-assignment-statement	https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md#signal-assignment
+UnusedVariableValue	CS0006	unused-variable-value	https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md#unused-variable-or-parameter
+UnusedParameterValue	CS0007	unused-parameter-value	https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md#unused-variable-or-parameter
+VariableWithoutSideEffect	CS0008	variable-without-side-effect	https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md#side-effect-free-assignment
+ConstantBranchCondition	CS0009	constant-branch-condition	https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md#constant-branch-condition
+NonStrictBinaryConversion	CS0010	non-strict-binary-conversion	https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md#non-strict-binary-conversion
+CyclomaticComplexity	CS0011	cyclomatic-complexity	https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md#overly-complex-function-or-template
+TooManyArguments	CS0012	too-many-arguments	https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md#overly-complex-function-or-template
+UnconstrainedLessThan	CS0014	unconstrained-less-than	https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md#unconstrained-less-than
+UnconstrainedDivision	CS0015	unconstrained-division	https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md#unconstrained-division
+Bn254SpecificCircuit	CS0016	bn254-specific-circuit	https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md#bn254-specific-circuit
+UnusedOutputSignal	CS0018	unused-output-signal	https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md#unused-output-signal
+UnresolvedCall	CS0019	unresolved-call	
+IncompleteCoverage	CS0020	incomplete-analysis	https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md#incomplete-analysis
+RedundantWitnessAssignment	CS0021	redundant-witness-assignment	https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md#redundant-witness-assignment
+MissingBusType	CS0022	missing-bus-type	
