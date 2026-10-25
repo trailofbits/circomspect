@@ -28,7 +28,14 @@ fn project() -> LiftedProject {
         ),
     )
     .unwrap();
-    lift_project(&load_sources(&[file], &[directory], VersionPolicy::new(Version::new(2, 2, 3))))
+    let loaded = load_sources(
+        std::slice::from_ref(&file),
+        std::slice::from_ref(&directory),
+        VersionPolicy::new(Version::new(2, 2, 3)),
+    );
+    std::fs::remove_file(file).unwrap();
+    std::fs::remove_dir(directory).unwrap();
+    lift_project(&loaded)
 }
 
 fn check_binding(
