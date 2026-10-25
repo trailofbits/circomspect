@@ -13,7 +13,8 @@ pub Item: SyntaxNode = {
         => labelled(SyntaxKind::Include, source, s, e, path, vec![]),
     <s:@L> "function" <name:Name> <params:Parameters> <body:Block> <e:@R>
         => node(SyntaxKind::Function, source, s, e, vec![name, params, body]),
-    <s:@L> "template" <mut mods:TemplateModifiers> <name:Name> <params:Parameters?> <body:Block> <e:@R>
+    <s:@L> "template" <mut mods:TemplateModifiers> <name:Name>
+    <params:Parameters?> <body:Block> <e:@R>
         => {
             mods.push(name);
             mods.extend(params);

@@ -1492,16 +1492,46 @@ fn statement_dispatch_preserves_effect_order_and_nested_scope() {
         "assert(a);log(\"values\",a,b);Child()();}"
     );
     let result = lift(&[("statements.circom", source)], Version::new(2, 2, 3));
-    let [Effect::Declaration { .. }, Effect::VariableAssignment { target: a, .. }, Effect::Declaration { .. }, Effect::VariableAssignment { target: b, .. }, Effect::Update { .. }, Effect::VariableAssignment { .. }, Effect::Block(block), Effect::If { .. }, Effect::While { .. }, Effect::For { .. }, Effect::Declaration { .. }, Effect::WitnessAssignment { .. }, Effect::ConstraintAssignment { .. }, Effect::EqualityConstraint { .. }, Effect::Assert { .. }, Effect::Log { values, .. }, Effect::AnonymousComponent { .. }] =
-        effect_for(&result, "T")
+    let effects = effect_for(&result, "T");
+    assert_eq!(effects.len(), 17);
+    let [Effect::Declaration { .. }, Effect::VariableAssignment { target: a, .. }] = &effects[0..2]
     else {
-        panic!("unexpected statement effect order: {:?}", effect_for(&result, "T"));
+        panic!("expected declaration and assignment of a");
+    };
+    let [Effect::Declaration { .. }, Effect::VariableAssignment { target: b, .. }] = &effects[2..4]
+    else {
+        panic!("expected declaration and assignment of b");
+    };
+    let [Effect::Update { .. }, Effect::VariableAssignment { .. }, Effect::Block(block)] =
+        &effects[4..7]
+    else {
+        panic!("expected update, assignment and nested block");
+    };
+    let [Effect::If { .. }, Effect::While { .. }, Effect::For { .. }] = &effects[7..10] else {
+        panic!("expected conditional, while and for");
+    };
+    let [Effect::Declaration { .. }, Effect::WitnessAssignment { .. }] = &effects[10..12] else {
+        panic!("expected signal declaration and witness assignment");
+    };
+    let [Effect::ConstraintAssignment { .. }, Effect::EqualityConstraint { .. }] = &effects[12..14]
+    else {
+        panic!("expected constraint assignment and equality constraint");
+    };
+    let [Effect::Assert { .. }, Effect::Log { values, .. }, Effect::AnonymousComponent { .. }] =
+        &effects[14..17]
+    else {
+        panic!("expected assertion, log and anonymous component");
     };
     let nested = &result.hir.block(*block).unwrap().effects;
-    let [Effect::Declaration { .. }, Effect::VariableAssignment { target: shadowed, .. }, Effect::Log { .. }] =
-        nested.as_slice()
-    else {
-        panic!("unexpected nested effects: {nested:?}");
+    assert_eq!(nested.len(), 3);
+    let Effect::Declaration { .. } = &nested[0] else {
+        panic!("expected nested declaration");
+    };
+    let Effect::VariableAssignment { target: shadowed, .. } = &nested[1] else {
+        panic!("expected nested assignment");
+    };
+    let Effect::Log { .. } = &nested[2] else {
+        panic!("expected nested log");
     };
     assert_ne!(shadowed.root, a.root);
     assert_eq!(values.len(), 2);
