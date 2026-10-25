@@ -1,250 +1,294 @@
+use crate::new_frontend::ast::{SourceId, SyntaxDiagnostic, SyntaxKind, SyntaxNode, Version};
+use crate::new_frontend::lexer::TokenKind;
+use crate::new_frontend::parsed::{
+    BusHeaderParts, DeclarationParts, DefinitionParts, ForParts, HeaderDirection,
+    ParseContext, Parsed, ParsedItem, Recovery, SourceForm, TemplateModifier, unpack,
+};
 use crate::new_frontend::typed::{
-    AssignmentOperator, BinaryOperator, InputAssignmentOperator, PostfixOperator, UnaryOperator,
+    AssignmentOperator, BinaryOperator, Block, Declaration, DeclarationKind,
+    DeclaredSymbol, DefinitionKind, Expression, Identifier, InputAssignmentOperator, Item,
+    LogArgument, PortDirection, PostfixOperator, Pragma, SpannedDirection, Statement, SymbolSyntax,
+    UnaryOperator,
 };
-use super::ast::{SourceId, SyntaxKind, SyntaxNode};
-use super::{node, labelled};
-use super::lexer::TokenKind;
+use crate::new_frontend::{node, labelled};
 
-grammar(source: SourceId);
+grammar(source: SourceId, context: &mut ParseContext);
 
-pub Item: SyntaxNode = {
+pub Item: ParsedItem = {
     <s:@L> "pragma" "circom" <a:Num> "." <b:Num> "." <c:Num> ";" <e:@R>
-        => labelled(SyntaxKind::Pragma, source, s, e, format!("{}.{}.{}", a, b, c), vec![]),
-    <s:@L> "pragma" "custom_templates" ";" <e:@R>
-        => node(SyntaxKind::Pragma, source, s, e, vec![]),
-    <s:@L> "include" <path:Str> ";" <e:@R>
-        => labelled(SyntaxKind::Include, source, s, e, path, vec![]),
-    <s:@L> "function" <name:Name> <params:Parameters> <body:Block> <e:@R>
-        => node(SyntaxKind::Function, source, s, e, vec![name, params, body]),
-    <s:@L> "template" <mut mods:TemplateModifiers> <name:Name>
-    <params:Parameters?> <body:Block> <e:@R>
-        => {
-            mods.push(name);
-            mods.extend(params);
-            mods.push(body);
-            node(SyntaxKind::Template, source, s, e, mods)
-        },
-    <s:@L> "bus" <name:Name> <params:Parameters?> <body:Block> <e:@R>
-        => {
-            let mut children = vec![name];
-            children.extend(params);
-            children.push(body);
-            node(SyntaxKind::Bus, source, s, e, children)
-        },
-    <s:@L> "component" "main" <public:PublicList?> "=" <expr:Expr> ";" <e:@R>
-        => {
-            let mut children: Vec<_> = public.into_iter().collect();
-            children.push(expr);
-            node(SyntaxKind::Main, source, s, e, children)
-        },
+        => context.version_item(context.span(s,e), [a,b,c]),
+    <s:@L> "pragma" "custom_templates" ";" <e:@R> => {
+        let span = context.span(s,e);
+        ParsedItem::Ready(context.annotate(
+            Item::Pragma { pragma: Pragma::CustomTemplates, span },
+            span, vec![], SourceForm::CustomTemplates))
+    },
+    <s:@L> "include" <path:Str> ";" <e:@R> => {
+        let span = context.span(s,e);
+        ParsedItem::Ready(context.plain(Item::Include { path, span }, span, vec![]))
+    },
+    <s:@L> "function" <name:Name> <parameters:Parameters> <body:Block> <e:@R>
+        => context.definition(DefinitionKind::Function, context.span(s,e),
+            DefinitionParts { name, parameters: Some(parameters), body }, vec![]),
+    <s:@L> "template" <modifiers:TemplateModifiers> <name:Name>
+    <parameters:Parameters?> <body:Block> <e:@R>
+        => context.template(context.span(s,e), modifiers,
+            DefinitionParts { name, parameters, body }),
+    <s:@L> "bus" <name:Name> <parameters:Parameters?> <body:Block> <e:@R>
+        => context.definition(DefinitionKind::Bus, context.span(s,e),
+            DefinitionParts { name, parameters, body }, vec![]),
+    <s:@L> "component" "main" <public:PublicList?> "=" <instance:Expr> ";" <e:@R>
+        => context.main_item(context.span(s,e), public, instance),
 };
-
-TemplateModifiers: Vec<SyntaxNode> = {
-    <custom:CustomModifier?> <external:ExternalModifier?> <parallel:ParallelModifier?>
-        => [custom, external, parallel].into_iter().flatten().collect(),
+TemplateModifiers: Vec<Parsed<TemplateModifier>> = {
+    <custom:CustomModifier?> <external:ExternalModifier?> <parallel:ParallelModifier?> => {
+        let mut modifiers = Vec::new();
+        modifiers.extend(custom);
+        modifiers.extend(external);
+        modifiers.extend(parallel);
+        modifiers
+    },
 };
-CustomModifier: SyntaxNode = {
-    <s:@L> "custom" <e:@R> => labelled(SyntaxKind::Modifier, source, s, e, "custom".into(), vec![]),
+CustomModifier: Parsed<TemplateModifier> = {
+    <s:@L> "custom" <e:@R> => context.annotate(TemplateModifier::Custom,
+        context.span(s,e), vec![], SourceForm::CustomTemplates),
 };
-ExternalModifier: SyntaxNode = {
-    <s:@L> "extern_c" <e:@R> => labelled(SyntaxKind::Modifier, source, s, e, "extern_c".into(), vec![]),
+ExternalModifier: Parsed<TemplateModifier> = {
+    <s:@L> "extern_c" <e:@R> => context.annotate(TemplateModifier::External,
+        context.span(s,e), vec![], SourceForm::Feature(Version::new(2,2,3))),
 };
-ParallelModifier: SyntaxNode = {
-    <s:@L> "parallel" <e:@R> => labelled(SyntaxKind::Modifier, source, s, e, "parallel".into(), vec![]),
+ParallelModifier: Parsed<TemplateModifier> = {
+    <s:@L> "parallel" <e:@R>
+        => context.plain(TemplateModifier::Parallel, context.span(s,e), vec![]),
 };
-
-PublicList: SyntaxNode = {
+PublicList: Parsed<Vec<Identifier>> = {
     <s:@L> "{" "public" "[" <names:NameList> "]" "}" <e:@R>
-        => node(SyntaxKind::PublicList, source, s, e, names),
+        => context.list(context.span(s,e), names),
 };
-Parameters: SyntaxNode = {
+Parameters: Parsed<Vec<Identifier>> = {
     <s:@L> "(" <names:NameList?> ")" <e:@R>
-        => node(SyntaxKind::Parameters, source, s, e, names.unwrap_or_default()),
+        => context.list(context.span(s,e), names.unwrap_or_default()),
 };
-NameList: Vec<SyntaxNode> = {
+NameList: Vec<Parsed<Identifier>> = {
     <mut names:(<Name> ",")*> <last:Name> => { names.push(last); names },
 };
-Name: SyntaxNode = {
-    <s:@L> <name:Id> <e:@R> => labelled(SyntaxKind::Identifier, source, s, e, name, vec![]),
+#[inline]
+Name: Parsed<Identifier> = {
+    <s:@L> <name:Id> <e:@R> => {
+        let span = context.span(s,e);
+        context.plain(Identifier { name, span }, span, vec![])
+    },
 };
-
-Block: SyntaxNode = {
-    <s:@L> "{" <stmts:BlockStatement*> "}" <e:@R>
-        => node(SyntaxKind::Block, source, s, e, stmts),
-    <s:@L> "{" <mut stmts:BlockStatement*> <error_start:@L> ! <error_end:@R> "}" <e:@R>
-        => {
-            stmts.push(node(SyntaxKind::RecoveredStatement, source,
-                error_start, error_end, vec![]));
-            node(SyntaxKind::Block, source, s, e, stmts)
-        },
+Block: Parsed<Block> = {
+    <s:@L> "{" <statements:BlockStatement*> "}" <e:@R> => {
+        let span = context.span(s,e);
+        context.list(span, statements).map(|statements| Block { statements, span })
+    },
+    <s:@L> "{" <mut statements:BlockStatement*>
+    <error_start:@L> ! <error_end:@R> "}" <e:@R> => {
+        let error_span = context.span(error_start,error_end);
+        statements.push(context.annotate(Statement::Error { span: error_span },
+            error_span, vec![], SourceForm::Recovery(Recovery::StatementBoundary)));
+        let span = context.span(s,e);
+        context.list(span, statements).map(|statements| Block { statements, span })
+    },
 };
-BlockStatement: SyntaxNode = {
-    <decl:Declaration> ";" => decl,
+BlockStatement: Parsed<Statement> = {
+    <declaration:Declaration> ";" => declaration.map(Statement::Declaration),
     Statement,
-    <s:@L> ! ";" <e:@R> => node(SyntaxKind::RecoveredStatement, source, s, e, vec![]),
+    <s:@L> ! ";" <e:@R> => {
+        let span = context.span(s,e);
+        context.annotate(Statement::Error { span }, span, vec![],
+            SourceForm::Recovery(Recovery::StatementBoundary))
+    },
 };
-
-Declaration: SyntaxNode = {
-    <s:@L> "var" <symbols:SymbolList> <e:@R>
-        => labelled(SyntaxKind::Declaration, source, s, e, "var".into(), symbols),
-    <s:@L> "component" <symbols:SymbolList> <e:@R>
-        => labelled(SyntaxKind::Declaration, source, s, e, "component".into(), symbols),
+Declaration: Parsed<Declaration> = {
+    <s:@L> <header:LocalHeader> <symbols:SymbolList> <e:@R>
+        => context.declaration(context.span(s,e), DeclarationParts {
+            header, syntax: SymbolSyntax::List, symbols, initialization: None }),
     <s:@L> <header:SignalHeader> <symbols:SignalSymbolList> <e:@R>
-        => {
-            let mut children = vec![header];
-            children.extend(symbols);
-            node(SyntaxKind::Declaration, source, s, e, children)
-        },
+        => context.declaration(context.span(s,e), DeclarationParts {
+            header, syntax: SymbolSyntax::List, symbols, initialization: None }),
     <s:@L> <header:BusHeader> <symbols:SignalSymbolList> <e:@R>
-        => {
-            let mut children = vec![header];
-            children.extend(symbols);
-            node(SyntaxKind::Declaration, source, s, e, children)
-        },
-    <s:@L> "var" "(" <mut symbols:SimpleSymbolList> ")" <init:TupleInit?> <e:@R>
-        => {
-            symbols.extend(init);
-            labelled(SyntaxKind::TupleDeclaration, source, s, e, "var".into(), symbols)
-        },
-    <s:@L> "component" "(" <mut symbols:SimpleSymbolList> ")" <init:TupleInit?> <e:@R>
-        => {
-            symbols.extend(init);
-            labelled(SyntaxKind::TupleDeclaration, source, s, e, "component".into(), symbols)
-        },
-    <s:@L> <header:SignalHeader> "(" <symbols:SimpleSymbolList> ")" <init:TupleInit?> <e:@R>
-        => {
-            let mut children = vec![header];
-            children.extend(symbols);
-            children.extend(init);
-            node(SyntaxKind::TupleDeclaration, source, s, e, children)
-        },
+        => context.declaration(context.span(s,e), DeclarationParts {
+            header, syntax: SymbolSyntax::List, symbols, initialization: None }),
+    <s:@L> <header:LocalHeader> "(" <symbols:SimpleSymbolList> ")"
+    <initialization:TupleInit?> <e:@R>
+        => context.declaration(context.span(s,e), DeclarationParts {
+            header, syntax: SymbolSyntax::Tuple, symbols, initialization }),
+    <s:@L> <header:SignalHeader> "(" <symbols:SimpleSymbolList> ")"
+    <initialization:TupleInit?> <e:@R>
+        => context.declaration(context.span(s,e), DeclarationParts {
+            header, syntax: SymbolSyntax::Tuple, symbols, initialization }),
 };
-
-SymbolList: Vec<SyntaxNode> = {
+LocalHeader: Parsed<DeclarationKind> = {
+    <s:@L> "var" <e:@R> => context.plain(DeclarationKind::Variable, context.span(s,e), vec![]),
+    <s:@L> "component" <e:@R>
+        => context.plain(DeclarationKind::Component, context.span(s,e), vec![]),
+};
+SymbolList: Vec<Parsed<DeclaredSymbol>> = {
     <mut xs:(<Symbol> ",")*> <x:Symbol> => { xs.push(x); xs },
 };
-SimpleSymbolList: Vec<SyntaxNode> = {
+SimpleSymbolList: Vec<Parsed<DeclaredSymbol>> = {
     <mut xs:(<SimpleSymbol> ",")*> <x:SimpleSymbol> => { xs.push(x); xs },
 };
-SignalSymbolList: Vec<SyntaxNode> = {
+SignalSymbolList: Vec<Parsed<DeclaredSymbol>> = {
     <mut xs:(<SignalSymbol> ",")*> <x:SignalSymbol> => { xs.push(x); xs },
 };
-SimpleSymbol: SyntaxNode = {
-    <s:@L> <name:Name> <dims:Index*> <e:@R>
-        => {
-            let mut children = vec![name];
-            children.extend(dims);
-            node(SyntaxKind::Name, source, s, e, children)
-        },
+SimpleSymbol: Parsed<DeclaredSymbol> = {
+    <s:@L> <name:Name> <dimensions:Index*> <e:@R>
+        => context.symbol(context.span(s,e), name, dimensions),
 };
-Symbol: SyntaxNode = {
-    <base:SimpleSymbol> => base,
-    <s:@L> <base:SimpleSymbol> "=" <expr:Expr> <e:@R>
-        => node(SyntaxKind::Assignment(AssignmentOperator::Assign),
-            source, s, e, vec![base, expr]),
+Symbol: Parsed<DeclaredSymbol> = {
+    SimpleSymbol,
+    <s:@L> <symbol:SimpleSymbol> "=" <value:Expr> <e:@R>
+        => context.initialized_symbol(context.span(s,e), symbol, AssignmentOperator::Assign, value),
 };
-SignalSymbol: SyntaxNode = {
-    <base:SimpleSymbol> => base,
-    <s:@L> <base:SimpleSymbol> <op:SignalAssignOp> <expr:Expr> <e:@R>
-        => node(SyntaxKind::Assignment(op), source, s, e, vec![base, expr]),
+SignalSymbol: Parsed<DeclaredSymbol> = {
+    SimpleSymbol,
+    <s:@L> <symbol:SimpleSymbol> <operator:SignalAssignOp> <value:Expr> <e:@R>
+        => context.initialized_symbol(context.span(s,e), symbol, operator, value),
 };
-TupleInit: SyntaxNode = {
-    <s:@L> <op:AssignOp> <expr:Expr> <e:@R>
-        => node(SyntaxKind::TupleInitialization(op), source, s, e, vec![expr]),
+TupleInit: Parsed<(AssignmentOperator, Expression)> = {
+    <s:@L> <operator:AssignOp> <expression:Expr> <e:@R>
+        => context.plain((operator, expression.value), context.span(s,e),
+            vec![expression.annotation]),
 };
-SignalHeader: SyntaxNode = {
+SignalHeader: Parsed<DeclarationKind> = {
     <s:@L> "signal" <direction:Direction?> <tags:Tags?> <e:@R>
-        => {
-            let mut children: Vec<_> = direction.into_iter().collect();
-            children.extend(tags.unwrap_or_default());
-            node(SyntaxKind::SignalHeader, source, s, e, children)
-        },
+        => context.signal_header(context.span(s,e), HeaderDirection::After(direction), tags),
     <s:@L> <direction:Direction> "signal" <tags:Tags?> <e:@R>
-        => {
-            let mut children = vec![direction];
-            children.extend(tags.unwrap_or_default());
-            node(SyntaxKind::DirectionFirstSignalHeader, source, s, e, children)
-        },
+        => context.signal_header(context.span(s,e), HeaderDirection::Before(direction), tags),
 };
-BusHeader: SyntaxNode = {
-    <s:@L> <name:Name> <args:Arguments?> <direction:Direction?> <tags:Tags?> <e:@R>
-        => {
-            let mut children = vec![name];
-            children.extend(args);
-            children.extend(direction);
-            children.extend(tags.unwrap_or_default());
-            node(SyntaxKind::BusHeader, source, s, e, children)
-        },
-    <s:@L> <direction:Direction> <name:Name> <args:Arguments?> <tags:Tags?> <e:@R>
-        => {
-            let mut children = vec![direction, name];
-            children.extend(args);
-            children.extend(tags.unwrap_or_default());
-            node(SyntaxKind::DirectionFirstBusHeader, source, s, e, children)
-        },
+BusHeader: Parsed<DeclarationKind> = {
+    <s:@L> <name:Name> <arguments:Arguments?> <direction:Direction?> <tags:Tags?> <e:@R>
+        => context.bus_header(context.span(s,e), BusHeaderParts {
+            name, arguments, direction: HeaderDirection::After(direction), tags }),
+    <s:@L> <direction:Direction> <name:Name> <arguments:Arguments?> <tags:Tags?> <e:@R>
+        => context.bus_header(context.span(s,e), BusHeaderParts {
+            name, arguments, direction: HeaderDirection::Before(direction), tags }),
 };
-Tags: Vec<SyntaxNode> = {
-    <s:@L> "{" <names:NameList> "}" <e:@R>
-        => vec![node(SyntaxKind::Tags, source, s, e, names)]
+Tags: Parsed<Vec<Identifier>> = {
+    <s:@L> "{" <names:NameList> "}" <e:@R> => {
+        let (names, children) = unpack(names);
+        context.annotate(names, context.span(s,e), children,
+            SourceForm::Feature(Version::new(2,1,0)))
+    },
 };
-Direction: SyntaxNode = {
-    <s:@L> "input" <e:@R> => labelled(SyntaxKind::Direction, source, s, e, "input".into(), vec![]),
-    <s:@L> "output" <e:@R> => labelled(SyntaxKind::Direction, source, s, e, "output".into(), vec![]),
+Direction: Parsed<SpannedDirection> = {
+    <s:@L> <direction:PortDirection> <e:@R> => {
+        let span = context.span(s,e);
+        context.plain(SpannedDirection { direction, span }, span, vec![])
+    },
+};
+PortDirection: PortDirection = {
+    "input" => PortDirection::Input,
+    "output" => PortDirection::Output,
 };
 
-pub Statement: SyntaxNode = { Statement0 };
-Statement0: SyntaxNode = { IfNoElse, Statement1 };
-IfNoElse: SyntaxNode = {
-    <s:@L> "if" "(" <cond:Expr> ")" <then:IfNoElse> <e:@R>
-        => node(SyntaxKind::Conditional, source, s, e, vec![cond, then]),
-    <s:@L> "if" "(" <cond:Expr> ")" <then:Statement1> <e:@R>
-        => node(SyntaxKind::Conditional, source, s, e, vec![cond, then]),
-    <s:@L> "if" "(" <cond:Expr> ")" <then:Statement1> "else" <otherwise:IfNoElse> <e:@R>
-        => node(SyntaxKind::Conditional, source, s, e, vec![cond, then, otherwise]),
+pub Statement: Parsed<Statement> = { Statement0 };
+Statement0: Parsed<Statement> = { IfNoElse, Statement1 };
+IfNoElse: Parsed<Statement> = {
+    <s:@L> "if" "(" <condition:Expr> ")" <then_branch:IfNoElse> <e:@R>
+        => context.conditional(context.span(s,e), condition, then_branch, None),
+    <s:@L> "if" "(" <condition:Expr> ")" <then_branch:Statement1> <e:@R>
+        => context.conditional(context.span(s,e), condition, then_branch, None),
+    <s:@L> "if" "(" <condition:Expr> ")" <then_branch:Statement1>
+    "else" <else_branch:IfNoElse> <e:@R>
+        => context.conditional(context.span(s,e), condition, then_branch, Some(else_branch)),
 };
-Statement1: SyntaxNode = {
-    <s:@L> "if" "(" <cond:Expr> ")" <then:Statement1> "else" <otherwise:Statement1> <e:@R>
-        => node(SyntaxKind::Conditional, source, s, e, vec![cond, then, otherwise]),
+Statement1: Parsed<Statement> = {
+    <s:@L> "if" "(" <condition:Expr> ")" <then_branch:Statement1>
+    "else" <else_branch:Statement1> <e:@R>
+        => context.conditional(context.span(s,e), condition, then_branch, Some(else_branch)),
     Statement2,
 };
-Statement2: SyntaxNode = {
-    <s:@L> "for" "(" <init:Declaration> ";" <cond:Expr> ";" <step:Substitution> ")" <body:Statement2> <e:@R>
-        => node(SyntaxKind::For, source, s, e, vec![init, cond, step, body]),
-    <s:@L> "for" "(" <init:Substitution> ";" <cond:Expr> ";" <step:Substitution> ")" <body:Statement2> <e:@R>
-        => node(SyntaxKind::For, source, s, e, vec![init, cond, step, body]),
-    <s:@L> "while" "(" <cond:Expr> ")" <body:Statement2> <e:@R>
-        => node(SyntaxKind::While, source, s, e, vec![cond, body]),
-    <s:@L> "return" <expr:Expr> ";" <e:@R>
-        => node(SyntaxKind::Return, source, s, e, vec![expr]),
-    <sub:Substitution> ";" => sub,
-    <s:@L> <left:Expr> "===" <right:Expr> ";" <e:@R>
-        => node(SyntaxKind::Constraint, source, s, e, vec![left, right]),
-    <s:@L> "log" "(" <args:LogArguments?> ")" ";" <e:@R>
-        => node(SyntaxKind::Log, source, s, e, args.unwrap_or_default()),
-    <s:@L> "assert" "(" <expr:Expr> ")" ";" <e:@R>
-        => node(SyntaxKind::Assert, source, s, e, vec![expr]),
-    <s:@L> <expr:Expr> ";" <e:@R>
-        => node(SyntaxKind::ExpressionStatement, source, s, e, vec![expr]),
-    Block,
+Statement2: Parsed<Statement> = {
+    <s:@L> "for" "(" <initializer:ForInitializer> ";" <condition:Expr> ";"
+    <step:Substitution> ")" <body:Statement2> <e:@R>
+        => context.for_statement(context.span(s,e),
+            ForParts { initializer, condition, step, body }),
+    <s:@L> "while" "(" <condition:Expr> ")" <body:Statement2> <e:@R> => {
+        let children = vec![condition.annotation, body.annotation];
+        let span = context.span(s,e);
+        context.plain(Statement::While {
+            condition: condition.value, body: Box::new(body.value), span }, span, children)
+    },
+    <s:@L> "return" <value:Expr> ";" <e:@R> => {
+        let span = context.span(s,e);
+        context.plain(Statement::Return { value: value.value, span }, span, vec![value.annotation])
+    },
+    <substitution:Substitution> ";" => substitution,
+    <s:@L> <left:Expr> "===" <right:Expr> ";" <e:@R> => {
+        let children = vec![left.annotation, right.annotation];
+        let span = context.span(s,e);
+        context.plain(Statement::Constraint {
+            left: left.value, right: right.value, span }, span, children)
+    },
+    <s:@L> "log" "(" <arguments:LogArguments?> ")" ";" <e:@R> => {
+        let (arguments, children) = unpack(arguments.unwrap_or_default());
+        let span = context.span(s,e);
+        context.annotate(Statement::Log { arguments, span }, span, children,
+            SourceForm::Feature(Version::new(2,0,7)))
+    },
+    <s:@L> "assert" "(" <condition:Expr> ")" ";" <e:@R> => {
+        let span = context.span(s,e);
+        context.plain(Statement::Assert { condition: condition.value, span }, span,
+            vec![condition.annotation])
+    },
+    <s:@L> <expression:Expr> ";" <e:@R>
+        => context.expression_statement(context.span(s,e), expression),
+    <block:Block> => block.map(Statement::Block),
 };
-LogArguments: Vec<SyntaxNode> = {
+ForInitializer: Parsed<Statement> = {
+    <declaration:Declaration> => declaration.map(Statement::Declaration),
+    Substitution,
+};
+LogArguments: Vec<Parsed<LogArgument>> = {
     <mut xs:(<LogArgument> ",")*> <x:LogArgument> => { xs.push(x); xs },
 };
-LogArgument: SyntaxNode = {
-    <s:@L> <value:Str> <e:@R> => labelled(SyntaxKind::String, source, s, e, value, vec![]),
-    Expr,
+LogArgument: Parsed<LogArgument> = {
+    <s:@L> <value:Str> <e:@R> => {
+        let span = context.span(s,e);
+        context.plain(LogArgument::String { value, span }, span, vec![])
+    },
+    <expression:Expr> => expression.map(LogArgument::Expression),
 };
+Substitution: Parsed<Statement> = {
+    <s:@L> <left:Expr> <operator:AssignOp> <right:Expr> <e:@R>
+        => context.assignment(context.span(s,e), left, operator, right),
+    <s:@L> <left:Expr> <operator:ReverseAssignOp> <right:Expr> <e:@R>
+        => context.assignment(context.span(s,e), left, operator, right),
+    <s:@L> <left:Variable> <operator:CompoundAssignOp> <right:Expr> <e:@R>
+        => context.assignment(context.span(s,e), left, operator, right),
+    <s:@L> <target:Variable> <operator:PostfixOp> <e:@R> => {
+        let span = context.span(s,e);
+        context.plain(Statement::PostfixUpdate { target: target.value, operator, span }, span,
+            vec![target.annotation])
+    },
+};
+#[inline]
+Index: Parsed<Expression> = {
+    <s:@L> "[" <expression:Expr> "]" <e:@R>
+        => context.plain(expression.value, context.span(s,e), vec![expression.annotation]),
+};
+Arguments: Parsed<Vec<Expression>> = {
+    <s:@L> "(" <arguments:ExpressionList?> ")" <e:@R>
+        => context.list(context.span(s,e), arguments.unwrap_or_default()),
+};
+#[inline]
+ExpressionList: Vec<Parsed<Expression>> = {
+    <expressions:LegacyExpressionList> =>? {
+        let mut values = Vec::with_capacity(expressions.len());
+        for expression in expressions { values.push(context.expression(expression)?); }
+        Ok(values)
+    },
+};
+#[inline]
+Expr: Parsed<Expression> = { <expression:LegacyExpr> =>? context.expression(expression) };
+#[inline]
+Variable: Parsed<Expression> = { <expression:LegacyVariable> =>? context.expression(expression) };
 
-Substitution: SyntaxNode = {
-    <s:@L> <left:Expr> <op:AssignOp> <right:Expr> <e:@R>
-        => node(SyntaxKind::Assignment(op), source, s, e, vec![left, right]),
-    <s:@L> <left:Expr> <op:ReverseAssignOp> <right:Expr> <e:@R>
-        => node(SyntaxKind::Assignment(op), source, s, e, vec![left, right]),
-    <s:@L> <left:Variable> <op:CompoundAssignOp> <right:Expr> <e:@R>
-        => node(SyntaxKind::Assignment(op), source, s, e, vec![left, right]),
-    <s:@L> <left:Variable> <op:PostfixOp> <e:@R>
-        => node(SyntaxKind::Postfix(op), source, s, e, vec![left]),
-};
 AssignOp: AssignmentOperator = {
     "=" => AssignmentOperator::Assign,
     "<--" => AssignmentOperator::Witness,
@@ -282,41 +326,42 @@ PostfixOp: PostfixOperator = {
     "--" => PostfixOperator::Decrement,
 };
 
-Variable: SyntaxNode = {
-    <s:@L> <name:Name> <access:Access*> <e:@R>
+#[inline]
+LegacyName: SyntaxNode = {
+    <s:@L> <name:Id> <e:@R>
+        => labelled(SyntaxKind::Identifier, source, s, e, name, vec![]),
+};
+LegacyVariable: SyntaxNode = {
+    <s:@L> <name:LegacyName> <access:LegacyAccess*> <e:@R>
         => {
             let mut children = vec![name];
             children.extend(access);
             node(SyntaxKind::Name, source, s, e, children)
         },
 };
-Access: SyntaxNode = {
-    Index,
-    <s:@L> "." <name:Name> <e:@R>
+LegacyAccess: SyntaxNode = {
+    LegacyIndex,
+    <s:@L> "." <name:LegacyName> <e:@R>
         => node(SyntaxKind::Access, source, s, e, vec![name]),
 };
-Index: SyntaxNode = {
-    <s:@L> "[" <expr:Expr> "]" <e:@R>
+LegacyIndex: SyntaxNode = {
+    <s:@L> "[" <expr:LegacyExpr> "]" <e:@R>
         => node(SyntaxKind::Access, source, s, e, vec![expr]),
 };
 
-Arguments: SyntaxNode = {
-    <s:@L> "(" <args:ExpressionList?> ")" <e:@R>
-        => node(SyntaxKind::Arguments, source, s, e, args.unwrap_or_default()),
+LegacyExpressionList: Vec<SyntaxNode> = {
+    <mut xs:(<LegacyExpr> ",")*> <x:LegacyExpr> => { xs.push(x); xs },
 };
-ExpressionList: Vec<SyntaxNode> = {
-    <mut xs:(<Expr> ",")*> <x:Expr> => { xs.push(x); xs },
+LegacyNamedInputs: Vec<SyntaxNode> = {
+    <mut xs:(<LegacyNamedInput> ",")*> <x:LegacyNamedInput> => { xs.push(x); xs },
 };
-NamedInputs: Vec<SyntaxNode> = {
-    <mut xs:(<NamedInput> ",")*> <x:NamedInput> => { xs.push(x); xs },
-};
-NamedInput: SyntaxNode = {
-    <s:@L> <name:Name> <op:InputAssignOp> <expr:Expr> <e:@R>
+LegacyNamedInput: SyntaxNode = {
+    <s:@L> <name:LegacyName> <op:InputAssignOp> <expr:LegacyExpr> <e:@R>
         => node(SyntaxKind::NamedInput(op), source, s, e, vec![name, expr]),
 };
-AnonymousInputs: Vec<SyntaxNode> = { ExpressionList, NamedInputs };
+LegacyAnonymousInputs: Vec<SyntaxNode> = { LegacyExpressionList, LegacyNamedInputs };
 
-pub Expr: SyntaxNode = { Expression14, Expression13, Expression12 };
+LegacyExpr: SyntaxNode = { Expression14, Expression13, Expression12 };
 Expression14: SyntaxNode = {
     <s:@L> "parallel" <expr:ParallelOperand> <e:@R>
         => node(SyntaxKind::Parallel, source, s, e, vec![expr]),
@@ -348,20 +393,20 @@ Expression4 = Infix<MulOp, Expression3>;
 Expression3 = Infix<PowOp, Expression2>;
 Expression2 = Prefix<UnaryOp, Expression1>;
 Expression1: SyntaxNode = {
-    <s:@L> <name:Name> <ps:@L> "(" <params:ExpressionList?> ")" <pe:@R>
-        <is:@L> "(" <inputs:AnonymousInputs?> ")" <ie:@R> <e:@R>
+    <s:@L> <name:LegacyName> <ps:@L> "(" <params:LegacyExpressionList?> ")" <pe:@R>
+        <is:@L> "(" <inputs:LegacyAnonymousInputs?> ")" <ie:@R> <e:@R>
         => node(SyntaxKind::AnonymousCall, source, s, e,
             vec![name, node(SyntaxKind::Parameters, source, ps, pe, params.unwrap_or_default()),
                  node(SyntaxKind::Inputs, source, is, ie, inputs.unwrap_or_default())]),
-    <s:@L> <name:Name> "(" <args:ExpressionList?> ")" <e:@R>
+    <s:@L> <name:LegacyName> "(" <args:LegacyExpressionList?> ")" <e:@R>
         => {
             let mut children = vec![name];
             children.extend(args.unwrap_or_default());
             node(SyntaxKind::Call, source, s, e, children)
         },
-    <s:@L> "[" <items:ExpressionList> "]" <e:@R>
+    <s:@L> "[" <items:LegacyExpressionList> "]" <e:@R>
         => node(SyntaxKind::Array, source, s, e, items),
-    <s:@L> "(" <first:Expr> "," <second:Expr> <rest:("," <Expr>)*> ")" <e:@R>
+    <s:@L> "(" <first:LegacyExpr> "," <second:LegacyExpr> <rest:("," <LegacyExpr>)*> ")" <e:@R>
         => {
             let mut children = vec![first, second];
             children.extend(rest);
@@ -370,10 +415,10 @@ Expression1: SyntaxNode = {
     Primary,
 };
 Primary: SyntaxNode = {
-    Variable,
+    LegacyVariable,
     <s:@L> "_" <e:@R> => labelled(SyntaxKind::Identifier, source, s, e, "_".into(), vec![]),
     <s:@L> <value:Num> <e:@R> => labelled(SyntaxKind::Number, source, s, e, value, vec![]),
-    <s:@L> "(" <expr:Expr> ")" <e:@R>
+    <s:@L> "(" <expr:LegacyExpr> ")" <e:@R>
         => node(SyntaxKind::Group, source, s, e, vec![expr]),
 };
 
@@ -428,7 +473,7 @@ Str: String = { "string" => <> };
 
 extern {
     type Location = usize;
-    type Error = ();
+    type Error = SyntaxDiagnostic;
     enum TokenKind {
         "ident" => TokenKind::Ident(<String>),
         "number" => TokenKind::Number(<String>),

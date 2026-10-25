@@ -1,6 +1,4 @@
-use crate::new_frontend::typed::{
-    AssignmentOperator, BinaryOperator, InputAssignmentOperator, PostfixOperator, UnaryOperator,
-};
+use crate::new_frontend::typed::{BinaryOperator, InputAssignmentOperator, UnaryOperator};
 
 use std::ops::Range;
 use std::path::PathBuf;
@@ -63,43 +61,12 @@ impl Span {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SyntaxKind {
-    Pragma,
-    Include,
-    Function,
-    Template,
-    Bus,
-    Main,
     Parameters,
-    Arguments,
     Inputs,
-    PublicList,
-    Block,
-    Declaration,
-    TupleDeclaration,
-    SignalHeader,
-    BusHeader,
-    DirectionFirstSignalHeader,
-    DirectionFirstBusHeader,
-    Direction,
-    Tags,
-    Modifier,
-    Assignment(AssignmentOperator),
-    TupleInitialization(AssignmentOperator),
-    Postfix(PostfixOperator),
     NamedInput(InputAssignmentOperator),
-    Constraint,
-    Conditional,
-    For,
-    While,
-    Return,
-    Assert,
-    Log,
-    ExpressionStatement,
-    RecoveredStatement,
     Name,
     Identifier,
     Number,
-    String,
     Call,
     AnonymousCall,
     Access,
@@ -110,7 +77,6 @@ pub enum SyntaxKind {
     Ternary,
     Parallel,
     Group,
-    Error,
 }
 
 /// A source-preserving syntax node; `text` stores names and literals.
