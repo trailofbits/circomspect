@@ -37,31 +37,9 @@ pub use typed::{
 };
 pub use walk::{SyntaxCategory, WalkSyntax};
 
-use ast::{SyntaxKind, SyntaxNode};
 use crate::new_frontend::parsed::{finish_segments, ParseContext, ParsedSegment};
 
 use lalrpop_util::ParseError;
-
-fn node(
-    kind: SyntaxKind,
-    source: SourceId,
-    start: usize,
-    end: usize,
-    children: Vec<SyntaxNode>,
-) -> SyntaxNode {
-    SyntaxNode::new(kind, source, start, end, None, children)
-}
-
-fn labelled(
-    kind: SyntaxKind,
-    source: SourceId,
-    start: usize,
-    end: usize,
-    label: String,
-    children: Vec<SyntaxNode>,
-) -> SyntaxNode {
-    SyntaxNode::new(kind, source, start, end, Some(label), children)
-}
 
 fn starts_item(token: &TokenKind) -> bool {
     token == &TokenKind::Pragma
@@ -127,7 +105,7 @@ fn segment_end(tokens: &[Token], start: usize) -> usize {
 }
 
 fn parse_error_location(
-    error: &ParseError<usize, TokenKind, SyntaxDiagnostic>,
+    error: &ParseError<usize, TokenKind, ()>,
     fallback: usize,
 ) -> (usize, usize) {
     match error {
@@ -141,7 +119,7 @@ fn parse_error_location(
     }
 }
 
-fn syntax_error_message(error: &ParseError<usize, TokenKind, SyntaxDiagnostic>) -> &'static str {
+fn syntax_error_message(error: &ParseError<usize, TokenKind, ()>) -> &'static str {
     match error {
         ParseError::InvalidToken { .. } => "invalid token in Circom source",
         ParseError::UnrecognizedEof { .. } => "unexpected end of Circom source",
@@ -163,20 +141,16 @@ fn parse_segment(source: SourceId, segment: &[Token]) -> Result<ParsedSegment, S
     let tokens =
         segment.iter().map(|token| Ok((token.span.start(), token.kind.clone(), token.span.end())));
     let mut context = ParseContext::new(source);
-    syntax::ItemParser::new()
-        .parse(source, &mut context, tokens)
-        .map(|item| context.finish(item))
-        .map_err(|error| {
-            if let ParseError::User { error } = &error {
-                return error.clone();
-            }
+    syntax::ItemParser::new().parse(&mut context, tokens).map(|item| context.finish(item)).map_err(
+        |error| {
             let (start, finish) = parse_error_location(&error, end);
             SyntaxDiagnostic::new(
                 DiagnosticKind::Syntax,
                 Span::from_lexer(source, start, finish),
                 syntax_error_message(&error),
             )
-        })
+        },
+    )
 }
 
 /// Parses one source file while retaining independent definitions after errors.

@@ -1,7 +1,7 @@
 //! Typed grammar values and source-only validation metadata for one parsed segment.
 
 mod construct;
-mod legacy;
+mod expressions;
 mod headers;
 mod validation;
 
@@ -9,6 +9,7 @@ use crate::new_frontend::ast::{SourceId, Span, SyntaxDiagnostic, Version};
 use crate::new_frontend::typed::{Item, Pragma};
 
 pub(super) use construct::{DeclarationParts, DefinitionParts, ForParts, TemplateModifier};
+pub(super) use expressions::AnonymousParts;
 pub(super) use headers::{BusHeaderParts, HeaderDirection};
 pub(super) use validation::finish_segments;
 

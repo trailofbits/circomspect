@@ -1,18 +1,17 @@
-use crate::new_frontend::ast::{SourceId, SyntaxDiagnostic, SyntaxKind, SyntaxNode, Version};
+use crate::new_frontend::ast::Version;
 use crate::new_frontend::lexer::TokenKind;
 use crate::new_frontend::parsed::{
-    BusHeaderParts, DeclarationParts, DefinitionParts, ForParts, HeaderDirection,
+    AnonymousParts, BusHeaderParts, DeclarationParts, DefinitionParts, ForParts, HeaderDirection,
     ParseContext, Parsed, ParsedItem, Recovery, SourceForm, TemplateModifier, unpack,
 };
 use crate::new_frontend::typed::{
-    AssignmentOperator, BinaryOperator, Block, Declaration, DeclarationKind,
+    Access, AnonymousInput, AssignmentOperator, BinaryOperator, Block, Declaration, DeclarationKind,
     DeclaredSymbol, DefinitionKind, Expression, Identifier, InputAssignmentOperator, Item,
     LogArgument, PortDirection, PostfixOperator, Pragma, SpannedDirection, Statement, SymbolSyntax,
     UnaryOperator,
 };
-use crate::new_frontend::{node, labelled};
 
-grammar(source: SourceId, context: &mut ParseContext);
+grammar(context: &mut ParseContext);
 
 pub Item: ParsedItem = {
     <s:@L> "pragma" "circom" <a:Num> "." <b:Num> "." <c:Num> ";" <e:@R>
@@ -72,7 +71,6 @@ Parameters: Parsed<Vec<Identifier>> = {
 NameList: Vec<Parsed<Identifier>> = {
     <mut names:(<Name> ",")*> <last:Name> => { names.push(last); names },
 };
-#[inline]
 Name: Parsed<Identifier> = {
     <s:@L> <name:Id> <e:@R> => {
         let span = context.span(s,e);
@@ -267,7 +265,6 @@ Substitution: Parsed<Statement> = {
             vec![target.annotation])
     },
 };
-#[inline]
 Index: Parsed<Expression> = {
     <s:@L> "[" <expression:Expr> "]" <e:@R>
         => context.plain(expression.value, context.span(s,e), vec![expression.annotation]),
@@ -276,19 +273,6 @@ Arguments: Parsed<Vec<Expression>> = {
     <s:@L> "(" <arguments:ExpressionList?> ")" <e:@R>
         => context.list(context.span(s,e), arguments.unwrap_or_default()),
 };
-#[inline]
-ExpressionList: Vec<Parsed<Expression>> = {
-    <expressions:LegacyExpressionList> =>? {
-        let mut values = Vec::with_capacity(expressions.len());
-        for expression in expressions { values.push(context.expression(expression)?); }
-        Ok(values)
-    },
-};
-#[inline]
-Expr: Parsed<Expression> = { <expression:LegacyExpr> =>? context.expression(expression) };
-#[inline]
-Variable: Parsed<Expression> = { <expression:LegacyVariable> =>? context.expression(expression) };
-
 AssignOp: AssignmentOperator = {
     "=" => AssignmentOperator::Assign,
     "<--" => AssignmentOperator::Witness,
@@ -326,59 +310,74 @@ PostfixOp: PostfixOperator = {
     "--" => PostfixOperator::Decrement,
 };
 
-#[inline]
-LegacyName: SyntaxNode = {
-    <s:@L> <name:Id> <e:@R>
-        => labelled(SyntaxKind::Identifier, source, s, e, name, vec![]),
+Variable: Parsed<Expression> = {
+    <s:@L> <name:Name> <access:Access*> <e:@R>
+        => context.variable(context.span(s,e), name, access),
 };
-LegacyVariable: SyntaxNode = {
-    <s:@L> <name:LegacyName> <access:LegacyAccess*> <e:@R>
-        => {
-            let mut children = vec![name];
-            children.extend(access);
-            node(SyntaxKind::Name, source, s, e, children)
-        },
+Access: Parsed<Access> = {
+    <s:@L> <expression:Index> <e:@R> => expression.map(|expression| Access::Index {
+        expression: Box::new(expression), span: context.span(s,e) }),
+    <s:@L> "." <field:Name> <e:@R> => {
+        let span = context.span(s,e);
+        context.plain(Access::Field { field: field.value, span }, span, vec![field.annotation])
+    },
 };
-LegacyAccess: SyntaxNode = {
-    LegacyIndex,
-    <s:@L> "." <name:LegacyName> <e:@R>
-        => node(SyntaxKind::Access, source, s, e, vec![name]),
+ExpressionList: Vec<Parsed<Expression>> = {
+    <mut xs:(<Expr> ",")*> <x:Expr> => { xs.push(x); xs },
 };
-LegacyIndex: SyntaxNode = {
-    <s:@L> "[" <expr:LegacyExpr> "]" <e:@R>
-        => node(SyntaxKind::Access, source, s, e, vec![expr]),
+NamedInputs: Vec<Parsed<AnonymousInput>> = {
+    <mut xs:(<NamedInput> ",")*> <x:NamedInput> => { xs.push(x); xs },
+};
+NamedInput: Parsed<AnonymousInput> = {
+    <s:@L> <name:Name> <operator:InputAssignOp> <value:Expr> <e:@R> => {
+        let children = vec![name.annotation, value.annotation];
+        let span = context.span(s,e);
+        context.annotate(AnonymousInput::Named { name: name.value, operator,
+            value: value.value, span }, span, children, SourceForm::Feature(Version::new(2,1,1)))
+    },
+};
+AnonymousInputs: Vec<Parsed<AnonymousInput>> = {
+    <expressions:ExpressionList> => {
+        let mut inputs = Vec::with_capacity(expressions.len());
+        for expression in expressions { inputs.push(expression.map(AnonymousInput::Positional)); }
+        inputs
+    },
+    NamedInputs,
 };
 
-LegacyExpressionList: Vec<SyntaxNode> = {
-    <mut xs:(<LegacyExpr> ",")*> <x:LegacyExpr> => { xs.push(x); xs },
+Expr: Parsed<Expression> = { Expression14, Expression13, Expression12 };
+Expression14: Parsed<Expression> = {
+    <s:@L> "parallel" <operand:ParallelOperand> <e:@R> => {
+        let span = context.span(s,e);
+        context.annotate(Expression::Parallel { operand: Box::new(operand.value), span }, span,
+            vec![operand.annotation], SourceForm::Feature(Version::new(2,0,8)))
+    },
 };
-LegacyNamedInputs: Vec<SyntaxNode> = {
-    <mut xs:(<LegacyNamedInput> ",")*> <x:LegacyNamedInput> => { xs.push(x); xs },
+ParallelOperand: Parsed<Expression> = { Expression13, Expression12 };
+Expression13: Parsed<Expression> = {
+    <s:@L> <condition:Expression12> "?" <yes:Expression12> ":" <no:Expression12> <e:@R> => {
+        let children = vec![condition.annotation, yes.annotation, no.annotation];
+        let span = context.span(s,e);
+        context.annotate(Expression::Ternary { condition: Box::new(condition.value),
+            yes: Box::new(yes.value), no: Box::new(no.value), span },
+            span, children, SourceForm::PotentialBus)
+    },
 };
-LegacyNamedInput: SyntaxNode = {
-    <s:@L> <name:LegacyName> <op:InputAssignOp> <expr:LegacyExpr> <e:@R>
-        => node(SyntaxKind::NamedInput(op), source, s, e, vec![name, expr]),
-};
-LegacyAnonymousInputs: Vec<SyntaxNode> = { LegacyExpressionList, LegacyNamedInputs };
-
-LegacyExpr: SyntaxNode = { Expression14, Expression13, Expression12 };
-Expression14: SyntaxNode = {
-    <s:@L> "parallel" <expr:ParallelOperand> <e:@R>
-        => node(SyntaxKind::Parallel, source, s, e, vec![expr]),
-};
-ParallelOperand: SyntaxNode = { Expression13, Expression12 };
-Expression13: SyntaxNode = {
-    <s:@L> <cond:Expression12> "?" <yes:Expression12> ":" <no:Expression12> <e:@R>
-        => node(SyntaxKind::Ternary, source, s, e, vec![cond, yes, no]),
-};
-Infix<Op, Next>: SyntaxNode = {
-    <s:@L> <left:Infix<Op, Next>> <op:Op> <right:Next> <e:@R>
-        => node(SyntaxKind::Binary(op), source, s, e, vec![left, right]),
+Infix<Op, Next>: Parsed<Expression> = {
+    <s:@L> <left:Infix<Op, Next>> <operator:Op> <right:Next> <e:@R> => {
+        let children = vec![left.annotation, right.annotation];
+        let span = context.span(s,e);
+        context.plain(Expression::Binary { operator, left: Box::new(left.value),
+            right: Box::new(right.value), span }, span, children)
+    },
     Next,
 };
-Prefix<Op, Next>: SyntaxNode = {
-    <s:@L> <op:Op> <expr:Next> <e:@R>
-        => node(SyntaxKind::Unary(op), source, s, e, vec![expr]),
+Prefix<Op, Next>: Parsed<Expression> = {
+    <s:@L> <operator:Op> <operand:Next> <e:@R> => {
+        let span = context.span(s,e);
+        context.plain(Expression::Unary { operator, operand: Box::new(operand.value), span },
+            span, vec![operand.annotation])
+    },
     Next,
 };
 Expression12 = Infix<BoolOrOp, Expression11>;
@@ -392,34 +391,46 @@ Expression5 = Infix<AddOp, Expression4>;
 Expression4 = Infix<MulOp, Expression3>;
 Expression3 = Infix<PowOp, Expression2>;
 Expression2 = Prefix<UnaryOp, Expression1>;
-Expression1: SyntaxNode = {
-    <s:@L> <name:LegacyName> <ps:@L> "(" <params:LegacyExpressionList?> ")" <pe:@R>
-        <is:@L> "(" <inputs:LegacyAnonymousInputs?> ")" <ie:@R> <e:@R>
-        => node(SyntaxKind::AnonymousCall, source, s, e,
-            vec![name, node(SyntaxKind::Parameters, source, ps, pe, params.unwrap_or_default()),
-                 node(SyntaxKind::Inputs, source, is, ie, inputs.unwrap_or_default())]),
-    <s:@L> <name:LegacyName> "(" <args:LegacyExpressionList?> ")" <e:@R>
-        => {
-            let mut children = vec![name];
-            children.extend(args.unwrap_or_default());
-            node(SyntaxKind::Call, source, s, e, children)
-        },
-    <s:@L> "[" <items:LegacyExpressionList> "]" <e:@R>
-        => node(SyntaxKind::Array, source, s, e, items),
-    <s:@L> "(" <first:LegacyExpr> "," <second:LegacyExpr> <rest:("," <LegacyExpr>)*> ")" <e:@R>
-        => {
-            let mut children = vec![first, second];
-            children.extend(rest);
-            node(SyntaxKind::Tuple, source, s, e, children)
-        },
+Expression1: Parsed<Expression> = {
+    <s:@L> <name:Name> <ps:@L> "(" <parameters:ExpressionList?> ")" <pe:@R>
+    <is:@L> "(" <inputs:AnonymousInputs?> ")" <ie:@R> <e:@R> => {
+        let parameters = context.list(context.span(ps,pe), parameters.unwrap_or_default());
+        let inputs = context.list(context.span(is,ie), inputs.unwrap_or_default());
+        context.anonymous_call(context.span(s,e), AnonymousParts { name, parameters, inputs })
+    },
+    <s:@L> <name:Name> "(" <arguments:ExpressionList?> ")" <e:@R>
+        => context.call(context.span(s,e), name, arguments.unwrap_or_default()),
+    <s:@L> "[" <elements:ExpressionList> "]" <e:@R> => {
+        let (elements, children) = unpack(elements);
+        let span = context.span(s,e);
+        context.annotate(Expression::Array { elements, span }, span, children, SourceForm::Array)
+    },
+    <s:@L> "(" <first:Expr> "," <second:Expr> <rest:("," <Expr>)*> ")" <e:@R> => {
+        let mut elements = vec![first,second];
+        elements.extend(rest);
+        let (elements, children) = unpack(elements);
+        let span = context.span(s,e);
+        context.annotate(Expression::Tuple { elements, span }, span, children, SourceForm::Tuple)
+    },
     Primary,
 };
-Primary: SyntaxNode = {
-    LegacyVariable,
-    <s:@L> "_" <e:@R> => labelled(SyntaxKind::Identifier, source, s, e, "_".into(), vec![]),
-    <s:@L> <value:Num> <e:@R> => labelled(SyntaxKind::Number, source, s, e, value, vec![]),
-    <s:@L> "(" <expr:LegacyExpr> ")" <e:@R>
-        => node(SyntaxKind::Group, source, s, e, vec![expr]),
+Primary: Parsed<Expression> = {
+    Variable,
+    <s:@L> "_" <e:@R> => {
+        let span = context.span(s,e);
+        let identifier = Identifier { name: "_".into(), span };
+        context.annotate(Expression::Name { identifier, access: vec![], span }, span, vec![],
+            SourceForm::Feature(Version::new(2,1,0)))
+    },
+    <s:@L> <text:Num> <e:@R> => {
+        let span = context.span(s,e);
+        context.plain(Expression::Number { text, span }, span, vec![])
+    },
+    <s:@L> "(" <expression:Expr> ")" <e:@R> => {
+        let span = context.span(s,e);
+        context.annotate(Expression::Group { expression: Box::new(expression.value), span }, span,
+            vec![expression.annotation], SourceForm::PotentialBus)
+    },
 };
 
 UnaryOp: UnaryOperator = {
@@ -473,7 +484,7 @@ Str: String = { "string" => <> };
 
 extern {
     type Location = usize;
-    type Error = SyntaxDiagnostic;
+    type Error = ();
     enum TokenKind {
         "ident" => TokenKind::Ident(<String>),
         "number" => TokenKind::Number(<String>),
