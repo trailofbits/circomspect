@@ -241,21 +241,34 @@ impl<N: Copy + Ord, E: Copy + Ord, S: Lattice, R: Clone + Ord> Working<N, E, S, 
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum JoinOutcome {
+    Unchanged,
+    Changed,
+    BudgetExhausted,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum StepOutcome<N> {
+    Completed,
+    BudgetExhausted { pending: N },
+}
+
 fn join_limited<S: Lattice>(
     target: &mut Option<S>,
     value: &S,
     updates: &mut usize,
     budget: Option<usize>,
-) -> Result<bool, ()> {
+) -> JoinOutcome {
     let changes = match target {
         Some(current) => !value.leq(current),
         None => true,
     };
     if !changes {
-        return Ok(false);
+        return JoinOutcome::Unchanged;
     }
     if budget.is_some_and(|limit| *updates >= limit) {
-        return Err(());
+        return JoinOutcome::BudgetExhausted;
     }
     match target {
         Some(current) => {
@@ -266,11 +279,11 @@ fn join_limited<S: Lattice>(
         }
     }
     *updates += 1;
-    Ok(true)
+    JoinOutcome::Changed
 }
 
 type StepResult<G> = Result<
-    Option<<G as FlowGraph>::NodeId>,
+    StepOutcome<<G as FlowGraph>::NodeId>,
     GraphError<<G as FlowGraph>::NodeId, <G as FlowGraph>::EdgeId>,
 >;
 
@@ -298,11 +311,13 @@ where
         };
         let slot = D::from_mut(facts);
         match join_limited(slot, &seed, &mut work.updates, work.budget) {
-            Ok(true | false) => {}
-            Err(()) => return Ok(Some(node)),
+            JoinOutcome::Changed | JoinOutcome::Unchanged => {}
+            JoinOutcome::BudgetExhausted => {
+                return Ok(StepOutcome::BudgetExhausted { pending: node });
+            }
         }
     }
-    Ok(None)
+    Ok(StepOutcome::Completed)
 }
 
 fn propagate_edge<G, A, D>(
@@ -330,9 +345,11 @@ where
     };
     let slot = work.edge_facts.entry(edge).or_default();
     match join_limited(slot, &value, &mut work.updates, work.budget) {
-        Ok(true) => {}
-        Ok(false) => return Ok(None),
-        Err(()) => return Ok(Some(current)),
+        JoinOutcome::Changed => {}
+        JoinOutcome::Unchanged => return Ok(StepOutcome::Completed),
+        JoinOutcome::BudgetExhausted => {
+            return Ok(StepOutcome::BudgetExhausted { pending: current });
+        }
     }
     let Some(&endpoints) = context.validated.endpoints.get(&edge) else {
         return Err(GraphError::MissingEdge(edge));
@@ -343,13 +360,15 @@ where
     };
     let slot = D::from_mut(facts);
     match join_limited(slot, &value, &mut work.updates, work.budget) {
-        Ok(true) => {
+        JoinOutcome::Changed => {
             work.queue.insert(target);
         }
-        Ok(false) => {}
-        Err(()) => return Ok(Some(target)),
+        JoinOutcome::Unchanged => {}
+        JoinOutcome::BudgetExhausted => {
+            return Ok(StepOutcome::BudgetExhausted { pending: target });
+        }
     }
-    Ok(None)
+    Ok(StepOutcome::Completed)
 }
 
 fn process_node<G, A, D>(
@@ -368,7 +387,7 @@ where
         return Err(GraphError::MissingNode(node));
     };
     let Some(input) = D::from(facts).as_ref() else {
-        return Ok(None);
+        return Ok(StepOutcome::Completed);
     };
     let Some(payload) = context.graph.node(node) else {
         return Err(GraphError::MissingNode(node));
@@ -385,16 +404,19 @@ where
     };
     let slot = D::to_mut(facts);
     match join_limited(slot, &value, &mut work.updates, work.budget) {
-        Ok(true) => {}
-        Ok(false) => return Ok(None),
-        Err(()) => return Ok(Some(node)),
-    }
-    for &edge in D::next_edges(context.validated, node) {
-        if let Some(pending) = propagate_edge::<G, A, D>(context, work, edge, node, &value)? {
-            return Ok(Some(pending));
+        JoinOutcome::Changed => {}
+        JoinOutcome::Unchanged => return Ok(StepOutcome::Completed),
+        JoinOutcome::BudgetExhausted => {
+            return Ok(StepOutcome::BudgetExhausted { pending: node });
         }
     }
-    Ok(None)
+    for &edge in D::next_edges(context.validated, node) {
+        match propagate_edge::<G, A, D>(context, work, edge, node, &value)? {
+            StepOutcome::Completed => {}
+            outcome @ StepOutcome::BudgetExhausted { .. } => return Ok(outcome),
+        }
+    }
+    Ok(StepOutcome::Completed)
 }
 
 /// Compute the least fixed point, or return only provisional facts with blockers.
@@ -424,14 +446,16 @@ where
         updates: 0,
         budget,
     };
-    if let Some(pending) = seed::<G, A, D>(graph, analysis, &mut work)? {
-        return Ok(work.incomplete(pending));
+    match seed::<G, A, D>(graph, analysis, &mut work)? {
+        StepOutcome::Completed => {}
+        StepOutcome::BudgetExhausted { pending } => return Ok(work.incomplete(pending)),
     }
     let context = FlowContext { graph, analysis, validated: &validated };
     while let Some(&node) = work.queue.first() {
         work.queue.remove(&node);
-        if let Some(pending) = process_node::<G, A, D>(&context, &mut work, node)? {
-            return Ok(work.incomplete(pending));
+        match process_node::<G, A, D>(&context, &mut work, node)? {
+            StepOutcome::Completed => {}
+            StepOutcome::BudgetExhausted { pending } => return Ok(work.incomplete(pending)),
         }
     }
     Ok(work.finish())

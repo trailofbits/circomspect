@@ -317,3 +317,6 @@ fn external_adapters_are_validated_before_any_transfer() {
     assert_eq!(edge, EdgeId::new(0));
     assert_eq!(node, NodeId::new(1));
 }
+
+#[path = "support/budget_traces.rs"]
+mod budget_traces;
