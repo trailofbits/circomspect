@@ -6,7 +6,7 @@ use program_structure::utils::constants::Curve;
 use crate::hir_facts::FieldContext;
 use crate::interprocedural::cache::SummaryCaches;
 use crate::interprocedural::source_validity::SourceQueries;
-use crate::interprocedural::{build_call_graph, CallGraph, CallGraphError};
+use crate::interprocedural::{build_call_graph, CallGraph, CallGraphError, ContextQueries};
 
 /// Owns the validated field and graph used to construct summary contexts.
 pub struct ProjectAnalysis<'hir> {
@@ -52,6 +52,12 @@ impl<'hir> ProjectAnalysis<'hir> {
 
     pub(crate) fn field_context(&self) -> &FieldContext {
         &self.field
+    }
+
+    /// Borrow context construction and source-evidence queries for this session.
+    #[must_use]
+    pub fn contexts(&self) -> ContextQueries<'_, 'hir> {
+        ContextQueries { analysis: self }
     }
 
     pub(crate) fn sources(&self) -> SourceQueries<'_, 'hir> {

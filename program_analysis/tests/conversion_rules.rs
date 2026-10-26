@@ -53,8 +53,8 @@ fn inspect_with_budget(
     let definition = lifted.hir.definition("Decompose").unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
     let provider = ProjectAnalysis::build(&lifted, curve).unwrap();
-    let evidence = provider.symbolic_root(definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, budget).unwrap();
+    let evidence = provider.contexts().symbolic_root(definition).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, budget).unwrap();
     let context = RuleContext::new(&facts, &provider, &evidence).unwrap();
     let rule = numeric::rules()
         .iter()

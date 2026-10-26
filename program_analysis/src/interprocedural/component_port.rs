@@ -69,11 +69,16 @@ impl ProjectAnalysis<'_> {
         };
         let cfg = build_cfg(self.hir(), callee.context().definition())
             .map_err(|_| SummaryBlocker::IncompleteDefinition)?;
-        let facts = self.analyze_for_evidence(&cfg, callee, None).map_err(|error| match error {
-            AnalyzeEvidenceError::Blocked(blocker) => blocker,
-            AnalyzeEvidenceError::InvalidAssignment { .. }
-            | AnalyzeEvidenceError::InvalidValueUse { .. } => SummaryBlocker::IncompleteDefinition,
-        })?;
+        let facts =
+            self.contexts().analyze_for_evidence(&cfg, callee, None).map_err(
+                |error| match error {
+                    AnalyzeEvidenceError::Blocked(blocker) => blocker,
+                    AnalyzeEvidenceError::InvalidAssignment { .. }
+                    | AnalyzeEvidenceError::InvalidValueUse { .. } => {
+                        SummaryBlocker::IncompleteDefinition
+                    }
+                },
+            )?;
         self.check_call_execution_scope(&facts, callee)?;
         work(&facts)
     }

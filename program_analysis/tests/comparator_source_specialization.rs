@@ -49,10 +49,10 @@ fn specialized_nodes(source: &str) -> Option<Vec<CfgNodeKind>> {
     else {
         return None;
     };
-    let evidence = provider.main_evidence(&call).ok()?;
+    let evidence = provider.contexts().main_evidence(&call).ok()?;
     let definition = lifted.hir.definition("Compare").unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).ok()?;
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).ok()?;
     Some(facts.cfg().nodes().iter().map(|id| facts.cfg().node(*id).unwrap().kind.clone()).collect())
 }
 
@@ -160,10 +160,10 @@ fn checked_child_bit_zero(argument: &str) -> bool {
     else {
         panic!("main call must be reachable")
     };
-    let evidence = provider.main_evidence(&main).unwrap();
+    let evidence = provider.contexts().main_evidence(&main).unwrap();
     let definition = lifted.hir.definition("Compare").unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let child = provider.graph().calls_from(CallOwner::Definition(definition))[0];
     let CallReachability::Reachable(child) = provider.graph().reachable_call(child.id(), &facts)
     else {
@@ -193,10 +193,10 @@ fn exact_scalar_seed_cannot_cross_provider_curve_or_project_identity() {
     else {
         panic!("main call must be reachable")
     };
-    let evidence = bn.main_evidence(&main).unwrap();
+    let evidence = bn.contexts().main_evidence(&main).unwrap();
     let cfg = build_cfg(&first.hir, first.hir.definition("Compare").unwrap()).unwrap();
     for provider in [&gold, &foreign] {
-        let result = provider.analyze_for_evidence(&cfg, &evidence, None);
+        let result = provider.contexts().analyze_for_evidence(&cfg, &evidence, None);
         let Err(AnalyzeEvidenceError::Blocked(SummaryBlocker::WrongContext)) = result else {
             panic!("foreign scalar seed must not specialize a comparator")
         };

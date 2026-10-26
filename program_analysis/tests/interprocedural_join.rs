@@ -43,8 +43,8 @@ fn composed(
         panic!("Child must be a template")
     };
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
-    let caller = provider.symbolic_root(parent).unwrap();
-    let full = provider.analyze_for_evidence(&cfg, &caller, None).unwrap();
+    let caller = provider.contexts().symbolic_root(parent).unwrap();
+    let full = provider.contexts().analyze_for_evidence(&cfg, &caller, None).unwrap();
     let output = lifted
         .hir
         .template(child)
@@ -65,7 +65,8 @@ fn composed(
     };
     let applied = provider.apply_component_output(&full, &caller, &call, &handle);
     let applied = applied.certified().ok_or_else(|| applied.unavailable().unwrap().clone())?;
-    let pending = budget.map(|limit| provider.analyze_for_evidence(&cfg, &caller, Some(limit)));
+    let pending =
+        budget.map(|limit| provider.contexts().analyze_for_evidence(&cfg, &caller, Some(limit)));
     let pending = pending.map(Result::unwrap);
     let facts = pending.as_ref().unwrap_or(&full);
     let result = provider.composed_constraint_fixed_output(facts, applied);

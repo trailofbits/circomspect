@@ -42,7 +42,7 @@ fn inspect(source: &str, budget: Option<usize>) -> (LoadedProject, RuleResult) {
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let evidence = if lifted.hir.mains().is_empty() {
         let definition = lifted.hir.definition("T").unwrap();
-        provider.symbolic_root(definition).unwrap()
+        provider.contexts().symbolic_root(definition).unwrap()
     } else {
         let site = provider.graph().calls_from(CallOwner::Main(0))[0];
         let CallReachability::Reachable(call) =
@@ -50,11 +50,11 @@ fn inspect(source: &str, budget: Option<usize>) -> (LoadedProject, RuleResult) {
         else {
             panic!("main is reachable")
         };
-        provider.main_evidence(&call).unwrap()
+        provider.contexts().main_evidence(&call).unwrap()
     };
     let definition = evidence.context().definition();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, budget).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, budget).unwrap();
     let context = RuleContext::new(&facts, &provider, &evidence).unwrap();
     (loaded, run_registered(&context).unwrap())
 }
@@ -209,18 +209,18 @@ fn called_outputs_and_internal_signals_abstain_without_incoming_constraint_closu
         else {
             panic!("main")
         };
-        let evidence = provider.main_evidence(&main).unwrap();
+        let evidence = provider.contexts().main_evidence(&main).unwrap();
         let definition = evidence.context().definition();
         let cfg = build_cfg(&lifted.hir, definition).unwrap();
-        let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+        let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
         let call = provider.graph().calls_from(CallOwner::Definition(definition))[0];
         let CallReachability::Reachable(call) = provider.graph().reachable_call(call.id(), &facts)
         else {
             panic!("child")
         };
-        let evidence = provider.call_evidence(&call, &facts, &evidence).unwrap();
+        let evidence = provider.contexts().call_evidence(&call, &facts, &evidence).unwrap();
         let cfg = build_cfg(&lifted.hir, evidence.context().definition()).unwrap();
-        let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+        let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
         let context = RuleContext::new(&facts, &provider, &evidence).unwrap();
         let result = run_registered(&context).unwrap();
         assert_abstention(&result, RuleKind::SignalAssignment);

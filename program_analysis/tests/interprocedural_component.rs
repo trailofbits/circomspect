@@ -40,8 +40,8 @@ fn output_read(source: &str, instance: usize) -> SummaryFact<CallerOutputRead> {
         panic!("Child must be a template")
     };
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
-    let scope = provider.symbolic_root(parent).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &scope, None).unwrap();
+    let scope = provider.contexts().symbolic_root(parent).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &scope, None).unwrap();
     let output = lifted.hir.template(child).unwrap().ports[0];
     let handle = facts
         .component_output_handle(lifted.hir.components()[0].id, &[instance], output, &[])
@@ -147,8 +147,8 @@ fn exact_array_instances_keep_distinct_parameterized_output_values() {
     let output = lifted.hir.template(child).unwrap().ports[0];
     let component = lifted.hir.components()[0].id;
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
-    let scope = provider.symbolic_root(parent).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &scope, None).unwrap();
+    let scope = provider.contexts().symbolic_root(parent).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &scope, None).unwrap();
     let calls = provider.graph().calls_from(CallOwner::Definition(parent));
     assert_eq!(calls.len(), 2);
     let field = FieldContext::for_curve(Curve::Bn254);
@@ -181,8 +181,8 @@ fn a_reachable_call_cannot_borrow_another_instance_output() {
         panic!("Child must be a template")
     };
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
-    let scope = provider.symbolic_root(parent).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &scope, None).unwrap();
+    let scope = provider.contexts().symbolic_root(parent).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &scope, None).unwrap();
     let output = lifted.hir.template(child).unwrap().ports[0];
     let handle =
         facts.component_output_handle(lifted.hir.components()[0].id, &[1], output, &[]).unwrap();
@@ -220,8 +220,8 @@ fn duplicate_instantiation_cannot_double_apply_one_child_summary() {
         panic!("Child must be a template")
     };
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
-    let scope = provider.symbolic_root(parent).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &scope, None).unwrap();
+    let scope = provider.contexts().symbolic_root(parent).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &scope, None).unwrap();
     let output = lifted.hir.template(child).unwrap().ports[0];
     let handle =
         facts.component_output_handle(lifted.hir.components()[0].id, &[], output, &[]).unwrap();
@@ -250,8 +250,8 @@ fn symbolic_instance_index_cannot_borrow_an_exact_output_handle() {
         panic!("Child must be a template")
     };
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
-    let scope = provider.symbolic_root(parent).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &scope, None).unwrap();
+    let scope = provider.contexts().symbolic_root(parent).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &scope, None).unwrap();
     let output = lifted.hir.template(child).unwrap().ports[0];
     let handle =
         facts.component_output_handle(lifted.hir.components()[0].id, &[0], output, &[]).unwrap();
@@ -279,8 +279,8 @@ fn unknown_template_argument_keeps_output_application_unavailable() {
         panic!("Child must be a template")
     };
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
-    let scope = provider.symbolic_root(parent).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &scope, None).unwrap();
+    let scope = provider.contexts().symbolic_root(parent).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &scope, None).unwrap();
     let output = lifted.hir.template(child).unwrap().ports[0];
     let handle =
         facts.component_output_handle(lifted.hir.components()[0].id, &[], output, &[]).unwrap();
@@ -311,8 +311,8 @@ fn checked_input_relation_agrees_with_direct_inline_output() {
         panic!("Inline must be a template")
     };
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
-    let scope = provider.symbolic_root(parent).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &scope, None).unwrap();
+    let scope = provider.contexts().symbolic_root(parent).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &scope, None).unwrap();
     let output = lifted.hir.template(child).unwrap().ports[1];
     let handle =
         facts.component_output_handle(lifted.hir.components()[0].id, &[], output, &[]).unwrap();
@@ -326,7 +326,8 @@ fn checked_input_relation_agrees_with_direct_inline_output() {
     assert_eq!(applied.port_summary().fixed_value(), None);
 
     let composed = provider.composed_constraint_fixed_output(&facts, applied);
-    let inline_context = provider.symbolic_context_for(DefinitionRef::Template(inline)).unwrap();
+    let inline_context =
+        provider.contexts().symbolic_context_for(DefinitionRef::Template(inline)).unwrap();
     let inline_output = lifted.hir.template(inline).unwrap().ports[0];
     let direct = provider.template_port(inline, &inline_context, inline_output);
     assert_eq!(
@@ -352,8 +353,8 @@ fn witness_only_input_does_not_fix_child_output() {
         panic!("Child must be a template")
     };
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
-    let scope = provider.symbolic_root(parent).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &scope, None).unwrap();
+    let scope = provider.contexts().symbolic_root(parent).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &scope, None).unwrap();
     let DefinitionRef::Template(parent_id) = parent else { panic!("Parent must be a template") };
     let x = facts.port_handle(lifted.hir.template(parent_id).unwrap().ports[0], &[]).unwrap();
     assert_eq!(facts.incidence_handle(&x).certified(), Some(&Incidence::Zero));
@@ -385,8 +386,8 @@ fn repeated_instances_compose_only_their_own_checked_inputs() {
         panic!("Child must be a template")
     };
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
-    let scope = provider.symbolic_root(parent).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &scope, None).unwrap();
+    let scope = provider.contexts().symbolic_root(parent).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &scope, None).unwrap();
     let output = lifted.hir.template(child).unwrap().ports[1];
     let calls = provider.graph().calls_from(CallOwner::Definition(parent));
     let field = FieldContext::for_curve(Curve::Bn254);
@@ -434,8 +435,8 @@ fn duplicate_and_missing_input_bindings_cannot_fix_an_output() {
             panic!("Child must be a template")
         };
         let cfg = build_cfg(&lifted.hir, parent).unwrap();
-        let scope = provider.symbolic_root(parent).unwrap();
-        let facts = provider.analyze_for_evidence(&cfg, &scope, None).unwrap();
+        let scope = provider.contexts().symbolic_root(parent).unwrap();
+        let facts = provider.contexts().analyze_for_evidence(&cfg, &scope, None).unwrap();
         let output = lifted.hir.template(child).unwrap().ports[1];
         let handle =
             facts.component_output_handle(lifted.hir.components()[0].id, &[], output, &[]).unwrap();
@@ -467,8 +468,8 @@ fn a_may_reachable_branch_instantiation_does_not_fix_an_output() {
         panic!("Child must be a template")
     };
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
-    let scope = provider.symbolic_root(parent).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &scope, None).unwrap();
+    let scope = provider.contexts().symbolic_root(parent).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &scope, None).unwrap();
     let output = lifted.hir.template(child).unwrap().ports[1];
     let handle =
         facts.component_output_handle(lifted.hir.components()[0].id, &[], output, &[]).unwrap();
@@ -497,8 +498,8 @@ fn disagreeing_branch_input_bindings_cannot_fix_an_output() {
         panic!("Child must be a template")
     };
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
-    let scope = provider.symbolic_root(parent).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &scope, None).unwrap();
+    let scope = provider.contexts().symbolic_root(parent).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &scope, None).unwrap();
     let output = lifted.hir.template(child).unwrap().ports[1];
     let handle =
         facts.component_output_handle(lifted.hir.components()[0].id, &[], output, &[]).unwrap();
@@ -527,8 +528,8 @@ fn unrelated_branch_preserves_the_later_checked_input_value() {
         panic!("Child must be a template")
     };
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
-    let scope = provider.symbolic_root(parent).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &scope, None).unwrap();
+    let scope = provider.contexts().symbolic_root(parent).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &scope, None).unwrap();
     let output = lifted.hir.template(child).unwrap().ports[1];
     let handle =
         facts.component_output_handle(lifted.hir.components()[0].id, &[], output, &[]).unwrap();
@@ -559,15 +560,16 @@ fn equality_without_output_witness_is_not_promoted_as_a_value_write() {
     let DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap() else {
         panic!("Child must be a template")
     };
-    let child_context = provider.symbolic_context_for(DefinitionRef::Template(child)).unwrap();
+    let child_context =
+        provider.contexts().symbolic_context_for(DefinitionRef::Template(child)).unwrap();
     let output = lifted.hir.template(child).unwrap().ports[1];
     assert!(provider
         .template_port_witnesses(child, &child_context, output)
         .certified()
         .is_some_and(Vec::is_empty));
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
-    let scope = provider.symbolic_root(parent).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &scope, None).unwrap();
+    let scope = provider.contexts().symbolic_root(parent).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &scope, None).unwrap();
     let handle =
         facts.component_output_handle(lifted.hir.components()[0].id, &[], output, &[]).unwrap();
     let site = provider.graph().calls_from(CallOwner::Definition(parent))[0];
@@ -595,8 +597,8 @@ fn nested_output_read_before_input_binding_blocks_composition() {
         panic!("Child must be a template")
     };
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
-    let scope = provider.symbolic_root(parent).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &scope, None).unwrap();
+    let scope = provider.contexts().symbolic_root(parent).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &scope, None).unwrap();
     let output = lifted.hir.template(child).unwrap().ports[1];
     let handle =
         facts.component_output_handle(lifted.hir.components()[0].id, &[], output, &[]).unwrap();
@@ -625,8 +627,8 @@ fn every_required_child_input_must_precede_the_output_read() {
         panic!("Child must be a template")
     };
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
-    let scope = provider.symbolic_root(parent).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &scope, None).unwrap();
+    let scope = provider.contexts().symbolic_root(parent).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &scope, None).unwrap();
     let output = lifted.hir.template(child).unwrap().ports[2];
     let handle =
         facts.component_output_handle(lifted.hir.components()[0].id, &[], output, &[]).unwrap();
@@ -654,8 +656,8 @@ fn opaque_competing_input_write_blocks_a_fixed_output() {
         panic!("Child must be a template")
     };
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
-    let scope = provider.symbolic_root(parent).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &scope, None).unwrap();
+    let scope = provider.contexts().symbolic_root(parent).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &scope, None).unwrap();
     let output = lifted.hir.template(child).unwrap().ports[1];
     let handle =
         facts.component_output_handle(lifted.hir.components()[0].id, &[], output, &[]).unwrap();
@@ -685,8 +687,8 @@ fn symbolic_component_index_may_alias_a_checked_input_binding() {
         panic!("Child must be a template")
     };
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
-    let scope = provider.symbolic_root(parent).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &scope, None).unwrap();
+    let scope = provider.contexts().symbolic_root(parent).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &scope, None).unwrap();
     let output = lifted.hir.template(child).unwrap().ports[1];
     let handle =
         facts.component_output_handle(lifted.hir.components()[0].id, &[0], output, &[]).unwrap();
@@ -717,8 +719,8 @@ fn competing_child_output_writes_cannot_borrow_the_first_equality() {
             panic!("Child must be a template")
         };
         let cfg = build_cfg(&lifted.hir, parent).unwrap();
-        let scope = provider.symbolic_root(parent).unwrap();
-        let facts = provider.analyze_for_evidence(&cfg, &scope, None).unwrap();
+        let scope = provider.contexts().symbolic_root(parent).unwrap();
+        let facts = provider.contexts().analyze_for_evidence(&cfg, &scope, None).unwrap();
         let output = lifted.hir.template(child).unwrap().ports[1];
         let handle =
             facts.component_output_handle(lifted.hir.components()[0].id, &[], output, &[]).unwrap();
@@ -756,8 +758,8 @@ fn repeated_loop_output_effects_cannot_be_counted_as_one_write() {
         panic!("Child must be a template")
     };
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
-    let scope = provider.symbolic_root(parent).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &scope, None).unwrap();
+    let scope = provider.contexts().symbolic_root(parent).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &scope, None).unwrap();
     let output = lifted.hir.template(child).unwrap().ports[1];
     let handle =
         facts.component_output_handle(lifted.hir.components()[0].id, &[], output, &[]).unwrap();
@@ -786,8 +788,8 @@ fn dynamic_child_loop_has_a_typed_write_blocker() {
         panic!("Child must be a template")
     };
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
-    let scope = provider.symbolic_root(parent).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &scope, None).unwrap();
+    let scope = provider.contexts().symbolic_root(parent).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &scope, None).unwrap();
     let output = lifted.hir.template(child).unwrap().ports[1];
     let handle =
         facts.component_output_handle(lifted.hir.components()[0].id, &[], output, &[]).unwrap();

@@ -13,8 +13,8 @@ impl ProjectAnalysis<'_> {
         facts: &AnalysisFacts<'_>,
         applied: &AppliedComponentPort,
     ) -> Result<(), SummaryBlocker> {
-        self.check_facts_for_evidence(facts, applied.caller_evidence())?;
-        self.check_evidence(applied.callee_evidence())?;
+        self.contexts().check_facts_for_evidence(facts, applied.caller_evidence())?;
+        self.contexts().check_evidence(applied.callee_evidence())?;
         let DefinitionRef::Template(id) = applied.callee_evidence().context().definition() else {
             return Err(SummaryBlocker::WrongInstance);
         };

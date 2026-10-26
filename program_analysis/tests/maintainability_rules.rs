@@ -46,8 +46,8 @@ fn with_rules(source: &str, name: &str, test: impl FnOnce(&RuleResult, &LoadedPr
     let definition = lifted.hir.definition(name).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
-    let evidence = provider.symbolic_root(definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let evidence = provider.contexts().symbolic_root(definition).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let context = RuleContext::new(&facts, &provider, &evidence).unwrap();
     let result = run_registered(&context).unwrap();
     test(&result, &loaded);
@@ -138,8 +138,8 @@ fn symbolic_compile_time_branches_do_not_certify_library_complexity() {
     else {
         panic!("complete main call")
     };
-    let evidence = provider.main_evidence(&call).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let evidence = provider.contexts().main_evidence(&call).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let context = RuleContext::new(&facts, &provider, &evidence).unwrap();
     let result = run_registered(&context).unwrap();
     assert!(result.findings().iter().all(|finding| finding.kind() != RuleKind::Complexity));
@@ -223,8 +223,8 @@ fn unfinished_local_solver_cannot_certify_complexity() {
     let definition = lifted.hir.definition("Check").unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
-    let evidence = provider.symbolic_root(definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, Some(0)).unwrap();
+    let evidence = provider.contexts().symbolic_root(definition).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, Some(0)).unwrap();
     let context = RuleContext::new(&facts, &provider, &evidence).unwrap();
     let result = run_registered(&context).unwrap();
     assert!(result.findings().iter().all(|finding| finding.kind() != RuleKind::Complexity));

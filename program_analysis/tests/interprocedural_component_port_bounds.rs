@@ -39,7 +39,7 @@ fn main_evidence(provider: &ProjectAnalysis<'_>, project: &LiftedProject) -> Con
     else {
         panic!("main must resolve")
     };
-    provider.main_evidence(&call).unwrap()
+    provider.contexts().main_evidence(&call).unwrap()
 }
 
 fn with_parent<T>(
@@ -51,7 +51,7 @@ fn with_parent<T>(
     let caller = main_evidence(&provider, project);
     let definition = project.hir.definition("Parent").unwrap();
     let cfg = build_cfg(&project.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &caller, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &caller, None).unwrap();
     work(&provider, &facts, &caller)
 }
 
@@ -74,9 +74,9 @@ fn local_handle(
             }
             panic!("child call unreachable");
         };
-        let child = provider.call_evidence(&call, facts, caller).unwrap();
+        let child = provider.contexts().call_evidence(&call, facts, caller).unwrap();
         let cfg = build_cfg(&project.hir, call.callee()).unwrap();
-        let child_facts = provider.analyze_for_evidence(&cfg, &child, None).unwrap();
+        let child_facts = provider.contexts().analyze_for_evidence(&cfg, &child, None).unwrap();
         let port = project
             .hir
             .ports()
@@ -106,7 +106,7 @@ fn exact_child_parameter_checks_output_port_dimensions() {
         let main = main_evidence(&provider, &project);
         let definition = project.hir.definition("Parent").unwrap();
         let cfg = build_cfg(&project.hir, definition).unwrap();
-        let facts = provider.analyze_for_evidence(&cfg, &main, None).unwrap();
+        let facts = provider.contexts().analyze_for_evidence(&cfg, &main, None).unwrap();
         let outputs = provider.exact_component_outputs(&facts, &main);
         assert_eq!(outputs.certified().map(Vec::len), Some(2), "{dimension}: {outputs:?}");
     }
@@ -122,15 +122,15 @@ fn provider_binds_a_parameter_checked_local_output_to_its_exact_call() {
     let caller = main_evidence(&provider, &project);
     let definition = project.hir.definition("Parent").unwrap();
     let cfg = build_cfg(&project.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &caller, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &caller, None).unwrap();
     let site = provider.graph().calls_from(CallOwner::Definition(definition))[0];
     let CallReachability::Reachable(call) = provider.graph().reachable_call(site.id(), &facts)
     else {
         panic!("child call must be reachable");
     };
-    let child = provider.call_evidence(&call, &facts, &caller).unwrap();
+    let child = provider.contexts().call_evidence(&call, &facts, &caller).unwrap();
     let cfg = build_cfg(&project.hir, call.callee()).unwrap();
-    let child_facts = provider.analyze_for_evidence(&cfg, &child, None).unwrap();
+    let child_facts = provider.contexts().analyze_for_evidence(&cfg, &child, None).unwrap();
     let output = project
         .hir
         .ports()
@@ -209,7 +209,7 @@ fn wrong_caller_and_incomplete_caller_cannot_borrow_a_valid_local_handle() {
         else {
             panic!("child must be reachable")
         };
-        let wrong = provider.symbolic_root(facts.definition()).unwrap();
+        let wrong = provider.contexts().symbolic_root(facts.definition()).unwrap();
         let result = provider.apply_component_local_output(facts, &wrong, &call, &local);
         assert_blocked(&result, SummaryBlocker::WrongContext);
         let warm = provider.apply_component_local_output(facts, caller, &call, &local);
@@ -219,7 +219,8 @@ fn wrong_caller_and_incomplete_caller_cannot_borrow_a_valid_local_handle() {
         assert_eq!(provider.apply_component_first_output(facts, caller, &call, port), warm);
         let cfg = build_cfg(&project.hir, facts.definition()).unwrap();
         for (limit, pending_node) in [(0, 0), (1, 0), (4, 2)] {
-            let pending = provider.analyze_for_evidence(&cfg, caller, Some(limit)).unwrap();
+            let pending =
+                provider.contexts().analyze_for_evidence(&cfg, caller, Some(limit)).unwrap();
             let result = provider.apply_component_local_output(&pending, caller, &call, &local);
             let blocker = SummaryBlocker::LocalFacts(std::collections::BTreeSet::from([
                 FactBlocker::Budget(NodeId::new(pending_node)),
@@ -421,7 +422,7 @@ fn local_context_checks_precede_competing_selected_assignments() {
                 SummaryBlocker::WrongContext,
             );
         }
-        let wrong = provider.symbolic_root(facts.definition()).unwrap();
+        let wrong = provider.contexts().symbolic_root(facts.definition()).unwrap();
         assert_blocked(
             &provider.apply_component_first_output(facts, &wrong, &call, project.hir.ports()[0].id),
             SummaryBlocker::WrongContext,

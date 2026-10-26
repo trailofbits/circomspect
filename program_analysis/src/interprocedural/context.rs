@@ -225,7 +225,12 @@ impl AnalyzeEvidenceError {
     }
 }
 
-impl ProjectAnalysis<'_> {
+/// Context keys and source-bound evidence borrowed from one analysis session.
+pub struct ContextQueries<'session, 'hir> {
+    pub(super) analysis: &'session ProjectAnalysis<'hir>,
+}
+
+impl<'session, 'hir: 'session> ContextQueries<'session, 'hir> {
     /// Construct a key only when the definition and parameter count belong to this HIR.
     ///
     /// # Errors
@@ -241,10 +246,10 @@ impl ProjectAnalysis<'_> {
         }
         let arguments = arguments.into_iter().map(|value| self.canonicalize(value)).collect();
         Ok(CallContext {
-            project: self.hir().identity(),
+            project: self.analysis.hir().identity(),
             definition,
-            curve: self.curve().into(),
-            version: self.lifted_project().version,
+            curve: self.analysis.curve().into(),
+            version: self.analysis.lifted_project().version,
             arguments,
         })
     }
@@ -266,9 +271,9 @@ impl ProjectAnalysis<'_> {
     /// # Errors
     /// Returns a blocker for a different project, curve, version, definition, or arity.
     pub fn check_context(&self, context: &CallContext) -> Result<(), SummaryBlocker> {
-        if context.project != self.hir().identity()
-            || context.curve != self.curve().into()
-            || context.version != self.lifted_project().version
+        if context.project != self.analysis.hir().identity()
+            || context.curve != self.analysis.curve().into()
+            || context.version != self.analysis.lifted_project().version
         {
             return Err(SummaryBlocker::WrongContext);
         }
@@ -306,10 +311,10 @@ impl ProjectAnalysis<'_> {
     ) -> Result<ContextEvidence, SummaryBlocker> {
         let site = call.site();
         let CallOwner::Main(index) = site.owner else { return Err(SummaryBlocker::ForeignCall) };
-        if self.graph().site(site.id()) != Some(site) {
+        if self.analysis.graph().site(site.id()) != Some(site) {
             return Err(SummaryBlocker::ForeignCall);
         }
-        let main = self.hir().mains().get(index).ok_or(SummaryBlocker::ForeignCall)?;
+        let main = self.analysis.hir().mains().get(index).ok_or(SummaryBlocker::ForeignCall)?;
         if site.target != main.target || site.span != main.span {
             return Err(SummaryBlocker::ForeignCall);
         }
@@ -332,12 +337,14 @@ impl ProjectAnalysis<'_> {
         facts: &AnalysisFacts<'_>,
         caller: &ContextEvidence,
     ) -> Result<ContextEvidence, SummaryBlocker> {
-        if self.hir().identity() != facts.hir().identity() || self.curve() != facts.curve() {
+        if self.analysis.hir().identity() != facts.hir().identity()
+            || self.analysis.curve() != facts.curve()
+        {
             return Err(SummaryBlocker::ForeignCall);
         }
         self.check_facts_for_evidence(facts, caller)?;
         let context = self.call_context(call, facts)?;
-        self.check_call_execution_scope(facts, caller)?;
+        self.analysis.check_call_execution_scope(facts, caller)?;
         self.extend_call_evidence(call.site(), context, caller)
     }
 
@@ -356,9 +363,9 @@ impl ProjectAnalysis<'_> {
         caller: &ContextEvidence,
     ) -> Result<ContextEvidence, SummaryBlocker> {
         self.check_facts_for_evidence(facts, caller)?;
-        let site = self.graph().site(site).ok_or(SummaryBlocker::ForeignCall)?;
-        let context = self.exact_site_context(site, facts)?;
-        self.check_call_execution_scope(facts, caller)?;
+        let site = self.analysis.graph().site(site).ok_or(SummaryBlocker::ForeignCall)?;
+        let context = self.analysis.exact_site_context(site, facts)?;
+        self.analysis.check_call_execution_scope(facts, caller)?;
         self.extend_call_evidence(site, context, caller)
     }
 
@@ -382,9 +389,9 @@ impl ProjectAnalysis<'_> {
         facts: &AnalysisFacts<'_>,
     ) -> Result<CallContext, SummaryBlocker> {
         let site = call.site();
-        if self.hir().identity() != facts.hir().identity()
-            || self.curve() != facts.curve()
-            || self.graph().site(site.id()) != Some(site)
+        if self.analysis.hir().identity() != facts.hir().identity()
+            || self.analysis.curve() != facts.curve()
+            || self.analysis.graph().site(site.id()) != Some(site)
         {
             return Err(SummaryBlocker::ForeignCall);
         }
@@ -401,7 +408,7 @@ impl ProjectAnalysis<'_> {
             Ok(false) => return Err(SummaryBlocker::ForeignCall),
             Err(blockers) => return Err(SummaryBlocker::LocalFacts(blockers)),
         }
-        let Some(expr) = self.hir().expression(expression) else {
+        let Some(expr) = self.analysis.hir().expression(expression) else {
             return Err(SummaryBlocker::ForeignCall);
         };
         let (ExprKind::Call { arguments, .. } | ExprKind::AnonymousComponent { arguments, .. }) =
@@ -484,7 +491,7 @@ impl ProjectAnalysis<'_> {
         step: CallPathSite,
         previous: Option<DefinitionRef>,
     ) -> Result<DefinitionRef, SummaryBlocker> {
-        let site = self.graph().site(step.site).ok_or(SummaryBlocker::ForeignCall)?;
+        let site = self.analysis.graph().site(step.site).ok_or(SummaryBlocker::ForeignCall)?;
         if CallPathSite::from_site(site)? != step {
             return Err(SummaryBlocker::ForeignCall);
         }
@@ -500,12 +507,15 @@ impl ProjectAnalysis<'_> {
     ///
     /// # Errors
     /// Returns a blocker for invalid scope or unavailable facts, or a located shape error.
-    pub fn analyze_for_evidence<'b>(
-        &'b self,
-        cfg: &'b DefinitionCfg,
+    pub fn analyze_for_evidence<'facts>(
+        &self,
+        cfg: &'facts DefinitionCfg,
         evidence: &ContextEvidence,
         budget: Option<usize>,
-    ) -> Result<AnalysisFacts<'b>, AnalyzeEvidenceError> {
+    ) -> Result<AnalysisFacts<'facts>, AnalyzeEvidenceError>
+    where
+        'session: 'facts,
+    {
         self.check_evidence(evidence).map_err(AnalyzeEvidenceError::Blocked)?;
         if cfg.definition() != evidence.context.definition {
             return Err(AnalyzeEvidenceError::Blocked(SummaryBlocker::WrongContext));
@@ -515,6 +525,7 @@ impl ProjectAnalysis<'_> {
             .ok_or(AnalyzeEvidenceError::Blocked(SummaryBlocker::ForeignDefinition))?;
         let seeds = evidence.context.scalar_seeds(parameters);
         let mut facts = self
+            .analysis
             .refined_facts(evidence.context(), &seeds, budget)
             .map_err(AnalyzeEvidenceError::Blocked)?;
         if let Some(failure) = self.invalid_value_use(parameters, evidence.context(), &facts) {
@@ -534,8 +545,8 @@ impl ProjectAnalysis<'_> {
         evidence: &ContextEvidence,
     ) -> Result<(), SummaryBlocker> {
         self.check_evidence(evidence)?;
-        if facts.hir().identity() != self.hir().identity()
-            || facts.curve() != self.curve()
+        if facts.hir().identity() != self.analysis.hir().identity()
+            || facts.curve() != self.analysis.curve()
             || facts.definition() != evidence.context.definition
             || !facts.matches_evidence(evidence)
         {
@@ -581,7 +592,7 @@ impl ProjectAnalysis<'_> {
         }
         *remaining -= 1;
         let expression_node =
-            self.hir().expression(expression).ok_or(SummaryBlocker::ForeignCall)?;
+            self.analysis.hir().expression(expression).ok_or(SummaryBlocker::ForeignCall)?;
         if let ExprKind::Array(items) = &expression_node.kind {
             let mut values = Vec::with_capacity(items.len());
             for item in items {
@@ -590,8 +601,9 @@ impl ProjectAnalysis<'_> {
             return Ok(ArgumentValue::Array(values));
         }
         let Some(facts) = facts else {
-            let value = exact_compile_time(self.hir(), self.field_context(), expression)
-                .ok_or(SummaryBlocker::UnprovenArgument(expression))?;
+            let value =
+                exact_compile_time(self.analysis.hir(), self.analysis.field_context(), expression)
+                    .ok_or(SummaryBlocker::UnprovenArgument(expression))?;
             return Ok(ArgumentValue::Scalar(value));
         };
         let range = facts.range(expression);
@@ -607,23 +619,25 @@ impl ProjectAnalysis<'_> {
         self.parameters(definition).map(<[SymbolId]>::len)
     }
 
-    fn parameters(&self, definition: DefinitionRef) -> Option<&[SymbolId]> {
+    fn parameters(&self, definition: DefinitionRef) -> Option<&'session [SymbolId]> {
         match definition {
             DefinitionRef::Function(id) => {
-                self.hir().function(id).map(|item| item.parameters.as_slice())
+                self.analysis.hir().function(id).map(|item| item.parameters.as_slice())
             }
             DefinitionRef::Template(id) => {
-                self.hir().template(id).map(|item| item.parameters.as_slice())
+                self.analysis.hir().template(id).map(|item| item.parameters.as_slice())
             }
-            DefinitionRef::Bus(id) => self.hir().bus(id).map(|item| item.parameters.as_slice()),
+            DefinitionRef::Bus(id) => {
+                self.analysis.hir().bus(id).map(|item| item.parameters.as_slice())
+            }
         }
     }
 
     fn canonicalize(&self, value: ArgumentValue) -> ArgumentValue {
         match value {
-            ArgumentValue::Scalar(value) => {
-                ArgumentValue::Scalar(self.field_context().canonical(value.as_bigint().clone()))
-            }
+            ArgumentValue::Scalar(value) => ArgumentValue::Scalar(
+                self.analysis.field_context().canonical(value.as_bigint().clone()),
+            ),
             ArgumentValue::Array(items) => ArgumentValue::Array(
                 items.into_iter().map(|item| self.canonicalize(item)).collect(),
             ),
@@ -647,6 +661,33 @@ mod tests {
     };
 
     #[test]
+    fn temporary_context_views_preserve_parameter_borrows() {
+        let source = "template T(n){}";
+        let policy = VersionPolicy::new(Version::new(2, 2, 3));
+        let id = parser::frontend::SourceId::new(0);
+        let loaded = parser::frontend::LoadedProject {
+            policy,
+            diagnostics: Vec::new(),
+            files: vec![parser::frontend::SourceFile {
+                id,
+                path: "context-view.circom".into(),
+                text: source.into(),
+                outcome: parser::frontend::parse_source(id, source, policy),
+            }],
+        };
+        let project = lift_project(&loaded);
+        let analysis = ProjectAnalysis::build(&project, Curve::Bn254).unwrap();
+        let definition = project.hir.definition("T").unwrap();
+        let first = analysis.contexts().parameters(definition).unwrap();
+        let second = {
+            let queries = analysis.contexts();
+            queries.parameters(definition).unwrap()
+        };
+        assert_eq!(first.len(), 1);
+        assert_eq!(second, first);
+    }
+
+    #[test]
     fn parameter_lookup_keeps_definition_kind_and_project_identity() {
         let directory = std::env::temp_dir().join(format!(
             "circomspect-parameter-lookup-{}-{:?}",
@@ -666,10 +707,13 @@ mod tests {
         let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         for (name, count) in [("F", 2), ("T", 3), ("B", 1)] {
             let definition = lifted.hir.definition(name).unwrap();
-            assert_eq!(provider.parameter_count(definition), Some(count));
-            assert_eq!(provider.parameters(definition).unwrap().len(), count);
-            assert_eq!(provider.parameter_count(foreign.hir.definition(name).unwrap()), None);
-            assert_eq!(provider.parameters(foreign.hir.definition(name).unwrap()), None);
+            assert_eq!(provider.contexts().parameter_count(definition), Some(count));
+            assert_eq!(provider.contexts().parameters(definition).unwrap().len(), count);
+            assert_eq!(
+                provider.contexts().parameter_count(foreign.hir.definition(name).unwrap()),
+                None
+            );
+            assert_eq!(provider.contexts().parameters(foreign.hir.definition(name).unwrap()), None);
         }
     }
 
@@ -697,12 +741,13 @@ mod tests {
         else {
             panic!("main call")
         };
-        let evidence = provider.main_evidence(&call).unwrap();
+        let evidence = provider.contexts().main_evidence(&call).unwrap();
         let cfg = build_cfg(provider.hir(), DefinitionRef::Template(template)).unwrap();
-        let symbolic = provider.symbolic_root(DefinitionRef::Template(template)).unwrap();
-        let wrong = provider.analyze_for_evidence(&cfg, &symbolic, None).unwrap();
+        let symbolic =
+            provider.contexts().symbolic_root(DefinitionRef::Template(template)).unwrap();
+        let wrong = provider.contexts().analyze_for_evidence(&cfg, &symbolic, None).unwrap();
         assert_eq!(
-            provider.check_facts_for_evidence(&wrong, &evidence),
+            provider.contexts().check_facts_for_evidence(&wrong, &evidence),
             Err(SummaryBlocker::WrongContext)
         );
     }
@@ -730,7 +775,7 @@ mod tests {
         else {
             panic!("main call")
         };
-        let evidence = provider.main_evidence(&call).unwrap();
+        let evidence = provider.contexts().main_evidence(&call).unwrap();
         assert_eq!(
             evidence.context().arguments(),
             [ArgumentValue::Array(vec![
@@ -739,7 +784,7 @@ mod tests {
             ])]
         );
         let cfg = build_cfg(provider.hir(), definition).unwrap();
-        let error = provider.analyze_for_evidence(&cfg, &evidence, None).err().unwrap();
+        let error = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).err().unwrap();
         let super::AnalyzeEvidenceError::InvalidAssignment { context, diagnostic } = error else {
             panic!("aggregate assignment must emit a located error")
         };
@@ -775,6 +820,6 @@ mod tests {
         else {
             panic!("main call must be reachable")
         };
-        assert_eq!(provider.main_evidence(&call), Err(SummaryBlocker::ContextBudget));
+        assert_eq!(provider.contexts().main_evidence(&call), Err(SummaryBlocker::ContextBudget));
     }
 }

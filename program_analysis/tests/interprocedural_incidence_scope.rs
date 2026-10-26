@@ -48,9 +48,9 @@ fn scoped_port(source: &str, budget: Option<usize>, indices: &[usize]) -> Summar
     let lifted = fixture(source);
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("T").unwrap();
-    let evidence = provider.symbolic_root(definition).unwrap();
+    let evidence = provider.contexts().symbolic_root(definition).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, budget).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, budget).unwrap();
     provider.template_port_for_evidence(&facts, &evidence, port(&lifted, "x"), indices)
 }
 
@@ -98,10 +98,10 @@ fn scoped_port_queries_bind_provider_curve_context_and_definition() {
     let lifted = fixture(source);
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("T").unwrap();
-    let evidence = provider.symbolic_root(definition).unwrap();
-    let other = provider.symbolic_root(lifted.hir.definition("U").unwrap()).unwrap();
+    let evidence = provider.contexts().symbolic_root(definition).unwrap();
+    let other = provider.contexts().symbolic_root(lifted.hir.definition("U").unwrap()).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let x = port(&lifted, "x");
     let result = provider.template_port_for_evidence(&facts, &other, x, &[]);
     assert!(result.unavailable().unwrap().contains(&SummaryBlocker::WrongContext));
@@ -125,15 +125,15 @@ fn scoped_port_queries_keep_the_supplied_budget_after_cache_warmup() {
     let lifted = fixture("template T(){signal output x;x<--1;}");
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("T").unwrap();
-    let evidence = provider.symbolic_root(definition).unwrap();
+    let evidence = provider.contexts().symbolic_root(definition).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
     let x = port(&lifted, "x");
-    let complete = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let complete = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     assert!(provider
         .template_port_for_evidence(&complete, &evidence, x, &[])
         .certified()
         .is_some());
-    let exhausted = provider.analyze_for_evidence(&cfg, &evidence, Some(0)).unwrap();
+    let exhausted = provider.contexts().analyze_for_evidence(&cfg, &evidence, Some(0)).unwrap();
     assert!(provider
         .template_port_for_evidence(&exhausted, &evidence, x, &[])
         .unavailable()
@@ -158,22 +158,22 @@ fn scoped_port_queries_preserve_main_but_refuse_incoming_call_closure() {
     else {
         panic!("main call must be reachable")
     };
-    let evidence = provider.main_evidence(&main).unwrap();
+    let evidence = provider.contexts().main_evidence(&main).unwrap();
     let definition = evidence.context().definition();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let x = port(&lifted, "x");
     assert!(provider.template_port_for_evidence(&facts, &evidence, x, &[]).certified().is_some());
-    let symbolic = provider.symbolic_root(definition).unwrap();
+    let symbolic = provider.contexts().symbolic_root(definition).unwrap();
     assert!(provider.template_port_for_evidence(&facts, &symbolic, x, &[]).unavailable().is_some());
     let site = provider.graph().calls_from(CallOwner::Definition(definition))[0];
     let CallReachability::Reachable(call) = provider.graph().reachable_call(site.id(), &facts)
     else {
         panic!("child call must be reachable")
     };
-    let child = provider.call_evidence(&call, &facts, &evidence).unwrap();
+    let child = provider.contexts().call_evidence(&call, &facts, &evidence).unwrap();
     let cfg = build_cfg(&lifted.hir, child.context().definition()).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &child, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &child, None).unwrap();
     let result = provider.template_port_for_evidence(&facts, &child, port(&lifted, "y"), &[]);
     assert!(result.unavailable().unwrap().contains(&SummaryBlocker::UnsupportedContext));
 }

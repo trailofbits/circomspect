@@ -44,7 +44,7 @@ fn check_binding(
     caller: &ContextEvidence,
     repeated: bool,
 ) {
-    provider.check_facts_for_evidence(facts, caller).unwrap();
+    provider.contexts().check_facts_for_evidence(facts, caller).unwrap();
     let sites = provider.graph().calls_from(CallOwner::Definition(facts.definition()));
     let output = provider.hir().ports()[0].id;
     let component = provider.hir().components()[0].id;
@@ -62,7 +62,7 @@ fn check_binding(
         else {
             panic!("constructor must be reachable")
         };
-        let callee = provider.call_evidence(&call, facts, caller).unwrap();
+        let callee = provider.contexts().call_evidence(&call, facts, caller).unwrap();
         let handle = facts.component_output_handle(component, &[index], output, &[0]).unwrap();
         let direct = provider.apply_component_output(facts, caller, &call, &handle);
         let direct = direct.certified().unwrap_or_else(|| panic!("{direct:?}"));
@@ -113,10 +113,10 @@ fn repeated_source_and_selected_instance_uniqueness_are_distinct() {
     else {
         panic!("main must resolve")
     };
-    let caller = provider.main_evidence(&main).unwrap();
-    provider.check_evidence(&caller).unwrap();
+    let caller = provider.contexts().main_evidence(&main).unwrap();
+    provider.contexts().check_evidence(&caller).unwrap();
     let cfg = build_cfg(&project.hir, caller.context().definition()).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &caller, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &caller, None).unwrap();
     check_binding(&provider, &facts, &caller, false);
     let cfg = repeat_constructor_source(&cfg);
     let field = FieldContext::for_curve(Curve::Bn254);

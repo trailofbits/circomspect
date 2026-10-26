@@ -60,9 +60,9 @@ fn with_facts(action: impl FnOnce(&AnalysisFacts<'_>, &AccessPath, &[AccessPath]
     assert!(lifted.syntax_diagnostics.is_empty());
     let provider = ProjectAnalysis::build(&lifted, Curve::Goldilocks).unwrap();
     let definition = lifted.hir.definition("T").unwrap();
-    let evidence = provider.symbolic_root(definition).unwrap();
+    let evidence = provider.contexts().symbolic_root(definition).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let input = path(&lifted.hir, "in", None);
     let bits: Vec<_> = (0..64).map(|index| path(&lifted.hir, "bits", Some(index))).collect();
     action(&facts, &input, &bits);

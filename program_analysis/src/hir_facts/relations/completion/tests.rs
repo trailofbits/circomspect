@@ -25,9 +25,9 @@ fn with_facts(source: &str, run: impl FnOnce(&AnalysisFacts<'_>)) {
     ));
     let provider = ProjectAnalysis::build(&project, Curve::Goldilocks).unwrap();
     let definition = project.hir.definition("T").unwrap();
-    let evidence = provider.symbolic_root(definition).unwrap();
+    let evidence = provider.contexts().symbolic_root(definition).unwrap();
     let cfg = build_cfg(&project.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     run(&facts);
 }
 

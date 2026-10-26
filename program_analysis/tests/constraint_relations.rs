@@ -47,8 +47,9 @@ fn inspect_with_budget(
     let definition = lifted.hir.definition("T").unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
     let provider = ProjectAnalysis::build(&lifted, curve).unwrap();
-    let evidence = provider.symbolic_root(definition).unwrap();
-    let facts: AnalysisFacts<'_> = provider.analyze_for_evidence(&cfg, &evidence, budget).unwrap();
+    let evidence = provider.contexts().symbolic_root(definition).unwrap();
+    let facts: AnalysisFacts<'_> =
+        provider.contexts().analyze_for_evidence(&cfg, &evidence, budget).unwrap();
     facts.must_equation_for_witness(witness(&cfg))
 }
 
@@ -250,8 +251,8 @@ fn querying_independent_writes_in_either_order_keeps_the_same_certificates() {
     let definition = lifted.hir.definition("T").unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
-    let evidence = provider.symbolic_root(definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let evidence = provider.contexts().symbolic_root(definition).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let witnesses: Vec<_> = cfg
         .nodes()
         .iter()
@@ -266,7 +267,7 @@ fn querying_independent_writes_in_either_order_keeps_the_same_certificates() {
     let second = facts.must_equation_for_witness(witnesses[1]);
     assert!(first.certified().unwrap().is_some());
     assert!(second.certified().unwrap().is_some());
-    let reverse_facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let reverse_facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let second_first = reverse_facts.must_equation_for_witness(witnesses[1]);
     let first_second = reverse_facts.must_equation_for_witness(witnesses[0]);
     assert_eq!(first, first_second);

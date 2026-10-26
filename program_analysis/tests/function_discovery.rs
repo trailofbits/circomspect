@@ -57,8 +57,10 @@ fn contexts(provider: &ProjectAnalysis<'_>, function: FunctionId, count: u32) ->
     let mut contexts = Vec::new();
     for argument in 0..count {
         let value = ArgumentValue::Scalar(field.canonical(argument.into()));
-        let context =
-            provider.context_for(DefinitionRef::Function(function), vec![value.clone()]).unwrap();
+        let context = provider
+            .contexts()
+            .context_for(DefinitionRef::Function(function), vec![value.clone()])
+            .unwrap();
         assert_eq!(context.arguments(), [value]);
         assert_eq!(context.definition(), DefinitionRef::Function(function));
         contexts.push(context);
@@ -165,7 +167,8 @@ fn return_and_effect_queries_keep_their_distinct_entry_error_order() {
     let lifted = fixture("function F(n){return n;}");
     let foreign = fixture("function F(n){return n;}");
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
-    let context = provider.symbolic_context_for(lifted.hir.definition("F").unwrap()).unwrap();
+    let context =
+        provider.contexts().symbolic_context_for(lifted.hir.definition("F").unwrap()).unwrap();
     let function = function(&foreign, "F");
     assert_eq!(
         provider.function(function, &context).unavailable(),

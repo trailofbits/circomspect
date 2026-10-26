@@ -43,7 +43,7 @@ fn run_case(source: &str, definition: &str, test: impl FnOnce(&RuleResult, &Sour
     let definition = lifted.hir.definition(definition).unwrap();
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let evidence = if lifted.hir.mains().is_empty() {
-        provider.symbolic_root(definition).unwrap()
+        provider.contexts().symbolic_root(definition).unwrap()
     } else {
         let site = provider.graph().calls_from(CallOwner::Main(0))[0];
         let CallReachability::Reachable(main) =
@@ -51,10 +51,10 @@ fn run_case(source: &str, definition: &str, test: impl FnOnce(&RuleResult, &Sour
         else {
             panic!("main must be reachable")
         };
-        provider.main_evidence(&main).unwrap()
+        provider.contexts().main_evidence(&main).unwrap()
     };
     let cfg = build_cfg(provider.hir(), definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let context = RuleContext::new(&facts, &provider, &evidence).unwrap();
     let results = run_registered(&context).unwrap();
     let sources = SourceMap::from_loaded(&loaded, &[loaded.files[0].id]).unwrap();

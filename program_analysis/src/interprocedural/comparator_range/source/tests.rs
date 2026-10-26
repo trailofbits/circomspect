@@ -21,9 +21,9 @@ fn comparator_port_expansion_preserves_exact_boundaries_and_handle_order() {
         let project = crate::test_fixtures::port_project(shape);
         let provider = ProjectAnalysis::build(&project, Curve::Goldilocks).unwrap();
         let definition = project.hir.definition("T").unwrap();
-        let evidence = provider.symbolic_root(definition).unwrap();
+        let evidence = provider.contexts().symbolic_root(definition).unwrap();
         let cfg = build_cfg(&project.hir, definition).unwrap();
-        let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+        let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
         let DefinitionRef::Template(template) = definition else { panic!("template T") };
         let ports = &project.hir.template(template).unwrap().ports;
 

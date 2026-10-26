@@ -46,7 +46,7 @@ impl ProjectAnalysis<'_> {
         facts: &AnalysisFacts<'_>,
         evidence: &ContextEvidence,
     ) -> Result<(), SummaryBlocker> {
-        self.check_facts_for_evidence(facts, evidence)?;
+        self.contexts().check_facts_for_evidence(facts, evidence)?;
         self.sources().validated_header(facts.definition())?;
         match facts.definition() {
             DefinitionRef::Function(_) => {}
@@ -94,8 +94,10 @@ impl ProjectAnalysis<'_> {
     ) -> Result<bool, SummaryBlocker> {
         let definition = DefinitionRef::Bus(id);
         let Ok(cfg) = build_cfg(self.hir(), definition) else { return Ok(false) };
-        let Ok(evidence) = self.symbolic_root(definition) else { return Ok(false) };
-        let Ok(facts) = self.analyze_for_evidence(&cfg, &evidence, None) else { return Ok(false) };
+        let Ok(evidence) = self.contexts().symbolic_root(definition) else { return Ok(false) };
+        let Ok(facts) = self.contexts().analyze_for_evidence(&cfg, &evidence, None) else {
+            return Ok(false);
+        };
         Ok(self.has_proven_failure(&facts, pending) || self.required_functions_fail(&facts)?)
     }
 
@@ -265,8 +267,8 @@ impl ProjectAnalysis<'_> {
         }
         // A call is evaluated before its still-untyped assignment consumes the return value.
         // This proves only required evaluation, not a valid assignment or usable call result.
-        let arguments = self.exact_call_arguments(arguments, facts).ok()?;
-        self.context_for(definition, arguments).ok()
+        let arguments = self.contexts().exact_call_arguments(arguments, facts).ok()?;
+        self.contexts().context_for(definition, arguments).ok()
     }
 
     fn proven_zero(expression: ExprId, facts: &AnalysisFacts<'_>) -> bool {
@@ -496,8 +498,10 @@ impl ProjectAnalysis<'_> {
         }
         let definition = DefinitionRef::Bus(*id);
         let Ok(cfg) = build_cfg(self.hir(), definition) else { return true };
-        let Ok(evidence) = self.symbolic_root(definition) else { return true };
-        let Ok(facts) = self.analyze_for_evidence(&cfg, &evidence, None) else { return true };
+        let Ok(evidence) = self.contexts().symbolic_root(definition) else { return true };
+        let Ok(facts) = self.contexts().analyze_for_evidence(&cfg, &evidence, None) else {
+            return true;
+        };
         let field = FieldContext::for_curve(self.curve().clone());
         for id in cfg.nodes() {
             let Some(node) = cfg.node(*id) else { return true };

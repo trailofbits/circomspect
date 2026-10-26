@@ -62,7 +62,7 @@ fn main_evidence(provider: &ProjectAnalysis<'_>, hir: &HirProject) -> ContextEvi
     else {
         panic!("main must be reachable")
     };
-    provider.main_evidence(&call).unwrap()
+    provider.contexts().main_evidence(&call).unwrap()
 }
 
 fn inspect(
@@ -75,14 +75,14 @@ fn inspect(
     let provider = ProjectAnalysis::build(&lifted, curve).unwrap();
     let evidence = main_evidence(&provider, &lifted.hir);
     let cfg = build_cfg(&lifted.hir, evidence.context().definition()).unwrap();
-    let complete = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let complete = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let input = complete.port_handle(port(&lifted.hir, "in"), &[]).unwrap();
     let mut bits = Vec::with_capacity(width);
     for index in 0..width {
         bits.push(complete.port_handle(port(&lifted.hir, "out"), &[index]).unwrap());
     }
     let facts = if let Some(budget) = budget {
-        provider.analyze_for_evidence(&cfg, &evidence, Some(budget)).unwrap()
+        provider.contexts().analyze_for_evidence(&cfg, &evidence, Some(budget)).unwrap()
     } else {
         complete
     };
@@ -187,7 +187,7 @@ fn checked_handles_enforce_context_curve_project_and_bounds() {
     let gold = ProjectAnalysis::build(&lifted, Curve::Goldilocks).unwrap();
     let evidence = main_evidence(&gold, &lifted.hir);
     let cfg = build_cfg(&lifted.hir, evidence.context().definition()).unwrap();
-    let facts = gold.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let facts = gold.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let input_port = port(&lifted.hir, "in");
     let output_port = port(&lifted.hir, "out");
     let input = facts.port_handle(input_port, &[]).unwrap();
@@ -199,17 +199,20 @@ fn checked_handles_enforce_context_curve_project_and_bounds() {
     let context = RuleContext::new(&facts, &gold, &evidence).unwrap();
     let bn = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let bn_evidence = main_evidence(&bn, &lifted.hir);
-    let bn_facts = bn.analyze_for_evidence(&cfg, &bn_evidence, None).unwrap();
+    let bn_facts = bn.contexts().analyze_for_evidence(&cfg, &bn_evidence, None).unwrap();
     let bn_input = bn_facts.port_handle(input_port, &[]).unwrap();
-    let different_context = gold.symbolic_root(lifted.hir.definition("Bits").unwrap()).unwrap();
-    let symbolic = gold.analyze_for_evidence(&cfg, &different_context, None).unwrap();
+    let different_context =
+        gold.contexts().symbolic_root(lifted.hir.definition("Bits").unwrap()).unwrap();
+    let symbolic = gold.contexts().analyze_for_evidence(&cfg, &different_context, None).unwrap();
     let symbolic_input = symbolic.port_handle(input_port, &[]).unwrap();
     let foreign = fixture(&source(3, ""));
     let foreign_provider = ProjectAnalysis::build(&foreign, Curve::Goldilocks).unwrap();
     let foreign_evidence = main_evidence(&foreign_provider, &foreign.hir);
     let foreign_cfg = build_cfg(&foreign.hir, foreign_evidence.context().definition()).unwrap();
-    let foreign_facts =
-        foreign_provider.analyze_for_evidence(&foreign_cfg, &foreign_evidence, None).unwrap();
+    let foreign_facts = foreign_provider
+        .contexts()
+        .analyze_for_evidence(&foreign_cfg, &foreign_evidence, None)
+        .unwrap();
     let foreign_input = foreign_facts.port_handle(port(&foreign.hir, "in"), &[]).unwrap();
     for candidate in [&bn_input, &symbolic_input, &foreign_input] {
         let result = context.template_bit_ambiguity_handles(candidate, &bits);
@@ -229,16 +232,17 @@ fn checked_models_refuse_called_and_symbolic_parameter_scopes() {
     let provider = ProjectAnalysis::build(&lifted, Curve::Goldilocks).unwrap();
     let parent = main_evidence(&provider, &lifted.hir);
     let parent_cfg = build_cfg(&lifted.hir, parent.context().definition()).unwrap();
-    let parent_facts = provider.analyze_for_evidence(&parent_cfg, &parent, None).unwrap();
+    let parent_facts =
+        provider.contexts().analyze_for_evidence(&parent_cfg, &parent, None).unwrap();
     let site = provider.graph().calls_from(CallOwner::Definition(parent.context().definition()))[0];
     let CallReachability::Reachable(call) =
         provider.graph().reachable_call(site.id(), &parent_facts)
     else {
         panic!("child must be reachable")
     };
-    let child = provider.call_evidence(&call, &parent_facts, &parent).unwrap();
+    let child = provider.contexts().call_evidence(&call, &parent_facts, &parent).unwrap();
     let child_cfg = build_cfg(&lifted.hir, child.context().definition()).unwrap();
-    let child_facts = provider.analyze_for_evidence(&child_cfg, &child, None).unwrap();
+    let child_facts = provider.contexts().analyze_for_evidence(&child_cfg, &child, None).unwrap();
     let input = child_facts.port_handle(port(&lifted.hir, "in"), &[]).unwrap();
     let bit = child_facts.port_handle(port(&lifted.hir, "out"), &[0]).unwrap();
     let context = RuleContext::new(&child_facts, &provider, &child).unwrap();
@@ -248,9 +252,9 @@ fn checked_models_refuse_called_and_symbolic_parameter_scopes() {
     let symbolic = fixture("template Bits(n){signal input in;signal output out[3];}");
     let provider = ProjectAnalysis::build(&symbolic, Curve::Goldilocks).unwrap();
     let definition = symbolic.hir.definition("Bits").unwrap();
-    let evidence = provider.symbolic_root(definition).unwrap();
+    let evidence = provider.contexts().symbolic_root(definition).unwrap();
     let cfg = build_cfg(&symbolic.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let input = facts.port_handle(port(&symbolic.hir, "in"), &[]).unwrap();
     let bit = facts.port_handle(port(&symbolic.hir, "out"), &[0]).unwrap();
     let context = RuleContext::new(&facts, &provider, &evidence).unwrap();

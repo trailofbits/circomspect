@@ -37,9 +37,9 @@ fn internal_incidence(source: &str, budget: Option<usize>) -> Option<Incidence> 
     let lifted = fixture(source);
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("T").unwrap();
-    let evidence = provider.symbolic_root(definition).unwrap();
+    let evidence = provider.contexts().symbolic_root(definition).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, budget).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, budget).unwrap();
     let symbol = lifted.hir.symbols().iter().find(|symbol| symbol.name == "s").unwrap();
     let path = AccessPath {
         root: symbol.id,
@@ -116,9 +116,9 @@ fn main_and_called_contexts_keep_their_own_scope() {
     else {
         panic!("main call must be reachable")
     };
-    let root = provider.main_evidence(&main).unwrap();
+    let root = provider.contexts().main_evidence(&main).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &root, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &root, None).unwrap();
     let symbol = lifted.hir.symbols().iter().find(|symbol| symbol.name == "t").unwrap();
     let path = AccessPath {
         root: symbol.id,
@@ -130,7 +130,7 @@ fn main_and_called_contexts_keep_their_own_scope() {
     };
     let result = provider.template_internal_signal_incidence(&facts, &root, &path);
     assert_eq!(result.certified(), Some(&Incidence::Zero));
-    let symbolic = provider.symbolic_root(definition).unwrap();
+    let symbolic = provider.contexts().symbolic_root(definition).unwrap();
     let mismatched = provider.template_internal_signal_incidence(&facts, &symbolic, &path);
     assert!(mismatched.certified().is_none());
 
@@ -139,9 +139,9 @@ fn main_and_called_contexts_keep_their_own_scope() {
     else {
         panic!("child call must be reachable")
     };
-    let child = provider.call_evidence(&call, &facts, &root).unwrap();
+    let child = provider.contexts().call_evidence(&call, &facts, &root).unwrap();
     let cfg = build_cfg(&lifted.hir, child.context().definition()).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &child, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &child, None).unwrap();
     let symbol = lifted.hir.symbols().iter().find(|symbol| symbol.name == "s").unwrap();
     let path = AccessPath { root: symbol.id, terminal: symbol.id, span: symbol.span, ..path };
     let result = provider.template_internal_signal_incidence(&facts, &child, &path);
@@ -164,9 +164,9 @@ fn internal_arrays_keep_element_context_and_failure_scope() {
         let lifted = fixture(&format!("template T(){{{body}}}"));
         let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let definition = lifted.hir.definition("T").unwrap();
-        let evidence = provider.symbolic_root(definition).unwrap();
+        let evidence = provider.contexts().symbolic_root(definition).unwrap();
         let cfg = build_cfg(&lifted.hir, definition).unwrap();
-        let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+        let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
         let path = facts
             .cfg()
             .nodes()

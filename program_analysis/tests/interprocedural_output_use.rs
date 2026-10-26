@@ -90,7 +90,7 @@ fn internal_use_at_option(
         panic!("Child must be a template")
     };
     let root = if lifted.hir.mains().is_empty() {
-        provider.symbolic_root(parent).unwrap()
+        provider.contexts().symbolic_root(parent).unwrap()
     } else {
         let site = provider.graph().calls_from(CallOwner::Main(0))[0];
         let CallReachability::Reachable(main) =
@@ -98,10 +98,10 @@ fn internal_use_at_option(
         else {
             panic!("main must resolve")
         };
-        provider.main_evidence(&main).unwrap()
+        provider.contexts().main_evidence(&main).unwrap()
     };
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &root, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &root, None).unwrap();
     let output = lifted
         .hir
         .template(child)
@@ -134,7 +134,7 @@ fn internal_use_at_option(
     let applied = provider.apply_component_output(&facts, &root, &call, &handle);
     let applied = applied.certified()?;
     let closure = if let Some(limit) = budget {
-        let pending = provider.analyze_for_evidence(&cfg, &root, Some(limit)).unwrap();
+        let pending = provider.contexts().analyze_for_evidence(&cfg, &root, Some(limit)).unwrap();
         provider.closed_project_output_uses(&pending, &root)
     } else {
         provider.closed_project_output_uses(&facts, &root)
@@ -232,10 +232,10 @@ fn symbolic_facts_cannot_borrow_a_concrete_main_output_use_proof() {
     else {
         panic!("main must resolve")
     };
-    let concrete = provider.main_evidence(&main).unwrap();
+    let concrete = provider.contexts().main_evidence(&main).unwrap();
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
-    let symbolic = provider.symbolic_root(parent).unwrap();
-    let symbolic_facts = provider.analyze_for_evidence(&cfg, &symbolic, None).unwrap();
+    let symbolic = provider.contexts().symbolic_root(parent).unwrap();
+    let symbolic_facts = provider.contexts().analyze_for_evidence(&cfg, &symbolic, None).unwrap();
     let result = provider.closed_project_output_uses(&symbolic_facts, &concrete);
     assert!(result
         .unavailable()
@@ -589,8 +589,8 @@ fn a_symbolic_indirect_child_cannot_borrow_main_output_use() {
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
-    let root = provider.symbolic_root(parent).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &root, None).unwrap();
+    let root = provider.contexts().symbolic_root(parent).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &root, None).unwrap();
     assert!(provider.closed_project_output_uses(&facts, &root).certified().is_none());
 }
 
@@ -704,9 +704,9 @@ fn an_exported_main_output_is_an_environment_read() {
     else {
         panic!("main must resolve")
     };
-    let root = provider.main_evidence(&main).unwrap();
+    let root = provider.contexts().main_evidence(&main).unwrap();
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &root, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &root, None).unwrap();
     let port = lifted.hir.template(template).unwrap().ports[0];
     let handle = facts.port_handle(port, &[]).unwrap();
     let result = provider.exported_main_output_use(&facts, &root, &handle);
@@ -725,9 +725,9 @@ fn a_main_input_cannot_be_mislabeled_as_an_exported_output() {
     else {
         panic!("main must resolve")
     };
-    let root = provider.main_evidence(&main).unwrap();
+    let root = provider.contexts().main_evidence(&main).unwrap();
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &root, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &root, None).unwrap();
     let port = lifted.hir.template(template).unwrap().ports[0];
     let handle = facts.port_handle(port, &[]).unwrap();
     assert!(provider.exported_main_output_use(&facts, &root, &handle).certified().is_none());
@@ -745,9 +745,9 @@ fn an_exact_exported_main_output_array_element_is_environment_read() {
     else {
         panic!("main must resolve")
     };
-    let root = provider.main_evidence(&main).unwrap();
+    let root = provider.contexts().main_evidence(&main).unwrap();
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &root, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &root, None).unwrap();
     let port = lifted.hir.template(template).unwrap().ports[0];
     let handle = facts.port_handle(port, &[1]).unwrap();
     let result = provider.exported_main_output_use(&facts, &root, &handle);

@@ -121,9 +121,11 @@ fn function_records() -> Vec<Value> {
         let definition = lifted.hir.definition(name).unwrap();
         let DefinitionRef::Function(function) = definition else { panic!("function {name}") };
         let context = if name == "Exact" {
-            provider.context_for(definition, vec![ArgumentValue::Scalar(field.canonical(5.into()))])
+            provider
+                .contexts()
+                .context_for(definition, vec![ArgumentValue::Scalar(field.canonical(5.into()))])
         } else {
-            provider.symbolic_context_for(definition)
+            provider.contexts().symbolic_context_for(definition)
         }
         .unwrap();
         let summary = provider.function(function, &context);
@@ -158,7 +160,7 @@ fn function_records() -> Vec<Value> {
     }
     let definition = lifted.hir.definition("Cycle").unwrap();
     let DefinitionRef::Function(function) = definition else { panic!("Cycle") };
-    let context = provider.symbolic_context_for(definition).unwrap();
+    let context = provider.contexts().symbolic_context_for(definition).unwrap();
     let summary = provider.function(function, &context);
     assert_eq!(summary.unavailable(), Some(&BTreeSet::from([SummaryBlocker::RecursiveCycle])));
     records.push(json!({
@@ -187,7 +189,7 @@ fn port_records() -> Vec<Value> {
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("T").unwrap();
     let DefinitionRef::Template(template) = definition else { panic!("template T") };
-    let context = provider.symbolic_context_for(definition).unwrap();
+    let context = provider.contexts().symbolic_context_for(definition).unwrap();
     let mut records = Vec::new();
     for port in &lifted.hir.template(template).unwrap().ports {
         let symbol = lifted.hir.port(*port).unwrap().symbol;
@@ -230,7 +232,7 @@ fn array_port_records() -> Vec<Value> {
     let definition = lifted.hir.definition("T").unwrap();
     let DefinitionRef::Template(template) = definition else { panic!("template T") };
     let port = lifted.hir.template(template).unwrap().ports[0];
-    let context = provider.symbolic_context_for(definition).unwrap();
+    let context = provider.contexts().symbolic_context_for(definition).unwrap();
     let mut records = Vec::new();
     for index in [0, 1] {
         let summary = provider.template_port_at(template, &context, port, &[index]);
@@ -254,10 +256,11 @@ fn context_records() -> Vec<Value> {
     let twin = ProjectAnalysis::build(&second, Curve::Bn254).unwrap();
     let gold = ProjectAnalysis::build(&first, Curve::Goldilocks).unwrap();
     let definition = first.hir.definition("F").unwrap();
-    let local = bn.symbolic_context_for(definition).unwrap();
-    let same = bn.symbolic_context_for(definition).unwrap();
-    let foreign = twin.symbolic_context_for(second.hir.definition("F").unwrap()).unwrap();
-    let other_curve = gold.symbolic_context_for(definition).unwrap();
+    let local = bn.contexts().symbolic_context_for(definition).unwrap();
+    let same = bn.contexts().symbolic_context_for(definition).unwrap();
+    let foreign =
+        twin.contexts().symbolic_context_for(second.hir.definition("F").unwrap()).unwrap();
+    let other_curve = gold.contexts().symbolic_context_for(definition).unwrap();
     let contexts = [&local, &same, &foreign, &other_curve];
     let mut equality = Vec::new();
     for left in contexts {
@@ -267,8 +270,8 @@ fn context_records() -> Vec<Value> {
         }
         equality.push(row);
     }
-    assert_eq!(bn.check_context(&foreign), Err(SummaryBlocker::WrongContext));
-    assert_eq!(bn.check_context(&other_curve), Err(SummaryBlocker::WrongContext));
+    assert_eq!(bn.contexts().check_context(&foreign), Err(SummaryBlocker::WrongContext));
+    assert_eq!(bn.contexts().check_context(&other_curve), Err(SummaryBlocker::WrongContext));
     assert_ne!(first.hir.identity(), second.hir.identity());
     vec![json!({
         "id": "context.identity", "slots": ["first", "first_again", "source_twin", "gold"],
@@ -278,15 +281,15 @@ fn context_records() -> Vec<Value> {
 
 fn child_evidence(provider: &ProjectAnalysis<'_>, name: &str) -> ContextEvidence {
     let definition = provider.hir().definition(name).unwrap();
-    let caller = provider.symbolic_root(definition).unwrap();
+    let caller = provider.contexts().symbolic_root(definition).unwrap();
     let cfg = build_cfg(provider.hir(), definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &caller, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &caller, None).unwrap();
     let site = provider.graph().calls_from(CallOwner::Definition(definition))[0];
     let CallReachability::Reachable(call) = provider.graph().reachable_call(site.id(), &facts)
     else {
         panic!("reachable child")
     };
-    provider.call_evidence(&call, &facts, &caller).unwrap()
+    provider.contexts().call_evidence(&call, &facts, &caller).unwrap()
 }
 
 fn ancestry_records() -> Vec<Value> {
@@ -299,8 +302,8 @@ fn ancestry_records() -> Vec<Value> {
     let left = child_evidence(&provider, "Left");
     let right = child_evidence(&provider, "Right");
     let cfg = build_cfg(&lifted.hir, left.context().definition()).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &left, None).unwrap();
-    let other_facts = provider.analyze_for_evidence(&cfg, &right, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &left, None).unwrap();
+    let other_facts = provider.contexts().analyze_for_evidence(&cfg, &right, None).unwrap();
     assert_eq!(
         RuleContext::new(&facts, &provider, &right).err(),
         Some(RuleContextError::MismatchedFacts(SummaryBlocker::WrongContext))

@@ -35,9 +35,9 @@ fn assignment_demands(source: &str, budget: Option<usize>) -> Vec<(String, Deman
     let lifted = lift_project(&loaded);
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("Check").unwrap();
-    let evidence = provider.symbolic_root(definition).unwrap();
+    let evidence = provider.contexts().symbolic_root(definition).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, budget).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, budget).unwrap();
     let context = RuleContext::new(&facts, &provider, &evidence).unwrap();
     let mut demands = Vec::new();
     for id in facts.cfg().nodes() {
@@ -183,9 +183,9 @@ fn assignment_query_requires_matching_node_and_source_path() {
     let lifted = lift_project(&loaded);
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("Check").unwrap();
-    let evidence = provider.symbolic_root(definition).unwrap();
+    let evidence = provider.contexts().symbolic_root(definition).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let context = RuleContext::new(&facts, &provider, &evidence).unwrap();
     let assignments: Vec<_> = facts
         .cfg()

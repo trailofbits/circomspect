@@ -58,11 +58,12 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
         if facts.curve() != summaries.curve() {
             return Err(RuleContextError::WrongCurve);
         }
-        summaries.check_evidence(evidence).map_err(RuleContextError::InvalidEvidence)?;
+        summaries.contexts().check_evidence(evidence).map_err(RuleContextError::InvalidEvidence)?;
         if facts.definition() != evidence.context().definition() {
             return Err(RuleContextError::WrongDefinition);
         }
         summaries
+            .contexts()
             .check_facts_for_evidence(facts, evidence)
             .map_err(RuleContextError::MismatchedFacts)?;
         Ok(Self { facts, summaries, evidence })

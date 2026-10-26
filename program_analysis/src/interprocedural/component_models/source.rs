@@ -32,7 +32,7 @@ impl ProjectAnalysis<'_> {
         let CallReachability::Reachable(call) = self.graph().reachable_call(site, facts) else {
             return Err(SummaryBlocker::ForeignCall);
         };
-        if self.call_evidence(&call, facts, applied.caller_evidence())?
+        if self.contexts().call_evidence(&call, facts, applied.caller_evidence())?
             != *applied.callee_evidence()
         {
             return Err(SummaryBlocker::WrongContext);

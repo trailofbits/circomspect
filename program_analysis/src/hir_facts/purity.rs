@@ -125,9 +125,9 @@ mod tests {
         let lifted = lift_project(&loaded);
         let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let definition = lifted.hir.definition("Check").unwrap();
-        let evidence = provider.symbolic_root(definition).unwrap();
+        let evidence = provider.contexts().symbolic_root(definition).unwrap();
         let cfg = build_cfg(&lifted.hir, definition).unwrap();
-        let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+        let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
         let SolveResult::Complete(_) = &facts.forward else {
             panic!("the loop safety regression needs complete forward facts")
         };

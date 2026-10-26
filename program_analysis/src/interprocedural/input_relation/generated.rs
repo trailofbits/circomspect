@@ -126,8 +126,8 @@ impl ProjectAnalysis<'_> {
     ) -> Result<ContextEvidence, SummaryBlocker> {
         let first = instance.outputs.first().ok_or(SummaryBlocker::UnsupportedContext)?;
         let caller = first.applied_port().caller_evidence();
-        self.check_facts_for_evidence(facts, caller)?;
-        self.check_facts_for_evidence(child, &instance.callee)?;
+        self.contexts().check_facts_for_evidence(facts, caller)?;
+        self.contexts().check_facts_for_evidence(child, &instance.callee)?;
         if certified(&facts.reachable_node(facts.cfg().exit()))? != &true {
             return Err(SummaryBlocker::UnsupportedContext);
         }

@@ -58,7 +58,7 @@ impl ProjectAnalysis<'_> {
         facts: &AnalysisFacts<'_>,
         evidence: &ContextEvidence,
     ) -> Result<(), SummaryBlocker> {
-        self.check_facts_for_evidence(facts, evidence)?;
+        self.contexts().check_facts_for_evidence(facts, evidence)?;
         let DefinitionRef::Template(_) = facts.definition() else {
             return Err(SummaryBlocker::WrongContext);
         };

@@ -342,7 +342,7 @@ impl ProjectAnalysis<'_> {
         main: &ContextEvidence,
         source: MainSourceScope<'_>,
     ) -> Result<(), SummaryBlocker> {
-        self.check_facts_for_evidence(facts, main)?;
+        self.contexts().check_facts_for_evidence(facts, main)?;
         let complete = match source {
             MainSourceScope::WholeProject => self.sources().source_complete(),
             MainSourceScope::ModelDefinitions => {

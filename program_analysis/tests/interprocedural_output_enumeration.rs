@@ -38,7 +38,7 @@ fn enumerated(source: &str) -> SummaryFact<Vec<EnumeratedComponentOutput>> {
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
     let root = if lifted.hir.mains().is_empty() {
-        provider.symbolic_root(parent).unwrap()
+        provider.contexts().symbolic_root(parent).unwrap()
     } else {
         let site = provider.graph().calls_from(CallOwner::Main(0))[0];
         let CallReachability::Reachable(main) =
@@ -46,10 +46,10 @@ fn enumerated(source: &str) -> SummaryFact<Vec<EnumeratedComponentOutput>> {
         else {
             panic!("main must be reachable")
         };
-        provider.main_evidence(&main).unwrap()
+        provider.contexts().main_evidence(&main).unwrap()
     };
     let cfg = build_cfg(provider.hir(), parent).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &root, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &root, None).unwrap();
     RuleContext::new(&facts, &provider, &root).unwrap().exact_component_outputs()
 }
 
@@ -153,9 +153,9 @@ fn unbound_child_input_enumerates_a_candidate_but_cannot_prove_project_unused() 
     else {
         panic!("main must be reachable")
     };
-    let root = provider.main_evidence(&main).unwrap();
+    let root = provider.contexts().main_evidence(&main).unwrap();
     let cfg = build_cfg(provider.hir(), parent).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &root, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &root, None).unwrap();
     let outputs = provider.exact_component_outputs(&facts, &root);
     let outputs = outputs.certified().unwrap();
     assert_eq!(outputs.len(), 1);
@@ -189,9 +189,9 @@ fn enumerated_outputs_retain_closed_project_use_provenance() {
     else {
         panic!("main must be reachable")
     };
-    let root = provider.main_evidence(&main).unwrap();
+    let root = provider.contexts().main_evidence(&main).unwrap();
     let cfg = build_cfg(provider.hir(), parent).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &root, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &root, None).unwrap();
     let result = provider.exact_component_outputs(&facts, &root);
     let outputs = result.certified().unwrap();
     let project_uses = provider.closed_project_output_uses(&facts, &root);

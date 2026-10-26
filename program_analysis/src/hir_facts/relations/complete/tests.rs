@@ -36,9 +36,9 @@ fn inspect(
     assert!(lifted.syntax_diagnostics.is_empty());
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("T").unwrap();
-    let evidence = provider.symbolic_root(definition).unwrap();
+    let evidence = provider.contexts().symbolic_root(definition).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, solver_budget).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, solver_budget).unwrap();
     let result = facts.generated_equation_sites(proof_budget);
     let Some(sites) = result.certified() else {
         return Err(result.unavailable().unwrap().clone());

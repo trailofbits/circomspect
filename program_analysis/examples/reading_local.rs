@@ -31,10 +31,13 @@ fn check(source: &str, operand: Operand) -> ExampleResult {
     let definition = project.hir.definition("T").ok_or("missing template T")?;
     let analysis = ProjectAnalysis::build(&project, Curve::Goldilocks)
         .map_err(|error| format!("call graph: {error:?}"))?;
-    let evidence =
-        analysis.symbolic_root(definition).map_err(|error| format!("root: {error:?}"))?;
+    let evidence = analysis
+        .contexts()
+        .symbolic_root(definition)
+        .map_err(|error| format!("root: {error:?}"))?;
     let cfg = build_cfg(&project.hir, definition).map_err(|error| format!("CFG: {error:?}"))?;
     let facts = analysis
+        .contexts()
         .analyze_for_evidence(&cfg, &evidence, None)
         .map_err(|error| format!("local facts: {error:?}"))?;
     let expression = project

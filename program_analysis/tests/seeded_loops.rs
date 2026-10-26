@@ -83,10 +83,10 @@ fn provider_cfg_source(source: &str) -> DefinitionCfg {
     else {
         panic!("main must be reachable");
     };
-    let evidence = provider.main_evidence(&call).unwrap();
+    let evidence = provider.contexts().main_evidence(&call).unwrap();
     let baseline = build_cfg(&lifted.hir, evidence.context().definition()).unwrap();
     assert_eq!(loop_nodes(&baseline), 1);
-    let facts = provider.analyze_for_evidence(&baseline, &evidence, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&baseline, &evidence, None).unwrap();
     let field = FieldContext::for_curve(Curve::Bn254);
     let Err(error) = analyze(&lifted.hir, facts.cfg(), &field, None) else {
         panic!("specialized graph cannot be reanalyzed without its scalar seeds");
@@ -117,9 +117,9 @@ fn symbolic_library_parameter_keeps_a_real_loop() {
     let lifted = fixture("template Loop(n){var sum=0;for(var i=0;i<n;i++){sum+=i;}}");
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("Loop").unwrap();
-    let evidence = provider.symbolic_root(definition).unwrap();
+    let evidence = provider.contexts().symbolic_root(definition).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     assert_eq!(loop_nodes(facts.cfg()), 1);
 }
 

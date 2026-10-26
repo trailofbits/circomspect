@@ -86,7 +86,7 @@ impl ProjectAnalysis<'_> {
         if context.definition() != DefinitionRef::Template(id) {
             return Err(SummaryBlocker::WrongContext);
         }
-        self.check_context(context)?;
+        self.contexts().check_context(context)?;
         if !template.ports.contains(&port) {
             return Err(SummaryBlocker::ForeignDefinition);
         }
@@ -263,13 +263,15 @@ impl ProjectAnalysis<'_> {
         if context.definition() != DefinitionRef::Template(id) {
             return Err(SummaryBlocker::WrongContext);
         }
-        self.check_context(context)?;
+        self.contexts().check_context(context)?;
         if template.custom || template.external {
             return Err(SummaryBlocker::ExternalSummary);
         }
         let parameters = context.scalar_seeds(&template.parameters);
         self.with_refined_facts(context, &parameters, |cfg, facts| {
-            if let Some(failure) = self.invalid_value_use(&template.parameters, context, facts) {
+            if let Some(failure) =
+                self.contexts().invalid_value_use(&template.parameters, context, facts)
+            {
                 return Err(failure.summary_blocker());
             }
 

@@ -68,7 +68,7 @@ fn query_source(source: &str, budget: Option<usize>) -> SummaryFact<Option<BitDe
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("Bits").unwrap();
     let evidence = if lifted.hir.mains().is_empty() {
-        provider.symbolic_root(definition).unwrap()
+        provider.contexts().symbolic_root(definition).unwrap()
     } else {
         let site = provider.graph().calls_from(CallOwner::Main(0))[0];
         let CallReachability::Reachable(call) =
@@ -76,10 +76,10 @@ fn query_source(source: &str, budget: Option<usize>) -> SummaryFact<Option<BitDe
         else {
             panic!("main must be reachable");
         };
-        provider.main_evidence(&call).unwrap()
+        provider.contexts().main_evidence(&call).unwrap()
     };
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, budget).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, budget).unwrap();
     let input = path(&lifted.hir, "in", None);
     let bits = [
         path(&lifted.hir, "bits", Some(0)),
@@ -113,9 +113,9 @@ fn custom_template_header_withholds_scoped_relation() {
     let lifted = fixture(&source);
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("Bits").unwrap();
-    let evidence = provider.symbolic_root(definition).unwrap();
+    let evidence = provider.contexts().symbolic_root(definition).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let input = path(&lifted.hir, "in", None);
     let bits = [path(&lifted.hir, "bits", Some(0))];
     let result = provider.template_bit_decomposition(&facts, &evidence, &input, &bits);
@@ -134,9 +134,9 @@ fn foreign_curve_and_project_cannot_rebind_a_scoped_relation() {
     let lifted = fixture(&source);
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("Bits").unwrap();
-    let evidence = provider.symbolic_root(definition).unwrap();
+    let evidence = provider.contexts().symbolic_root(definition).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let input = path(&lifted.hir, "in", None);
     let bits = [path(&lifted.hir, "bits", Some(0))];
 
@@ -156,10 +156,10 @@ fn evidence_from_another_definition_cannot_rebind_facts() {
     let lifted = fixture(&source);
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("Bits").unwrap();
-    let evidence = provider.symbolic_root(definition).unwrap();
+    let evidence = provider.contexts().symbolic_root(definition).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
-    let other = provider.symbolic_root(lifted.hir.definition("Other").unwrap()).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let other = provider.contexts().symbolic_root(lifted.hir.definition("Other").unwrap()).unwrap();
     let input = path(&lifted.hir, "in", None);
     let bits = [path(&lifted.hir, "bits", Some(0))];
     let result = provider.template_bit_decomposition(&facts, &other, &input, &bits);
@@ -179,9 +179,9 @@ fn called_scope_abstains_until_incoming_constraints_are_proved() {
     else {
         panic!("main must be reachable");
     };
-    let main = provider.main_evidence(&main_call).unwrap();
+    let main = provider.contexts().main_evidence(&main_call).unwrap();
     let main_cfg = build_cfg(&lifted.hir, main.context().definition()).unwrap();
-    let main_facts = provider.analyze_for_evidence(&main_cfg, &main, None).unwrap();
+    let main_facts = provider.contexts().analyze_for_evidence(&main_cfg, &main, None).unwrap();
     let child_site =
         provider.graph().calls_from(CallOwner::Definition(main.context().definition()))[0];
     let CallReachability::Reachable(child_call) =
@@ -189,9 +189,9 @@ fn called_scope_abstains_until_incoming_constraints_are_proved() {
     else {
         panic!("child must be reachable");
     };
-    let child = provider.call_evidence(&child_call, &main_facts, &main).unwrap();
+    let child = provider.contexts().call_evidence(&child_call, &main_facts, &main).unwrap();
     let child_cfg = build_cfg(&lifted.hir, child.context().definition()).unwrap();
-    let child_facts = provider.analyze_for_evidence(&child_cfg, &child, None).unwrap();
+    let child_facts = provider.contexts().analyze_for_evidence(&child_cfg, &child, None).unwrap();
     let input = path(&lifted.hir, "in", None);
     let bits = [
         path(&lifted.hir, "bits", Some(0)),

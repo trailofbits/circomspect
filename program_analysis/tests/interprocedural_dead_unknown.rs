@@ -29,9 +29,9 @@ fn validated(source: &str, budget: Option<usize>) -> Result<(), SummaryBlocker> 
     let lifted = lift_project(&loaded);
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("Check").unwrap();
-    let evidence = provider.symbolic_root(definition).unwrap();
+    let evidence = provider.contexts().symbolic_root(definition).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, budget).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, budget).unwrap();
     let context = RuleContext::new(&facts, &provider, &evidence).unwrap();
     context.validated_definition().map(|_| ())
 }

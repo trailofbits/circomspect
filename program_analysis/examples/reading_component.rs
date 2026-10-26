@@ -40,10 +40,12 @@ fn check(source: &str, expected: Expected) -> ExampleResult {
     else {
         return Err("main must be reachable".into());
     };
-    let evidence = analysis.main_evidence(&call).map_err(|error| format!("main: {error:?}"))?;
+    let evidence =
+        analysis.contexts().main_evidence(&call).map_err(|error| format!("main: {error:?}"))?;
     let cfg = build_cfg(&project.hir, evidence.context().definition())
         .map_err(|error| format!("CFG: {error:?}"))?;
     let facts = analysis
+        .contexts()
         .analyze_for_evidence(&cfg, &evidence, None)
         .map_err(|error| format!("local facts: {error:?}"))?;
     let outputs = analysis.exact_component_outputs(&facts, &evidence);

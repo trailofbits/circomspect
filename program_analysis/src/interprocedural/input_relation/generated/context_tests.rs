@@ -31,9 +31,9 @@ fn with_instance(
     assert!(project.syntax_diagnostics.is_empty(), "{:?}", project.syntax_diagnostics);
     let provider = ProjectAnalysis::build(&project, Curve::Goldilocks).unwrap();
     let definition = project.hir.definition("Parent").unwrap();
-    let caller = provider.symbolic_root(definition).unwrap();
+    let caller = provider.contexts().symbolic_root(definition).unwrap();
     let cfg = build_cfg(&project.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &caller, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &caller, None).unwrap();
     let site = provider.graph().calls_from(CallOwner::Definition(definition))[0];
     let CallReachability::Reachable(call) = provider.graph().reachable_call(site.id(), &facts)
     else {
@@ -82,7 +82,7 @@ fn generated_source_identity_precedes_unproved_component_bounds() {
             else {
                 panic!("second constructor must be reachable")
             };
-            let callee = provider.call_evidence(&call, facts, &caller).unwrap();
+            let callee = provider.contexts().call_evidence(&call, facts, &caller).unwrap();
             let (component, target, instantiation) =
                 provider.instantiated_component(facts, call.site().expression).unwrap();
             assert!(facts.component_bounds(component).is_err());
@@ -124,7 +124,8 @@ fn generated_context_rechecks_the_current_analysis_after_success() {
                 provider.generated_input_context(facts, child, &instance),
                 Ok(caller.clone())
             );
-            let pending = provider.analyze_for_evidence(facts.cfg(), caller, Some(0)).unwrap();
+            let pending =
+                provider.contexts().analyze_for_evidence(facts.cfg(), caller, Some(0)).unwrap();
             let blockers = pending.reachable_node(pending.cfg().exit()).into_result().unwrap_err();
             assert_eq!(
                 provider.generated_input_context(&pending, child, &instance),

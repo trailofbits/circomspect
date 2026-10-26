@@ -13,8 +13,7 @@ use parser::frontend::{AssignmentOperator, Span};
 use crate::hir_cfg::CfgNodeKind;
 use crate::hir_facts::{AnalysisFacts, FieldContext, Range};
 use crate::interprocedural::{
-    AnalyzeEvidenceError, ArgumentShape, ArgumentValue, CallContext, ProjectAnalysis,
-    SummaryBlocker,
+    AnalyzeEvidenceError, ArgumentShape, ArgumentValue, CallContext, ContextQueries, SummaryBlocker,
 };
 use crate::interprocedural::context::MAX_ARGUMENT_DEPTH;
 
@@ -98,7 +97,7 @@ struct ShapeValidator<'a, 'hir> {
     field: &'a FieldContext,
 }
 
-impl ProjectAnalysis<'_> {
+impl ContextQueries<'_, '_> {
     pub(super) fn invalid_value_use(
         &self,
         parameters: &[SymbolId],
@@ -108,7 +107,7 @@ impl ProjectAnalysis<'_> {
         let validator = ShapeValidator {
             arguments: parameters.iter().copied().zip(context.arguments()).collect(),
             facts,
-            field: self.field_context(),
+            field: self.analysis.field_context(),
         };
         for id in facts.cfg().nodes() {
             let Some(node) = facts.cfg().node(*id) else { continue };

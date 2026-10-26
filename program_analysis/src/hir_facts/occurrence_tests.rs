@@ -146,9 +146,9 @@ fn occurrence_slices_belong_to_each_ordinary_or_specialized_cfg() {
     else {
         panic!("main must be reachable");
     };
-    let evidence = provider.main_evidence(&call).unwrap();
+    let evidence = provider.contexts().main_evidence(&call).unwrap();
     let cfg = build_cfg(&project.hir, evidence.context().definition()).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     compare_occurrence_index(&project.hir, &cfg);
     compare_occurrence_index(&project.hir, facts.cfg());
     let expression = expression_at(&project.hir, source, "i+9");

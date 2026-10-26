@@ -35,8 +35,8 @@ fn with_scope(source: &str, test: impl FnOnce(&RuleContext<'_, '_, '_>)) {
     let definition = lifted.hir.definition("Check").unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
-    let evidence = provider.symbolic_root(definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let evidence = provider.contexts().symbolic_root(definition).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let context = RuleContext::new(&facts, &provider, &evidence).unwrap();
     test(&context);
 }
@@ -117,8 +117,8 @@ fn budget_limited_call_result_cannot_validate_a_partial_definition() {
     let definition = lifted.hir.definition("Check").unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
-    let evidence = provider.symbolic_root(definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, Some(1)).unwrap();
+    let evidence = provider.contexts().symbolic_root(definition).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, Some(1)).unwrap();
     let context = RuleContext::new(&facts, &provider, &evidence).unwrap();
     assert_eq!(context.validated_definition().err(), Some(SummaryBlocker::IncompleteDefinition));
 }
@@ -149,8 +149,8 @@ fn incomplete_included_library_does_not_invalidate_a_clean_definition() {
     let definition = lifted.hir.definition("Check").unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
-    let evidence = provider.symbolic_root(definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let evidence = provider.contexts().symbolic_root(definition).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let context = RuleContext::new(&facts, &provider, &evidence).unwrap();
     assert!(context.validated_header().is_ok());
     assert!(context.validated_definition().is_ok());

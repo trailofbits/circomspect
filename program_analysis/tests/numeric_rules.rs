@@ -48,8 +48,8 @@ fn inspect(source: &str, curve: Curve, definition: &str) -> (LoadedProject, Rule
     let definition = lifted.hir.definition(definition).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
     let summaries = ProjectAnalysis::build(&lifted, curve).unwrap();
-    let evidence = summaries.symbolic_root(definition).unwrap();
-    let facts = summaries.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let evidence = summaries.contexts().symbolic_root(definition).unwrap();
+    let facts = summaries.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let context = RuleContext::new(&facts, &summaries, &evidence).unwrap();
     let result = run_registered(&context).unwrap();
     (loaded, result)
@@ -76,9 +76,10 @@ fn inspect_call(
     let parent = lifted.hir.definition(parent).unwrap();
     let child = lifted.hir.definition(child).unwrap();
     let summaries = ProjectAnalysis::build(&lifted, curve).unwrap();
-    let parent_evidence = summaries.symbolic_root(parent).unwrap();
+    let parent_evidence = summaries.contexts().symbolic_root(parent).unwrap();
     let parent_cfg = build_cfg(&lifted.hir, parent).unwrap();
-    let parent_facts = summaries.analyze_for_evidence(&parent_cfg, &parent_evidence, None).unwrap();
+    let parent_facts =
+        summaries.contexts().analyze_for_evidence(&parent_cfg, &parent_evidence, None).unwrap();
     let site = summaries.graph().calls_from(CallOwner::Definition(parent))[0];
     let call = match summaries.graph().reachable_call(site.id(), &parent_facts) {
         CallReachability::Reachable(call) => call,
@@ -86,9 +87,10 @@ fn inspect_call(
         CallReachability::Unavailable(blocker) => panic!("child call blocked: {blocker:?}"),
     };
     assert_eq!(call.callee(), child);
-    let evidence = summaries.call_evidence(&call, &parent_facts, &parent_evidence).unwrap();
+    let evidence =
+        summaries.contexts().call_evidence(&call, &parent_facts, &parent_evidence).unwrap();
     let cfg = build_cfg(&lifted.hir, child).unwrap();
-    let facts = summaries.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let facts = summaries.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let context = RuleContext::new(&facts, &summaries, &evidence).unwrap();
     (loaded, run_registered(&context).unwrap())
 }
@@ -113,9 +115,9 @@ fn inspect_main(source: &str, curve: Curve) -> RuleResult {
     else {
         panic!("reachable main")
     };
-    let evidence = provider.main_evidence(&call).unwrap();
+    let evidence = provider.contexts().main_evidence(&call).unwrap();
     let cfg = build_cfg(&lifted.hir, evidence.context().definition()).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let context = RuleContext::new(&facts, &provider, &evidence).unwrap();
     run_registered(&context).unwrap()
 }
@@ -453,8 +455,8 @@ fn numeric_findings_obey_level_allow_and_root_filters() {
     let definition = lifted.hir.definition("T").unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
     let summaries = ProjectAnalysis::build(&lifted, Curve::Goldilocks).unwrap();
-    let evidence = summaries.symbolic_root(definition).unwrap();
-    let facts = summaries.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let evidence = summaries.contexts().symbolic_root(definition).unwrap();
+    let facts = summaries.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let context = RuleContext::new(&facts, &summaries, &evidence).unwrap();
     let result = run_registered(&context).unwrap();
     assert!(kinds(&result).contains(&RuleKind::BitwiseComplement));

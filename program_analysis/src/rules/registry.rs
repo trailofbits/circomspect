@@ -161,8 +161,8 @@ mod tests {
         let definition = lifted.hir.definition("Check").unwrap();
         let cfg = build_cfg(&lifted.hir, definition).unwrap();
         let summaries = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
-        let evidence = summaries.symbolic_root(definition).unwrap();
-        let facts = summaries.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+        let evidence = summaries.contexts().symbolic_root(definition).unwrap();
+        let facts = summaries.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
         let context = RuleContext::new(&facts, &summaries, &evidence).unwrap();
         let DefinitionRef::Template(id) = definition else { panic!("template definition") };
         test(&context, &summaries, lifted.hir.template(id).unwrap().name_span);
@@ -270,12 +270,13 @@ mod tests {
             };
             let field = FieldContext::for_curve(Curve::Bn254);
             let hypothetical = summaries
+                .contexts()
                 .context_for(
                     DefinitionRef::Template(definition),
                     vec![ArgumentValue::Scalar(field.canonical(2.into()))],
                 )
                 .unwrap();
-            assert!(summaries.check_context(&hypothetical).is_ok());
+            assert!(summaries.contexts().check_context(&hypothetical).is_ok());
             assert_ne!(&hypothetical, context.call_context());
             let rule = Returns {
                 finding: None,

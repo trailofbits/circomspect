@@ -152,9 +152,9 @@ fn inspect_indices_with_budget(
     assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
     let definition = lifted.hir.definition("Bits").unwrap();
     let provider = ProjectAnalysis::build(&lifted, curve).unwrap();
-    let evidence = provider.symbolic_root(definition).unwrap();
+    let evidence = provider.contexts().symbolic_root(definition).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, budget).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, budget).unwrap();
     let input = signal_path(&lifted.hir, "in", None);
     let bits: Vec<_> =
         indices.iter().map(|index| signal_path(&lifted.hir, "bits", Some(*index))).collect();

@@ -45,10 +45,12 @@ impl<'a, 'b, 'c, 'd> ScopeRunner<'a, 'b, 'c, 'd> {
         for site in self.summaries.graph().sites() {
             let CallOwner::Main(_) = site.owner else { continue };
             match self.summaries.graph().reachable_main_call(site.id(), self.summaries.hir()) {
-                CallReachability::Reachable(call) => match self.summaries.main_evidence(&call) {
-                    Ok(evidence) => self.pending.push_back(evidence),
-                    Err(reason) => self.source_blocked(site.span, &reason),
-                },
+                CallReachability::Reachable(call) => {
+                    match self.summaries.contexts().main_evidence(&call) {
+                        Ok(evidence) => self.pending.push_back(evidence),
+                        Err(reason) => self.source_blocked(site.span, &reason),
+                    }
+                }
                 CallReachability::Unavailable(_) => self
                     .diagnostics
                     .source_incomplete(site.span, "the main component could not be resolved"),
@@ -70,7 +72,7 @@ impl<'a, 'b, 'c, 'd> ScopeRunner<'a, 'b, 'c, 'd> {
             if self.reports.contains_key(&definition) {
                 continue;
             }
-            match self.summaries.symbolic_root(definition) {
+            match self.summaries.contexts().symbolic_root(definition) {
                 Ok(evidence) => self.pending.push_back(evidence),
                 Err(reason) => self.source_blocked(self.span(definition)?, &reason),
             }
@@ -103,7 +105,7 @@ impl<'a, 'b, 'c, 'd> ScopeRunner<'a, 'b, 'c, 'd> {
         let cfg = build_cfg(self.summaries.hir(), definition).map_err(|error| {
             ApplicationError::Invariant(format!("invalid control flow: {error:?}"))
         })?;
-        let facts = match self.summaries.analyze_for_evidence(&cfg, evidence, None) {
+        let facts = match self.summaries.contexts().analyze_for_evidence(&cfg, evidence, None) {
             Ok(facts) => facts,
             Err(error) => {
                 self.analysis_error(evidence, self.span(definition)?, error)?;
@@ -153,11 +155,12 @@ impl<'a, 'b, 'c, 'd> ScopeRunner<'a, 'b, 'c, 'd> {
             let child = match self.summaries.graph().reachable_call(site.id(), facts) {
                 CallReachability::Unreachable => continue,
                 CallReachability::Reachable(call) => {
-                    self.summaries.call_evidence(&call, facts, evidence)
+                    self.summaries.contexts().call_evidence(&call, facts, evidence)
                 }
-                CallReachability::Unavailable(CallBlocker::ProvisionalSite) => {
-                    self.summaries.refined_function_call_evidence(site.id(), facts, evidence)
-                }
+                CallReachability::Unavailable(CallBlocker::ProvisionalSite) => self
+                    .summaries
+                    .contexts()
+                    .refined_function_call_evidence(site.id(), facts, evidence),
                 CallReachability::Unavailable(_) => {
                     self.context_blocked(evidence, site.span, &SummaryBlocker::ExternalSummary)?;
                     continue;

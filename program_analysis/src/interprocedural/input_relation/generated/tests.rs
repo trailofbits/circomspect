@@ -42,10 +42,11 @@ fn inspect(binding: &str, dimension: &str) -> Result<Vec<GeneratedInputEquation>
     else {
         return Err(SummaryBlocker::ForeignCall);
     };
-    let caller = provider.main_evidence(&call)?;
+    let caller = provider.contexts().main_evidence(&call)?;
     let definition = project.hir.definition("Parent").unwrap();
     let cfg = build_cfg(&project.hir, definition).unwrap();
     let facts = provider
+        .contexts()
         .analyze_for_evidence(&cfg, &caller, None)
         .map_err(|_| SummaryBlocker::UnsupportedContext)?;
     let site = provider.graph().calls_from(CallOwner::Definition(definition))[0];
@@ -56,6 +57,7 @@ fn inspect(binding: &str, dimension: &str) -> Result<Vec<GeneratedInputEquation>
     let instance = provider.enumerate_call(&facts, &caller, &call, 4)?;
     let cfg = build_cfg(&project.hir, call.callee()).unwrap();
     let child = provider
+        .contexts()
         .analyze_for_evidence(&cfg, &instance.callee, None)
         .map_err(|_| SummaryBlocker::UnsupportedContext)?;
     let before = facts.no_possible_repeated_body_writes().certified().copied();
@@ -119,8 +121,8 @@ fn check_refusals(
         let mut budget = budget;
         assert!(provider.ready_generated_instance(facts, child, instance, &mut budget).is_err());
     }
-    let wrong = provider.symbolic_root(child.definition()).unwrap();
-    let wrong = provider.analyze_for_evidence(child.cfg(), &wrong, None).unwrap();
+    let wrong = provider.contexts().symbolic_root(child.definition()).unwrap();
+    let wrong = provider.contexts().analyze_for_evidence(child.cfg(), &wrong, None).unwrap();
     assert!(provider
         .ready_generated_instance(facts, &wrong, instance, &mut ProofBudget::default())
         .is_err());
@@ -130,7 +132,8 @@ fn check_refusals(
     assert!(provider
         .ready_generated_instance(facts, child, &other, &mut ProofBudget::default())
         .is_err());
-    let partial = provider.analyze_for_evidence(facts.cfg(), ready.caller(), Some(0)).unwrap();
+    let partial =
+        provider.contexts().analyze_for_evidence(facts.cfg(), ready.caller(), Some(0)).unwrap();
     assert!(provider
         .ready_generated_instance(&partial, child, instance, &mut ProofBudget::default())
         .is_err());
@@ -236,10 +239,10 @@ fn a_symbolic_input_index_retains_its_expression_blocker() {
     else {
         panic!("main must be reachable");
     };
-    let caller = provider.main_evidence(&call).unwrap();
+    let caller = provider.contexts().main_evidence(&call).unwrap();
     let definition = project.hir.definition("Parent").unwrap();
     let cfg = build_cfg(&project.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &caller, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &caller, None).unwrap();
     let site = provider.graph().calls_from(CallOwner::Definition(definition))[0];
     let CallReachability::Reachable(call) = provider.graph().reachable_call(site.id(), &facts)
     else {
@@ -247,7 +250,7 @@ fn a_symbolic_input_index_retains_its_expression_blocker() {
     };
     let instance = provider.enumerate_call(&facts, &caller, &call, 4).unwrap();
     let cfg = build_cfg(&project.hir, call.callee()).unwrap();
-    let child = provider.analyze_for_evidence(&cfg, &instance.callee, None).unwrap();
+    let child = provider.contexts().analyze_for_evidence(&cfg, &instance.callee, None).unwrap();
     let offset = source.find("values[x]").unwrap() + "values[".len();
     let expression = project
         .hir

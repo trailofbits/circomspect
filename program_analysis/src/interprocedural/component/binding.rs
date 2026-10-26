@@ -38,7 +38,7 @@ impl<'query, 'project> CheckedCallContext<'query, 'project> {
         caller: &'query ContextEvidence,
         call: &ReachableCall<'_>,
     ) -> Result<Self, SummaryBlocker> {
-        let callee = provider.call_evidence(call, facts, caller)?;
+        let callee = provider.contexts().call_evidence(call, facts, caller)?;
         Ok(Self::from_evidence(provider, facts, caller, call, callee))
     }
 
@@ -117,7 +117,7 @@ impl<'query, 'project> CheckedCallContext<'query, 'project> {
     }
 
     fn local_summary(&self, local: LocalOutputPort<'_, '_>) -> Result<PortSummary, SummaryBlocker> {
-        self.provider.check_facts_for_evidence(local.facts, &self.callee)?;
+        self.provider.contexts().check_facts_for_evidence(local.facts, &self.callee)?;
         if !local.handle.matches_context(self.callee.context()) {
             return Err(SummaryBlocker::WrongContext);
         }
@@ -268,7 +268,7 @@ impl ProjectAnalysis<'_> {
         call: &ReachableCall<'_>,
         handle: &AccessHandle,
     ) -> Result<AppliedComponentPort, SummaryBlocker> {
-        self.check_facts_for_evidence(facts, caller)?;
+        self.contexts().check_facts_for_evidence(facts, caller)?;
         let DefinitionRef::Template(template) = call.callee() else {
             return Err(SummaryBlocker::WrongInstance);
         };

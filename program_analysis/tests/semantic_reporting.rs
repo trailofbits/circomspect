@@ -52,17 +52,19 @@ fn reachable_array_argument_renders_t2000_with_exact_source_location() {
     else {
         panic!("main call must be reachable");
     };
-    let caller = provider.main_evidence(&main_call).unwrap();
-    let parent_facts = provider.analyze_for_evidence(&parent_cfg, &caller, None).unwrap();
+    let caller = provider.contexts().main_evidence(&main_call).unwrap();
+    let parent_facts =
+        provider.contexts().analyze_for_evidence(&parent_cfg, &caller, None).unwrap();
     let site = provider.graph().calls_from(CallOwner::Definition(parent))[0];
     let CallReachability::Reachable(call) =
         provider.graph().reachable_call(site.id(), &parent_facts)
     else {
         panic!("child call must be reachable");
     };
-    let evidence = provider.call_evidence(&call, &parent_facts, &caller).unwrap();
+    let evidence = provider.contexts().call_evidence(&call, &parent_facts, &caller).unwrap();
     let child_cfg = build_cfg(&lifted.hir, child).unwrap();
-    let error = provider.analyze_for_evidence(&child_cfg, &evidence, None).err().unwrap();
+    let error =
+        provider.contexts().analyze_for_evidence(&child_cfg, &evidence, None).err().unwrap();
     let AnalyzeEvidenceError::InvalidAssignment { diagnostic, .. } = error else {
         panic!("aggregate argument must invalidate the scalar write");
     };
@@ -273,9 +275,9 @@ fn concrete_parameter_index_error_uses_terminal_and_sarif_source_ranges() {
     else {
         panic!("main must be reachable")
     };
-    let evidence = provider.main_evidence(&call).unwrap();
+    let evidence = provider.contexts().main_evidence(&call).unwrap();
     let cfg = build_cfg(provider.hir(), evidence.context().definition()).unwrap();
-    let error = provider.analyze_for_evidence(&cfg, &evidence, None).err().unwrap();
+    let error = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).err().unwrap();
     let diagnostic = error.diagnostic().unwrap();
     assert_eq!(diagnostic.code, SemanticCode::InvalidArrayAccess);
     assert_eq!(&source[diagnostic.span.start()..diagnostic.span.end()], "n[1]");

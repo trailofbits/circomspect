@@ -62,9 +62,9 @@ fn provider_certifies_generated_equation_in_valid_template_scope() {
     let lifted = fixture(source);
     let definition = lifted.hir.definition("T").unwrap();
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
-    let evidence = provider.symbolic_root(definition).unwrap();
+    let evidence = provider.contexts().symbolic_root(definition).unwrap();
     let cfg = circomspect_program_analysis::hir_cfg::build_cfg(&lifted.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let result = provider
         .template_generated_equations(&facts, &evidence)
         .for_witness(first_witness(facts.cfg()));
@@ -82,10 +82,10 @@ fn provider_rejects_a_foreign_evidence_context() {
     let definition = lifted.hir.definition("T").unwrap();
     let other = lifted.hir.definition("U").unwrap();
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
-    let evidence = provider.symbolic_root(definition).unwrap();
-    let foreign = provider.symbolic_root(other).unwrap();
+    let evidence = provider.contexts().symbolic_root(definition).unwrap();
+    let foreign = provider.contexts().symbolic_root(other).unwrap();
     let cfg = circomspect_program_analysis::hir_cfg::build_cfg(&lifted.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let result =
         provider.template_generated_equations(&facts, &foreign).for_witness(first_witness(&cfg));
     assert!(result.unavailable().unwrap().contains(&SummaryBlocker::WrongContext));
@@ -105,13 +105,13 @@ fn nested_equation(constraint_rhs: &str) -> SummaryFact<Option<GeneratedEquation
     else {
         panic!("main template must be reachable");
     };
-    let evidence = provider.main_evidence(&call).unwrap();
+    let evidence = provider.contexts().main_evidence(&call).unwrap();
     let cfg = circomspect_program_analysis::hir_cfg::build_cfg(
         &lifted.hir,
         evidence.context().definition(),
     )
     .unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     provider.template_generated_equations(&facts, &evidence).for_witness(witness_for(
         facts.cfg(),
         &lifted.hir,
@@ -123,9 +123,9 @@ fn symbolic_equation(source: &str) -> SummaryFact<Option<GeneratedEquation>> {
     let lifted = fixture(source);
     let definition = lifted.hir.definition("T").unwrap();
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
-    let evidence = provider.symbolic_root(definition).unwrap();
+    let evidence = provider.contexts().symbolic_root(definition).unwrap();
     let cfg = circomspect_program_analysis::hir_cfg::build_cfg(&lifted.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     provider.template_generated_equations(&facts, &evidence).for_witness(witness_for(
         facts.cfg(),
         &lifted.hir,
@@ -325,9 +325,9 @@ fn provider_refuses_a_template_with_repeated_body_writes() {
     let lifted = fixture("template T(){signal output x;x<--1;x<--2;x===1;}");
     let definition = lifted.hir.definition("T").unwrap();
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
-    let evidence = provider.symbolic_root(definition).unwrap();
+    let evidence = provider.contexts().symbolic_root(definition).unwrap();
     let cfg = circomspect_program_analysis::hir_cfg::build_cfg(&lifted.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let result = provider
         .template_generated_equations(&facts, &evidence)
         .for_witness(first_witness(facts.cfg()));
@@ -339,9 +339,9 @@ fn incomplete_solver_cannot_release_a_provider_equation() {
     let lifted = fixture("template T(){signal output x;x<--1;x===1;}");
     let definition = lifted.hir.definition("T").unwrap();
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
-    let evidence = provider.symbolic_root(definition).unwrap();
+    let evidence = provider.contexts().symbolic_root(definition).unwrap();
     let cfg = circomspect_program_analysis::hir_cfg::build_cfg(&lifted.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, Some(0)).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, Some(0)).unwrap();
     let result = provider
         .template_generated_equations(&facts, &evidence)
         .for_witness(first_witness(facts.cfg()));
@@ -369,11 +369,11 @@ fn provider_refuses_called_context_until_incoming_constraints_are_known() {
     else {
         panic!("main template must be reachable");
     };
-    let root = provider.main_evidence(&root_call).unwrap();
+    let root = provider.contexts().main_evidence(&root_call).unwrap();
     let root_cfg =
         circomspect_program_analysis::hir_cfg::build_cfg(&lifted.hir, root.context().definition())
             .unwrap();
-    let root_facts = provider.analyze_for_evidence(&root_cfg, &root, None).unwrap();
+    let root_facts = provider.contexts().analyze_for_evidence(&root_cfg, &root, None).unwrap();
     let child_site =
         provider.graph().calls_from(CallOwner::Definition(root.context().definition()))[0];
     let CallReachability::Reachable(child_call) =
@@ -381,11 +381,11 @@ fn provider_refuses_called_context_until_incoming_constraints_are_known() {
     else {
         panic!("child template must be reachable");
     };
-    let child = provider.call_evidence(&child_call, &root_facts, &root).unwrap();
+    let child = provider.contexts().call_evidence(&child_call, &root_facts, &root).unwrap();
     let child_cfg =
         circomspect_program_analysis::hir_cfg::build_cfg(&lifted.hir, child.context().definition())
             .unwrap();
-    let child_facts = provider.analyze_for_evidence(&child_cfg, &child, None).unwrap();
+    let child_facts = provider.contexts().analyze_for_evidence(&child_cfg, &child, None).unwrap();
     let result = provider
         .template_generated_equations(&child_facts, &child)
         .for_witness(first_witness(child_facts.cfg()));
@@ -399,9 +399,9 @@ fn independent_equation(
     let lifted = fixture(source);
     let definition = lifted.hir.definition("T").unwrap();
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
-    let evidence = provider.symbolic_root(definition).unwrap();
+    let evidence = provider.contexts().symbolic_root(definition).unwrap();
     let cfg = circomspect_program_analysis::hir_cfg::build_cfg(&lifted.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, budget).ok()?;
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, budget).ok()?;
     let query = facts.cfg().nodes().iter().copied().find(|id| {
         let Some(node) = facts.cfg().node(*id) else { return false };
         let CfgNodeKind::Witness { target, .. } = &node.kind else { return false };
@@ -492,16 +492,16 @@ fn independent_equation_certificates_reject_provider_curve_and_evidence_mismatch
     let lifted = fixture(source);
     let definition = lifted.hir.definition("T").unwrap();
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
-    let root = provider.symbolic_root(definition).unwrap();
+    let root = provider.contexts().symbolic_root(definition).unwrap();
     let cfg = circomspect_program_analysis::hir_cfg::build_cfg(&lifted.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &root, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &root, None).unwrap();
     let site = provider.graph().calls_from(CallOwner::Main(0))[0];
     let CallReachability::Reachable(call) =
         provider.graph().reachable_main_call(site.id(), &lifted.hir)
     else {
         panic!("main")
     };
-    let main = provider.main_evidence(&call).unwrap();
+    let main = provider.contexts().main_evidence(&call).unwrap();
     let query = first_witness(facts.cfg());
     assert!(provider
         .template_generated_equations(&facts, &main)
@@ -704,9 +704,9 @@ fn equation_batch_keeps_each_witness_and_solver_scope_separate() {
     );
     let definition = lifted.hir.definition("T").unwrap();
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
-    let evidence = provider.symbolic_root(definition).unwrap();
+    let evidence = provider.contexts().symbolic_root(definition).unwrap();
     let cfg = circomspect_program_analysis::hir_cfg::build_cfg(&lifted.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let batch = provider.template_generated_equations(&facts, &evidence);
     let x = witness_for(facts.cfg(), &lifted.hir, "x");
     let y = witness_for(facts.cfg(), &lifted.hir, "y");
@@ -714,7 +714,7 @@ fn equation_batch_keeps_each_witness_and_solver_scope_separate() {
     assert!(batch.for_witness(y).certified().unwrap().is_none());
     assert!(batch.for_witness(cfg.entry()).certified().is_none());
     assert!(batch.for_witness(x).certified().unwrap().is_some());
-    let incomplete = provider.analyze_for_evidence(&cfg, &evidence, Some(0)).unwrap();
+    let incomplete = provider.contexts().analyze_for_evidence(&cfg, &evidence, Some(0)).unwrap();
     let blocked = provider.template_generated_equations(&incomplete, &evidence);
     assert!(blocked.for_witness(x).certified().is_none());
     assert!(blocked.for_witness(y).certified().is_none());

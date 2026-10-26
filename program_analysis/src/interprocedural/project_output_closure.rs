@@ -99,7 +99,7 @@ impl ProjectAnalysis<'_> {
         evidence: &ContextEvidence,
         closure: &mut Closure,
     ) -> Result<CompletedTemplate, SummaryBlocker> {
-        self.check_facts_for_evidence(facts, evidence)?;
+        self.contexts().check_facts_for_evidence(facts, evidence)?;
         self.sources().validated_definition(facts)?;
         self.check_warning_execution_scope(facts, evidence)?;
         self.check_complete_template_execution(facts.cfg(), facts)?;
@@ -149,15 +149,16 @@ impl ProjectAnalysis<'_> {
         }
         let cfg = build_cfg(self.hir(), DefinitionRef::Template(child))
             .map_err(|_| SummaryBlocker::IncompleteDefinition)?;
-        let child_facts = self.analyze_for_evidence(&cfg, &instance.callee, None).map_err(
-            |error| match error {
+        let child_facts = self
+            .contexts()
+            .analyze_for_evidence(&cfg, &instance.callee, None)
+            .map_err(|error| match error {
                 crate::interprocedural::AnalyzeEvidenceError::Blocked(blocker) => blocker,
                 crate::interprocedural::AnalyzeEvidenceError::InvalidAssignment { .. }
                 | crate::interprocedural::AnalyzeEvidenceError::InvalidValueUse { .. } => {
                     SummaryBlocker::IncompleteDefinition
                 }
-            },
-        )?;
+            })?;
         self.visit_scope(&child_facts, &instance.callee, closure)
     }
 
@@ -217,7 +218,7 @@ mod tests {
         let lifted = lift_project(&loaded);
         let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let definition = lifted.hir.definition("Main").unwrap();
-        let main = provider.symbolic_root(definition).unwrap();
+        let main = provider.contexts().symbolic_root(definition).unwrap();
         let mut closure = Closure::new(&main);
         for _ in 0..256 {
             assert!(closure.reserve(1).is_ok());

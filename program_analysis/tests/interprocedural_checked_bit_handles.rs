@@ -38,7 +38,7 @@ fn main_evidence(provider: &ProjectAnalysis<'_>, hir: &HirProject) -> ContextEvi
     else {
         panic!("main must be reachable")
     };
-    provider.main_evidence(&call).unwrap()
+    provider.contexts().main_evidence(&call).unwrap()
 }
 
 fn scoped(extra: &str) -> SummaryFact<Option<BitDecomposition>> {
@@ -60,7 +60,7 @@ fn scoped(extra: &str) -> SummaryFact<Option<BitDecomposition>> {
     let provider = ProjectAnalysis::build(&lifted, Curve::Goldilocks).unwrap();
     let evidence = main_evidence(&provider, &lifted.hir);
     let cfg = build_cfg(&lifted.hir, evidence.context().definition()).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let input = facts.port_handle(port(&lifted.hir, "in"), &[]).unwrap();
     let mut bits = Vec::new();
     for index in 0..3 {
@@ -104,11 +104,11 @@ fn a_checked_handle_from_another_curve_cannot_authorize_the_relation() {
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
     let gold = ProjectAnalysis::build(&lifted, Curve::Goldilocks).unwrap();
     let gold_evidence = main_evidence(&gold, &lifted.hir);
-    let gold_facts = gold.analyze_for_evidence(&cfg, &gold_evidence, None).unwrap();
+    let gold_facts = gold.contexts().analyze_for_evidence(&cfg, &gold_evidence, None).unwrap();
     let context = RuleContext::new(&gold_facts, &gold, &gold_evidence).unwrap();
     let bn = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let bn_evidence = main_evidence(&bn, &lifted.hir);
-    let bn_facts = bn.analyze_for_evidence(&cfg, &bn_evidence, None).unwrap();
+    let bn_facts = bn.contexts().analyze_for_evidence(&cfg, &bn_evidence, None).unwrap();
     let input = bn_facts.port_handle(port(&lifted.hir, "in"), &[]).unwrap();
     let bit = bn_facts.port_handle(port(&lifted.hir, "out"), &[0]).unwrap();
     let result = context.template_bit_decomposition_handles(&input, &[bit]);

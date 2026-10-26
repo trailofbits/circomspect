@@ -56,12 +56,13 @@ fn inspect_loaded(
         else {
             panic!("reachable main")
         };
-        provider.main_evidence(&call).unwrap()
+        provider.contexts().main_evidence(&call).unwrap()
     } else {
-        provider.symbolic_root(parent).unwrap()
+        provider.contexts().symbolic_root(parent).unwrap()
     };
     let parent_cfg = build_cfg(&lifted.hir, parent).unwrap();
-    let parent_facts = provider.analyze_for_evidence(&parent_cfg, &parent_evidence, None).unwrap();
+    let parent_facts =
+        provider.contexts().analyze_for_evidence(&parent_cfg, &parent_evidence, None).unwrap();
     let child = lifted.hir.definition("Quotient").unwrap();
     let site = provider
         .graph()
@@ -75,9 +76,9 @@ fn inspect_loaded(
     else {
         panic!("reachable child")
     };
-    let evidence = provider.call_evidence(&call, &parent_facts, &parent_evidence)?;
+    let evidence = provider.contexts().call_evidence(&call, &parent_facts, &parent_evidence)?;
     let cfg = build_cfg(&lifted.hir, child).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, budget).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, budget).unwrap();
     let context = RuleContext::new(&facts, &provider, &evidence).unwrap();
     Ok(run_registered(&context).unwrap())
 }

@@ -86,8 +86,8 @@ fn concrete_main_argument_selects_the_matching_branch_edge() {
         else {
             panic!("checked main call")
         };
-        let evidence = provider.main_evidence(&call).unwrap();
-        let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+        let evidence = provider.contexts().main_evidence(&call).unwrap();
+        let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
         let branch = cfg
             .nodes()
             .iter()

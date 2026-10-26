@@ -100,10 +100,10 @@ fn inspect_with(
     else {
         return None;
     };
-    let caller = provider.main_evidence(&call).ok()?;
+    let caller = provider.contexts().main_evidence(&call).ok()?;
     let definition = project.hir.definition("Parent").unwrap();
     let cfg = build_cfg(&project.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &caller, budget).ok()?;
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &caller, budget).ok()?;
     let convert = project.hir.definition("Convert").unwrap();
     let site = provider
         .graph()
@@ -114,9 +114,9 @@ fn inspect_with(
     else {
         return None;
     };
-    let callee = provider.call_evidence(&call, &facts, &caller).ok()?;
+    let callee = provider.contexts().call_evidence(&call, &facts, &caller).ok()?;
     let cfg = build_cfg(&project.hir, call.callee()).unwrap();
-    let child = provider.analyze_for_evidence(&cfg, &callee, None).ok()?;
+    let child = provider.contexts().analyze_for_evidence(&cfg, &callee, None).ok()?;
     let port = project
         .hir
         .ports()
@@ -378,18 +378,18 @@ fn checked_requests_reject_foreign_context_curve_project_and_input_bits() {
     else {
         panic!("main call")
     };
-    let caller = provider.main_evidence(&main_call).unwrap();
+    let caller = provider.contexts().main_evidence(&main_call).unwrap();
     let parent = project.hir.definition("Parent").unwrap();
     let cfg = build_cfg(&project.hir, parent).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &caller, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &caller, None).unwrap();
     let site = provider.graph().calls_from(CallOwner::Definition(parent))[0];
     let CallReachability::Reachable(call) = provider.graph().reachable_call(site.id(), &facts)
     else {
         panic!("child call")
     };
-    let callee = provider.call_evidence(&call, &facts, &caller).unwrap();
+    let callee = provider.contexts().call_evidence(&call, &facts, &caller).unwrap();
     let cfg = build_cfg(&project.hir, call.callee()).unwrap();
-    let child = provider.analyze_for_evidence(&cfg, &callee, None).unwrap();
+    let child = provider.contexts().analyze_for_evidence(&cfg, &callee, None).unwrap();
     let input_port = project.hir.ports()[0].id;
     let output_port = project.hir.ports()[1].id;
     let input = child.port_handle(input_port, &[]).unwrap();
@@ -422,9 +422,9 @@ fn checked_requests_reject_foreign_context_curve_project_and_input_bits() {
         .component_bit_ambiguity_handles(&facts, applied, &bit, std::slice::from_ref(&input))
         .unavailable()
         .is_some());
-    let symbolic = provider.symbolic_root(parent).unwrap();
+    let symbolic = provider.contexts().symbolic_root(parent).unwrap();
     let cfg = build_cfg(&project.hir, parent).unwrap();
-    let wrong = provider.analyze_for_evidence(&cfg, &symbolic, None).unwrap();
+    let wrong = provider.contexts().analyze_for_evidence(&cfg, &symbolic, None).unwrap();
     assert!(provider
         .component_bit_ambiguity_handles(&wrong, applied, &input, std::slice::from_ref(&bit))
         .unavailable()
@@ -437,9 +437,9 @@ fn checked_requests_reject_foreign_context_curve_project_and_input_bits() {
         let foreign = fixture(&text);
         let other = ProjectAnalysis::build(&foreign, curve).unwrap();
         let definition = foreign.hir.definition("Convert").unwrap();
-        let evidence = other.symbolic_root(definition).unwrap();
+        let evidence = other.contexts().symbolic_root(definition).unwrap();
         let cfg = build_cfg(&foreign.hir, definition).unwrap();
-        let foreign_facts = other.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+        let foreign_facts = other.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
         assert!(provider
             .component_bit_ambiguity_ports(&foreign_facts, applied, input_port, output_port)
             .unavailable()

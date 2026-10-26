@@ -39,20 +39,20 @@ fn main_evidence(provider: &ProjectAnalysis<'_>, project: &LiftedProject) -> Con
     else {
         panic!("main must resolve")
     };
-    provider.main_evidence(&call).unwrap()
+    provider.contexts().main_evidence(&call).unwrap()
 }
 
 fn middle_evidence(provider: &ProjectAnalysis<'_>, project: &LiftedProject) -> ContextEvidence {
     let main = main_evidence(provider, project);
     let parent = project.hir.definition("Parent").unwrap();
     let cfg = build_cfg(&project.hir, parent).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &main, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &main, None).unwrap();
     let site = provider.graph().calls_from(CallOwner::Definition(parent))[0];
     let CallReachability::Reachable(call) = provider.graph().reachable_call(site.id(), &facts)
     else {
         panic!("middle must be reachable")
     };
-    provider.call_evidence(&call, &facts, &main).unwrap()
+    provider.contexts().call_evidence(&call, &facts, &main).unwrap()
 }
 
 fn nested_uses(
@@ -64,7 +64,7 @@ fn nested_uses(
     let main = main_evidence(&provider, &project);
     let definition = project.hir.definition("Parent").unwrap();
     let cfg = build_cfg(&project.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &main, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &main, None).unwrap();
     provider.closed_project_output_uses(&facts, &main)
 }
 
@@ -129,7 +129,7 @@ fn one_loop_call_site_cannot_merge_distinct_array_instances() {
     let main = main_evidence(&provider, &project);
     let definition = project.hir.definition("Parent").unwrap();
     let cfg = build_cfg(&project.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &main, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &main, None).unwrap();
     let uses = provider.closed_project_output_uses(&facts, &main);
     assert!(uses.certified().is_none());
 }
@@ -312,7 +312,7 @@ fn the_combined_instance_and_output_budget_is_all_or_nothing() {
     let main = main_evidence(&provider, &complete);
     let definition = complete.hir.definition("Parent").unwrap();
     let cfg = build_cfg(&complete.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &main, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &main, None).unwrap();
     let result = provider.closed_project_output_uses(&facts, &main);
     assert_eq!(result.certified().map(Vec::len), Some(255), "{result:?}");
 
@@ -321,7 +321,7 @@ fn the_combined_instance_and_output_budget_is_all_or_nothing() {
     let main = main_evidence(&provider, &over);
     let definition = over.hir.definition("Parent").unwrap();
     let cfg = build_cfg(&over.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &main, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &main, None).unwrap();
     let result = provider.closed_project_output_uses(&facts, &main);
     assert!(result.unavailable().is_some_and(|reasons| {
         reasons
@@ -370,9 +370,9 @@ fn a_symbolic_library_parent_cannot_claim_nested_unused_output() {
     ));
     let provider = ProjectAnalysis::build(&project, Curve::Bn254).unwrap();
     let definition = project.hir.definition("Middle").unwrap();
-    let evidence = provider.symbolic_root(definition).unwrap();
+    let evidence = provider.contexts().symbolic_root(definition).unwrap();
     let cfg = build_cfg(&project.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let result = provider.closed_project_output_uses(&facts, &evidence);
     assert!(result.certified().is_none());
 }
@@ -390,7 +390,7 @@ fn foreign_project_facts_and_evidence_cannot_close_an_equal_source_project() {
     let main = main_evidence(&first_provider, &first);
     let definition = first.hir.definition("Parent").unwrap();
     let cfg = build_cfg(&first.hir, definition).unwrap();
-    let facts = first_provider.analyze_for_evidence(&cfg, &main, None).unwrap();
+    let facts = first_provider.contexts().analyze_for_evidence(&cfg, &main, None).unwrap();
     let result = second_provider.closed_project_output_uses(&facts, &main);
     assert!(result.unavailable().is_some_and(|reasons| {
         reasons
@@ -410,7 +410,7 @@ fn a_nested_known_output_read_survives_an_opaque_sibling() {
     let middle = middle_evidence(&provider, &project);
     let definition = project.hir.definition("Middle").unwrap();
     let cfg = build_cfg(&project.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &middle, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &middle, None).unwrap();
     let site = provider.graph().calls_from(CallOwner::Definition(definition))[0];
     let CallReachability::Reachable(call) = provider.graph().reachable_call(site.id(), &facts)
     else {

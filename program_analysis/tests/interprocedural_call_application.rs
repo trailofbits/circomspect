@@ -40,7 +40,7 @@ fn function_summary(source: &str, name: &str) -> SummaryFact<FunctionSummary> {
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition(name).unwrap();
     let DefinitionRef::Function(function) = definition else { panic!("function") };
-    let context = provider.symbolic_context_for(definition).unwrap();
+    let context = provider.contexts().symbolic_context_for(definition).unwrap();
     provider.function(function, &context)
 }
 
@@ -62,9 +62,9 @@ fn output_facts(source: &str, arguments: Option<&[i64]>, indices: &[usize]) -> O
             for argument in arguments {
                 values.push(ArgumentValue::Scalar(field.canonical((*argument).into())));
             }
-            provider.context_for(definition, values).unwrap()
+            provider.contexts().context_for(definition, values).unwrap()
         }
-        None => provider.symbolic_context_for(definition).unwrap(),
+        None => provider.contexts().symbolic_context_for(definition).unwrap(),
     };
     let port = lifted.hir.template(template).unwrap().ports[0];
     OutputFacts {
@@ -111,6 +111,7 @@ fn template_call_rhs_uses_the_exact_parameter_context() {
     let field = FieldContext::for_curve(Curve::Bn254);
     for value in [0, 1, 7, 1, 0] {
         let context = provider
+            .contexts()
             .context_for(definition, vec![ArgumentValue::Scalar(field.canonical(value.into()))])
             .unwrap();
         let facts = OutputFacts {
@@ -121,7 +122,7 @@ fn template_call_rhs_uses_the_exact_parameter_context() {
         assert_fixed_output(&facts, value + 1);
         assert_eq!(facts.witnesses.certified().unwrap().len(), 1);
     }
-    let context = provider.symbolic_context_for(definition).unwrap();
+    let context = provider.contexts().symbolic_context_for(definition).unwrap();
     let symbolic = provider.template_port(template, &context, output);
     assert!(symbolic.certified().and_then(PortSummary::fixed_value).is_none());
 }
@@ -223,7 +224,7 @@ fn specializing_a_return_value_preserves_callee_logging_effects() {
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("G").unwrap();
     let DefinitionRef::Function(function) = definition else { panic!("function G") };
-    let context = provider.symbolic_context_for(definition).unwrap();
+    let context = provider.contexts().symbolic_context_for(definition).unwrap();
     let effects = provider.function_effects(function, &context);
     assert!(effects.certified().unwrap().contains(FunctionEffect::Log));
     let summary = provider.function(function, &context);
@@ -244,8 +245,8 @@ fn resolved_calls_do_not_leave_a_spurious_incomplete_definition() {
         let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let definition = lifted.hir.definition("T").unwrap();
         let cfg = build_cfg(&lifted.hir, definition).unwrap();
-        let evidence = provider.symbolic_root(definition).unwrap();
-        let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+        let evidence = provider.contexts().symbolic_root(definition).unwrap();
+        let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
         let context = RuleContext::new(&facts, &provider, &evidence).unwrap();
         assert!(context.validated_definition().is_ok(), "assignment: x={value}");
     }

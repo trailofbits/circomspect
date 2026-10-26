@@ -51,7 +51,7 @@ fn definitely_invalid_templates_cannot_certify_ports_reads_or_witnesses() {
         let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let definition = lifted.hir.definition("T").unwrap();
         let DefinitionRef::Template(template) = definition else { panic!("template T") };
-        let context = provider.symbolic_context_for(definition).unwrap();
+        let context = provider.contexts().symbolic_context_for(definition).unwrap();
         let output = lifted.hir.template(template).unwrap().ports[0];
         let port = provider.template_port(template, &context, output);
         assert!(port.certified().is_none(), "{statement}: {port:?}");
@@ -70,7 +70,7 @@ fn invalid_bus_field_dimensions_block_unrelated_port_certificates() {
             let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
             let definition = lifted.hir.definition("T").unwrap();
             let DefinitionRef::Template(template) = definition else { panic!("template T") };
-            let context = provider.symbolic_context_for(definition).unwrap();
+            let context = provider.contexts().symbolic_context_for(definition).unwrap();
             let output = lifted.hir.template(template).unwrap().ports[0];
             assert!(provider.template_port(template, &context, output).certified().is_none());
         }
@@ -83,7 +83,7 @@ fn an_unused_invalid_bus_definition_preserves_independent_template_facts() {
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("T").unwrap();
     let DefinitionRef::Template(template) = definition else { panic!("template T") };
-    let context = provider.symbolic_context_for(definition).unwrap();
+    let context = provider.contexts().symbolic_context_for(definition).unwrap();
     let output = lifted.hir.template(template).unwrap().ports[0];
     let facts = provider.template_port(template, &context, output);
     assert_eq!(facts.certified().unwrap().incidence(), Incidence::Must);
@@ -101,7 +101,7 @@ fn custom_and_external_templates_never_supply_trusted_port_effects() {
         let DefinitionRef::Template(template) = definition else { panic!("template T") };
         let declaration = lifted.hir.template(template).unwrap();
         assert!(declaration.custom || declaration.external);
-        let context = provider.symbolic_context_for(definition).unwrap();
+        let context = provider.contexts().symbolic_context_for(definition).unwrap();
         let output = declaration.ports[0];
         assert!(provider.template_port(template, &context, output).certified().is_none());
         assert!(provider.template_port_read(template, &context, output).certified().is_none());
@@ -122,7 +122,7 @@ fn literal_dimensions_use_canonical_field_values() {
             let provider = ProjectAnalysis::build(&lifted, curve.clone()).unwrap();
             let definition = lifted.hir.definition("T").unwrap();
             let DefinitionRef::Template(template) = definition else { panic!("template T") };
-            let context = provider.symbolic_context_for(definition).unwrap();
+            let context = provider.contexts().symbolic_context_for(definition).unwrap();
             let output = lifted.hir.template(template).unwrap().ports[0];
             let result = provider.template_port(template, &context, output);
             assert_eq!(result.certified().is_none(), invalid, "{size}: {result:?}");
@@ -141,6 +141,7 @@ fn declaration_validity_uses_the_selected_curve_and_parameter_context() {
         let field = FieldContext::for_curve(curve);
         for size in [-1, 0, 1, 2] {
             let context = provider
+                .contexts()
                 .context_for(definition, vec![ArgumentValue::Scalar(field.canonical(size.into()))])
                 .unwrap();
             let port = provider.template_port(template, &context, output);
@@ -171,7 +172,7 @@ fn valid_execution_and_unrelated_opacity_preserve_independent_port_facts() {
         let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let definition = lifted.hir.definition("T").unwrap();
         let DefinitionRef::Template(template) = definition else { panic!("template T") };
-        let context = provider.symbolic_context_for(definition).unwrap();
+        let context = provider.contexts().symbolic_context_for(definition).unwrap();
         let output = lifted.hir.template(template).unwrap().ports[0];
         let port = provider.template_port(template, &context, output);
         assert_eq!(
@@ -193,7 +194,7 @@ fn unproved_access_bounds_do_not_invalidate_independent_port_facts() {
         let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let definition = lifted.hir.definition("T").unwrap();
         let DefinitionRef::Template(template) = definition else { panic!("template T") };
-        let context = provider.symbolic_context_for(definition).unwrap();
+        let context = provider.contexts().symbolic_context_for(definition).unwrap();
         let output = lifted.hir.template(template).unwrap().ports[0];
         let summary = provider.template_port(template, &context, output);
         assert_eq!(

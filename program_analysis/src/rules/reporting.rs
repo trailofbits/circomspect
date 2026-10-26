@@ -278,8 +278,8 @@ mod tests {
         let definition = lifted.hir.definition("Check").unwrap();
         let cfg = build_cfg(&lifted.hir, definition).unwrap();
         let summaries = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
-        let evidence = summaries.symbolic_root(definition).unwrap();
-        let facts = summaries.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+        let evidence = summaries.contexts().symbolic_root(definition).unwrap();
+        let facts = summaries.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
         let context = RuleContext::new(&facts, &summaries, &evidence).unwrap();
         let primary = Span::checked(loaded.files[0].id, 22..30, &loaded.files[0].text).unwrap();
         let finding = context.finding(

@@ -45,9 +45,9 @@ fn with_query<T>(
     else {
         panic!("main");
     };
-    let evidence = provider.main_evidence(&call).unwrap();
+    let evidence = provider.contexts().main_evidence(&call).unwrap();
     let cfg = build_cfg(&project.hir, evidence.context().definition()).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let outputs = provider.exact_component_outputs(&facts, &evidence);
     let applied = outputs.certified().unwrap()[0].applied_port();
     let other = ProjectAnalysis::build(&project, Curve::Bn254).unwrap();
@@ -64,8 +64,9 @@ fn comparator_models_keep_scope_curve_project_and_budget_identity() {
         assert_eq!(result[0].upper_bound().to_string(), "4");
         assert_eq!(result[0].applied_port(), applied);
         assert!(!result[0].constraint_origins().is_empty());
-        let symbolic = provider.symbolic_root(facts.definition()).unwrap();
-        let symbolic = provider.analyze_for_evidence(facts.cfg(), &symbolic, None).unwrap();
+        let symbolic = provider.contexts().symbolic_root(facts.definition()).unwrap();
+        let symbolic =
+            provider.contexts().analyze_for_evidence(facts.cfg(), &symbolic, None).unwrap();
         assert!(provider.component_comparator_range(&symbolic, applied).certified().is_none());
         assert!(other.component_comparator_range(facts, applied).certified().is_none());
         for limit in 0..64 {
@@ -159,8 +160,9 @@ fn array_outputs_are_refused_before_any_comparator_proof_work() {
             provider.comparator_range_result(facts, applied, &mut budget),
             Err(crate::interprocedural::SummaryBlocker::UnsupportedContext)
         );
-        let symbolic = provider.symbolic_root(facts.definition()).unwrap();
-        let symbolic = provider.analyze_for_evidence(facts.cfg(), &symbolic, None).unwrap();
+        let symbolic = provider.contexts().symbolic_root(facts.definition()).unwrap();
+        let symbolic =
+            provider.contexts().analyze_for_evidence(facts.cfg(), &symbolic, None).unwrap();
         let result = provider.component_comparator_range(&symbolic, applied);
         assert!(result
             .unavailable()

@@ -146,7 +146,7 @@ impl ProjectAnalysis<'_> {
         instance: &EnumeratedComponentInstance,
         completion: ChildCompletion,
     ) -> Result<(CompletedChild, ReadyInstanceAtUse), SummaryBlocker> {
-        self.check_facts_for_evidence(facts, caller)?;
+        self.contexts().check_facts_for_evidence(facts, caller)?;
         let (completed, ready) = match completion {
             ChildCompletion::ProjectOutput(completed) => {
                 (completed, ready_enumerated_instance(facts, instance)?)
@@ -192,7 +192,7 @@ impl ProjectAnalysis<'_> {
         instance: &EnumeratedComponentInstance,
         completed: CompletedTemplate,
     ) -> Result<CompletedChild, SummaryBlocker> {
-        self.check_facts_for_evidence(facts, caller)?;
+        self.contexts().check_facts_for_evidence(facts, caller)?;
         if completed.evidence != instance.callee {
             return Err(SummaryBlocker::WrongContext);
         }
@@ -204,7 +204,7 @@ impl ProjectAnalysis<'_> {
         else {
             return Err(SummaryBlocker::ForeignCall);
         };
-        if self.call_evidence(&call, facts, caller)? != completed.evidence {
+        if self.contexts().call_evidence(&call, facts, caller)? != completed.evidence {
             return Err(SummaryBlocker::WrongContext);
         }
         let DefinitionRef::Template(_) = completed.evidence.context().definition() else {
@@ -280,7 +280,7 @@ impl ProjectAnalysis<'_> {
         children: &[CompletedChild],
         ports: Option<&ValidatedComponentPorts>,
     ) -> Result<CompletedTemplate, SummaryBlocker> {
-        self.check_facts_for_evidence(facts, evidence)?;
+        self.contexts().check_facts_for_evidence(facts, evidence)?;
         self.sources().validated_definition(facts)?;
         self.check_warning_execution_scope(facts, evidence)?;
         if certified(&facts.reachable_node(facts.cfg().exit()))? != &true {
@@ -381,7 +381,7 @@ impl ProjectAnalysis<'_> {
             if calls.len() >= MAX_CONSTRUCTORS {
                 return Err(SummaryBlocker::ContextBudget);
             }
-            let child = self.call_evidence(&call, facts, evidence)?;
+            let child = self.contexts().call_evidence(&call, facts, evidence)?;
             self.check_leaf_constructor(&child)?;
             calls.insert(site.expression.ok_or(SummaryBlocker::ForeignCall)?);
         }
@@ -402,9 +402,10 @@ impl ProjectAnalysis<'_> {
         let cfg = build_cfg(self.hir(), evidence.context().definition()).map_err(|error| {
             SummaryBlocker::LocalAnalysis(format!("leaf constructor analysis: {error:?}"))
         })?;
-        let facts = self.analyze_for_evidence(&cfg, evidence, None).map_err(|error| {
-            SummaryBlocker::LocalAnalysis(format!("leaf constructor analysis: {error:?}"))
-        })?;
+        let facts =
+            self.contexts().analyze_for_evidence(&cfg, evidence, None).map_err(|error| {
+                SummaryBlocker::LocalAnalysis(format!("leaf constructor analysis: {error:?}"))
+            })?;
         self.check_warning_execution_scope(&facts, evidence)?;
         self.sources().validated_definition(&facts)?;
         if certified(&facts.reachable_node(facts.cfg().exit()))? != &true {

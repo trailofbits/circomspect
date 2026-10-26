@@ -264,7 +264,7 @@ impl ProjectAnalysis<'_> {
         if context.definition() != DefinitionRef::Function(id) {
             return SummaryFact::blocked(SummaryBlocker::WrongContext);
         }
-        if let Err(blocker) = self.check_context(context) {
+        if let Err(blocker) = self.contexts().check_context(context) {
             return SummaryFact::blocked(blocker);
         }
         self.caches.returns.get_or_compute(context.clone(), || {
@@ -357,10 +357,12 @@ impl ProjectAnalysis<'_> {
         if context.definition() != DefinitionRef::Function(id) {
             return Err(SummaryBlocker::WrongContext);
         }
-        self.check_context(context)?;
+        self.contexts().check_context(context)?;
         let parameters = context.scalar_seeds(&function.parameters);
         self.with_refined_facts(context, &parameters, |cfg, facts| {
-            if let Some(failure) = self.invalid_value_use(&function.parameters, context, facts) {
+            if let Some(failure) =
+                self.contexts().invalid_value_use(&function.parameters, context, facts)
+            {
                 return Err(failure.summary_blocker());
             }
 
@@ -394,7 +396,7 @@ impl ProjectAnalysis<'_> {
             else {
                 return Err(SummaryBlocker::UnsupportedCallForm);
             };
-            let callee = self.call_context(&call, facts)?;
+            let callee = self.contexts().call_context(&call, facts)?;
             let arguments = Self::argument_dependencies(function, arguments, facts);
             calls.insert(expression, ReturnCall { callee, arguments });
         }

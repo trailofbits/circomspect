@@ -39,8 +39,8 @@ fn status_with_diagnostics(source: &str) -> (Fact<BodyWriteStatus>, usize) {
     let definition = lifted.hir.definition("T").unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
-    let evidence = provider.symbolic_root(definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let evidence = provider.contexts().symbolic_root(definition).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let target = cfg
         .nodes()
         .iter()
@@ -70,7 +70,7 @@ fn port_availability(source: &str, names: &[&str]) -> Vec<bool> {
     let definition = lifted.hir.definition("T").unwrap();
     let DefinitionRef::Template(id) = definition else { panic!("template") };
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
-    let evidence = provider.symbolic_root(definition).unwrap();
+    let evidence = provider.contexts().symbolic_root(definition).unwrap();
     let ports = &lifted.hir.template(id).unwrap().ports;
     names
         .iter()

@@ -50,10 +50,10 @@ fn inspect(source: &str, curve: Curve, budget: Option<usize>) -> (LoadedProject,
     else {
         panic!("main call must be reachable");
     };
-    let evidence = provider.main_evidence(&call).unwrap();
+    let evidence = provider.contexts().main_evidence(&call).unwrap();
     let definition = lifted.hir.definition("Parent").unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, budget).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, budget).unwrap();
     let context = RuleContext::new(&facts, &provider, &evidence).unwrap();
     let rule = numeric::rules()
         .iter()

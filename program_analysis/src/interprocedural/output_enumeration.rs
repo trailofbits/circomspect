@@ -112,7 +112,7 @@ impl ProjectAnalysis<'_> {
         caller: &ContextEvidence,
         mut visit: impl FnMut(&ReachableCall<'_>) -> Result<(), SummaryBlocker>,
     ) -> Result<(), SummaryBlocker> {
-        self.check_facts_for_evidence(facts, caller)?;
+        self.contexts().check_facts_for_evidence(facts, caller)?;
         self.sources().validated_definition(facts)?;
         let owner = CallOwner::Definition(facts.definition());
         for site in self.graph().calls_from(owner) {

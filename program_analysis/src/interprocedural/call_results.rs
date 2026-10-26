@@ -37,7 +37,7 @@ impl ProjectAnalysis<'_> {
         budget: Option<usize>,
     ) -> Result<AnalysisFacts<'a>, SummaryBlocker> {
         const MAX_REFINEMENTS: usize = 64;
-        self.check_context(context)?;
+        self.contexts().check_context(context)?;
         let definition = context.definition();
         let mut calls = ScalarExpressionEvidence::empty(self.hir(), context, self.curve().clone());
         for _ in 0..MAX_REFINEMENTS {
@@ -105,8 +105,8 @@ impl ProjectAnalysis<'_> {
         if site.resolved() != Some(DefinitionRef::Function(*id)) {
             return Err(SummaryBlocker::ForeignCall);
         }
-        let arguments = self.exact_call_arguments(arguments, facts)?;
-        self.context_for(DefinitionRef::Function(*id), arguments)
+        let arguments = self.contexts().exact_call_arguments(arguments, facts)?;
+        self.contexts().context_for(DefinitionRef::Function(*id), arguments)
     }
 
     fn checked_provisional_site(
@@ -242,8 +242,8 @@ impl ProjectAnalysis<'_> {
         if self.sources().definition_has_hard_source_issue(definition).ok()? {
             return None;
         }
-        let arguments = self.exact_call_arguments(arguments, facts).ok()?;
-        let context = self.context_for(definition, arguments).ok()?;
+        let arguments = self.contexts().exact_call_arguments(arguments, facts).ok()?;
+        let context = self.contexts().context_for(definition, arguments).ok()?;
         let summary = self.function(callee, &context);
         let item = summary.certified()?;
         let Range::Exact(value) = item.complete_return()? else { return None };
@@ -384,9 +384,9 @@ mod tests {
         let lifted = fixture(source, "mutated-span");
         let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let parent = lifted.hir.definition("T").unwrap();
-        let caller = provider.symbolic_root(parent).unwrap();
+        let caller = provider.contexts().symbolic_root(parent).unwrap();
         let cfg = build_cfg(&lifted.hir, parent).unwrap();
-        let facts = provider.analyze_for_evidence(&cfg, &caller, None).unwrap();
+        let facts = provider.contexts().analyze_for_evidence(&cfg, &caller, None).unwrap();
         let site = provider.graph().calls_from(CallOwner::Definition(parent))[0];
         assert!(provider.exact_site_context(site, &facts).is_ok());
         let mut forged = site.clone();
@@ -405,9 +405,9 @@ mod tests {
         );
         let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let definition = lifted.hir.definition("Check").unwrap();
-        let evidence = provider.symbolic_root(definition).unwrap();
+        let evidence = provider.contexts().symbolic_root(definition).unwrap();
         let cfg = build_cfg(&lifted.hir, definition).unwrap();
-        let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+        let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
         let site = provider.graph().calls_from(CallOwner::Definition(definition))[0];
         let expression = site.expression.unwrap();
         let exact = FieldContext::for_curve(Curve::Bn254).canonical(7.into());
@@ -432,20 +432,22 @@ mod tests {
         else {
             panic!("main call must be reachable")
         };
-        let evidence = provider.main_evidence(&call).unwrap();
+        let evidence = provider.contexts().main_evidence(&call).unwrap();
         let cfg = build_cfg(&lifted.hir, definition).unwrap();
-        let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+        let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
         let site = provider.graph().calls_from(CallOwner::Definition(definition))[0];
         let expression = site.expression.unwrap();
         assert!(facts.removable_call(expression));
 
         let field = FieldContext::for_curve(Curve::Bn254);
         let sibling = provider
+            .contexts()
             .context_for(definition, vec![ArgumentValue::Scalar(field.canonical(2.into()))])
             .unwrap();
         assert!(!provider.certified_scalar_evidence(&sibling, &facts).removable_call(expression));
         let other_curve = ProjectAnalysis::build(&lifted, Curve::Goldilocks).unwrap();
         let curve_context = other_curve
+            .contexts()
             .context_for(
                 definition,
                 vec![ArgumentValue::Scalar(
@@ -460,6 +462,7 @@ mod tests {
         let foreign = ProjectAnalysis::build(&other_project, Curve::Bn254).unwrap();
         let foreign_definition = other_project.hir.definition("Check").unwrap();
         let foreign_context = foreign
+            .contexts()
             .context_for(foreign_definition, vec![ArgumentValue::Scalar(field.canonical(1.into()))])
             .unwrap();
         assert!(!foreign
@@ -483,9 +486,9 @@ mod tests {
             let lifted = fixture(source, name);
             let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
             let definition = lifted.hir.definition("Check").unwrap();
-            let evidence = provider.symbolic_root(definition).unwrap();
+            let evidence = provider.contexts().symbolic_root(definition).unwrap();
             let cfg = build_cfg(&lifted.hir, definition).unwrap();
-            let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+            let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
             let site = provider.graph().calls_from(CallOwner::Definition(definition))[0];
             let expression = site.expression.unwrap();
             let context = RuleContext::new(&facts, &provider, &evidence).unwrap();
@@ -510,9 +513,9 @@ mod tests {
         );
         let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let definition = lifted.hir.definition("Check").unwrap();
-        let evidence = provider.symbolic_root(definition).unwrap();
+        let evidence = provider.contexts().symbolic_root(definition).unwrap();
         let cfg = build_cfg(&lifted.hir, definition).unwrap();
-        let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+        let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
         let site = provider.graph().calls_from(CallOwner::Definition(definition))[0];
         let expression = site.expression.unwrap();
         let expected = FieldContext::for_curve(Curve::Bn254).canonical(7.into());

@@ -816,7 +816,7 @@ mod tests {
         let field = FieldContext::for_curve(Curve::Bn254);
         let one = field.canonical(1.into());
         let values = BTreeMap::from([(x, one.clone())]);
-        let context = provider.symbolic_context_for(definition).unwrap();
+        let context = provider.contexts().symbolic_context_for(definition).unwrap();
         let mut calls = ScalarExpressionEvidence::empty(hir, &context, Curve::Bn254);
         calls.insert_call(call, one.clone(), BTreeSet::new());
         let empty = MustSymbolicVariables::reachable_empty();

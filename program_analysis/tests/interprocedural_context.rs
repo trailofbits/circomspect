@@ -47,9 +47,9 @@ fn parameter_writes_cannot_certify_the_stale_incoming_value() {
         else {
             panic!("main T(2) is reachable")
         };
-        let evidence = summaries.main_evidence(&call).unwrap();
+        let evidence = summaries.contexts().main_evidence(&call).unwrap();
         let cfg = build_cfg(&lifted.hir, evidence.context().definition()).unwrap();
-        let facts = summaries.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+        let facts = summaries.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
         let mut observed = false;
         for expression in lifted.hir.expressions() {
             let ExprKind::Access(path) = &expression.kind else { continue };
@@ -76,9 +76,10 @@ fn context_keys_bind_project_curve_version_shape_and_canonical_values() {
     let bn_field = FieldContext::for_curve(Curve::Bn254);
     let gold_field = FieldContext::for_curve(Curve::Goldilocks);
     let negative = bn
+        .contexts()
         .context_for(function, vec![ArgumentValue::Scalar(bn_field.canonical((-1).into()))])
         .unwrap();
-    let canonical = bn
+    let canonical = bn.contexts()
         .context_for(
             function,
             vec![ArgumentValue::Scalar(
@@ -89,11 +90,12 @@ fn context_keys_bind_project_curve_version_shape_and_canonical_values() {
     assert_eq!(negative, canonical);
     assert_eq!(negative.version(), version);
     let gold_context = gold
+        .contexts()
         .context_for(function, vec![ArgumentValue::Scalar(gold_field.canonical((-1).into()))])
         .unwrap();
     assert_ne!(negative, gold_context);
-    assert_eq!(gold.check_context(&negative), Err(SummaryBlocker::WrongContext));
-    let array = bn.context_for(function, vec![ArgumentValue::Array(vec![])]).unwrap();
+    assert_eq!(gold.contexts().check_context(&negative), Err(SummaryBlocker::WrongContext));
+    let array = bn.contexts().context_for(function, vec![ArgumentValue::Array(vec![])]).unwrap();
     assert_ne!(negative, array);
 }
 
@@ -103,7 +105,7 @@ fn symbolic_library_context_needs_no_main_and_rejects_foreign_ids() {
     let foreign = fixture("template T(n,m){}", Version::new(2, 2, 3));
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("T").unwrap();
-    let context = provider.symbolic_context_for(definition).unwrap();
+    let context = provider.contexts().symbolic_context_for(definition).unwrap();
     assert_eq!(
         context.arguments(),
         [
@@ -113,11 +115,11 @@ fn symbolic_library_context_needs_no_main_and_rejects_foreign_ids() {
     );
     assert!(lifted.hir.mains().is_empty());
     assert_eq!(
-        provider.symbolic_context_for(foreign.hir.definition("T").unwrap()),
+        provider.contexts().symbolic_context_for(foreign.hir.definition("T").unwrap()),
         Err(SummaryBlocker::ForeignDefinition)
     );
     assert_eq!(
-        provider.context_for(definition, vec![]),
+        provider.contexts().context_for(definition, vec![]),
         Err(SummaryBlocker::WrongArity { expected: 2, actual: 0 })
     );
 }
@@ -132,7 +134,7 @@ fn evidence_scope_distinguishes_universal_root_from_a_reachable_call() {
     let summaries = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let child = lifted.hir.definition("Child").unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
-    let root = summaries.symbolic_root(child).unwrap();
+    let root = summaries.contexts().symbolic_root(child).unwrap();
     assert_eq!(root.origin(), ContextOrigin::SymbolicRoot);
     assert_eq!(root.context().arguments(), [ArgumentValue::Symbolic(ArgumentShape::Unknown)]);
 
@@ -142,32 +144,32 @@ fn evidence_scope_distinguishes_universal_root_from_a_reachable_call() {
     else {
         panic!("validated main call")
     };
-    let main_evidence = summaries.main_evidence(&main_call).unwrap();
+    let main_evidence = summaries.contexts().main_evidence(&main_call).unwrap();
     assert_eq!(main_evidence.origin(), ContextOrigin::Main(main.id()));
     assert_eq!(main_evidence.context().definition(), parent);
 
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
     let field = FieldContext::for_curve(Curve::Bn254);
-    let facts = summaries.analyze_for_evidence(&cfg, &main_evidence, None).unwrap();
+    let facts = summaries.contexts().analyze_for_evidence(&cfg, &main_evidence, None).unwrap();
     let site = summaries.graph().calls_from(CallOwner::Definition(parent))[0];
     let CallReachability::Reachable(call) = summaries.graph().reachable_call(site.id(), &facts)
     else {
         panic!("reachable child")
     };
-    let evidence = summaries.call_evidence(&call, &facts, &main_evidence).unwrap();
+    let evidence = summaries.contexts().call_evidence(&call, &facts, &main_evidence).unwrap();
     assert_eq!(evidence.origin(), ContextOrigin::Call(site.id()));
     assert_eq!(evidence.context().definition(), child);
     assert_eq!(evidence.context().arguments(), [ArgumentValue::Scalar(field.canonical(2.into())),]);
-    assert!(summaries.check_evidence(&evidence).is_ok());
+    assert!(summaries.contexts().check_evidence(&evidence).is_ok());
     let gold_field = FieldContext::for_curve(Curve::Goldilocks);
     let wrong_curve = analyze(&lifted.hir, &cfg, &gold_field, None).unwrap();
     assert_eq!(
-        summaries.call_evidence(&call, &wrong_curve, &main_evidence),
+        summaries.contexts().call_evidence(&call, &wrong_curve, &main_evidence),
         Err(SummaryBlocker::ForeignCall)
     );
-    let pending = summaries.analyze_for_evidence(&cfg, &main_evidence, Some(0)).unwrap();
+    let pending = summaries.contexts().analyze_for_evidence(&cfg, &main_evidence, Some(0)).unwrap();
     assert!(matches!(
-        summaries.call_evidence(&call, &pending, &main_evidence),
+        summaries.contexts().call_evidence(&call, &pending, &main_evidence),
         Err(SummaryBlocker::LocalFacts(_))
     ));
 }
@@ -188,8 +190,11 @@ fn unbound_local_facts_cannot_mint_reachable_child_evidence() {
     else {
         panic!("checked call must be reachable")
     };
-    let caller = provider.symbolic_root(parent).unwrap();
-    assert_eq!(provider.call_evidence(&call, &unbound, &caller), Err(SummaryBlocker::WrongContext));
+    let caller = provider.contexts().symbolic_root(parent).unwrap();
+    assert_eq!(
+        provider.contexts().call_evidence(&call, &unbound, &caller),
+        Err(SummaryBlocker::WrongContext)
+    );
 }
 
 #[test]
@@ -219,9 +224,9 @@ fn specializing_two_calls_keeps_one_source_diagnostic_for_a_missing_callee() {
     else {
         panic!("main must resolve")
     };
-    let root = provider.main_evidence(&main).unwrap();
+    let root = provider.contexts().main_evidence(&main).unwrap();
     let parent_cfg = build_cfg(&lifted.hir, parent).unwrap();
-    let facts = provider.analyze_for_evidence(&parent_cfg, &root, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&parent_cfg, &root, None).unwrap();
     let child_cfg = build_cfg(&lifted.hir, child).unwrap();
     let sites = provider.graph().calls_from(CallOwner::Definition(parent));
     let mut contexts = Vec::new();
@@ -230,8 +235,8 @@ fn specializing_two_calls_keeps_one_source_diagnostic_for_a_missing_callee() {
         else {
             panic!("child call must be reachable")
         };
-        let evidence = provider.call_evidence(&call, &facts, &root).unwrap();
-        provider.analyze_for_evidence(&child_cfg, &evidence, None).unwrap();
+        let evidence = provider.contexts().call_evidence(&call, &facts, &root).unwrap();
+        provider.contexts().analyze_for_evidence(&child_cfg, &evidence, None).unwrap();
         contexts.push(evidence.context().clone());
     }
     assert_ne!(contexts[0], contexts[1]);
@@ -256,15 +261,16 @@ fn reachable_array_call_preserves_shape_and_emits_a_located_assignment_error() {
     else {
         panic!("main call must be reachable")
     };
-    let caller = provider.main_evidence(&main_call).unwrap();
-    let parent_facts = provider.analyze_for_evidence(&parent_cfg, &caller, None).unwrap();
+    let caller = provider.contexts().main_evidence(&main_call).unwrap();
+    let parent_facts =
+        provider.contexts().analyze_for_evidence(&parent_cfg, &caller, None).unwrap();
     let site = provider.graph().calls_from(CallOwner::Definition(parent))[0];
     let CallReachability::Reachable(call) =
         provider.graph().reachable_call(site.id(), &parent_facts)
     else {
         panic!("array call must be reachable")
     };
-    let evidence = provider.call_evidence(&call, &parent_facts, &caller).unwrap();
+    let evidence = provider.contexts().call_evidence(&call, &parent_facts, &caller).unwrap();
     assert_eq!(
         evidence.context().arguments(),
         [ArgumentValue::Array(vec![
@@ -273,7 +279,8 @@ fn reachable_array_call_preserves_shape_and_emits_a_located_assignment_error() {
         ])]
     );
     let child_cfg = build_cfg(&lifted.hir, child).unwrap();
-    let error = provider.analyze_for_evidence(&child_cfg, &evidence, None).err().unwrap();
+    let error =
+        provider.contexts().analyze_for_evidence(&child_cfg, &evidence, None).err().unwrap();
     let AnalyzeEvidenceError::InvalidAssignment { context, diagnostic } = error else {
         panic!("aggregate argument must make the deferred scalar write invalid")
     };
@@ -304,8 +311,8 @@ fn scalar_main_specializes_deferred_guard_while_symbolic_library_scope_abstains(
     else {
         panic!("main call must be reachable")
     };
-    let concrete = provider.main_evidence(&call).unwrap();
-    let concrete_facts = provider.analyze_for_evidence(&cfg, &concrete, None).unwrap();
+    let concrete = provider.contexts().main_evidence(&call).unwrap();
+    let concrete_facts = provider.contexts().analyze_for_evidence(&cfg, &concrete, None).unwrap();
     let concrete_handle = concrete_facts.port_handle(output, &[]).unwrap();
     let field = FieldContext::for_curve(Curve::Bn254);
     assert_eq!(
@@ -313,8 +320,8 @@ fn scalar_main_specializes_deferred_guard_while_symbolic_library_scope_abstains(
         Some(&Some(field.canonical(2.into())))
     );
 
-    let symbolic = provider.symbolic_root(definition).unwrap();
-    let symbolic_facts = provider.analyze_for_evidence(&cfg, &symbolic, None).unwrap();
+    let symbolic = provider.contexts().symbolic_root(definition).unwrap();
+    let symbolic_facts = provider.contexts().analyze_for_evidence(&cfg, &symbolic, None).unwrap();
     let symbolic_handle = symbolic_facts.port_handle(output, &[]).unwrap();
     assert!(symbolic_facts.constraint_fixed_handle(&symbolic_handle).unavailable().is_some());
 }
@@ -338,8 +345,8 @@ fn aggregate_argument_in_dead_arm_or_call_argument_is_not_a_scalar_assignment_er
         else {
             panic!("main call must be reachable")
         };
-        let evidence = provider.main_evidence(&call).unwrap();
-        let result = provider.analyze_for_evidence(&cfg, &evidence, None);
+        let evidence = provider.contexts().main_evidence(&call).unwrap();
+        let result = provider.contexts().analyze_for_evidence(&cfg, &evidence, None);
         assert!(!matches!(result, Err(AnalyzeEvidenceError::InvalidAssignment { .. })));
     }
 }
@@ -363,8 +370,8 @@ fn concrete_taken_branch_rejects_a_scalar_assignment_from_an_array() {
     else {
         panic!("main call must be reachable")
     };
-    let evidence = provider.main_evidence(&call).unwrap();
-    let error = provider.analyze_for_evidence(&cfg, &evidence, None).err().unwrap();
+    let evidence = provider.contexts().main_evidence(&call).unwrap();
+    let error = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).err().unwrap();
     let AnalyzeEvidenceError::InvalidAssignment { diagnostic, .. } = error else {
         panic!("the taken scalar assignment is invalid")
     };
@@ -383,9 +390,10 @@ fn hypothetical_context_does_not_create_a_reachable_scope() {
     let child = lifted.hir.definition("Child").unwrap();
     let field = FieldContext::for_curve(Curve::Bn254);
     let hypothetical = summaries
+        .contexts()
         .context_for(child, vec![ArgumentValue::Scalar(field.canonical(2.into()))])
         .unwrap();
-    assert!(summaries.check_context(&hypothetical).is_ok());
+    assert!(summaries.contexts().check_context(&hypothetical).is_ok());
     let parent = lifted.hir.definition("Parent").unwrap();
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
     let facts = analyze(&lifted.hir, &cfg, &field, None).unwrap();
@@ -414,37 +422,38 @@ fn local_facts_must_match_the_exact_evidence_scope() {
     else {
         panic!("main call must be reachable")
     };
-    let caller = provider.main_evidence(&main_call).unwrap();
-    let parent_facts = provider.analyze_for_evidence(&parent_cfg, &caller, None).unwrap();
+    let caller = provider.contexts().main_evidence(&main_call).unwrap();
+    let parent_facts =
+        provider.contexts().analyze_for_evidence(&parent_cfg, &caller, None).unwrap();
     let site = provider.graph().calls_from(CallOwner::Definition(parent))[0];
     let CallReachability::Reachable(call) =
         provider.graph().reachable_call(site.id(), &parent_facts)
     else {
         panic!("reachable component")
     };
-    let one = provider.call_evidence(&call, &parent_facts, &caller).unwrap();
+    let one = provider.contexts().call_evidence(&call, &parent_facts, &caller).unwrap();
     assert_eq!(one.context().definition(), template);
     let cfg = build_cfg(&lifted.hir, template).unwrap();
-    let facts_one = provider.analyze_for_evidence(&cfg, &one, None).unwrap();
+    let facts_one = provider.contexts().analyze_for_evidence(&cfg, &one, None).unwrap();
     assert_eq!(
-        provider.analyze_for_evidence(&parent_cfg, &one, None).err(),
+        provider.contexts().analyze_for_evidence(&parent_cfg, &one, None).err(),
         Some(circomspect_program_analysis::interprocedural::AnalyzeEvidenceError::Blocked(
             SummaryBlocker::WrongContext,
         ))
     );
     let unseeded = analyze(&lifted.hir, &cfg, &field, None).unwrap();
-    let root = provider.symbolic_root(template).unwrap();
-    let symbolic = provider.analyze_for_evidence(&cfg, &root, None).unwrap();
-    assert!(provider.check_facts_for_evidence(&facts_one, &one).is_ok());
+    let root = provider.contexts().symbolic_root(template).unwrap();
+    let symbolic = provider.contexts().analyze_for_evidence(&cfg, &root, None).unwrap();
+    assert!(provider.contexts().check_facts_for_evidence(&facts_one, &one).is_ok());
     assert_eq!(
-        provider.check_facts_for_evidence(&unseeded, &one),
+        provider.contexts().check_facts_for_evidence(&unseeded, &one),
         Err(SummaryBlocker::WrongContext)
     );
     assert_eq!(
-        provider.check_facts_for_evidence(&facts_one, &root),
+        provider.contexts().check_facts_for_evidence(&facts_one, &root),
         Err(SummaryBlocker::WrongContext)
     );
-    assert!(provider.check_facts_for_evidence(&symbolic, &root).is_ok());
+    assert!(provider.contexts().check_facts_for_evidence(&symbolic, &root).is_ok());
 }
 
 fn parameter_operation_error(source: &str) -> Option<AnalyzeEvidenceError> {
@@ -457,9 +466,9 @@ fn parameter_operation_error(source: &str) -> Option<AnalyzeEvidenceError> {
     else {
         panic!("main must be reachable")
     };
-    let evidence = provider.main_evidence(&call).unwrap();
+    let evidence = provider.contexts().main_evidence(&call).unwrap();
     let cfg = build_cfg(provider.hir(), evidence.context().definition()).unwrap();
-    provider.analyze_for_evidence(&cfg, &evidence, None).err()
+    provider.contexts().analyze_for_evidence(&cfg, &evidence, None).err()
 }
 
 #[test]
@@ -525,9 +534,9 @@ fn unrolled_scalar_checks_do_not_certify_a_budget_limited_range() {
     else {
         panic!("main must be reachable")
     };
-    let evidence = provider.main_evidence(&call).unwrap();
+    let evidence = provider.contexts().main_evidence(&call).unwrap();
     let cfg = build_cfg(provider.hir(), evidence.context().definition()).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, Some(0)).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, Some(0)).unwrap();
     let expression = lifted
         .hir
         .expressions()
@@ -552,9 +561,9 @@ fn public_cfg_queries_follow_the_specialized_control_flow() {
     else {
         panic!("main must be reachable")
     };
-    let evidence = provider.main_evidence(&call).unwrap();
+    let evidence = provider.contexts().main_evidence(&call).unwrap();
     let cfg = build_cfg(provider.hir(), evidence.context().definition()).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let mut branches = 0;
     for id in facts.cfg().edges() {
         let edge = facts.cfg().edge(*id).unwrap();
@@ -608,10 +617,10 @@ fn optional_bad_access_cannot_become_a_definite_error_at_low_budget() {
         else {
             panic!("main call must be reachable")
         };
-        let evidence = provider.main_evidence(&call).unwrap();
+        let evidence = provider.contexts().main_evidence(&call).unwrap();
         let cfg = build_cfg(provider.hir(), evidence.context().definition()).unwrap();
         for budget in 0..100 {
-            let result = provider.analyze_for_evidence(&cfg, &evidence, Some(budget));
+            let result = provider.contexts().analyze_for_evidence(&cfg, &evidence, Some(budget));
             assert!(result.is_ok(), "budget {budget}, {source}: {:?}", result.err());
         }
     }
@@ -637,11 +646,38 @@ fn fallthrough_value_effects_do_not_prune_unknown_control_or_indices() {
         else {
             panic!("main call must be reachable")
         };
-        let evidence = provider.main_evidence(&call).unwrap();
+        let evidence = provider.contexts().main_evidence(&call).unwrap();
         let cfg = build_cfg(provider.hir(), evidence.context().definition()).unwrap();
         for budget in 0..128 {
-            let result = provider.analyze_for_evidence(&cfg, &evidence, Some(budget));
+            let result = provider.contexts().analyze_for_evidence(&cfg, &evidence, Some(budget));
             assert!(result.is_ok(), "budget {budget}, {source}: {:?}", result.err());
         }
     }
+}
+
+#[test]
+fn temporary_context_views_preserve_fact_borrows() {
+    let lifted = fixture("template T(){signal output y;y<==7;}", Version::new(2, 2, 3));
+    let analysis = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
+    let definition = lifted.hir.definition("T").unwrap();
+    let evidence = analysis.contexts().symbolic_root(definition).unwrap();
+    let cfg = build_cfg(&lifted.hir, definition).unwrap();
+    let expression = lifted
+        .hir
+        .expressions()
+        .iter()
+        .find(|expression| {
+            let ExprKind::Number(value) = &expression.kind else { return false };
+            value == "7"
+        })
+        .unwrap()
+        .id;
+    let first = analysis.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let second = {
+        let queries = analysis.contexts();
+        queries.analyze_for_evidence(&cfg, &evidence, None).unwrap()
+    };
+    let field = FieldContext::for_curve(Curve::Bn254);
+    assert_eq!(first.range(expression).certified(), Some(&Range::Exact(field.canonical(7.into()))));
+    assert_eq!(second.range(expression), first.range(expression));
 }

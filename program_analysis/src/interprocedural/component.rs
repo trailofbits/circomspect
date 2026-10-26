@@ -152,7 +152,7 @@ impl ProjectAnalysis<'_> {
         facts: &AnalysisFacts<'_>,
         applied: &AppliedComponentPort,
     ) -> Result<LocalOutputUse, SummaryBlocker> {
-        self.check_facts_for_evidence(facts, &applied.caller)?;
+        self.contexts().check_facts_for_evidence(facts, &applied.caller)?;
         if !applied.handle.matches_context(applied.caller.context()) {
             return Err(SummaryBlocker::WrongContext);
         }
@@ -258,7 +258,7 @@ impl ProjectAnalysis<'_> {
         facts: &AnalysisFacts<'_>,
         applied: &AppliedComponentPort,
     ) -> Result<ComposedConstraintFixedOutput, SummaryBlocker> {
-        self.check_facts_for_evidence(facts, &applied.caller)?;
+        self.contexts().check_facts_for_evidence(facts, &applied.caller)?;
         if !applied.handle.matches_context(applied.caller.context()) {
             return Err(SummaryBlocker::WrongContext);
         }
@@ -323,7 +323,7 @@ impl ProjectAnalysis<'_> {
         child: parser::hir::TemplateId,
         applied: &AppliedComponentPort,
     ) -> Result<GeneratedPortEquality, SummaryBlocker> {
-        self.check_evidence(&applied.callee)?;
+        self.contexts().check_evidence(&applied.callee)?;
         if !applied.port.indices().is_empty() {
             return Err(SummaryBlocker::UnsupportedContext);
         }
@@ -532,8 +532,8 @@ mod tests {
             panic!("Child must be a template")
         };
         let cfg = build_cfg(&lifted.hir, parent).unwrap();
-        let scope = provider.symbolic_root(parent).unwrap();
-        let facts = provider.analyze_for_evidence(&cfg, &scope, None).unwrap();
+        let scope = provider.contexts().symbolic_root(parent).unwrap();
+        let facts = provider.contexts().analyze_for_evidence(&cfg, &scope, None).unwrap();
         let output = lifted.hir.template(child).unwrap().ports[0];
         let component = lifted.hir.components()[0].id;
         let handle = facts.component_output_handle(component, &[instance], output, &[]).unwrap();

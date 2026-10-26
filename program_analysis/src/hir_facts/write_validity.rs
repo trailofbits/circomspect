@@ -894,7 +894,7 @@ mod tests {
             };
             assert!(before.evidence.is_none());
             let provider = ProjectAnalysis::build(lifted, Curve::Goldilocks).unwrap();
-            let evidence = provider.symbolic_root(cfg.definition()).unwrap();
+            let evidence = provider.contexts().symbolic_root(cfg.definition()).unwrap();
             facts.bind_evidence(evidence.clone());
             let after = facts.body_write_status(target);
             let Some(BodyWriteStatus::NoRepeat(after)) = after.certified() else {

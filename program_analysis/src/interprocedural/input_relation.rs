@@ -996,8 +996,8 @@ mod tests {
         };
         let ports = &lifted.hir.template(child).unwrap().ports;
         let cfg = build_cfg(&lifted.hir, parent).unwrap();
-        let caller = provider.symbolic_root(parent).unwrap();
-        let facts = provider.analyze_for_evidence(&cfg, &caller, None).unwrap();
+        let caller = provider.contexts().symbolic_root(parent).unwrap();
+        let facts = provider.contexts().analyze_for_evidence(&cfg, &caller, None).unwrap();
         let handle = facts
             .component_output_handle(lifted.hir.components()[0].id, &[], ports[1], &[])
             .unwrap();
@@ -1015,7 +1015,8 @@ mod tests {
         };
         let instance = provider.enumerate_call(&facts, &caller, &call, 4).unwrap();
         let child_cfg = build_cfg(&lifted.hir, call.callee()).unwrap();
-        let child = provider.analyze_for_evidence(&child_cfg, &instance.callee, None).unwrap();
+        let child =
+            provider.contexts().analyze_for_evidence(&child_cfg, &instance.callee, None).unwrap();
         let ready = provider
             .ready_generated_instance(&facts, &child, &instance, &mut ProofBudget::default())
             .unwrap();

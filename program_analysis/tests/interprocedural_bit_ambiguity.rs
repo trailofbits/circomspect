@@ -83,7 +83,7 @@ fn inspect(
     let provider = ProjectAnalysis::build(&lifted, curve).unwrap();
     let definition = lifted.hir.definition("T").unwrap();
     let evidence = if lifted.hir.mains().is_empty() {
-        provider.symbolic_root(definition).unwrap()
+        provider.contexts().symbolic_root(definition).unwrap()
     } else {
         let site = provider.graph().calls_from(CallOwner::Main(0))[0];
         let CallReachability::Reachable(call) =
@@ -91,10 +91,10 @@ fn inspect(
         else {
             panic!("main must be reachable");
         };
-        provider.main_evidence(&call).unwrap()
+        provider.contexts().main_evidence(&call).unwrap()
     };
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, budget).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, budget).unwrap();
     let input = path(&lifted.hir, "in", None);
     let bits: Vec<_> = (0..width).map(|index| path(&lifted.hir, "bits", Some(index))).collect();
     let context = RuleContext::new(&facts, &provider, &evidence).unwrap();
@@ -287,15 +287,16 @@ fn binding_cannot_be_reused_for_another_field_project_or_definition() {
     let lifted = fixture(&source);
     let provider = ProjectAnalysis::build(&lifted, Curve::Goldilocks).unwrap();
     let definition = lifted.hir.definition("T").unwrap();
-    let evidence = provider.symbolic_root(definition).unwrap();
+    let evidence = provider.contexts().symbolic_root(definition).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let input = path(&lifted.hir, "in", None);
     let bits: Vec<_> = (0..64).map(|index| path(&lifted.hir, "bits", Some(index))).collect();
     let other_curve = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let result = other_curve.template_bit_ambiguity(&facts, &evidence, &input, &bits);
     assert!(result.unavailable().is_some(), "{result:?}");
-    let other_evidence = provider.symbolic_root(lifted.hir.definition("Other").unwrap()).unwrap();
+    let other_evidence =
+        provider.contexts().symbolic_root(lifted.hir.definition("Other").unwrap()).unwrap();
     let result = provider.template_bit_ambiguity(&facts, &other_evidence, &input, &bits);
     assert!(result.unavailable().is_some(), "{result:?}");
     let foreign = fixture(&source);
@@ -326,9 +327,9 @@ fn a_called_leaf_does_not_claim_its_callers_constraint_domain_is_closed() {
     else {
         panic!("main must be reachable");
     };
-    let main = provider.main_evidence(&main_call).unwrap();
+    let main = provider.contexts().main_evidence(&main_call).unwrap();
     let main_cfg = build_cfg(&lifted.hir, main.context().definition()).unwrap();
-    let main_facts = provider.analyze_for_evidence(&main_cfg, &main, None).unwrap();
+    let main_facts = provider.contexts().analyze_for_evidence(&main_cfg, &main, None).unwrap();
     let child_site =
         provider.graph().calls_from(CallOwner::Definition(main.context().definition()))[0];
     let CallReachability::Reachable(child_call) =
@@ -336,9 +337,9 @@ fn a_called_leaf_does_not_claim_its_callers_constraint_domain_is_closed() {
     else {
         panic!("child must be reachable");
     };
-    let child = provider.call_evidence(&child_call, &main_facts, &main).unwrap();
+    let child = provider.contexts().call_evidence(&child_call, &main_facts, &main).unwrap();
     let child_cfg = build_cfg(&lifted.hir, child.context().definition()).unwrap();
-    let child_facts = provider.analyze_for_evidence(&child_cfg, &child, None).unwrap();
+    let child_facts = provider.contexts().analyze_for_evidence(&child_cfg, &child, None).unwrap();
     let input = path(&lifted.hir, "in", None);
     let bits: Vec<_> = (0..64).map(|index| path(&lifted.hir, "bits", Some(index))).collect();
     let result = provider.template_bit_ambiguity(&child_facts, &child, &input, &bits);
@@ -363,9 +364,9 @@ fn exact_bounds_and_order_are_part_of_the_requested_relation() {
     let lifted = fixture(&source(64, ""));
     let provider = ProjectAnalysis::build(&lifted, Curve::Goldilocks).unwrap();
     let definition = lifted.hir.definition("T").unwrap();
-    let evidence = provider.symbolic_root(definition).unwrap();
+    let evidence = provider.contexts().symbolic_root(definition).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let input = path(&lifted.hir, "in", None);
     let bits: Vec<_> = (0..64).map(|index| path(&lifted.hir, "bits", Some(index))).collect();
     let mut reordered = bits.clone();

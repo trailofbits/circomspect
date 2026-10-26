@@ -59,9 +59,9 @@ fn inspect_with_extra(count: usize, curve: Curve, extra: &str) -> Fact<Option<Bi
     else {
         panic!("expected reachable main");
     };
-    let evidence = provider.main_evidence(&call).unwrap();
+    let evidence = provider.contexts().main_evidence(&call).unwrap();
     let cfg = build_cfg(&lifted.hir, evidence.context().definition()).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     if count > 1 {
         let out = lifted.hir.port(port(&lifted.hir, "out")).unwrap().symbol;
         let source_index = lifted
@@ -139,8 +139,8 @@ fn symbolic_library_root_cannot_name_a_parameter_sized_bit() {
     let lifted = lift_project(&loaded);
     let definition = lifted.hir.definition("Bits").unwrap();
     let provider = ProjectAnalysis::build(&lifted, Curve::Goldilocks).unwrap();
-    let evidence = provider.symbolic_root(definition).unwrap();
+    let evidence = provider.contexts().symbolic_root(definition).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     assert!(facts.port_handle(port(&lifted.hir, "out"), &[0]).is_err());
 }

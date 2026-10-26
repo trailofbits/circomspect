@@ -51,8 +51,10 @@ fn borrowed_and_owned_facts_preserve_complete_and_pending_results() {
     let mut snapshots = Vec::new();
     for initial in [1, 2] {
         let value = field.canonical(initial.into());
-        let context =
-            provider.context_for(definition, vec![ArgumentValue::Scalar(value.clone())]).unwrap();
+        let context = provider
+            .contexts()
+            .context_for(definition, vec![ArgumentValue::Scalar(value.clone())])
+            .unwrap();
         let mut calls = ScalarExpressionEvidence::empty(hir, &context, Curve::Bn254);
         calls.insert_call(call, field.canonical(9.into()), BTreeSet::new());
         let values = BTreeMap::from([(parameter, value)]);
@@ -120,8 +122,10 @@ fn owned_analysis_rejects_project_then_calls_then_scalar_seeds() {
     let DefinitionRef::Template(template) = definition else { panic!("template") };
     let field = FieldContext::for_curve(Curve::Bn254);
     let value = field.canonical(1.into());
-    let context =
-        provider.context_for(definition, vec![ArgumentValue::Scalar(value.clone())]).unwrap();
+    let context = provider
+        .contexts()
+        .context_for(definition, vec![ArgumentValue::Scalar(value.clone())])
+        .unwrap();
     let calls = ScalarExpressionEvidence::empty(hir, &context, Curve::Bn254);
     let values = BTreeMap::from([(hir.template(template).unwrap().parameters[0], value)]);
     let cfg = build_cfg_with_exact_calls(hir, definition, &calls, &values).unwrap();

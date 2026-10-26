@@ -59,9 +59,9 @@ fn inspect(source: &str, curve: Curve, budget: Option<usize>) -> (LoadedProject,
     else {
         panic!("main")
     };
-    let evidence = provider.main_evidence(&call).unwrap();
+    let evidence = provider.contexts().main_evidence(&call).unwrap();
     let cfg = build_cfg(&project.hir, evidence.context().definition()).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, budget).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, budget).unwrap();
     let context = RuleContext::new(&facts, &provider, &evidence).unwrap();
     (loaded, run_registered(&context).unwrap())
 }

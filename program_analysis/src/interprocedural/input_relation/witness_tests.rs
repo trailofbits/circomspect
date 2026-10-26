@@ -39,10 +39,11 @@ fn inspect(binding: &str, extra: &str) -> Result<Vec<WitnessInputValue>, Summary
     else {
         return Err(SummaryBlocker::ForeignCall);
     };
-    let caller = provider.main_evidence(&call)?;
+    let caller = provider.contexts().main_evidence(&call)?;
     let definition = project.hir.definition("Parent").unwrap();
     let cfg = build_cfg(&project.hir, definition).unwrap();
     let facts = provider
+        .contexts()
         .analyze_for_evidence(&cfg, &caller, None)
         .map_err(|_| SummaryBlocker::UnsupportedContext)?;
     let site = provider.graph().calls_from(CallOwner::Definition(definition))[0];
@@ -53,16 +54,17 @@ fn inspect(binding: &str, extra: &str) -> Result<Vec<WitnessInputValue>, Summary
     let instance = provider.enumerate_call(&facts, &caller, &call, 4)?;
     let ready = ready_witness_instance(&facts, &caller, &instance)?;
     assert!(ready_enumerated_instance(&facts, &instance).is_err());
-    let symbolic = provider.symbolic_root(definition).unwrap();
+    let symbolic = provider.contexts().symbolic_root(definition).unwrap();
     assert!(ready_witness_instance(&facts, &symbolic, &instance).is_err());
     let mut other = instance.clone();
     other.indices.push(0);
     assert!(!ready.matches(&facts, &other));
-    let partial = provider.analyze_for_evidence(&cfg, &caller, Some(0)).unwrap();
+    let partial = provider.contexts().analyze_for_evidence(&cfg, &caller, Some(0)).unwrap();
     assert!(!ready.matches(&partial, &instance));
     assert!(ready_witness_instance(&partial, &caller, &instance).is_err());
     let cfg = build_cfg(&project.hir, call.callee()).unwrap();
     let child = provider
+        .contexts()
         .analyze_for_evidence(&cfg, &instance.callee, None)
         .map_err(|_| SummaryBlocker::UnsupportedContext)?;
     let completed = provider.completed_project_template(&child, &instance.callee, &[])?;

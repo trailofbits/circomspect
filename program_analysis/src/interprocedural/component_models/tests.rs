@@ -34,10 +34,10 @@ fn checked_port_candidates_use_the_selected_child_parameter_shape_and_roles() {
     else {
         panic!("main call");
     };
-    let evidence = provider.main_evidence(&call).unwrap();
+    let evidence = provider.contexts().main_evidence(&call).unwrap();
     let definition = project.hir.definition("Child").unwrap();
     let cfg = build_cfg(&project.hir, definition).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let DefinitionRef::Template(id) = definition else { panic!("child template") };
     let ports = &project.hir.template(id).unwrap().ports;
     let (input, bits) = checked_bit_port_handles(&facts, ports[0], ports[1]).unwrap();
@@ -46,8 +46,8 @@ fn checked_port_candidates_use_the_selected_child_parameter_shape_and_roles() {
     assert!(checked_bit_port_handles(&facts, ports[1], ports[0]).is_err());
     assert!(checked_bit_port_handles(&facts, ports[0], ports[2]).is_err());
 
-    let symbolic = provider.symbolic_root(definition).unwrap();
-    let unknown = provider.analyze_for_evidence(&cfg, &symbolic, None).unwrap();
+    let symbolic = provider.contexts().symbolic_root(definition).unwrap();
+    let unknown = provider.contexts().analyze_for_evidence(&cfg, &symbolic, None).unwrap();
     assert!(checked_bit_port_handles(&unknown, ports[0], ports[1]).is_err());
 
     let parameter = project.hir.symbols().iter().find(|symbol| symbol.name == "n").unwrap().id;
@@ -86,18 +86,18 @@ fn closure_collection_charges_shared_site_term_key_and_operation_budgets() {
     else {
         panic!("main call")
     };
-    let caller = provider.main_evidence(&call).unwrap();
+    let caller = provider.contexts().main_evidence(&call).unwrap();
     let parent = project.hir.definition("Parent").unwrap();
     let cfg = build_cfg(&project.hir, parent).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &caller, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &caller, None).unwrap();
     let site = provider.graph().calls_from(CallOwner::Definition(parent))[0];
     let CallReachability::Reachable(call) = provider.graph().reachable_call(site.id(), &facts)
     else {
         panic!("child call")
     };
-    let callee = provider.call_evidence(&call, &facts, &caller).unwrap();
+    let callee = provider.contexts().call_evidence(&call, &facts, &caller).unwrap();
     let cfg = build_cfg(&project.hir, call.callee()).unwrap();
-    let child = provider.analyze_for_evidence(&cfg, &callee, None).unwrap();
+    let child = provider.contexts().analyze_for_evidence(&cfg, &callee, None).unwrap();
     let DefinitionRef::Template(id) = call.callee() else { panic!("child template") };
     let ports = &project.hir.template(id).unwrap().ports;
     let input = child.port_handle(ports[0], &[]).unwrap();
@@ -150,10 +150,10 @@ fn checked_port_mapping_keeps_identical_template_instances_separate() {
     else {
         panic!("main call")
     };
-    let caller = provider.main_evidence(&call).unwrap();
+    let caller = provider.contexts().main_evidence(&call).unwrap();
     let parent = project.hir.definition("Parent").unwrap();
     let cfg = build_cfg(&project.hir, parent).unwrap();
-    let facts = provider.analyze_for_evidence(&cfg, &caller, None).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &caller, None).unwrap();
     let mut instances = Vec::new();
     for site in provider.graph().calls_from(CallOwner::Definition(parent)) {
         let CallReachability::Reachable(call) = provider.graph().reachable_call(site.id(), &facts)
@@ -164,7 +164,7 @@ fn checked_port_mapping_keeps_identical_template_instances_separate() {
     }
     let first = &instances[0];
     let cfg = build_cfg(&project.hir, first.callee.context().definition()).unwrap();
-    let child = provider.analyze_for_evidence(&cfg, &first.callee, None).unwrap();
+    let child = provider.contexts().analyze_for_evidence(&cfg, &first.callee, None).unwrap();
     let ready =
         crate::interprocedural::input_relation::ready_model_instance(&facts, first).unwrap();
     let ports = crate::interprocedural::component_models::ValidatedComponentPorts::new(
@@ -197,9 +197,9 @@ fn component_port_expansion_preserves_exact_boundaries_and_handle_order() {
         let project = crate::test_fixtures::port_project(shape);
         let provider = ProjectAnalysis::build(&project, Curve::Goldilocks).unwrap();
         let definition = project.hir.definition("T").unwrap();
-        let evidence = provider.symbolic_root(definition).unwrap();
+        let evidence = provider.contexts().symbolic_root(definition).unwrap();
         let cfg = build_cfg(&project.hir, definition).unwrap();
-        let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
+        let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
         let DefinitionRef::Template(template) = definition else { panic!("template T") };
         let ports = &project.hir.template(template).unwrap().ports;
 

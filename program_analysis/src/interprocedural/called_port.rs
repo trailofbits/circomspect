@@ -21,7 +21,7 @@ impl ProjectAnalysis<'_> {
         port: PortId,
         indices: &[usize],
     ) -> Result<PortSummary, SummaryBlocker> {
-        self.check_facts_for_evidence(child, evidence)?;
+        self.contexts().check_facts_for_evidence(child, evidence)?;
         let schema = self.hir().port(port).ok_or(SummaryBlocker::ForeignDefinition)?;
         if schema.direction != Some(PortDirection::Input) || !indices.is_empty() {
             return Err(SummaryBlocker::UnsupportedContext);
@@ -34,6 +34,7 @@ impl ProjectAnalysis<'_> {
         let cfg = build_cfg(self.hir(), parent.context().definition())
             .map_err(|error| SummaryBlocker::LocalAnalysis(format!("caller CFG: {error:?}")))?;
         let facts = self
+            .contexts()
             .analyze_for_evidence(&cfg, &parent, None)
             .map_err(|error| SummaryBlocker::LocalAnalysis(format!("caller facts: {error:?}")))?;
         self.check_model_main_root(&facts, &parent)?;
@@ -89,7 +90,7 @@ impl ProjectAnalysis<'_> {
         else {
             return Err(SummaryBlocker::ForeignCall);
         };
-        self.main_evidence(&call)
+        self.contexts().main_evidence(&call)
     }
 
     fn sole_child_instance(
@@ -100,7 +101,7 @@ impl ProjectAnalysis<'_> {
     ) -> Result<EnumeratedComponentInstance, SummaryBlocker> {
         let mut instance = None;
         self.visit_component_calls(facts, parent, |call| {
-            if instance.is_some() || self.call_evidence(call, facts, parent)? != *child {
+            if instance.is_some() || self.contexts().call_evidence(call, facts, parent)? != *child {
                 return Err(SummaryBlocker::UnsupportedContext);
             }
             instance = Some(self.enumerate_call(facts, parent, call, 256)?);

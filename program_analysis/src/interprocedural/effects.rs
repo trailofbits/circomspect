@@ -104,7 +104,7 @@ impl ProjectAnalysis<'_> {
         if self.hir().function(id).is_none() {
             return SummaryFact::from_result(Err(SummaryBlocker::ForeignDefinition));
         }
-        if let Err(blocker) = self.check_context(context) {
+        if let Err(blocker) = self.contexts().check_context(context) {
             return SummaryFact::from_result(Err(blocker));
         }
         self.caches.effects.get_or_compute(context.clone(), || {
@@ -187,7 +187,7 @@ impl ProjectAnalysis<'_> {
                     CallReachability::Unreachable => continue,
                     CallReachability::Reachable(call) => {
                         if let DefinitionRef::Function(_) = call.callee() {
-                            self.call_context(&call, facts)?
+                            self.contexts().call_context(&call, facts)?
                         } else {
                             return Err(SummaryBlocker::ExternalSummary);
                         }

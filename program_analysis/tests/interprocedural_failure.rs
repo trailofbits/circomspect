@@ -35,7 +35,7 @@ fn assert_output_availability(source: &str, available: bool) {
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("T").unwrap();
     let DefinitionRef::Template(template) = definition else { panic!("template T") };
-    let context = provider.symbolic_context_for(definition).unwrap();
+    let context = provider.contexts().symbolic_context_for(definition).unwrap();
     let output = lifted.hir.template(template).unwrap().ports[0];
     let port = provider.template_port(template, &context, output);
     let read = provider.template_port_read(template, &context, output);
@@ -121,7 +121,7 @@ fn failure_scan_budget_cannot_certify_a_template() {
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("T").unwrap();
     let DefinitionRef::Template(template) = definition else { panic!("template T") };
-    let context = provider.symbolic_context_for(definition).unwrap();
+    let context = provider.contexts().symbolic_context_for(definition).unwrap();
     let output = lifted.hir.template(template).unwrap().ports[0];
     let expected = std::collections::BTreeSet::from([SummaryBlocker::ContextBudget]);
     assert_eq!(provider.template_port(template, &context, output).unavailable(), Some(&expected));
