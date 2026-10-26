@@ -1,0 +1,277 @@
+{
+  "records": [
+    {
+      "id": "local.unknown",
+      "range": {
+        "kind": "canonical"
+      },
+      "reachable": true,
+      "state": "certified"
+    },
+    {
+      "blockers": [
+        "MissingExit"
+      ],
+      "id": "local.unreachable",
+      "reachable": false,
+      "state": "unavailable"
+    },
+    {
+      "blockers": [
+        "MissingExit"
+      ],
+      "id": "local.unobserved",
+      "reachability_blockers": [
+        "MissingExit"
+      ],
+      "state": "unavailable"
+    },
+    {
+      "blockers": [
+        "MissingExit"
+      ],
+      "id": "local.pending",
+      "reachability_blockers": [
+        {
+          "Budget": "cfg.entry"
+        }
+      ],
+      "state": "unavailable"
+    },
+    {
+      "coverage": "complete",
+      "dependencies": [
+        0
+      ],
+      "id": "return.Exact",
+      "state": "certified",
+      "value": {
+        "kind": "exact",
+        "value": "7"
+      }
+    },
+    {
+      "assert": false,
+      "empty": true,
+      "id": "effects.Exact",
+      "log": false,
+      "state": "certified"
+    },
+    {
+      "coverage": "conditional",
+      "dependencies": [],
+      "id": "return.Conditional",
+      "state": "certified",
+      "value": {
+        "kind": "exact",
+        "value": "7"
+      }
+    },
+    {
+      "blockers": [
+        "ExternalSummary"
+      ],
+      "id": "effects.Conditional",
+      "state": "unavailable"
+    },
+    {
+      "coverage": "complete",
+      "dependencies": [],
+      "id": "return.Empty",
+      "state": "certified",
+      "value": {
+        "kind": "exact",
+        "value": "7"
+      }
+    },
+    {
+      "assert": false,
+      "empty": true,
+      "id": "effects.Empty",
+      "log": false,
+      "state": "certified"
+    },
+    {
+      "coverage": "complete",
+      "dependencies": [],
+      "id": "return.Noisy",
+      "state": "certified",
+      "value": {
+        "kind": "exact",
+        "value": "7"
+      }
+    },
+    {
+      "assert": true,
+      "empty": false,
+      "id": "effects.Noisy",
+      "log": true,
+      "state": "certified"
+    },
+    {
+      "blockers": [
+        "RecursiveCycle"
+      ],
+      "id": "return.Cycle",
+      "state": "unavailable"
+    },
+    {
+      "assert": false,
+      "empty": false,
+      "id": "effects.Cycle",
+      "log": true,
+      "state": "certified"
+    },
+    {
+      "fixed": null,
+      "id": "port.x",
+      "incidence": "zero",
+      "indices": [],
+      "read": true,
+      "state": "certified",
+      "writes": []
+    },
+    {
+      "fixed": null,
+      "id": "port.y",
+      "incidence": "zero",
+      "indices": [],
+      "read": true,
+      "state": "certified",
+      "writes": [
+        {
+          "block": {
+            "end": 59,
+            "source": 0,
+            "start": 12
+          },
+          "effect": 3,
+          "expression": {
+            "end": 51,
+            "source": 0,
+            "start": 50
+          },
+          "provenance": "witness",
+          "span": {
+            "end": 51,
+            "source": 0,
+            "start": 46
+          }
+        }
+      ]
+    },
+    {
+      "fixed": "1",
+      "id": "port.z",
+      "incidence": "must",
+      "indices": [],
+      "read": true,
+      "state": "certified",
+      "writes": [
+        {
+          "block": {
+            "end": 59,
+            "source": 0,
+            "start": 12
+          },
+          "effect": 4,
+          "expression": {
+            "end": 57,
+            "source": 0,
+            "start": 56
+          },
+          "provenance": "generated",
+          "span": {
+            "end": 57,
+            "source": 0,
+            "start": 52
+          }
+        }
+      ]
+    },
+    {
+      "fixed": "1",
+      "id": "port.array.0",
+      "incidence": "must",
+      "indices": [
+        0
+      ],
+      "state": "certified"
+    },
+    {
+      "fixed": null,
+      "id": "port.array.1",
+      "incidence": "zero",
+      "indices": [
+        1
+      ],
+      "state": "certified"
+    },
+    {
+      "equal": [
+        [
+          true,
+          true,
+          false,
+          false
+        ],
+        [
+          true,
+          true,
+          false,
+          false
+        ],
+        [
+          false,
+          false,
+          true,
+          false
+        ],
+        [
+          false,
+          false,
+          false,
+          true
+        ]
+      ],
+      "foreign_blockers": [
+        "WrongContext",
+        "WrongContext"
+      ],
+      "id": "context.identity",
+      "slots": [
+        "first",
+        "first_again",
+        "source_twin",
+        "gold"
+      ]
+    },
+    {
+      "cross_facts_blocker": "WrongContext",
+      "equal_contexts": true,
+      "equal_paths": false,
+      "id": "context.ancestry",
+      "paths": [
+        [
+          {
+            "end": 61,
+            "source": 0,
+            "start": 54
+          }
+        ],
+        [
+          {
+            "end": 99,
+            "source": 0,
+            "start": 92
+          }
+        ]
+      ],
+      "slots": [
+        "left_call",
+        "right_call"
+      ]
+    }
+  ],
+  "schema": 1
+}
