@@ -20,6 +20,10 @@ use crate::interprocedural::{CallOwner, ProjectAnalysis, SummaryBlocker};
 /// use circomspect_program_analysis::interprocedural::ValidatedHeader;
 /// fn forge(header: &mut ValidatedHeader) { header.parameter_count = 8; }
 /// ```
+///
+/// Issued by source validation for one definition's name, parameter list, and header coverage.
+/// The owned name, span, and parameter count remain bound to that definition's identity.
+/// A valid header makes no claim about body completeness or execution.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ValidatedHeader {
     definition: DefinitionRef,
@@ -50,7 +54,7 @@ impl ValidatedHeader {
     }
 }
 
-/// A checked header whose entire definition has no parser, lifting, or semantic errors.
+/// A checked header issued after validating the definition's active source regions.
 ///
 /// ```compile_fail
 /// use circomspect_program_analysis::interprocedural::{ValidatedDefinition, ValidatedHeader};
@@ -58,6 +62,11 @@ impl ValidatedHeader {
 ///     definition.header = header;
 /// }
 /// ```
+///
+/// Issued after header and active-body source checks, including only authorized resolved or
+/// dead regions. It stores only the validated header and its definition identity, not the
+/// facts or scope used for those checks. It certifies neither successful execution nor
+/// completeness of unrelated project definitions.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ValidatedDefinition {
     header: ValidatedHeader,

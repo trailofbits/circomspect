@@ -57,6 +57,10 @@ impl From<&Curve> for CurveKey {
 }
 
 /// A validated specialization key, bound to one HIR, field, version, and definition.
+///
+/// The context issuer validates project identity, language version, curve, definition, arity,
+/// and canonical argument values/shapes. This owned key can describe a hypothetical call;
+/// only separate context evidence authorizes analysis of a root or reachable call.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct CallContext {
     project: ProjectIdentity,
@@ -156,6 +160,10 @@ impl PartialOrd for CallPathSite {
 }
 
 /// A nonforgeable scope linking a context to a library root or reachable call.
+///
+/// The context issuer binds a symbolic library root, main, or reachable call to its exact
+/// project, field, root, and source call-site ancestry. Consumers must match this evidence to
+/// local facts; equal argument values alone do not authorize evidence reuse.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ContextEvidence {
     context: CallContext,

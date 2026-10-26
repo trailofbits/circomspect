@@ -41,6 +41,11 @@ impl ComparatorScope<'_> {
 
 /// A complete generated closure bound to the output and field that were checked.
 /// The borrowed facts and equations cannot outlive the construction callback.
+///
+/// The closure issuer checks main, comparison, and decomposition scopes, paths, readiness,
+/// and recognized relation before invoking the callback. Its borrowed field, facts, equations,
+/// and ready inputs stay inside that callback. A range violation is issued only after a
+/// candidate satisfies every participating equation.
 pub(super) struct CheckedComparatorClosure<'a> {
     field: &'a FieldContext,
     applied: &'a AppliedComponentPort,

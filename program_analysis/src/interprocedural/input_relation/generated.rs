@@ -25,6 +25,10 @@ pub(in crate::interprocedural) struct PortAlias {
 }
 
 /// Port identities issued only after source call and both parameter contexts match.
+///
+/// The generated-input issuer checks complete input shape and parent/child port mapping.
+/// Its evidence remains bound to actual source targets, elements, and context identities;
+/// consuming the schema rechecks it against the supplied caller, child, and instance.
 pub(in crate::interprocedural) struct CheckedInputSchema {
     caller: ContextEvidence,
     instance: EnumeratedComponentInstance,
@@ -49,6 +53,10 @@ impl CheckedInputSchema {
 }
 
 /// Complete generated bindings; their equations retain constraint provenance.
+///
+/// The generated-input issuer retains checked equality provenance, port mapping, and input
+/// readiness for the exact parent/child contexts. Consumers still validate model keys and all
+/// participating equations; witness-only bindings cannot substitute for these equalities.
 pub(in crate::interprocedural) struct ReadyGeneratedInputs {
     caller: ContextEvidence,
     instance: EnumeratedComponentInstance,

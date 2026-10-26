@@ -11,6 +11,10 @@ use crate::interprocedural::summary::certified;
 /// The provider validates the shared scope once. Every query still checks its
 /// own witness node, generated equation, and dependency closure. Failed scope
 /// validation is retained for every query and cannot expose provisional facts.
+///
+/// This query object borrows the supplied facts and carries the checked template-scope
+/// refusal state. It is not an eager certificate for every equation: each operation can still
+/// be unavailable and must retain its originating context checks.
 pub struct GeneratedEquationQueries<'facts, 'project> {
     facts: &'facts AnalysisFacts<'project>,
     scope: Result<(), SummaryBlocker>,

@@ -1,4 +1,29 @@
 //! Resolved interprocedural calls and certified summaries.
+//!
+//! [`ProjectAnalysis`] owns one project's field, call graph, and completed summary caches.
+//! Queries bind results to source identities and context evidence before composing local facts.
+//! Function return coverage, function effects, and template ports have distinct policies;
+//! their similarly shaped results do not make their recursion or completion checks interchangeable.
+//!
+//! | Evidence | Issuer module | Required consumer check |
+//! | --- | --- | --- |
+//! | [`CallContext`] | `context` | Hypothetical keys do not prove reachability |
+//! | [`ContextEvidence`] | `context` | Match exact facts and ancestry |
+//! | [`ValidatedHeader`] | `source_validity` | Body coverage is separate |
+//! | [`ValidatedDefinition`] | `source_validity` | Coverage does not prove execution |
+//! | `CheckedCallContext` | `component::binding` | Select and check the source instance |
+//! | [`AppliedComponentPort`] | `component::binding` | Check generation and input readiness |
+//! | `CompletedTemplate`, `CompletedChild` | `constructor_readiness` | Match current read sites |
+//! | `ReadyWitnessInputs` | `input_relation` | Witness values are not generated equations |
+//! | `ReadyGeneratedInputs` | `input_relation::generated` | Validate complete model equations |
+//! | [`GeneratedEquationQueries`] | `constraint_relation` | Inspect each query's availability |
+//! | `CheckedComparatorClosure` | `comparator_range::closure` | Validate every candidate equation |
+//! | [`ComponentBitAmbiguity`] | `component_models` | Inspect both models and their provenance |
+//! | [`ProjectOutputUse`] | `project_use` | Require the selected rooted closure policy |
+//!
+//! The issuer types document their identity, borrowing, and coverage contracts in more detail.
+//! Constructors stay in those modules; there is no universal certificate that skips the remaining
+//! checks. Bounded candidate rejection proves neither uniqueness nor successful witness execution.
 
 mod graph;
 mod cache;

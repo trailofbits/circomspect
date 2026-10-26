@@ -19,6 +19,12 @@ use crate::hir_facts::relations::{
     MustSymbolicVariables, NormalizationInputs,
 };
 
+///
+/// Forward product domain with `Unreachable` bottom. Reached states lose conflicting exact
+/// locals and must-symbolic facts. Dependency maps retain variables present on both paths
+/// (absence means unknown), then union their per-variable dependency sets. May-sites union;
+/// must constraints, touches, fixed values, and equations intersect. Degree information weakens.
+/// Transfers preserve source origins and keep unavailable evidence distinct from exact values.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ForwardState {
     Unreachable,

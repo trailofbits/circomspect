@@ -15,6 +15,11 @@ pub trait DataflowAnalysis<G: FlowGraph> {
 }
 
 /// Every node and edge payload supplies a total, monotone transfer.
+///
+/// If `input_a <= input_b`, the transferred abstract state must remain ordered in the same
+/// direction. Rust cannot prove this semantic obligation; domain law tests, transfer tests,
+/// and review must establish it. Unknown semantics return explicit blockers, and provisional
+/// states do not become reporting certificates merely because they contain an exact value.
 pub trait Transfer<A, S, R> {
     fn apply(&self, analysis: &A, input: &S) -> TransferOutcome<S, R>;
 }

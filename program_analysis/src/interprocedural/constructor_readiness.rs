@@ -22,6 +22,10 @@ use crate::interprocedural::summary::certified;
 
 /// Constructors whose exact leaf children passed source, read, and generated-form checks.
 /// This is local readiness coverage, not a successful-termination certificate.
+///
+/// The readiness issuer binds constructor expressions and exact site/path/port tuples to
+/// context evidence. Consumers recheck coverage against each current output-read occurrence;
+/// matching a child definition alone is insufficient.
 pub(crate) struct ValidatedConstructorReads {
     evidence: ContextEvidence,
     calls: BTreeSet<ExprId>,
@@ -55,6 +59,10 @@ impl ValidatedComponentOutputRead {
     }
 }
 
+///
+/// The readiness issuer records required source, read, and generated-form checks for one exact
+/// context and its checked definitions. This is scope-specific readiness, not universal
+/// successful termination; child and current read-site checks remain separate.
 pub(super) struct CompletedTemplate {
     evidence: ContextEvidence,
     checked_definitions: BTreeSet<DefinitionRef>,
@@ -75,6 +83,10 @@ enum ChildCompletion {
     CompleteModels(CompletedTemplate),
 }
 
+///
+/// The readiness issuer binds a checked child to the caller evidence, call site, instance
+/// indices, and current output reads. Consumers must match the exact current occurrence;
+/// a certificate for the same child definition at another instance is insufficient.
 pub(super) struct CompletedChild {
     caller: ContextEvidence,
     site: CallSiteId,

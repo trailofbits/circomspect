@@ -25,6 +25,10 @@ pub enum FunctionEffect {
 }
 
 /// May-effects of every reachable call in one function context.
+///
+/// The lattice is a finite set of effects: empty bottom, subset order, and union join.
+/// Transfers compose effects through recursive strongly connected components to a least fixed
+/// point. This effect policy does not replace the separate return-summary cycle policy.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FunctionEffects(Set<FunctionEffect>);
 

@@ -21,6 +21,11 @@ use crate::interprocedural::{
 /// use circomspect_program_analysis::interprocedural::SummaryFact;
 /// let forged = SummaryFact::known(1);
 /// ```
+///
+/// Only interprocedural issuers construct these results. The wrapper stores no separate scope
+/// identity: any context, provenance, and coverage come from `T` and its query contract.
+/// Certification does not imply complete execution.
+/// An empty certified value is a successful query, whereas blockers mean no certificate was issued.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SummaryFact<T>(SummaryState<T>);
 
@@ -84,6 +89,11 @@ enum ReturnCoverage {
 ///
 /// A conditional value describes a return only if execution reaches it; it cannot establish
 /// termination or complete return coverage. Repeated call contexts never produce a summary.
+///
+/// Its lattice bottom is unreachable return, no input dependencies, and complete coverage.
+/// Join combines the return range, unions dependencies, and weakens `Complete` to `Conditional`.
+/// Transfers must preserve that distinction: an exact conditional return cannot justify
+/// termination or removal of a call.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FunctionSummary {
     returns: Range,

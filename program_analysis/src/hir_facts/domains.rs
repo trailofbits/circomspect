@@ -7,6 +7,10 @@ use super::field::FieldValue;
 /// Field-aware exact value or the canonical field range.
 ///
 /// This flat domain has height three: unreachable, one exact value, canonical.
+///
+/// `Unreachable` is bottom; each field-bound `Exact` value is below `Canonical`.
+/// Equal exact values join to themselves; different exact values join to `Canonical`.
+/// Transfers preserve the selected field and leave unknown values canonical.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum FieldRange {
     Unreachable,
@@ -43,6 +47,10 @@ impl Lattice for FieldRange {
 /// A sound upper bound for polynomial degree in witness inputs.
 ///
 /// Its five-element chain saturates at `Unbounded`; no widening is needed.
+///
+/// The order is `Unreachable < Constant < Linear < Quadratic < Unbounded`; join takes the
+/// maximum. Transfer functions must preserve source-form degree evidence: numeric cancellation
+/// alone cannot certify the source form of a constraint.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum DegreeUpper {
     Unreachable,

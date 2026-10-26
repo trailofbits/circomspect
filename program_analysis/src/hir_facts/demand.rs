@@ -15,6 +15,10 @@ use crate::hir_facts::{AnalysisFacts, Fact, FactBlocker, FieldContext, VisitAcce
 use crate::interprocedural::{CallContext, ContextEvidence};
 use crate::scalar_evidence::ScalarExpressionEvidence;
 
+///
+/// Backward observable-demand domain with `Unreachable` bottom, subset order on reached
+/// access-key sets, and union join. Its transfer rules describe safe assignment removal;
+/// ordinary may liveness is a different question and cannot replace this analysis.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum DemandState {
     Unreachable,

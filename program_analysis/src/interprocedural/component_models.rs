@@ -52,6 +52,11 @@ impl ComponentModelAssignment {
 /// Witness-only values do not restrict these models. This proves existence of two
 /// constraint models, not that the witness generator produces either assignment.
 /// Maps retain finite equation support; unmentioned signal cells extend with zero.
+///
+/// The model issuer checks two different bit representations against complete parent/child
+/// equations with the same external and bound inputs. Assignments and source origins retain
+/// the checked applied-port identity. This proves constraint ambiguity, not witness-generator
+/// execution; failure to find such a pair does not prove uniqueness.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ComponentBitAmbiguity {
     applied: AppliedComponentPort,

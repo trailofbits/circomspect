@@ -89,6 +89,11 @@ pub(crate) fn exact_compile_time(
 /// use circomspect_program_analysis::hir_facts::{Fact, Incidence};
 /// let forged = Fact::known(Incidence::Zero);
 /// ```
+///
+/// Local queries issue either the value `T` or the blocker set returned by that query.
+/// The wrapper stores no separate scope identity and is not a lattice or a global execution
+/// certificate. Consumers follow the query contract and any scope carried by `T`.
+/// A certified `None` is different from an unavailable fact.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Fact<T>(FactState<T>);
 

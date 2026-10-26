@@ -163,6 +163,11 @@ impl InputState {
 /// bindings join their finite sets of source sites. Invalid is the top state.
 /// The selected field and finite CFG bound the height; solver budgets still
 /// produce incomplete results before large dynamic paths can certify facts.
+///
+/// `Unreachable` is bottom. Reached bindings join equal values by unioning source sites;
+/// conflicting values or absent-versus-bound inputs join to `Invalid` top. The `instantiated`
+/// flag uses reverse Boolean order and AND join. Transfers preserve generated-versus-witness
+/// binding policy; exhausted solver budgets cannot certify provisional readiness.
 enum RelationState {
     Unreachable,
     Reached { instantiated: bool, inputs: BTreeMap<InputPortElement, InputState> },
@@ -289,6 +294,10 @@ impl ReadyInputs {
 }
 
 /// Initialization evidence only. No field equality follows from these bindings.
+///
+/// The input-relation issuer checks initialization at use for a selected instance, retaining
+/// per-element witness values and source origins. These bindings do not authorize generated
+/// constraint equations or prove complete witness execution.
 pub(super) struct ReadyWitnessInputs {
     caller: ContextEvidence,
     instance: EnumeratedComponentInstance,
@@ -315,6 +324,11 @@ impl ReadyWitnessInputs {
     }
 }
 
+///
+/// This value stores only checked per-element bindings, targets, and source origins; it has
+/// no context or instance field. Its issuer checks readiness for the current instance and use
+/// site. Callers must keep those scoped inputs together and still check ports and complete
+/// model equations; the value alone cannot authenticate a different instance.
 pub(super) struct ReadyInstanceAtUse {
     bindings: BTreeMap<InputPortElement, ConstrainedInputBinding>,
 }

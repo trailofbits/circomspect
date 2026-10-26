@@ -18,6 +18,10 @@ use super::{ContextEvidence, PortSummary, ProjectAnalysis, ReachableCall, Summar
 /// A child-local output fact bound to one reachable, exact caller instance.
 ///
 /// The binding does not prove that all caller-side input or output relations are closed.
+///
+/// Issued through checked component binding for one selected instance and port. It retains
+/// caller/callee evidence, call site, checked handle, and indices. It does not by itself prove
+/// input initialization, generated equations, or complete child generation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AppliedComponentPort {
     caller: ContextEvidence,

@@ -7,6 +7,8 @@ use std::sync::Arc;
 ///
 /// Implementations must make `join_assign` the least upper bound, returning
 /// `true` exactly when `self` changes. These laws are checked in property tests.
+/// Rust checks the interface, not these laws: implementations must preserve reflexive/transitive
+/// order and an associative, commutative, idempotent join consistent with `leq`.
 pub trait Lattice: Clone + Eq {
     fn bottom() -> Self;
     fn leq(&self, other: &Self) -> bool;
@@ -39,6 +41,8 @@ impl<T: Lattice> Lattice for Arc<T> {
 }
 
 /// Facts ordered by subset inclusion.
+///
+/// Empty is bottom, subset inclusion is the order, and union is the least upper bound.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Set<T: Ord>(BTreeSet<T>);
 
@@ -69,6 +73,8 @@ impl<T: Clone + Ord> Lattice for Set<T> {
 }
 
 /// Whether a path has been reached.
+///
+/// `Unreachable` is bottom and `Reachable` is top; join selects the reached state.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Reachability {
     Unreachable,
@@ -98,6 +104,9 @@ impl Lattice for Reachability {
 }
 
 /// Flat constant domain: absent path, one known value, or conflicting values.
+///
+/// `Bottom` is below each `Value`, with `Top` above all values. Equal values join unchanged;
+/// different values join to `Top`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Constant<T> {
     Bottom,

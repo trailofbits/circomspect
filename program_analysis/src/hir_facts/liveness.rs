@@ -16,6 +16,10 @@ use super::field::FieldContext;
 use super::forward::eval_expression;
 use super::walk::VisitAccesses;
 
+///
+/// Backward may-liveness domain with `Unreachable` bottom and reached access-key sets ordered
+/// by inclusion. Join unions sets, including possible aliases. Edge pruning requires separate
+/// reachability evidence; an absent read is not automatically a safely removable assignment.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LiveState {
     Unreachable,

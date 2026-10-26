@@ -40,6 +40,10 @@ enum MainSourceScope<'a> {
 /// Only the provider can construct this after validating main, project
 /// completeness, and an exact output path. `Unused` never describes a library
 /// root or an exported main port.
+///
+/// The project-use issuer records status for an exact rooted instance and selected closure
+/// policy, retaining root evidence, instance steps, target, and use evidence. Unknown library
+/// consumers prevent closed-project negative claims.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProjectOutputUse {
     main: ContextEvidence,

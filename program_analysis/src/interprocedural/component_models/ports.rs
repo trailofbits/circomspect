@@ -16,6 +16,10 @@ struct CheckedOutput {
 
 /// Exact aliases issued from caller instance bounds and callee port bounds.
 /// The fields are private so a source path alone cannot authorize a bounds exemption.
+///
+/// The port issuer binds aliases to checked parent/child contexts, source instance bounds,
+/// and per-element input/output mappings. Model consumers must still check generation and
+/// the complete equation set for the current facts.
 pub(crate) struct ValidatedComponentPorts {
     evidence: ContextEvidence,
     outputs: Vec<CheckedOutput>,

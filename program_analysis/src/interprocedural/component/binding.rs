@@ -16,6 +16,10 @@ use crate::interprocedural::{
     CallSiteId, ContextEvidence, PortSummary, ProjectAnalysis, ReachableCall, SummaryBlocker,
 };
 
+///
+/// The binding issuer checks caller facts and evidence against one source call and owns the
+/// resulting callee evidence. It borrows the actual analysis session and caller data for the
+/// query lifetime. Direct, local, and enumerated instance selection still apply their own checks.
 #[derive(Clone)]
 pub(in crate::interprocedural) struct CheckedCallContext<'query, 'project> {
     provider: &'query ProjectAnalysis<'project>,
@@ -163,6 +167,10 @@ impl<'query, 'project> CheckedCallContext<'query, 'project> {
     }
 }
 
+///
+/// The binding issuer selects an exact component instance and checks its source binding and
+/// bounds. Caller/callee evidence and source indices remain attached to the query's borrowed
+/// session and facts. Port application and generated-input readiness require further checks.
 pub(in crate::interprocedural) struct CheckedComponentCall<'query, 'project> {
     context: CheckedCallContext<'query, 'project>,
     component: ComponentId,
