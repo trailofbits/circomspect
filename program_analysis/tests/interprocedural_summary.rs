@@ -855,14 +855,14 @@ fn template_port_summary_specializes_constraint_provenance() {
         .unwrap();
     let symbolic =
         provider.contexts().symbolic_context_for(DefinitionRef::Template(template)).unwrap();
-    let constrained = provider.template_port(template, &one, port);
+    let constrained = provider.templates().template_port(template, &one, port);
     assert_eq!(constrained.certified().unwrap().incidence(), Incidence::Must);
     assert_eq!(constrained.certified().unwrap().fixed_value(), Some(&field.canonical(1.into())));
     assert_eq!(
-        provider.template_port(template, &zero, port).certified().unwrap().incidence(),
+        provider.templates().template_port(template, &zero, port).certified().unwrap().incidence(),
         Incidence::Zero
     );
-    assert!(provider.template_port(template, &symbolic, port).unavailable().is_some());
+    assert!(provider.templates().template_port(template, &symbolic, port).unavailable().is_some());
     assert!(lifted.hir.mains().is_empty());
 }
 
@@ -881,7 +881,7 @@ fn complete_call_result_through_local_access_agrees_with_inlining() {
         let port = lifted.hir.template(template).unwrap().ports[0];
         let context =
             provider.contexts().symbolic_context_for(DefinitionRef::Template(template)).unwrap();
-        let summary = provider.template_port(template, &context, port);
+        let summary = provider.templates().template_port(template, &context, port);
         let summary = summary.certified().expect("complete call result");
         assert_eq!(summary.incidence(), Incidence::Must, "{value}");
         assert_eq!(summary.fixed_value(), Some(&field.canonical(7.into())), "{value}");
@@ -906,13 +906,18 @@ fn deferred_variable_guard_specializes_template_constraint_incidence() {
             )
             .unwrap();
         assert_eq!(
-            provider.template_port(template, &context, port).certified().unwrap().incidence(),
+            provider
+                .templates()
+                .template_port(template, &context, port)
+                .certified()
+                .unwrap()
+                .incidence(),
             incidence
         );
     }
     let symbolic =
         provider.contexts().symbolic_context_for(DefinitionRef::Template(template)).unwrap();
-    assert!(provider.template_port(template, &symbolic, port).unavailable().is_some());
+    assert!(provider.templates().template_port(template, &symbolic, port).unavailable().is_some());
 }
 
 #[test]
@@ -925,31 +930,60 @@ fn template_port_summary_keeps_witness_and_read_evidence_separate() {
     let ports = &lifted.hir.template(template).unwrap().ports;
     let context =
         provider.contexts().symbolic_context_for(DefinitionRef::Template(template)).unwrap();
-    assert_eq!(provider.template_port_read(template, &context, ports[0]).certified(), Some(&true));
     assert_eq!(
-        provider.template_port_witnesses(template, &context, ports[1]).certified().map(Vec::len),
+        provider.templates().template_port_read(template, &context, ports[0]).certified(),
+        Some(&true)
+    );
+    assert_eq!(
+        provider
+            .templates()
+            .template_port_witnesses(template, &context, ports[1])
+            .certified()
+            .map(Vec::len),
         Some(1)
     );
     assert_eq!(
-        provider.template_port_witnesses(template, &context, ports[1]).certified().unwrap()[0]
+        provider
+            .templates()
+            .template_port_witnesses(template, &context, ports[1])
+            .certified()
+            .unwrap()[0]
             .provenance(),
         WitnessProvenance::WitnessOnly
     );
     assert_eq!(
-        provider.template_port(template, &context, ports[1]).certified().unwrap().incidence(),
+        provider
+            .templates()
+            .template_port(template, &context, ports[1])
+            .certified()
+            .unwrap()
+            .incidence(),
         Incidence::Zero
     );
     assert_eq!(
-        provider.template_port_witnesses(template, &context, ports[2]).certified().map(Vec::len),
+        provider
+            .templates()
+            .template_port_witnesses(template, &context, ports[2])
+            .certified()
+            .map(Vec::len),
         Some(1)
     );
     assert_eq!(
-        provider.template_port_witnesses(template, &context, ports[2]).certified().unwrap()[0]
+        provider
+            .templates()
+            .template_port_witnesses(template, &context, ports[2])
+            .certified()
+            .unwrap()[0]
             .provenance(),
         WitnessProvenance::GeneratedConstraint
     );
     assert_eq!(
-        provider.template_port(template, &context, ports[2]).certified().unwrap().incidence(),
+        provider
+            .templates()
+            .template_port(template, &context, ports[2])
+            .certified()
+            .unwrap()
+            .incidence(),
         Incidence::Must
     );
 }
@@ -964,8 +998,16 @@ fn opaque_witness_write_cannot_certify_an_empty_witness_summary() {
     let port = lifted.hir.template(template).unwrap().ports[0];
     let context =
         provider.contexts().symbolic_context_for(DefinitionRef::Template(template)).unwrap();
-    assert!(provider.template_port_witnesses(template, &context, port).unavailable().is_some());
-    assert!(provider.template_port_witnesses(template, &context, port).unavailable().is_some());
+    assert!(provider
+        .templates()
+        .template_port_witnesses(template, &context, port)
+        .unavailable()
+        .is_some());
+    assert!(provider
+        .templates()
+        .template_port_witnesses(template, &context, port)
+        .unavailable()
+        .is_some());
 }
 
 #[test]
@@ -978,19 +1020,19 @@ fn exact_array_port_summaries_retain_distinct_element_identity() {
     let port = lifted.hir.template(template).unwrap().ports[0];
     let context =
         provider.contexts().symbolic_context_for(DefinitionRef::Template(template)).unwrap();
-    let first = provider.template_port_at(template, &context, port, &[0]);
-    let second = provider.template_port_at(template, &context, port, &[1]);
+    let first = provider.templates().template_port_at(template, &context, port, &[0]);
+    let second = provider.templates().template_port_at(template, &context, port, &[1]);
     assert_eq!(first.certified().unwrap().indices(), [0]);
     assert_eq!(second.certified().unwrap().indices(), [1]);
     assert_eq!(first.certified().unwrap().incidence(), Incidence::Must);
     assert_eq!(second.certified().unwrap().incidence(), Incidence::Zero);
-    assert_eq!(provider.template_port_at(template, &context, port, &[0]), first);
-    assert_eq!(provider.template_port_at(template, &context, port, &[1]), second);
+    assert_eq!(provider.templates().template_port_at(template, &context, port, &[0]), first);
+    assert_eq!(provider.templates().template_port_at(template, &context, port, &[1]), second);
     let other_curve = ProjectAnalysis::build(&lifted, Curve::Goldilocks).unwrap();
     let foreign_context =
         other_curve.contexts().symbolic_context_for(DefinitionRef::Template(template)).unwrap();
     assert_eq!(
-        provider.template_port_at(template, &foreign_context, port, &[0]).unavailable(),
+        provider.templates().template_port_at(template, &foreign_context, port, &[0]).unavailable(),
         Some(&std::collections::BTreeSet::from([SummaryBlocker::WrongContext]))
     );
 }
@@ -1110,7 +1152,7 @@ fn complete_call_result_agrees_with_inlined_template_constraint() {
         let port = lifted.hir.template(template).unwrap().ports[0];
         let context =
             provider.contexts().symbolic_context_for(DefinitionRef::Template(template)).unwrap();
-        let summary = provider.template_port(template, &context, port);
+        let summary = provider.templates().template_port(template, &context, port);
         assert_eq!(
             summary
                 .certified()
@@ -1242,12 +1284,12 @@ fn deferred_assertion_uses_the_concrete_scalar_context() {
         .is_none());
     let t_one = provider.contexts().context_for(DefinitionRef::Template(t), vec![one]).unwrap();
     let t_zero = provider.contexts().context_for(DefinitionRef::Template(t), vec![zero]).unwrap();
-    let one_output = provider.template_port(t, &t_one, output);
+    let one_output = provider.templates().template_port(t, &t_one, output);
     assert_eq!(
         one_output.certified().and_then(|item| item.fixed_value()),
         Some(&field.canonical(7.into()))
     );
-    assert!(provider.template_port(t, &t_zero, output).certified().is_none());
+    assert!(provider.templates().template_port(t, &t_zero, output).certified().is_none());
     let symbolic = provider.contexts().symbolic_context_for(DefinitionRef::Function(f)).unwrap();
     assert!(provider
         .functions()
@@ -1255,4 +1297,35 @@ fn deferred_assertion_uses_the_concrete_scalar_context() {
         .certified()
         .and_then(|item| item.complete_return())
         .is_none());
+}
+
+#[test]
+fn temporary_template_views_preserve_owned_port_results() {
+    let lifted = fixture("template T(){signal input x;signal output y,z;y<--x;z<==1;}");
+    let analysis = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
+    let DefinitionRef::Template(template) = lifted.hir.definition("T").unwrap() else {
+        panic!("template T")
+    };
+    let ports = &lifted.hir.template(template).unwrap().ports;
+    let context =
+        analysis.contexts().symbolic_context_for(DefinitionRef::Template(template)).unwrap();
+    let first = (
+        analysis.templates().template_port(template, &context, ports[2]),
+        analysis.templates().template_port_read(template, &context, ports[0]),
+        analysis.templates().template_port_witnesses(template, &context, ports[1]),
+    );
+    let second = {
+        let queries = analysis.templates();
+        (
+            queries.template_port(template, &context, ports[2]),
+            queries.template_port_read(template, &context, ports[0]),
+            queries.template_port_witnesses(template, &context, ports[1]),
+        )
+    };
+    let field = FieldContext::for_curve(Curve::Bn254);
+    assert_eq!(first.0.certified().unwrap().fixed_value(), Some(&field.canonical(1.into())));
+    assert_eq!(first.1.certified(), Some(&true));
+    assert_eq!(first.2.certified().unwrap().len(), 1);
+    assert_eq!(first.2.certified().unwrap()[0].provenance(), WitnessProvenance::WitnessOnly);
+    assert_eq!(second, first);
 }

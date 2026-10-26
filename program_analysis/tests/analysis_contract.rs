@@ -194,13 +194,13 @@ fn port_records() -> Vec<Value> {
     for port in &lifted.hir.template(template).unwrap().ports {
         let symbol = lifted.hir.port(*port).unwrap().symbol;
         let name = &lifted.hir.symbol(symbol).unwrap().name;
-        let summary = provider.template_port(template, &context, *port);
-        assert_eq!(summary, provider.template_port(template, &context, *port));
+        let summary = provider.templates().template_port(template, &context, *port);
+        assert_eq!(summary, provider.templates().template_port(template, &context, *port));
         let summary = summary.certified().unwrap();
         assert_eq!(summary.context(), &context);
         assert_eq!(summary.port(), *port);
-        let read = provider.template_port_read(template, &context, *port);
-        let writes = provider.template_port_witnesses(template, &context, *port);
+        let read = provider.templates().template_port_read(template, &context, *port);
+        let writes = provider.templates().template_port_witnesses(template, &context, *port);
         let mut origins = Vec::new();
         for write in writes.certified().unwrap() {
             let origin = write.origin();
@@ -235,8 +235,11 @@ fn array_port_records() -> Vec<Value> {
     let context = provider.contexts().symbolic_context_for(definition).unwrap();
     let mut records = Vec::new();
     for index in [0, 1] {
-        let summary = provider.template_port_at(template, &context, port, &[index]);
-        assert_eq!(summary, provider.template_port_at(template, &context, port, &[index]));
+        let summary = provider.templates().template_port_at(template, &context, port, &[index]);
+        assert_eq!(
+            summary,
+            provider.templates().template_port_at(template, &context, port, &[index])
+        );
         let summary = summary.certified().unwrap();
         assert_eq!(summary.indices(), [index]);
         records.push(json!({

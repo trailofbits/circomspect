@@ -51,7 +51,7 @@ fn scoped_port(source: &str, budget: Option<usize>, indices: &[usize]) -> Summar
     let evidence = provider.contexts().symbolic_root(definition).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
     let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, budget).unwrap();
-    provider.template_port_for_evidence(&facts, &evidence, port(&lifted, "x"), indices)
+    provider.templates().template_port_for_evidence(&facts, &evidence, port(&lifted, "x"), indices)
 }
 
 #[test]
@@ -103,18 +103,21 @@ fn scoped_port_queries_bind_provider_curve_context_and_definition() {
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
     let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let x = port(&lifted, "x");
-    let result = provider.template_port_for_evidence(&facts, &other, x, &[]);
+    let result = provider.templates().template_port_for_evidence(&facts, &other, x, &[]);
     assert!(result.unavailable().unwrap().contains(&SummaryBlocker::WrongContext));
-    let result = provider.template_port_for_evidence(&facts, &evidence, port(&lifted, "y"), &[]);
+    let result =
+        provider.templates().template_port_for_evidence(&facts, &evidence, port(&lifted, "y"), &[]);
     assert!(result.unavailable().is_some(), "foreign port cannot be certified");
     let other_curve = ProjectAnalysis::build(&lifted, Curve::Bls12_381).unwrap();
     assert!(other_curve
+        .templates()
         .template_port_for_evidence(&facts, &evidence, x, &[])
         .unavailable()
         .is_some());
     let copied = fixture(source);
     let other_project = ProjectAnalysis::build(&copied, Curve::Bn254).unwrap();
     assert!(other_project
+        .templates()
         .template_port_for_evidence(&facts, &evidence, x, &[])
         .unavailable()
         .is_some());
@@ -130,15 +133,18 @@ fn scoped_port_queries_keep_the_supplied_budget_after_cache_warmup() {
     let x = port(&lifted, "x");
     let complete = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     assert!(provider
+        .templates()
         .template_port_for_evidence(&complete, &evidence, x, &[])
         .certified()
         .is_some());
     let exhausted = provider.contexts().analyze_for_evidence(&cfg, &evidence, Some(0)).unwrap();
     assert!(provider
+        .templates()
         .template_port_for_evidence(&exhausted, &evidence, x, &[])
         .unavailable()
         .is_some());
     assert!(provider
+        .templates()
         .template_port_for_evidence(&complete, &evidence, x, &[])
         .certified()
         .is_some());
@@ -163,9 +169,17 @@ fn scoped_port_queries_preserve_main_but_refuse_incoming_call_closure() {
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
     let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let x = port(&lifted, "x");
-    assert!(provider.template_port_for_evidence(&facts, &evidence, x, &[]).certified().is_some());
+    assert!(provider
+        .templates()
+        .template_port_for_evidence(&facts, &evidence, x, &[])
+        .certified()
+        .is_some());
     let symbolic = provider.contexts().symbolic_root(definition).unwrap();
-    assert!(provider.template_port_for_evidence(&facts, &symbolic, x, &[]).unavailable().is_some());
+    assert!(provider
+        .templates()
+        .template_port_for_evidence(&facts, &symbolic, x, &[])
+        .unavailable()
+        .is_some());
     let site = provider.graph().calls_from(CallOwner::Definition(definition))[0];
     let CallReachability::Reachable(call) = provider.graph().reachable_call(site.id(), &facts)
     else {
@@ -174,7 +188,8 @@ fn scoped_port_queries_preserve_main_but_refuse_incoming_call_closure() {
     let child = provider.contexts().call_evidence(&call, &facts, &evidence).unwrap();
     let cfg = build_cfg(&lifted.hir, child.context().definition()).unwrap();
     let facts = provider.contexts().analyze_for_evidence(&cfg, &child, None).unwrap();
-    let result = provider.template_port_for_evidence(&facts, &child, port(&lifted, "y"), &[]);
+    let result =
+        provider.templates().template_port_for_evidence(&facts, &child, port(&lifted, "y"), &[]);
     assert!(result.unavailable().unwrap().contains(&SummaryBlocker::UnsupportedContext));
 }
 

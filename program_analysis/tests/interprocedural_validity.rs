@@ -53,10 +53,18 @@ fn definitely_invalid_templates_cannot_certify_ports_reads_or_witnesses() {
         let DefinitionRef::Template(template) = definition else { panic!("template T") };
         let context = provider.contexts().symbolic_context_for(definition).unwrap();
         let output = lifted.hir.template(template).unwrap().ports[0];
-        let port = provider.template_port(template, &context, output);
+        let port = provider.templates().template_port(template, &context, output);
         assert!(port.certified().is_none(), "{statement}: {port:?}");
-        assert!(provider.template_port_read(template, &context, output).certified().is_none());
-        assert!(provider.template_port_witnesses(template, &context, output).certified().is_none());
+        assert!(provider
+            .templates()
+            .template_port_read(template, &context, output)
+            .certified()
+            .is_none());
+        assert!(provider
+            .templates()
+            .template_port_witnesses(template, &context, output)
+            .certified()
+            .is_none());
     }
 }
 
@@ -72,7 +80,11 @@ fn invalid_bus_field_dimensions_block_unrelated_port_certificates() {
             let DefinitionRef::Template(template) = definition else { panic!("template T") };
             let context = provider.contexts().symbolic_context_for(definition).unwrap();
             let output = lifted.hir.template(template).unwrap().ports[0];
-            assert!(provider.template_port(template, &context, output).certified().is_none());
+            assert!(provider
+                .templates()
+                .template_port(template, &context, output)
+                .certified()
+                .is_none());
         }
     }
 }
@@ -85,7 +97,7 @@ fn an_unused_invalid_bus_definition_preserves_independent_template_facts() {
     let DefinitionRef::Template(template) = definition else { panic!("template T") };
     let context = provider.contexts().symbolic_context_for(definition).unwrap();
     let output = lifted.hir.template(template).unwrap().ports[0];
-    let facts = provider.template_port(template, &context, output);
+    let facts = provider.templates().template_port(template, &context, output);
     assert_eq!(facts.certified().unwrap().incidence(), Incidence::Must);
 }
 
@@ -103,9 +115,21 @@ fn custom_and_external_templates_never_supply_trusted_port_effects() {
         assert!(declaration.custom || declaration.external);
         let context = provider.contexts().symbolic_context_for(definition).unwrap();
         let output = declaration.ports[0];
-        assert!(provider.template_port(template, &context, output).certified().is_none());
-        assert!(provider.template_port_read(template, &context, output).certified().is_none());
-        assert!(provider.template_port_witnesses(template, &context, output).certified().is_none());
+        assert!(provider
+            .templates()
+            .template_port(template, &context, output)
+            .certified()
+            .is_none());
+        assert!(provider
+            .templates()
+            .template_port_read(template, &context, output)
+            .certified()
+            .is_none());
+        assert!(provider
+            .templates()
+            .template_port_witnesses(template, &context, output)
+            .certified()
+            .is_none());
     }
 }
 
@@ -124,7 +148,7 @@ fn literal_dimensions_use_canonical_field_values() {
             let DefinitionRef::Template(template) = definition else { panic!("template T") };
             let context = provider.contexts().symbolic_context_for(definition).unwrap();
             let output = lifted.hir.template(template).unwrap().ports[0];
-            let result = provider.template_port(template, &context, output);
+            let result = provider.templates().template_port(template, &context, output);
             assert_eq!(result.certified().is_none(), invalid, "{size}: {result:?}");
         }
     }
@@ -144,7 +168,7 @@ fn declaration_validity_uses_the_selected_curve_and_parameter_context() {
                 .contexts()
                 .context_for(definition, vec![ArgumentValue::Scalar(field.canonical(size.into()))])
                 .unwrap();
-            let port = provider.template_port(template, &context, output);
+            let port = provider.templates().template_port(template, &context, output);
             if size < 0 {
                 assert!(port.certified().is_none(), "{port:?}");
             } else {
@@ -174,7 +198,7 @@ fn valid_execution_and_unrelated_opacity_preserve_independent_port_facts() {
         let DefinitionRef::Template(template) = definition else { panic!("template T") };
         let context = provider.contexts().symbolic_context_for(definition).unwrap();
         let output = lifted.hir.template(template).unwrap().ports[0];
-        let port = provider.template_port(template, &context, output);
+        let port = provider.templates().template_port(template, &context, output);
         assert_eq!(
             port.certified()
                 .map(circomspect_program_analysis::interprocedural::PortSummary::incidence),
@@ -196,7 +220,7 @@ fn unproved_access_bounds_do_not_invalidate_independent_port_facts() {
         let DefinitionRef::Template(template) = definition else { panic!("template T") };
         let context = provider.contexts().symbolic_context_for(definition).unwrap();
         let output = lifted.hir.template(template).unwrap().ports[0];
-        let summary = provider.template_port(template, &context, output);
+        let summary = provider.templates().template_port(template, &context, output);
         assert_eq!(
             summary
                 .certified()

@@ -368,21 +368,26 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
         indices: &[usize],
     ) -> Option<SummaryFact<PortSummary>> {
         let DefinitionRef::Template(_) = self.call_context().definition() else { return None };
-        Some(self.summaries.template_port_for_evidence(self.facts, self.evidence, port, indices))
+        Some(self.summaries.templates().template_port_for_evidence(
+            self.facts,
+            self.evidence,
+            port,
+            indices,
+        ))
     }
 
     /// Return whether the active template reads a declared port.
     #[must_use]
     pub fn template_port_read(&self, port: PortId) -> Option<SummaryFact<bool>> {
         let DefinitionRef::Template(id) = self.call_context().definition() else { return None };
-        Some(self.summaries.template_port_read(id, self.call_context(), port))
+        Some(self.summaries.templates().template_port_read(id, self.call_context(), port))
     }
 
     /// Return witness writes to a declared port in the active template.
     #[must_use]
     pub fn template_port_witnesses(&self, port: PortId) -> Option<SummaryFact<Vec<WitnessSite>>> {
         let DefinitionRef::Template(id) = self.call_context().definition() else { return None };
-        Some(self.summaries.template_port_witnesses(id, self.call_context(), port))
+        Some(self.summaries.templates().template_port_witnesses(id, self.call_context(), port))
     }
 
     /// Record an undecided predicate in this validated scope without changing its reason or span.

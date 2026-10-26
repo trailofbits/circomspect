@@ -68,9 +68,9 @@ fn output_facts(source: &str, arguments: Option<&[i64]>, indices: &[usize]) -> O
     };
     let port = lifted.hir.template(template).unwrap().ports[0];
     OutputFacts {
-        port: provider.template_port_at(template, &context, port, indices),
-        read: provider.template_port_read(template, &context, port),
-        witnesses: provider.template_port_witnesses(template, &context, port),
+        port: provider.templates().template_port_at(template, &context, port, indices),
+        read: provider.templates().template_port_read(template, &context, port),
+        witnesses: provider.templates().template_port_witnesses(template, &context, port),
     }
 }
 
@@ -115,15 +115,15 @@ fn template_call_rhs_uses_the_exact_parameter_context() {
             .context_for(definition, vec![ArgumentValue::Scalar(field.canonical(value.into()))])
             .unwrap();
         let facts = OutputFacts {
-            port: provider.template_port(template, &context, output),
-            read: provider.template_port_read(template, &context, output),
-            witnesses: provider.template_port_witnesses(template, &context, output),
+            port: provider.templates().template_port(template, &context, output),
+            read: provider.templates().template_port_read(template, &context, output),
+            witnesses: provider.templates().template_port_witnesses(template, &context, output),
         };
         assert_fixed_output(&facts, value + 1);
         assert_eq!(facts.witnesses.certified().unwrap().len(), 1);
     }
     let context = provider.contexts().symbolic_context_for(definition).unwrap();
-    let symbolic = provider.template_port(template, &context, output);
+    let symbolic = provider.templates().template_port(template, &context, output);
     assert!(symbolic.certified().and_then(PortSummary::fixed_value).is_none());
 }
 

@@ -283,7 +283,8 @@ impl ProjectAnalysis<'_> {
         let instantiation = self.bind_instantiation(facts, call.site().expression, handle)?;
         let context = CheckedCallContext::new(self, facts, caller, call)?;
         let (port, indices) = handle.output_port().ok_or(SummaryBlocker::WrongInstance)?;
-        let summary = self.template_port_at(template, context.callee.context(), port, &indices);
+        let summary =
+            self.templates().template_port_at(template, context.callee.context(), port, &indices);
         let port = summary.certified().cloned().ok_or_else(|| {
             summary
                 .unavailable()

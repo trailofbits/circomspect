@@ -329,7 +329,7 @@ fn checked_input_relation_agrees_with_direct_inline_output() {
     let inline_context =
         provider.contexts().symbolic_context_for(DefinitionRef::Template(inline)).unwrap();
     let inline_output = lifted.hir.template(inline).unwrap().ports[0];
-    let direct = provider.template_port(inline, &inline_context, inline_output);
+    let direct = provider.templates().template_port(inline, &inline_context, inline_output);
     assert_eq!(
         composed.certified().map(
             circomspect_program_analysis::interprocedural::ComposedConstraintFixedOutput::value
@@ -564,6 +564,7 @@ fn equality_without_output_witness_is_not_promoted_as_a_value_write() {
         provider.contexts().symbolic_context_for(DefinitionRef::Template(child)).unwrap();
     let output = lifted.hir.template(child).unwrap().ports[1];
     assert!(provider
+        .templates()
         .template_port_witnesses(child, &child_context, output)
         .certified()
         .is_some_and(Vec::is_empty));

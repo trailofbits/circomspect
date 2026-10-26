@@ -327,45 +327,52 @@ impl ProjectAnalysis<'_> {
         if !applied.port.indices().is_empty() {
             return Err(SummaryBlocker::UnsupportedContext);
         }
-        self.with_local_template(child, applied.callee.context(), |template, cfg, facts| {
-            Self::reject_reachable_child_loop(cfg, facts)?;
-            let output =
-                self.hir().port(applied.port.port()).ok_or(SummaryBlocker::ForeignDefinition)?;
-            let symbol =
-                self.hir().symbol(output.symbol).ok_or(SummaryBlocker::ForeignDefinition)?;
-            if symbol.rank != 0 || output.schema != PortSchema::Signal {
-                return Err(SummaryBlocker::UnsupportedContext);
-            }
-            let mut result = None;
-            for id in cfg.nodes() {
-                let Some(node) = cfg.node(*id) else { continue };
-                let CfgNodeKind::Constraint(Constraint::Assignment { target, value }) = &node.kind
-                else {
-                    continue;
-                };
-                if target.root != output.symbol || !target.steps.is_empty() {
-                    continue;
+        self.templates().with_local_template(
+            child,
+            applied.callee.context(),
+            |template, cfg, facts| {
+                Self::reject_reachable_child_loop(cfg, facts)?;
+                let output = self
+                    .hir()
+                    .port(applied.port.port())
+                    .ok_or(SummaryBlocker::ForeignDefinition)?;
+                let symbol =
+                    self.hir().symbol(output.symbol).ok_or(SummaryBlocker::ForeignDefinition)?;
+                if symbol.rank != 0 || output.schema != PortSchema::Signal {
+                    return Err(SummaryBlocker::UnsupportedContext);
                 }
-                let Some(ExprKind::Access(source)) =
-                    self.hir().expression(*value).map(|expr| &expr.kind)
-                else {
-                    continue;
-                };
-                let Some(input) = self.exact_input_port(template, source) else {
-                    continue;
-                };
-                if !*certified(&facts.must_execute(*id))? || result.is_some() {
-                    return Err(SummaryBlocker::ExternalSummary);
+                let mut result = None;
+                for id in cfg.nodes() {
+                    let Some(node) = cfg.node(*id) else { continue };
+                    let CfgNodeKind::Constraint(Constraint::Assignment { target, value }) =
+                        &node.kind
+                    else {
+                        continue;
+                    };
+                    if target.root != output.symbol || !target.steps.is_empty() {
+                        continue;
+                    }
+                    let Some(ExprKind::Access(source)) =
+                        self.hir().expression(*value).map(|expr| &expr.kind)
+                    else {
+                        continue;
+                    };
+                    let Some(input) = self.exact_input_port(template, source) else {
+                        continue;
+                    };
+                    if !*certified(&facts.must_execute(*id))? || result.is_some() {
+                        return Err(SummaryBlocker::ExternalSummary);
+                    }
+                    let origin = node.origin.ok_or(SummaryBlocker::LocalAnalysis(
+                        "missing child equality origin".into(),
+                    ))?;
+                    result = Some(GeneratedPortEquality { input, origin });
                 }
-                let origin = node
-                    .origin
-                    .ok_or(SummaryBlocker::LocalAnalysis("missing child equality origin".into()))?;
-                result = Some(GeneratedPortEquality { input, origin });
-            }
-            let equality = result.ok_or(SummaryBlocker::ExternalSummary)?;
-            self.check_child_output_effects(cfg, facts, output.symbol, equality.origin)?;
-            Ok(equality)
-        })
+                let equality = result.ok_or(SummaryBlocker::ExternalSummary)?;
+                self.check_child_output_effects(cfg, facts, output.symbol, equality.origin)?;
+                Ok(equality)
+            },
+        )
     }
 
     fn reject_reachable_child_loop(

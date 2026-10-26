@@ -127,7 +127,8 @@ fn concrete_rule_context_rejects_unbound_and_wrong_seed_facts() {
     let port = lifted.hir.template(child_id).unwrap().ports[0];
     let summary = scoped.template_port(port, &[]).unwrap();
     assert!(summary.unavailable().unwrap().contains(&SummaryBlocker::UnsupportedContext));
-    let summary = summaries.template_port_at(child_id, scoped.call_context(), port, &[]);
+    let summary =
+        summaries.templates().template_port_at(child_id, scoped.call_context(), port, &[]);
     let summary = summary.certified().unwrap();
     assert_eq!(summary.context(), child_evidence[0].context());
     assert_eq!(summary.fixed_value(), Some(&field.canonical(1.into())));
@@ -140,7 +141,8 @@ fn concrete_rule_context_rejects_unbound_and_wrong_seed_facts() {
     let other = RuleContext::new(&other_facts, &summaries, &child_evidence[1]).unwrap();
     let other_summary = other.template_port(port, &[]).unwrap();
     assert!(other_summary.unavailable().unwrap().contains(&SummaryBlocker::UnsupportedContext));
-    let other_summary = summaries.template_port_at(child_id, other.call_context(), port, &[]);
+    let other_summary =
+        summaries.templates().template_port_at(child_id, other.call_context(), port, &[]);
     assert_eq!(other_summary.certified().unwrap().fixed_value(), Some(&field.canonical(2.into())));
     let symbolic = summaries.contexts().symbolic_root(child).unwrap();
     assert_eq!(

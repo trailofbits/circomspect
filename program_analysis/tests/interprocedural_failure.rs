@@ -37,9 +37,9 @@ fn assert_output_availability(source: &str, available: bool) {
     let DefinitionRef::Template(template) = definition else { panic!("template T") };
     let context = provider.contexts().symbolic_context_for(definition).unwrap();
     let output = lifted.hir.template(template).unwrap().ports[0];
-    let port = provider.template_port(template, &context, output);
-    let read = provider.template_port_read(template, &context, output);
-    let witnesses = provider.template_port_witnesses(template, &context, output);
+    let port = provider.templates().template_port(template, &context, output);
+    let read = provider.templates().template_port_read(template, &context, output);
+    let witnesses = provider.templates().template_port_witnesses(template, &context, output);
     assert_eq!(port.certified().is_some(), available, "{source}: {port:?}");
     if !available {
         assert!(read.certified().is_none(), "{source}: {read:?}");
@@ -124,13 +124,16 @@ fn failure_scan_budget_cannot_certify_a_template() {
     let context = provider.contexts().symbolic_context_for(definition).unwrap();
     let output = lifted.hir.template(template).unwrap().ports[0];
     let expected = std::collections::BTreeSet::from([SummaryBlocker::ContextBudget]);
-    assert_eq!(provider.template_port(template, &context, output).unavailable(), Some(&expected));
     assert_eq!(
-        provider.template_port_read(template, &context, output).unavailable(),
+        provider.templates().template_port(template, &context, output).unavailable(),
         Some(&expected)
     );
     assert_eq!(
-        provider.template_port_witnesses(template, &context, output).unavailable(),
+        provider.templates().template_port_read(template, &context, output).unavailable(),
+        Some(&expected)
+    );
+    assert_eq!(
+        provider.templates().template_port_witnesses(template, &context, output).unavailable(),
         Some(&expected)
     );
 }

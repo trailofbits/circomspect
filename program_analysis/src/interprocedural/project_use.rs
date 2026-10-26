@@ -236,12 +236,16 @@ impl ProjectAnalysis<'_> {
     ) -> Result<LocalOutputUse, SummaryBlocker> {
         let port = applied.port_summary().port();
         let indices = applied.port_summary().indices();
-        self.with_local_template(child, applied.callee_evidence().context(), |_, _, facts| {
-            let handle = facts
-                .port_handle(port, indices)
-                .map_err(|error| SummaryBlocker::LocalAnalysis(error.to_string()))?;
-            self.local_handle_use_result(facts, &handle)
-        })
+        self.templates().with_local_template(
+            child,
+            applied.callee_evidence().context(),
+            |_, _, facts| {
+                let handle = facts
+                    .port_handle(port, indices)
+                    .map_err(|error| SummaryBlocker::LocalAnalysis(error.to_string()))?;
+                self.local_handle_use_result(facts, &handle)
+            },
+        )
     }
 
     /// Treat a declared output of the validated main template as environment-read.

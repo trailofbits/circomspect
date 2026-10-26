@@ -377,7 +377,11 @@ fn concrete_taken_branch_rejects_a_scalar_assignment_from_an_array() {
     };
     assert_eq!(diagnostic.code, SemanticCode::InvalidAssignment);
     let output = lifted.hir.template(template).unwrap().ports[0];
-    assert!(provider.template_port(template, evidence.context(), output).certified().is_none());
+    assert!(provider
+        .templates()
+        .template_port(template, evidence.context(), output)
+        .certified()
+        .is_none());
 }
 
 #[test]

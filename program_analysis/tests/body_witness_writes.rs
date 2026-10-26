@@ -82,7 +82,7 @@ fn port_availability(source: &str, names: &[&str]) -> Vec<bool> {
                     lifted.hir.symbol(symbol).unwrap().name == **name
                 })
                 .unwrap();
-            provider.template_port(id, evidence.context(), *port).certified().is_some()
+            provider.templates().template_port(id, evidence.context(), *port).certified().is_some()
         })
         .collect()
 }
