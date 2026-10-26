@@ -15,5 +15,5 @@
 #[macro_use]
 extern crate lalrpop_util;
 
-pub mod new_frontend;
+pub mod frontend;
 pub mod hir;

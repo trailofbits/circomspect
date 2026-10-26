@@ -22,7 +22,7 @@ use circomspect_program_analysis::new_rules::{
 };
 use num_bigint_dig::BigInt;
 use parser::hir::lift_project;
-use parser::new_frontend::{load_sources, LoadedProject, Version, VersionPolicy};
+use parser::frontend::{load_sources, LoadedProject, Version, VersionPolicy};
 use program_structure::report::MessageCategory;
 use program_structure::utils::constants::{Curve, UsefulConstants};
 use serde_json::Value;

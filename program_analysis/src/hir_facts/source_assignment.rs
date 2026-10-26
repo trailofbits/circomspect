@@ -1,7 +1,7 @@
 //! Source operator descriptions, without a claim that a deferred assignment is valid.
 
 use parser::hir::{AccessPath, Effect, ExprId, IncompleteReason};
-use parser::new_frontend::AssignmentOperator;
+use parser::frontend::AssignmentOperator;
 
 pub(crate) enum SourceSignalAssignment<'a> {
     Generated { target: &'a AccessPath, value: ExprId },

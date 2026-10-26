@@ -7,7 +7,7 @@ mod source;
 use std::collections::BTreeMap;
 
 use parser::hir::{AccessPath, PortId, PortSchema};
-use parser::new_frontend::PortDirection;
+use parser::frontend::PortDirection;
 
 use crate::hir_cfg::Origin;
 use crate::hir_facts::{

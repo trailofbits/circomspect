@@ -2,7 +2,7 @@
 
 use abstract_interpretation::graph::{FlowGraph, NodeId};
 use parser::hir::{AccessPath, ComponentId, DefinitionRef, ExprId};
-use parser::new_frontend::Span;
+use parser::frontend::Span;
 
 use crate::hir_cfg::CfgNodeKind;
 use crate::hir_facts::{AccessHandle, AnalysisFacts, InstanceRelation};

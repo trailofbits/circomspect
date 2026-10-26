@@ -12,7 +12,7 @@ use crate::hir::{
     IncompleteReason, Knownness, PortId, PortSchema, SymbolId, SymbolKind, Template, TemplateId,
     ValueEvidence,
 };
-use crate::new_frontend::{
+use crate::frontend::{
     BinaryOperator, InputAssignmentOperator, LoadedProject, PortDirection, SourceId, Span,
     UnaryOperator, Version, VersionPolicy,
 };

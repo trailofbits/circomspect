@@ -7,7 +7,7 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use circomspect_parser::hir::lift_project;
-use circomspect_parser::new_frontend::{
+use circomspect_parser::frontend::{
     parse_source, DiagnosticKind, Item, LoadedProject, SourceFile, SourceId, Statement, Version,
     VersionPolicy, WalkSyntax,
 };
@@ -87,11 +87,7 @@ fn source(mode: &str, shape: &str, depth: usize) -> String {
     format!("function F(n){{return n;}}{body}")
 }
 
-fn assert_recovery(
-    mode: &str,
-    source: &str,
-    parsed: &circomspect_parser::new_frontend::ParseOutcome,
-) {
+fn assert_recovery(mode: &str, source: &str, parsed: &circomspect_parser::frontend::ParseOutcome) {
     assert_eq!(parsed.diagnostics.len(), 1);
     let diagnostic = &parsed.diagnostics[0];
     assert_eq!(diagnostic.kind, DiagnosticKind::Syntax);

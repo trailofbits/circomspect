@@ -11,7 +11,7 @@
 use abstract_interpretation::graph::FlowGraph;
 use circomspect_program_analysis::hir_cfg::{Constraint, build_cfg, BuildError, CfgNodeKind, EdgeKind};
 use parser::hir::{lift_project, AccessStep, ArrayIndex, ControlGuard, DefinitionRef, Effect};
-use parser::new_frontend::{load_sources, Version, VersionPolicy};
+use parser::frontend::{load_sources, Version, VersionPolicy};
 use std::fs;
 
 fn lift_fixture(source: &str) -> parser::hir::LiftedProject {

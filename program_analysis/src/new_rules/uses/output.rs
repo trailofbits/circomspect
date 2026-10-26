@@ -1,5 +1,5 @@
 use parser::hir::DefinitionRef;
-use parser::new_frontend::Span;
+use parser::frontend::Span;
 
 use crate::interprocedural::{ContextOrigin, ProjectOutputStatus, ProjectOutputUse, SummaryBlocker};
 use crate::new_rules::uses::{definition_span, summary_abstain, summary_reason};

@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 
 use abstract_interpretation::graph::FlowGraph;
 use parser::hir::{AccessPath, DefinitionRef, SymbolId, SymbolKind};
-use parser::new_frontend::Span;
+use parser::frontend::Span;
 
 use crate::hir_cfg::{Constraint, CfgNode, CfgNodeKind};
 use crate::hir_facts::{AccessKey, Incidence, VisitAccesses};

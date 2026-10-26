@@ -1,5 +1,5 @@
 use parser::hir::{AccessPath, DefinitionRef, Effect, Expr, ExprId, ExprKind, PortId, SymbolKind};
-use parser::new_frontend::{BinaryOperator, PortDirection, Span};
+use parser::frontend::{BinaryOperator, PortDirection, Span};
 
 use crate::hir_facts::Incidence;
 use crate::new_rules::{AbstentionReason, RuleContext, RuleKind, RuleResult};

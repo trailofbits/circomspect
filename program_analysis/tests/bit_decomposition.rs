@@ -15,7 +15,7 @@ use circomspect_program_analysis::hir_facts::{BitDecomposition, Fact, FactBlocke
 use circomspect_program_analysis::interprocedural::ProjectSummaries;
 use num_bigint_dig::BigInt;
 use parser::hir::{lift_project, AccessPath, AccessStep, ArrayIndex, HirProject, SymbolKind};
-use parser::new_frontend::{load_sources, Version, VersionPolicy};
+use parser::frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
 
 fn source(boolean: [bool; 3], weight: usize, generated: bool) -> String {

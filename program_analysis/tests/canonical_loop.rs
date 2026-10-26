@@ -13,7 +13,7 @@ use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::hir_facts::{BitDecomposition, Fact};
 use circomspect_program_analysis::interprocedural::{CallOwner, CallReachability, ProjectSummaries};
 use parser::hir::{lift_project, AccessStep, ArrayIndex, DefinitionRef, ExprKind, HirProject, PortId};
-use parser::new_frontend::{load_sources, Version, VersionPolicy};
+use parser::frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
 
 fn port(hir: &HirProject, name: &str) -> PortId {

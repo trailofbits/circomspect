@@ -6,7 +6,7 @@ mod redundant_witness;
 mod signal_assignment;
 
 use parser::hir::Effect;
-use parser::new_frontend::AssignmentOperator;
+use parser::frontend::AssignmentOperator;
 
 use crate::hir_cfg::{CfgNode, CfgNodeKind};
 use crate::new_rules::{Rule, RuleKind};

@@ -17,7 +17,7 @@ use circomspect_program_analysis::interprocedural::{
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::hir_facts::analyze;
 use parser::hir::{lift_project, ExprKind, LiftedProject, SemanticCode, Severity};
-use parser::new_frontend::{load_sources, Version, VersionPolicy};
+use parser::frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
 use std::fs;
 

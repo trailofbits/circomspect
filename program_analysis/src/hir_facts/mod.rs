@@ -44,7 +44,7 @@ use parser::hir::{
     AccessPath, AccessStep, ArrayIndex, CallTarget, DefinitionRef, Effect, ExprId, ExprKind,
     HirProject, SymbolId, SymbolKind,
 };
-use parser::new_frontend::{AssignmentOperator, InputAssignmentOperator};
+use parser::frontend::{AssignmentOperator, InputAssignmentOperator};
 
 use crate::hir_cfg::{Constraint, CfgNodeKind, DefinitionCfg};
 use crate::hir_facts::demand::{DemandAnalysis, DemandState};
@@ -1626,7 +1626,7 @@ mod call_shape_tests {
 
     use abstract_interpretation::graph::FlowGraph;
     use parser::hir::{lift_project, DefinitionRef, Effect, ExprKind, HirProject};
-    use parser::new_frontend::{AssignmentOperator, load_sources, Version, VersionPolicy};
+    use parser::frontend::{AssignmentOperator, load_sources, Version, VersionPolicy};
     use program_structure::utils::constants::Curve;
 
     use crate::hir_cfg::{build_cfg, CfgNodeKind};

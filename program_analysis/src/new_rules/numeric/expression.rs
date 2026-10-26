@@ -3,7 +3,7 @@ use std::cmp::Ordering;
 use num_bigint::BigInt;
 use num_traits::Zero;
 use parser::hir::{DefinitionRef, ExprKind};
-use parser::new_frontend::{BinaryOperator, UnaryOperator};
+use parser::frontend::{BinaryOperator, UnaryOperator};
 use program_structure::utils::constants::{Curve, UsefulConstants};
 
 use crate::hir_facts::FieldContext;

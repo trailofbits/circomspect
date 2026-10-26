@@ -7,7 +7,7 @@ use crate::hir::{
     Knownness, LiftedProject, Main, PortId, PortSchema, SemanticCode, SemanticDiagnostic, Severity,
     SymbolId, SymbolKind, Template, TemplateId, ValueEvidence, Function, FunctionId,
 };
-use crate::new_frontend::{
+use crate::frontend::{
     Access, AnonymousCallExpr, AnonymousInput, AssignmentOperator, Declaration, DeclarationKind,
     DeclaredSymbol, Definition, DefinitionKind as SourceDefinitionKind, DirectionSyntax,
     Expression, Identifier, Item, LoadedProject, LogArgument, PortDirection, Span, Statement,

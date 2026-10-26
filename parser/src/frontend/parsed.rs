@@ -5,13 +5,15 @@ mod expressions;
 mod headers;
 mod validation;
 
-use crate::new_frontend::ast::{SourceId, Span, SyntaxDiagnostic, Version};
-use crate::new_frontend::typed::{Item, Pragma};
+use crate::frontend::source::{SourceId, Span, SyntaxDiagnostic, Version};
+use crate::frontend::ast::{Item, Pragma};
 
-pub(super) use construct::{DeclarationParts, DefinitionParts, ForParts, TemplateModifier};
-pub(super) use expressions::AnonymousParts;
-pub(super) use headers::{BusHeaderParts, HeaderDirection};
-pub(super) use validation::finish_segments;
+pub(super) use crate::frontend::parsed::construct::{
+    DeclarationParts, DefinitionParts, ForParts, TemplateModifier,
+};
+pub(super) use crate::frontend::parsed::expressions::AnonymousParts;
+pub(super) use crate::frontend::parsed::headers::{BusHeaderParts, HeaderDirection};
+pub(super) use crate::frontend::parsed::validation::finish_segments;
 
 #[derive(Clone, Copy)]
 pub(super) struct AnnotationId(usize);

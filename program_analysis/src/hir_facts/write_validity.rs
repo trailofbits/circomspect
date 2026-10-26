@@ -9,7 +9,7 @@ use abstract_interpretation::solver::{
     TransferOutcome,
 };
 use parser::hir::{AccessPath, AccessStep, ArrayIndex, ExprId, ProjectIdentity, SymbolKind};
-use parser::new_frontend::{AssignmentOperator, PortDirection};
+use parser::frontend::{AssignmentOperator, PortDirection};
 
 use crate::hir_cfg::{Constraint, CfgEdge, CfgNode, CfgNodeKind, DefinitionCfg, Origin};
 use crate::hir_facts::access::key_for_path;
@@ -762,7 +762,7 @@ mod tests {
     use abstract_interpretation::graph::FlowGraph;
     use abstract_interpretation::lattice::Lattice;
     use parser::hir::{lift_project, LiftedProject};
-    use parser::new_frontend::{load_sources, Version, VersionPolicy};
+    use parser::frontend::{load_sources, Version, VersionPolicy};
     use program_structure::utils::constants::Curve;
 
     use crate::hir_cfg::{build_cfg, CfgNodeKind, DefinitionCfg};

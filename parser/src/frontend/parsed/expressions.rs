@@ -1,6 +1,6 @@
-use crate::new_frontend::ast::Span;
-use crate::new_frontend::parsed::{unpack, ParseContext, Parsed, SourceForm};
-use crate::new_frontend::typed::{Access, AnonymousCallExpr, AnonymousInput, Expression, Identifier};
+use crate::frontend::source::Span;
+use crate::frontend::parsed::{unpack, ParseContext, Parsed, SourceForm};
+use crate::frontend::ast::{Access, AnonymousCallExpr, AnonymousInput, Expression, Identifier};
 
 pub(crate) struct AnonymousParts {
     pub name: Parsed<Identifier>,

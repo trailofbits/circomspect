@@ -1,7 +1,7 @@
-use crate::new_frontend::ast::{DiagnosticKind, SyntaxDiagnostic, Version, VersionPolicy};
-use crate::new_frontend::parsed::{Annotation, Parsed, ParsedItem, ParsedSegment};
-use crate::new_frontend::parsed::{Recovery, SourceForm};
-use crate::new_frontend::typed::{Item, PendingFeatureCheck, PendingFeatureKind};
+use crate::frontend::source::{DiagnosticKind, SyntaxDiagnostic, Version, VersionPolicy};
+use crate::frontend::parsed::{Annotation, Parsed, ParsedItem, ParsedSegment};
+use crate::frontend::parsed::{Recovery, SourceForm};
+use crate::frontend::ast::{Item, PendingFeatureCheck, PendingFeatureKind};
 
 fn minimum_version(annotation: &Annotation) -> Option<Version> {
     match annotation.form {

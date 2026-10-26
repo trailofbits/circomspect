@@ -12,7 +12,7 @@ use abstract_interpretation::lattice::Lattice;
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::hir_facts::{analyze, Degree, FieldContext, Range};
 use parser::hir::{lift_project, ExprKind};
-use parser::new_frontend::{load_sources, Version, VersionPolicy};
+use parser::frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
 use std::fmt::Debug;
 use std::fs;
@@ -97,9 +97,9 @@ fn real_hir_range_degree_and_dependencies_are_distinct() {
         .expressions()
         .iter()
         .find_map(|expression| match expression.kind {
-            ExprKind::Binary {
-                operator: parser::new_frontend::BinaryOperator::Multiply, ..
-            } => Some(expression.id),
+            ExprKind::Binary { operator: parser::frontend::BinaryOperator::Multiply, .. } => {
+                Some(expression.id)
+            }
             _ => None,
         })
         .unwrap();

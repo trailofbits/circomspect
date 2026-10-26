@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 
 use abstract_interpretation::graph::FlowGraph;
 use parser::hir::{AccessPath, AccessStep, ArrayIndex, DefinitionRef, PortSchema};
-use parser::new_frontend::{PortDirection, Span};
+use parser::frontend::{PortDirection, Span};
 
 use crate::hir_cfg::{CfgNodeKind, Origin};
 use crate::hir_facts::{AccessHandle, AnalysisFacts};

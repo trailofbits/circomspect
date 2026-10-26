@@ -1,7 +1,7 @@
 //! Exact constructor and port schemas for the bounded comparator closure.
 
 use parser::hir::{DefinitionRef, PortId, PortSchema};
-use parser::new_frontend::PortDirection;
+use parser::frontend::PortDirection;
 
 use crate::hir_facts::{AccessHandle, AnalysisFacts};
 use crate::interprocedural::output_enumeration::EnumeratedComponentInstance;

@@ -3,7 +3,7 @@
 use abstract_interpretation::graph::{FlowGraph, NodeId};
 use num_traits::ToPrimitive;
 use parser::hir::{AccessPath, AccessStep, ArrayIndex, ComponentId, DefinitionRef, ExprId, PortId};
-use parser::new_frontend::{PortDirection, Span};
+use parser::frontend::{PortDirection, Span};
 
 use crate::hir_cfg::CfgNodeKind;
 use crate::hir_facts::{AnalysisFacts, Range};

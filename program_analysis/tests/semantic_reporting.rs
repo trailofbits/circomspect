@@ -17,7 +17,7 @@ use circomspect_program_analysis::interprocedural::{
 };
 use circomspect_program_analysis::new_rules::SourceMap;
 use parser::hir::{lift_project, SemanticCode, SemanticDiagnostic, Severity};
-use parser::new_frontend::{load_sources, LoadedProject, SourceId, Span, Version, VersionPolicy};
+use parser::frontend::{load_sources, LoadedProject, SourceId, Span, Version, VersionPolicy};
 use program_structure::report::MessageCategory;
 use program_structure::utils::constants::Curve;
 use serde_json::Value;

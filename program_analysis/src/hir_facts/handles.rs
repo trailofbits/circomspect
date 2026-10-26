@@ -10,7 +10,7 @@ use parser::hir::{
     AccessPath, AccessStep, ArrayIndex, CallTarget, ComponentId, DefinitionRef, ExprId, ExprKind,
     PortId, PortSchema, Symbol, SymbolId, TemplateId,
 };
-use parser::new_frontend::PortDirection;
+use parser::frontend::PortDirection;
 use program_structure::utils::constants::Curve;
 
 use crate::hir_facts::access::{key_for_path, AccessKey};
@@ -44,7 +44,7 @@ impl AccessHandle {
     }
 
     #[must_use]
-    pub fn span(&self) -> parser::new_frontend::Span {
+    pub fn span(&self) -> parser::frontend::Span {
         self.path.span
     }
 

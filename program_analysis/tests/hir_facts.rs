@@ -17,7 +17,7 @@ use parser::hir::{
     lift_project, AccessPath, AccessStep, ArrayIndex, ControlGuard, DefinitionRef, Effect,
     ExprKind, HirProject, LiftedProject, SemanticCode,
 };
-use parser::new_frontend::{load_sources, Version, VersionPolicy};
+use parser::frontend::{load_sources, Version, VersionPolicy};
 use std::collections::BTreeSet;
 use std::fs;
 use program_structure::utils::constants::Curve;

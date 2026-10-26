@@ -6,7 +6,7 @@ use abstract_interpretation::solver::{
     solve, DataflowAnalysis, Forward, SolveResult, Transfer, TransferOutcome,
 };
 use parser::hir::{DefinitionRef, FunctionId};
-use parser::new_frontend::AssignmentOperator;
+use parser::frontend::AssignmentOperator;
 
 use crate::hir_cfg::CfgNodeKind;
 use crate::hir_facts::Range;

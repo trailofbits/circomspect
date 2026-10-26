@@ -16,7 +16,7 @@ use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::interprocedural::{CallOwner, CallReachability, ProjectSummaries};
 use circomspect_program_analysis::new_rules::{numeric, RuleContext, RuleKind, RuleResult, SourceMap};
 use parser::hir::lift_project;
-use parser::new_frontend::{load_sources, LoadedProject, Version, VersionPolicy};
+use parser::frontend::{load_sources, LoadedProject, Version, VersionPolicy};
 use program_structure::report::MessageCategory;
 use program_structure::utils::constants::Curve;
 use serde_json::Value;

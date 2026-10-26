@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::new_frontend::{
+use crate::frontend::{
     AssignmentOperator, BinaryOperator, DiagnosticLocation, InputAssignmentOperator, PortDirection,
     PostfixOperator, Span, SyntaxDiagnostic, UnaryOperator, Version,
 };

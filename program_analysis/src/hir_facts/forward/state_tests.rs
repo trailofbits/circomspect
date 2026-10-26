@@ -6,7 +6,7 @@ use abstract_interpretation::graph::{FlowGraph, NodeId};
 use abstract_interpretation::lattice::Lattice;
 use abstract_interpretation::solver::{Transfer, TransferOutcome};
 use parser::hir::{lift_project, ExprKind, HirProject, SymbolId};
-use parser::new_frontend::{load_sources, AssignmentOperator, Version, VersionPolicy};
+use parser::frontend::{load_sources, AssignmentOperator, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
 
 use crate::hir_cfg::{build_cfg, CfgNode, CfgNodeKind, DefinitionCfg};

@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use parser::hir::DefinitionRef;
-use parser::new_frontend::Span;
+use parser::frontend::Span;
 
 use crate::hir_facts::FactBlocker;
 use crate::interprocedural::{CallBlocker, CallContext, SummaryBlocker};

@@ -8,17 +8,17 @@
     clippy::panic_in_result_fn,
     clippy::unwrap_used
 )]
-use circomspect_parser::new_frontend::{
+use circomspect_parser::frontend::{
     load_sources, parse_source, DefinitionKind, DiagnosticKind, DiagnosticLocation, Expression,
     Item, SourceId, Statement, SyntaxCategory, Version, VersionPolicy, WalkSyntax,
 };
 use std::fs;
 
-fn parse(source: &str) -> circomspect_parser::new_frontend::ParseOutcome {
+fn parse(source: &str) -> circomspect_parser::frontend::ParseOutcome {
     parse_source(SourceId::new(0), source, VersionPolicy::new(Version::new(2, 2, 3)))
 }
 
-fn has_definition(outcome: &circomspect_parser::new_frontend::ParseOutcome, name: &str) -> bool {
+fn has_definition(outcome: &circomspect_parser::frontend::ParseOutcome, name: &str) -> bool {
     outcome.ast.items.iter().any(|item| {
         if let Item::Definition(definition) = item {
             definition.name.name == name
@@ -35,7 +35,7 @@ fn assert_missing_return(statement: &Statement) {
     assert_eq!(name.name, "Missing");
 }
 
-fn assert_spans(source: &str, outcome: &circomspect_parser::new_frontend::ParseOutcome) {
+fn assert_spans(source: &str, outcome: &circomspect_parser::frontend::ParseOutcome) {
     outcome.ast.walk_syntax(None, &mut |_, span, parent| {
         assert!(source.is_char_boundary(span.start()));
         assert!(source.is_char_boundary(span.end()));
@@ -451,7 +451,7 @@ fn parallel_operand_preserves_binary_expression() {
     };
     assert!(left.span().start() < right.span().start());
     assert!(span.start() < span.end());
-    assert_eq!(*operator, circomspect_parser::new_frontend::BinaryOperator::Add);
+    assert_eq!(*operator, circomspect_parser::frontend::BinaryOperator::Add);
     assert_spans(source, &outcome);
 }
 
@@ -560,7 +560,7 @@ fn arbitrary_unicode_and_malformed_strings_never_panic_or_make_invalid_spans() {
 
 #[test]
 fn typed_ast_distinguishes_definition_and_direction_kinds() {
-    use circomspect_parser::new_frontend::{DeclarationKind, DirectionSyntax};
+    use circomspect_parser::frontend::{DeclarationKind, DirectionSyntax};
 
     let outcome = parse("template T() { output signal x; signal input y; }");
     assert!(outcome.diagnostics.is_empty());

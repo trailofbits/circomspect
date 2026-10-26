@@ -1,5 +1,5 @@
-use super::ast::Span;
-use super::typed::{
+use crate::frontend::source::Span;
+use crate::frontend::ast::{
     Access, AnonymousCallExpr, AnonymousInput, Block, Declaration, DeclarationKind, DeclaredSymbol,
     Definition, DirectionSyntax, Expression, Identifier, Item, LogArgument, SourceAst, Statement,
 };

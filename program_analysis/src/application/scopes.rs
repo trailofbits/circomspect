@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use parser::hir::DefinitionRef;
-use parser::new_frontend::Span;
+use parser::frontend::Span;
 use program_structure::report::Report;
 
 use crate::application::diagnostics::{Diagnostics, IncompleteCause, IncompleteDetail};

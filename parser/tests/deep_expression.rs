@@ -11,7 +11,7 @@
 use std::fs;
 
 use circomspect_parser::hir::lift_project;
-use circomspect_parser::new_frontend::{
+use circomspect_parser::frontend::{
     load_sources, parse_source, BinaryOperator, Expression, Item, SourceId, Statement, Version,
     VersionPolicy, WalkSyntax, SyntaxCategory,
 };

@@ -1,6 +1,6 @@
 use abstract_interpretation::graph::FlowGraph;
 use parser::hir::{DefinitionRef, Effect, PortId, Template, TemplateId};
-use parser::new_frontend::AssignmentOperator;
+use parser::frontend::AssignmentOperator;
 
 use crate::hir_cfg::{CfgNodeKind, DefinitionCfg, Origin};
 use crate::hir_facts::{AccessHandle, AnalysisFacts, BodyWriteStatus, FieldValue, Incidence};

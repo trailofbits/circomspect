@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use num_bigint::BigUint;
 use parser::hir::{AccessPath, SymbolKind};
-use parser::new_frontend::PortDirection;
+use parser::frontend::PortDirection;
 
 use crate::hir_cfg::Origin;
 use crate::hir_facts::relations::complete::{

@@ -17,7 +17,7 @@ use circomspect_program_analysis::interprocedural::{
 };
 use circomspect_program_analysis::new_rules::RuleContext;
 use parser::hir::{lift_project, DefinitionRef, LiftedProject};
-use parser::new_frontend::{load_sources, Version, VersionPolicy};
+use parser::frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
 
 fn fixture(source: &str) -> LiftedProject {

@@ -173,7 +173,7 @@ fn incomplete_names_code(result: &Value, code: &str) -> bool {
 
 fn scope_lines(case: &Value, path: &Path) -> (u64, u64, ScopeKind) {
     use parser::hir::{lift_project, DefinitionRef, IncompleteReason};
-    use parser::new_frontend::{load_sources, Version, VersionPolicy};
+    use parser::frontend::{load_sources, Version, VersionPolicy};
     let loaded = load_sources(&[path.to_owned()], &[], VersionPolicy::new(Version::new(2, 2, 3)));
     let lifted = lift_project(&loaded);
     let (span, kind) = if let Some(definition) = lifted.hir.definition(field(case, "scope")) {

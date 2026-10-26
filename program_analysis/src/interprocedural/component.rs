@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 
 use abstract_interpretation::graph::{FlowGraph, NodeId};
 use parser::hir::{AccessPath, DefinitionRef, ExprId, ExprKind, PortId, PortSchema, SymbolId};
-use parser::new_frontend::PortDirection;
+use parser::frontend::PortDirection;
 
 use crate::hir_cfg::{Constraint, CfgNodeKind, DefinitionCfg, Origin};
 use crate::hir_facts::{AccessHandle, AnalysisFacts, FieldValue, InstanceRelation, VisitAccesses};
@@ -505,7 +505,7 @@ impl ProjectSummaries<'_> {
 #[cfg(test)]
 mod tests {
     use parser::hir::{lift_project, DefinitionRef};
-    use parser::new_frontend::{load_sources, Version, VersionPolicy};
+    use parser::frontend::{load_sources, Version, VersionPolicy};
     use program_structure::utils::constants::Curve;
 
     use crate::hir_cfg::build_cfg;

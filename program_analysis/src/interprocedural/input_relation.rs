@@ -10,7 +10,7 @@ use abstract_interpretation::solver::{
 use parser::hir::{
     AccessPath, AccessStep, ArrayIndex, ControlGuard, ExprKind, PortId, PortSchema, SymbolKind,
 };
-use parser::new_frontend::PortDirection;
+use parser::frontend::PortDirection;
 
 use crate::hir_cfg::{Constraint, CfgEdge, CfgNode, CfgNodeKind, Origin};
 use crate::hir_facts::{
@@ -877,7 +877,7 @@ mod tests {
     use abstract_interpretation::lattice::Lattice;
     use abstract_interpretation::solver::{Transfer, TransferOutcome};
     use parser::hir::{lift_project, DefinitionRef, PortId};
-    use parser::new_frontend::{load_sources, Version, VersionPolicy};
+    use parser::frontend::{load_sources, Version, VersionPolicy};
     use program_structure::utils::constants::Curve;
 
     use crate::hir_cfg::build_cfg;

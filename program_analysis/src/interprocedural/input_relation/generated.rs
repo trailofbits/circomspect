@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use abstract_interpretation::graph::FlowGraph;
 
 use parser::hir::{AccessPath, AccessStep, ArrayIndex, DefinitionRef, PortSchema};
-use parser::new_frontend::PortDirection;
+use parser::frontend::PortDirection;
 
 use crate::hir_facts::{AccessKey, AnalysisFacts, GeneratedInputEquation, ProofBudget};
 use crate::interprocedural::component::binding::CheckedCallContext;

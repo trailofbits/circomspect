@@ -18,7 +18,7 @@ use circomspect_program_analysis::interprocedural::{
 };
 use num_bigint_dig::BigInt;
 use parser::hir::{lift_project, AccessPath, AccessStep, ArrayIndex, HirProject, LiftedProject};
-use parser::new_frontend::{load_sources, Version, VersionPolicy};
+use parser::frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
 
 fn fixture(source: &str) -> LiftedProject {

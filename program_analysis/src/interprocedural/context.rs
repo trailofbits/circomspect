@@ -5,7 +5,7 @@ use parser::hir::{
     DefinitionRef, ExprId, ExprKind, HirProject, LiftedProject, ProjectIdentity,
     SemanticDiagnostic, SymbolId,
 };
-use parser::new_frontend::{Span, Version};
+use parser::frontend::{Span, Version};
 use program_structure::utils::constants::Curve;
 
 use crate::hir_cfg::DefinitionCfg;
@@ -683,7 +683,7 @@ impl<'a> ProjectSummaries<'a> {
 #[cfg(test)]
 mod tests {
     use parser::hir::{lift_project, DefinitionRef, SemanticCode, Severity};
-    use parser::new_frontend::{load_sources, Version, VersionPolicy};
+    use parser::frontend::{load_sources, Version, VersionPolicy};
     use program_structure::utils::constants::Curve;
 
     use crate::hir_cfg::build_cfg;

@@ -4,7 +4,7 @@ use std::fs;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use parser::hir::{lift_project, LiftedProject};
-use parser::new_frontend::{load_sources, Version, VersionPolicy};
+use parser::frontend::{load_sources, Version, VersionPolicy};
 
 /// Load one template with a scalar input and an output of the requested array shape.
 pub(crate) fn port_project(shape: &str) -> LiftedProject {

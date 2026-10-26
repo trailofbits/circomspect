@@ -7,7 +7,7 @@
     clippy::panic_in_result_fn,
     clippy::unwrap_used
 )]
-use circomspect_parser::new_frontend::{
+use circomspect_parser::frontend::{
     parse_source, DiagnosticKind, SourceId, SyntaxCategory, Version, VersionPolicy, WalkSyntax,
 };
 use serde_json::Value;

@@ -2,9 +2,9 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use super::ast::{DiagnosticKind, SourceId, Span, SyntaxDiagnostic, VersionPolicy};
-use super::typed::{Item, ParseOutcome};
-use super::parse_source;
+use crate::frontend::source::{DiagnosticKind, SourceId, Span, SyntaxDiagnostic, VersionPolicy};
+use crate::frontend::ast::{Item, ParseOutcome};
+use crate::frontend::parse_source;
 
 #[derive(Clone, Debug)]
 pub struct SourceFile {

@@ -107,7 +107,7 @@ impl AnalysisFacts<'_> {
 mod tests {
     use abstract_interpretation::graph::FlowGraph;
     use parser::hir::{lift_project, ExprKind};
-    use parser::new_frontend::{load_sources, Version, VersionPolicy};
+    use parser::frontend::{load_sources, Version, VersionPolicy};
     use program_structure::utils::constants::Curve;
 
     use crate::hir_cfg::{build_cfg, CfgNodeKind};

@@ -17,7 +17,7 @@ use circomspect_program_analysis::interprocedural::{
     FunctionSummary, ProjectSummaries, SummaryBlocker, SummaryFact,
 };
 use parser::hir::{lift_project, DefinitionRef, FunctionId, LiftedProject};
-use parser::new_frontend::{load_sources, Version, VersionPolicy};
+use parser::frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
 
 const CHAIN: &str = "function F(n){if(n){return F(n-1);}log(1);return 7;}";

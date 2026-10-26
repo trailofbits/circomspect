@@ -15,7 +15,7 @@ use parser::hir::{
     AccessPath, AccessStep, ArrayIndex, BlockId, ControlGuard, DefinitionRef, Effect, ExprId,
     ExprKind, HirProject, IncompleteReason, PortSchema, SymbolId, SymbolKind, ValueEvidence,
 };
-use parser::new_frontend::{AssignmentOperator, BinaryOperator, PostfixOperator, Span};
+use parser::frontend::{AssignmentOperator, BinaryOperator, PostfixOperator, Span};
 
 use crate::scalar_evidence::ScalarExpressionEvidence;
 use crate::hir_facts::FieldValue;

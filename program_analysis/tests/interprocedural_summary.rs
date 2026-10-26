@@ -14,7 +14,7 @@ use circomspect_program_analysis::interprocedural::{
     WitnessProvenance,
 };
 use parser::hir::{lift_project, DefinitionRef, Effect, ExprKind, LiftedProject};
-use parser::new_frontend::{load_sources, Version, VersionPolicy};
+use parser::frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
 use std::fs;
 

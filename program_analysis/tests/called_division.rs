@@ -20,7 +20,7 @@ use circomspect_program_analysis::new_rules::{
     run_registered, RuleContext, RuleKind, RuleResult, SourceMap,
 };
 use parser::hir::lift_project;
-use parser::new_frontend::{load_sources, LoadedProject, Version, VersionPolicy};
+use parser::frontend::{load_sources, LoadedProject, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
 use program_structure::report::MessageCategory;
 use serde_json::Value;

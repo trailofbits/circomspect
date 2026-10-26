@@ -1,10 +1,10 @@
 //! Owned Circom source frontend with recovery at definition and statement boundaries.
 
-mod ast;
+mod source;
 mod lexer;
 mod loader;
 mod parsed;
-mod typed;
+mod ast;
 mod walk;
 
 // LALRPOP emits its own parser machine, including unreachable-state panics and
@@ -20,24 +20,24 @@ lalrpop_mod!(
         clippy::panic
     )]
     syntax,
-    "/new_frontend/syntax.rs"
+    "/frontend/syntax.rs"
 );
 
-pub use ast::{
+pub use crate::frontend::source::{
     DiagnosticKind, DiagnosticLocation, SourceId, Span, SyntaxDiagnostic, Version, VersionPolicy,
 };
-pub use lexer::{tokenize, LexOutcome, Token, TokenKind, Trivia, TriviaKind};
-pub use loader::{load_sources, LoadedProject, SourceFile};
-pub use typed::{
+pub use crate::frontend::lexer::{tokenize, LexOutcome, Token, TokenKind, Trivia, TriviaKind};
+pub use crate::frontend::loader::{load_sources, LoadedProject, SourceFile};
+pub use crate::frontend::ast::{
     Access, AnonymousCallExpr, AnonymousInput, ArgumentList, AssignmentOperator, BinaryOperator,
     Block, Declaration, DeclarationKind, DeclaredSymbol, Definition, DefinitionKind,
     DirectionSyntax, Expression, Identifier, InputAssignmentOperator, Item, LogArgument,
     ParseOutcome, PendingFeatureCheck, PendingFeatureKind, PortDirection, PostfixOperator, Pragma,
     SourceAst, SpannedDirection, Statement, SymbolSyntax, UnaryOperator,
 };
-pub use walk::{SyntaxCategory, WalkSyntax};
+pub use crate::frontend::walk::{SyntaxCategory, WalkSyntax};
 
-use crate::new_frontend::parsed::{finish_segments, ParseContext, ParsedSegment};
+use crate::frontend::parsed::{finish_segments, ParseContext, ParsedSegment};
 
 use lalrpop_util::ParseError;
 

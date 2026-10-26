@@ -187,7 +187,7 @@ pub fn key_for_path(
 mod tests {
     use super::*;
     use parser::hir::{lift_project, ExprKind};
-    use parser::new_frontend::{load_sources, Version, VersionPolicy};
+    use parser::frontend::{load_sources, Version, VersionPolicy};
     use program_structure::utils::constants::Curve;
     use std::fs;
 

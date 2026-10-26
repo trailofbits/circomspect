@@ -1,8 +1,8 @@
-use crate::new_frontend::ast::{DiagnosticKind, Span, SyntaxDiagnostic, Version};
-use crate::new_frontend::parsed::{
+use crate::frontend::source::{DiagnosticKind, Span, SyntaxDiagnostic, Version};
+use crate::frontend::parsed::{
     unpack, AnnotationId, ParseContext, Parsed, ParsedItem, Recovery, SourceForm,
 };
-use crate::new_frontend::typed::{
+use crate::frontend::ast::{
     ArgumentList, AssignmentOperator, Block, Declaration, DeclarationKind, DeclaredSymbol,
     Definition, DefinitionKind, Expression, Identifier, Item, Pragma, Statement, SymbolSyntax,
 };

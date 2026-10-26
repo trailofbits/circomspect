@@ -14,7 +14,7 @@ use circomspect_program_analysis::hir_cfg::{build_cfg, CfgNodeKind, EdgeKind};
 use circomspect_program_analysis::hir_facts::{analyze, FactBlocker, FieldContext};
 use circomspect_program_analysis::interprocedural::{CallOwner, CallReachability, ProjectSummaries};
 use parser::hir::{lift_project, ControlGuard};
-use parser::new_frontend::{load_sources, Version, VersionPolicy};
+use parser::frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
 
 fn fixture(source: &str) -> (parser::hir::LiftedProject, parser::hir::DefinitionRef) {

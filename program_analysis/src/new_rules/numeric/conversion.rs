@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use parser::hir::{DefinitionRef, Port, PortSchema};
-use parser::new_frontend::{PortDirection, Span};
+use parser::frontend::{PortDirection, Span};
 
 use crate::hir_facts::NoBitAmbiguityCertificate;
 use crate::hir_facts::{
@@ -306,7 +306,7 @@ fn ambiguity_message(
 fn abstain_budget(
     context: &RuleContext<'_, '_, '_>,
     result: &mut RuleResult,
-    span: parser::new_frontend::Span,
+    span: parser::frontend::Span,
 ) {
     result.add_abstention(context.abstention(
         RuleKind::NonstrictBinaryConversion,

@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use parser::new_frontend::Span;
+use parser::frontend::Span;
 
 use crate::hir_facts::{
     generated_models_satisfy, generated_seeds, AccessKey, BitRepresentation,

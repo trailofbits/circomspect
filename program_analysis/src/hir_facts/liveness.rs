@@ -6,7 +6,7 @@ use abstract_interpretation::graph::{EdgeId, NodeId};
 use abstract_interpretation::lattice::Lattice;
 use abstract_interpretation::solver::{DataflowAnalysis, Transfer, TransferOutcome};
 use parser::hir::{DefinitionRef, ExprId, HirProject, SymbolId};
-use parser::new_frontend::{AssignmentOperator, PortDirection};
+use parser::frontend::{AssignmentOperator, PortDirection};
 
 use crate::hir_cfg::{Constraint, CfgEdge, CfgNode, CfgNodeKind, DefinitionCfg, EdgeKind};
 use crate::scalar_evidence::ScalarExpressionEvidence;
@@ -268,7 +268,7 @@ mod tests {
     use super::*;
     use abstract_interpretation::graph::FlowGraph;
     use parser::hir::{lift_project, ExprKind};
-    use parser::new_frontend::{load_sources, Version, VersionPolicy};
+    use parser::frontend::{load_sources, Version, VersionPolicy};
     use program_structure::utils::constants::Curve;
     use std::fs;
 

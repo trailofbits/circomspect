@@ -14,7 +14,7 @@ use circomspect_program_analysis::hir_cfg::{build_cfg, CfgNodeKind, DefinitionCf
 use circomspect_program_analysis::hir_facts::{AnalysisFacts, Fact, FactBlocker, GeneratedEquation};
 use circomspect_program_analysis::interprocedural::{ContextOrigin, ProjectSummaries};
 use parser::hir::lift_project;
-use parser::new_frontend::{load_sources, Version, VersionPolicy};
+use parser::frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
 
 fn witness(cfg: &DefinitionCfg) -> NodeId {

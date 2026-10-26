@@ -74,7 +74,7 @@ fn comparison_inputs(scope: &ComparatorScope<'_>) -> Result<Vec<AccessKey>, Summ
     let mut keys = Vec::new();
     for id in &template.ports {
         let port = scope.facts.hir().port(*id).ok_or(SummaryBlocker::ForeignDefinition)?;
-        if port.direction != Some(parser::new_frontend::PortDirection::Input) {
+        if port.direction != Some(parser::frontend::PortDirection::Input) {
             continue;
         }
         let dimensions = scope

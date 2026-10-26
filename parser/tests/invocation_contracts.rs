@@ -6,7 +6,7 @@ use std::fmt::Write;
 use std::fs;
 
 use circomspect_parser::hir::{lift_project, CallTarget, IncompleteReason, LiftedProject};
-use circomspect_parser::new_frontend::{load_sources, Version, VersionPolicy};
+use circomspect_parser::frontend::{load_sources, Version, VersionPolicy};
 
 fn lift(source: &str) -> LiftedProject {
     let directory = std::env::temp_dir().join(format!(

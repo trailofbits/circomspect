@@ -5,7 +5,7 @@ mod pattern;
 mod source;
 
 use num_bigint::BigInt;
-use parser::new_frontend::Span;
+use parser::frontend::Span;
 
 use crate::hir_cfg::Origin;
 use crate::hir_facts::{AccessKey, AnalysisFacts, BitDecomposition, FieldValue, ProofBudget};

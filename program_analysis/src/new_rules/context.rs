@@ -1,5 +1,5 @@
 use parser::hir::{AccessPath, DefinitionRef, HirProject, PortId};
-use parser::new_frontend::Span;
+use parser::frontend::Span;
 
 use crate::hir_facts::{
     AccessHandle, AnalysisFacts, AssignmentDemand, BitAmbiguityOutcome, BitDecomposition, Fact,

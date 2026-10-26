@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use parser::hir::{lift_project, DefinitionRef};
-use parser::new_frontend::{load_sources, SourceId, Version, VersionPolicy};
+use parser::frontend::{load_sources, SourceId, Version, VersionPolicy};
 use program_structure::constants::Curve;
 use program_structure::file_definition::FileLibrary;
 use program_structure::report::Report;

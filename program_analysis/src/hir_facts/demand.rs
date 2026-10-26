@@ -6,7 +6,7 @@ use abstract_interpretation::graph::{EdgeId, FlowGraph, NodeId};
 use abstract_interpretation::lattice::Lattice;
 use abstract_interpretation::solver::{DataflowAnalysis, SolveResult, Transfer, TransferOutcome};
 use parser::hir::{AccessPath, DefinitionRef, Effect, ExprId, ExprKind, HirProject, SymbolKind};
-use parser::new_frontend::{AssignmentOperator, Span};
+use parser::frontend::{AssignmentOperator, Span};
 
 use crate::hir_cfg::{Constraint, CfgEdge, CfgNode, CfgNodeKind, DefinitionCfg};
 use crate::hir_facts::access::{key_for_path, AccessKey};
@@ -465,7 +465,7 @@ mod tests {
     use abstract_interpretation::lattice::Lattice;
     use abstract_interpretation::solver::{Transfer, TransferOutcome};
     use parser::hir::lift_project;
-    use parser::new_frontend::{load_sources, Version, VersionPolicy};
+    use parser::frontend::{load_sources, Version, VersionPolicy};
     use program_structure::utils::constants::Curve;
 
     use crate::hir_cfg::{build_cfg, CfgNodeKind};

@@ -17,7 +17,7 @@ use circomspect_program_analysis::interprocedural::{
 };
 use circomspect_program_analysis::new_rules::{run_registered, RuleContext, RuleKind};
 use parser::hir::{lift_project, IncompleteReason, LiftedProject, SemanticCode};
-use parser::new_frontend::{load_sources, Version, VersionPolicy};
+use parser::frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
 
 fn fixture(source: &str) -> LiftedProject {

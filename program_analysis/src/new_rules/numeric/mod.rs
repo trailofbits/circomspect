@@ -8,7 +8,7 @@ mod expression;
 use std::collections::BTreeSet;
 
 use parser::hir::{DefinitionRef, Expr, ExprId};
-use parser::new_frontend::Span;
+use parser::frontend::Span;
 
 use crate::hir_facts::{FieldValue, Range};
 use crate::interprocedural::ContextOrigin;

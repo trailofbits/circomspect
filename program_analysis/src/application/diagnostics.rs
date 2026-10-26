@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use parser::hir::{IncompleteReason, LiftedProject};
-use parser::new_frontend::{DiagnosticKind, Item, LoadedProject, Span};
+use parser::frontend::{DiagnosticKind, Item, LoadedProject, Span};
 use program_structure::report::Report;
 use program_structure::report_code::ReportCode;
 
@@ -65,8 +65,8 @@ impl<'a, 'b> Diagnostics<'a, 'b> {
             let versioned = source.outcome.ast.items.iter().any(|item| {
                 if let Item::Pragma { pragma, .. } = item {
                     return match pragma {
-                        parser::new_frontend::Pragma::Version(_) => true,
-                        parser::new_frontend::Pragma::CustomTemplates => false,
+                        parser::frontend::Pragma::Version(_) => true,
+                        parser::frontend::Pragma::CustomTemplates => false,
                     };
                 }
                 false

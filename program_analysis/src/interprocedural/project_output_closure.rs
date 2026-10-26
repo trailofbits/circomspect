@@ -203,7 +203,7 @@ mod tests {
     use crate::interprocedural::project_output_closure::Closure;
     use crate::interprocedural::ProjectSummaries;
     use parser::hir::lift_project;
-    use parser::new_frontend::{load_sources, Version, VersionPolicy};
+    use parser::frontend::{load_sources, Version, VersionPolicy};
     use program_structure::utils::constants::Curve;
     use crate::interprocedural::SummaryBlocker;
 

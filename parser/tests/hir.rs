@@ -14,7 +14,7 @@ use circomspect_parser::hir::{
     IncompleteLocation, IncompleteReason, Knownness, PortSchema, SemanticCode, Severity,
     ValueEvidence,
 };
-use circomspect_parser::new_frontend::{AssignmentOperator, load_sources, Version, VersionPolicy};
+use circomspect_parser::frontend::{AssignmentOperator, load_sources, Version, VersionPolicy};
 use proptest::prelude::*;
 use std::fs;
 use std::path::PathBuf;
@@ -384,15 +384,16 @@ fn local_bus_and_anonymous_array_version_boundaries_are_distinct() {
     let anonymous = "template Child(){signal input in;} template T(){var a=[Child()(1)];}";
     let old = lift(&[("anonymous_array.circom", anonymous)], Version::new(2, 2, 2));
     assert!(old.syntax_diagnostics.iter().any(|item| {
-        item.kind == circomspect_parser::new_frontend::DiagnosticKind::FeatureVersion
+        item.kind == circomspect_parser::frontend::DiagnosticKind::FeatureVersion
             && item
                 .span()
                 .is_some_and(|span| &anonymous[span.start()..span.end()] == "[Child()(1)]")
     }));
     let current = lift(&[("anonymous_array.circom", anonymous)], Version::new(2, 2, 3));
-    assert!(!current.syntax_diagnostics.iter().any(|item| {
-        item.kind == circomspect_parser::new_frontend::DiagnosticKind::FeatureVersion
-    }));
+    assert!(!current
+        .syntax_diagnostics
+        .iter()
+        .any(|item| { item.kind == circomspect_parser::frontend::DiagnosticKind::FeatureVersion }));
 }
 
 #[test]
@@ -1546,7 +1547,7 @@ fn statement_dispatch_preserves_effect_order_and_nested_scope() {
 #[test]
 fn prohibited_statements_reject_before_lifting_operands() {
     use circomspect_parser::hir::{IncompleteRegion, SemanticDiagnostic};
-    use circomspect_parser::new_frontend::{SourceId, Span};
+    use circomspect_parser::frontend::{SourceId, Span};
 
     let source = "function F(){Missing()===Other();return 1;}template T(){return Another();}";
     let result = lift(&[("prohibited.circom", source)], Version::new(2, 2, 3));

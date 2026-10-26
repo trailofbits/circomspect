@@ -14,7 +14,7 @@ use abstract_interpretation::graph::FlowGraph;
 use circomspect_program_analysis::hir_cfg::{build_cfg, CfgNodeKind};
 use circomspect_program_analysis::hir_facts::{analyze, AccessKeyStep, FieldContext, IndexKey};
 use parser::hir::{lift_project, AccessPath, LiftedProject};
-use parser::new_frontend::{load_sources, Version, VersionPolicy};
+use parser::frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
 
 fn fixture(source: &str) -> LiftedProject {

@@ -1,4 +1,4 @@
-use circomspect_parser::new_frontend::Version;
+use circomspect_parser::frontend::Version;
 
 pub const CASES: &[(&str, &str)] = &[
     ("operators", include_str!("../fixtures/grammar_contracts/operators.circom")),

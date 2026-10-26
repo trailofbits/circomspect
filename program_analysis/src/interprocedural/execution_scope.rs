@@ -8,7 +8,7 @@ use parser::hir::{
     BusId, BusTarget, CallTarget, ControlGuard, DefinitionRef, ExprId, ExprKind, FunctionId,
     Symbol, SymbolId, SymbolKind,
 };
-use parser::new_frontend::{AssignmentOperator, BinaryOperator};
+use parser::frontend::{AssignmentOperator, BinaryOperator};
 
 use crate::hir_cfg::{build_cfg, Constraint, CfgNodeKind, DefinitionCfg};
 use crate::hir_facts::{AnalysisFacts, FieldContext, Range};

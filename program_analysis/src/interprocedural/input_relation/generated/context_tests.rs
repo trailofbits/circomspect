@@ -1,5 +1,5 @@
 use parser::hir::lift_project;
-use parser::new_frontend::{parse_source, LoadedProject, SourceFile, SourceId, Version, VersionPolicy};
+use parser::frontend::{parse_source, LoadedProject, SourceFile, SourceId, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
 
 use crate::hir_cfg::build_cfg;

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::cmp::Ordering;
 
 use parser::hir::{SemanticCode, SemanticDiagnostic, Severity};
-use parser::new_frontend::{LoadedProject, SourceId, Span};
+use parser::frontend::{LoadedProject, SourceId, Span};
 use program_structure::file_definition::{FileID, FileLibrary};
 use program_structure::report::{MessageCategory, Report};
 use program_structure::report_code::ReportCode;
@@ -138,7 +138,7 @@ fn semantic_report_code(code: SemanticCode) -> ReportCode {
 /// ```compile_fail
 /// use circomspect_program_analysis::new_rules::{Finding, RuleKind};
 /// use circomspect_program_analysis::interprocedural::CallContext;
-/// use parser::new_frontend::{SourceId, Span};
+/// use parser::frontend::{SourceId, Span};
 /// fn forge(context: CallContext) {
 ///     let span = Span::checked(SourceId::new(0), 0..0, "").unwrap();
 ///     let _ = Finding::at(context, RuleKind::Complexity, String::new(), span, String::new());
@@ -254,7 +254,7 @@ mod tests {
     use std::fs;
 
     use parser::hir::lift_project;
-    use parser::new_frontend::{load_sources, LoadedProject, SourceId, Span, Version, VersionPolicy};
+    use parser::frontend::{load_sources, LoadedProject, SourceId, Span, Version, VersionPolicy};
     use program_structure::report::MessageCategory;
     use program_structure::utils::constants::Curve;
 

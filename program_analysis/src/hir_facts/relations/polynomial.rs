@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 
 use abstract_interpretation::lattice::Lattice;
 use parser::hir::{AccessPath, ExprId, ExprKind, HirProject, SymbolId, SymbolKind};
-use parser::new_frontend::{BinaryOperator, UnaryOperator};
+use parser::frontend::{BinaryOperator, UnaryOperator};
 use program_structure::utils::constants::Curve;
 
 use crate::hir_cfg::{CfgNodeKind, Constraint};
@@ -582,7 +582,7 @@ mod tests {
 
     use abstract_interpretation::graph::FlowGraph;
     use parser::hir::{lift_project, ExprId, ExprKind, HirProject, SymbolId};
-    use parser::new_frontend::{load_sources, BinaryOperator, Version, VersionPolicy};
+    use parser::frontend::{load_sources, BinaryOperator, Version, VersionPolicy};
     use program_structure::utils::constants::Curve;
 
     use crate::hir_cfg::{Constraint, build_cfg, CfgNodeKind};

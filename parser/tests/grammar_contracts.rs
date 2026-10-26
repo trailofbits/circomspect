@@ -4,7 +4,7 @@
 
 use std::fmt::Write;
 
-use circomspect_parser::new_frontend::{parse_source, SourceId, Version, VersionPolicy};
+use circomspect_parser::frontend::{parse_source, SourceId, Version, VersionPolicy};
 
 #[path = "support/grammar_cases.rs"]
 mod grammar_cases;
@@ -63,7 +63,7 @@ proptest::proptest! {
     fn mixed_expression_operands_keep_source_order(
         steps in proptest::collection::vec((0_u8..4, 2_u8..100), 0..40),
     ) {
-        use circomspect_parser::new_frontend::{SyntaxCategory, WalkSyntax};
+        use circomspect_parser::frontend::{SyntaxCategory, WalkSyntax};
         let (expression, expected) = mixed_expression(&steps);
         let source = format!("function F(){{return {expression};}}");
         let parsed = parse_source(SourceId::new(7), &source,

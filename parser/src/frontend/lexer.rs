@@ -1,4 +1,4 @@
-use super::ast::{DiagnosticKind, SourceId, Span, SyntaxDiagnostic};
+use crate::frontend::source::{DiagnosticKind, SourceId, Span, SyntaxDiagnostic};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TokenKind {

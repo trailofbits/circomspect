@@ -4,7 +4,7 @@
 
 use crate::hir::lift::symbol_state::{SymbolSnapshot, SymbolState};
 use crate::hir::{HirProject, Knownness, SymbolKind, ValueEvidence};
-use crate::new_frontend::{SourceId, Span};
+use crate::frontend::{SourceId, Span};
 use proptest::prelude::*;
 
 fn snapshot(values: &[(u8, bool)]) -> SymbolSnapshot {

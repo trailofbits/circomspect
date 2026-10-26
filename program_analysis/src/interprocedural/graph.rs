@@ -6,7 +6,7 @@ use parser::hir::{
     ControlGuard, DefinitionRef, Effect, ExprId, ExprKind, HirProject, IncompleteReason,
     ProjectIdentity, SymbolId,
 };
-use parser::new_frontend::Span;
+use parser::frontend::Span;
 
 use crate::hir_facts::{AnalysisFacts, FactBlocker};
 

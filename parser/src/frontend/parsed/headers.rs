@@ -1,9 +1,7 @@
-use crate::new_frontend::ast::{Span, Version};
-use crate::new_frontend::parsed::construct::arguments;
-use crate::new_frontend::parsed::{AnnotationId, ParseContext, Parsed, SourceForm};
-use crate::new_frontend::typed::{
-    DeclarationKind, DirectionSyntax, Expression, Identifier, SpannedDirection,
-};
+use crate::frontend::source::{Span, Version};
+use crate::frontend::parsed::construct::arguments;
+use crate::frontend::parsed::{AnnotationId, ParseContext, Parsed, SourceForm};
+use crate::frontend::ast::{DeclarationKind, DirectionSyntax, Expression, Identifier, SpannedDirection};
 
 pub(crate) enum HeaderDirection {
     Before(Parsed<SpannedDirection>),

@@ -1,5 +1,5 @@
-use crate::new_frontend::ast::{SourceId, Span, SyntaxDiagnostic, Version};
-use crate::new_frontend::lexer::Trivia;
+use crate::frontend::source::{SourceId, Span, SyntaxDiagnostic, Version};
+use crate::frontend::lexer::Trivia;
 
 /// A parsed file whose public nodes have structurally valid, named fields.
 #[derive(Clone, Debug, Eq, PartialEq)]

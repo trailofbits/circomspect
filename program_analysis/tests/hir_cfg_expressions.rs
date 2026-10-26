@@ -13,7 +13,7 @@ use std::fs;
 use abstract_interpretation::graph::{FlowGraph, NodeId};
 use circomspect_program_analysis::hir_cfg::{build_cfg, CfgNodeKind, DefinitionCfg, EdgeKind};
 use parser::hir::{lift_project, ControlGuard, DefinitionRef, LiftedProject};
-use parser::new_frontend::{load_sources, Version, VersionPolicy};
+use parser::frontend::{load_sources, Version, VersionPolicy};
 
 fn fixture(source: &str) -> (LiftedProject, DefinitionRef) {
     let directory = std::env::temp_dir().join(format!(

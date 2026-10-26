@@ -15,7 +15,7 @@ use circomspect_program_analysis::hir_cfg::{build_cfg, CfgNodeKind};
 use circomspect_program_analysis::hir_facts::{analyze, FieldContext, Range};
 use num_bigint_dig::BigInt;
 use parser::hir::lift_project;
-use parser::new_frontend::{load_sources, Version, VersionPolicy};
+use parser::frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
 
 fn returned_range(expression: &str, curve: Curve) -> Option<Range> {

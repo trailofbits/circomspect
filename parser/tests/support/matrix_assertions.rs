@@ -1,4 +1,4 @@
-use circomspect_parser::new_frontend::{
+use circomspect_parser::frontend::{
     Access, AnonymousCallExpr, AnonymousInput, ArgumentList, AssignmentOperator, BinaryOperator,
     Declaration, DeclarationKind, Definition, DefinitionKind, DirectionSyntax, Expression,
     InputAssignmentOperator, Item, LogArgument, PortDirection, PostfixOperator, Pragma, SourceAst,

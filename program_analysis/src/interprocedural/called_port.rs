@@ -1,7 +1,7 @@
 //! Complete incoming scope for a witness-initialized leaf input divisor.
 
 use parser::hir::PortId;
-use parser::new_frontend::PortDirection;
+use parser::frontend::PortDirection;
 
 use crate::hir_cfg::build_cfg;
 use crate::hir_facts::{AnalysisFacts, Incidence, ProofBudget};

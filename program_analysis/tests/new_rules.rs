@@ -25,13 +25,13 @@ use circomspect_program_analysis::interprocedural::{
     SummaryBlocker,
 };
 use parser::hir::lift_project;
-use parser::new_frontend::{load_sources, SourceId, Span, Version, VersionPolicy};
+use parser::frontend::{load_sources, SourceId, Span, Version, VersionPolicy};
 use program_structure::report::{MessageCategory, Report};
 use program_structure::report_code::ReportCode;
 use program_structure::utils::constants::Curve;
 use serde_json::Value;
 
-fn load_fixture(name: &str, source: &str) -> parser::new_frontend::LoadedProject {
+fn load_fixture(name: &str, source: &str) -> parser::frontend::LoadedProject {
     let directory = std::env::temp_dir().join(format!(
         "circomspect-rules-{name}-{}-{:?}",
         std::process::id(),

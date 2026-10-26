@@ -7,7 +7,7 @@ mod parameter;
 use std::collections::BTreeSet;
 
 use parser::hir::DefinitionRef;
-use parser::new_frontend::Span;
+use parser::frontend::Span;
 
 use crate::interprocedural::{SummaryBlocker, SummaryFact};
 use crate::new_rules::{AbstentionReason, Rule, RuleContext, RuleKind, RuleResult};

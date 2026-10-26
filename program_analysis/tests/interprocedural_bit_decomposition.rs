@@ -16,7 +16,7 @@ use circomspect_program_analysis::interprocedural::{
 };
 use circomspect_program_analysis::new_rules::RuleContext;
 use parser::hir::{lift_project, AccessPath, AccessStep, ArrayIndex, HirProject, LiftedProject};
-use parser::new_frontend::{load_sources, Version, VersionPolicy};
+use parser::frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
 
 const BODY: &str = "signal input in;signal output bits[3];\

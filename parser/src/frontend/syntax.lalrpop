@@ -1,10 +1,10 @@
-use crate::new_frontend::ast::Version;
-use crate::new_frontend::lexer::TokenKind;
-use crate::new_frontend::parsed::{
+use crate::frontend::source::Version;
+use crate::frontend::lexer::TokenKind;
+use crate::frontend::parsed::{
     AnonymousParts, BusHeaderParts, DeclarationParts, DefinitionParts, ForParts, HeaderDirection,
     ParseContext, Parsed, ParsedItem, Recovery, SourceForm, TemplateModifier, unpack,
 };
-use crate::new_frontend::typed::{
+use crate::frontend::ast::{
     Access, AnonymousInput, AssignmentOperator, BinaryOperator, Block, Declaration, DeclarationKind,
     DeclaredSymbol, DefinitionKind, Expression, Identifier, InputAssignmentOperator, Item,
     LogArgument, PortDirection, PostfixOperator, Pragma, SpannedDirection, Statement, SymbolSyntax,

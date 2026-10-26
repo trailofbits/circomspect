@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use abstract_interpretation::graph::{EdgeId, FlowGraph, NodeId};
 use parser::hir::{ControlGuard, DefinitionRef};
-use parser::new_frontend::Span;
+use parser::frontend::Span;
 
 use crate::hir_cfg::{CfgNodeKind, DefinitionCfg, EdgeKind};
 use crate::hir_facts::{AnalysisFacts, FactBlocker};

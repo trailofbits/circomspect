@@ -7,7 +7,7 @@ use parser::hir::{
     BlockId, DefinitionRef, Effect, ExprId, ExprKind, IncompleteReason, IncompleteRegion, Severity,
     SymbolId, SymbolKind,
 };
-use parser::new_frontend::{AssignmentOperator, SourceId, Span};
+use parser::frontend::{AssignmentOperator, SourceId, Span};
 
 use crate::hir_cfg::{Constraint, CfgNodeKind, Origin};
 use crate::hir_facts::{AnalysisFacts, Range};

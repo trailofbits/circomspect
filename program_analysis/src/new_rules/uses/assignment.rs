@@ -1,6 +1,6 @@
 use abstract_interpretation::graph::FlowGraph;
 use parser::hir::{AccessPath, DefinitionRef, SymbolId, SymbolKind};
-use parser::new_frontend::AssignmentOperator;
+use parser::frontend::AssignmentOperator;
 
 use crate::hir_cfg::{CfgNode, CfgNodeKind};
 use crate::hir_facts::{AssignmentDemand, Incidence};

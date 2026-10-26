@@ -8,7 +8,7 @@ use parser::hir::{
     AccessPath, AccessStep, ArrayIndex, ExprId, ExprKind, SemanticCode, SemanticDiagnostic,
     Severity, SymbolId,
 };
-use parser::new_frontend::{AssignmentOperator, Span};
+use parser::frontend::{AssignmentOperator, Span};
 
 use crate::hir_cfg::CfgNodeKind;
 use crate::hir_facts::{AnalysisFacts, FieldContext, Range};

@@ -7,7 +7,7 @@
     clippy::panic_in_result_fn,
     clippy::unwrap_used
 )]
-use circomspect_parser::new_frontend::{
+use circomspect_parser::frontend::{
     load_sources, parse_source, tokenize, DiagnosticKind, DiagnosticLocation, SourceId, Span,
     Version, VersionPolicy, WalkSyntax,
 };
