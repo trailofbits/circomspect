@@ -7,7 +7,7 @@ use program_structure::utils::constants::Curve;
 
 use crate::hir_cfg::build_cfg;
 use crate::hir_facts::{generated_models_satisfy, AnalysisFacts, ProofBudget};
-use crate::interprocedural::ProjectSummaries;
+use crate::interprocedural::ProjectAnalysis;
 
 fn with_facts(source: &str, run: impl FnOnce(&AnalysisFacts<'_>)) {
     let directory = std::env::temp_dir().join(format!(
@@ -23,7 +23,7 @@ fn with_facts(source: &str, run: impl FnOnce(&AnalysisFacts<'_>)) {
         &[directory],
         VersionPolicy::new(Version::new(2, 2, 3)),
     ));
-    let provider = ProjectSummaries::build(&project, Curve::Goldilocks).unwrap();
+    let provider = ProjectAnalysis::build(&project, Curve::Goldilocks).unwrap();
     let definition = project.hir.definition("T").unwrap();
     let evidence = provider.symbolic_root(definition).unwrap();
     let cfg = build_cfg(&project.hir, definition).unwrap();

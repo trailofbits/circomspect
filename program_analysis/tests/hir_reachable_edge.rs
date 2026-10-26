@@ -12,7 +12,7 @@ use std::fs;
 use abstract_interpretation::graph::{EdgeId, FlowGraph};
 use circomspect_program_analysis::hir_cfg::{build_cfg, CfgNodeKind, EdgeKind};
 use circomspect_program_analysis::hir_facts::{analyze, FactBlocker, FieldContext};
-use circomspect_program_analysis::interprocedural::{CallOwner, CallReachability, ProjectSummaries};
+use circomspect_program_analysis::interprocedural::{CallOwner, CallReachability, ProjectAnalysis};
 use parser::hir::{lift_project, ControlGuard};
 use parser::frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
@@ -79,7 +79,7 @@ fn concrete_main_argument_selects_the_matching_branch_edge() {
         );
         let (lifted, definition) = fixture(&source);
         let cfg = build_cfg(&lifted.hir, definition).unwrap();
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let main = provider.graph().calls_from(CallOwner::Main(0))[0];
         let CallReachability::Reachable(call) =
             provider.graph().reachable_main_call(main.id(), provider.hir())

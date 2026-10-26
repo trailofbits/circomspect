@@ -10,10 +10,10 @@ use crate::interprocedural::output_enumeration::EnumeratedComponentInstance;
 use crate::interprocedural::summary::certified;
 use crate::interprocedural::template::port_summary;
 use crate::interprocedural::{
-    CallOwner, CallReachability, ContextEvidence, PortSummary, ProjectSummaries, SummaryBlocker,
+    CallOwner, CallReachability, ContextEvidence, PortSummary, ProjectAnalysis, SummaryBlocker,
 };
 
-impl ProjectSummaries<'_> {
+impl ProjectAnalysis<'_> {
     pub(super) fn called_input_port(
         &self,
         child: &AnalysisFacts<'_>,

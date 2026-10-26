@@ -13,9 +13,7 @@ use crate::hir_facts::{AccessHandle, AnalysisFacts, FieldValue, InstanceRelation
 
 use crate::interprocedural::input_relation::ready_instance_at_use;
 use super::summary::certified;
-use super::{
-    ContextEvidence, PortSummary, ProjectSummaries, ReachableCall, SummaryBlocker, SummaryFact,
-};
+use super::{ContextEvidence, PortSummary, ProjectAnalysis, ReachableCall, SummaryBlocker, SummaryFact};
 
 /// A child-local output fact bound to one reachable, exact caller instance.
 ///
@@ -127,7 +125,7 @@ impl AppliedComponentPort {
     }
 }
 
-impl ProjectSummaries<'_> {
+impl ProjectAnalysis<'_> {
     /// Certify an exact source read of this output in the bound caller context.
     ///
     /// Absence of a local read cannot certify a project-wide unused output.
@@ -509,7 +507,7 @@ mod tests {
     use program_structure::utils::constants::Curve;
 
     use crate::hir_cfg::build_cfg;
-    use crate::interprocedural::{CallOwner, CallReachability, ProjectSummaries, SummaryBlocker};
+    use crate::interprocedural::{CallOwner, CallReachability, ProjectAnalysis, SummaryBlocker};
 
     use super::LocalOutputUse;
 
@@ -524,7 +522,7 @@ mod tests {
         std::fs::write(&file, source).unwrap();
         let loaded = load_sources(&[file], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
         let lifted = lift_project(&loaded);
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let parent = lifted.hir.definition("Parent").unwrap();
         let DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap() else {
             panic!("Child must be a template")
@@ -576,7 +574,7 @@ mod tests {
             let field = crate::hir_facts::FieldContext::for_curve(Curve::Bn254);
             let facts = crate::hir_facts::analyze(&lifted.hir, &cfg, &field, None).unwrap();
             assert_eq!(
-                ProjectSummaries::require_linear_caller_path(facts.cfg(), cfg.entry(), cfg.exit()),
+                ProjectAnalysis::require_linear_caller_path(facts.cfg(), cfg.entry(), cfg.exit()),
                 expected
             );
         }

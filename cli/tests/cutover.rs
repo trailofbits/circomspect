@@ -264,7 +264,7 @@ fn signal_termination_retains_the_signal_and_process_streams() {
 }
 
 #[test]
-fn new_diagnostic_contracts_preserve_filtering_levels_and_exit_status() {
+fn diagnostic_contracts_preserve_filtering_levels_and_exit_status() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/contracts");
     let manifest: Value =
         serde_json::from_str(&fs::read_to_string(root.join("active.json")).unwrap()).unwrap();

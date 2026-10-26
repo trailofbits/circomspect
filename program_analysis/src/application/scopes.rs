@@ -10,14 +10,14 @@ use crate::hir_cfg::build_cfg;
 use crate::hir_facts::AnalysisFacts;
 use crate::interprocedural::{
     AnalyzeEvidenceError, CallBlocker, CallOwner, CallReachability, ContextEvidence,
-    ProjectSummaries, SummaryBlocker,
+    ProjectAnalysis, SummaryBlocker,
 };
-use crate::new_rules::{run_registered, RuleContext, SourceMap};
+use crate::rules::{run_registered, RuleContext, SourceMap};
 
 const CONTEXT_BUDGET: usize = 1024;
 
 pub(super) struct ScopeRunner<'a, 'b, 'c, 'd> {
-    summaries: &'a ProjectSummaries<'b>,
+    summaries: &'a ProjectAnalysis<'b>,
     sources: &'a SourceMap<'c>,
     diagnostics: &'d mut Diagnostics<'a, 'c>,
     pending: VecDeque<ContextEvidence>,
@@ -27,7 +27,7 @@ pub(super) struct ScopeRunner<'a, 'b, 'c, 'd> {
 
 impl<'a, 'b, 'c, 'd> ScopeRunner<'a, 'b, 'c, 'd> {
     pub(super) fn new(
-        summaries: &'a ProjectSummaries<'b>,
+        summaries: &'a ProjectAnalysis<'b>,
         sources: &'a SourceMap<'c>,
         diagnostics: &'d mut Diagnostics<'a, 'c>,
     ) -> Self {

@@ -14,8 +14,8 @@ use std::fs;
 use abstract_interpretation::graph::{FlowGraph, NodeId};
 use circomspect_program_analysis::hir_cfg::{build_cfg, CfgNodeKind};
 use circomspect_program_analysis::hir_facts::{AssignmentDemand, Fact, FactBlocker};
-use circomspect_program_analysis::interprocedural::{ProjectSummaries, SummaryBlocker};
-use circomspect_program_analysis::new_rules::RuleContext;
+use circomspect_program_analysis::interprocedural::{ProjectAnalysis, SummaryBlocker};
+use circomspect_program_analysis::rules::RuleContext;
 use parser::hir::lift_project;
 use parser::frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
@@ -33,7 +33,7 @@ fn assignment_demands(source: &str, budget: Option<usize>) -> Vec<(String, Deman
     fs::write(&path, source).unwrap();
     let loaded = load_sources(&[path], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
     let lifted = lift_project(&loaded);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("Check").unwrap();
     let evidence = provider.symbolic_root(definition).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
@@ -181,7 +181,7 @@ fn assignment_query_requires_matching_node_and_source_path() {
     fs::write(&path, source).unwrap();
     let loaded = load_sources(&[path], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
     let lifted = lift_project(&loaded);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("Check").unwrap();
     let evidence = provider.symbolic_root(definition).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();

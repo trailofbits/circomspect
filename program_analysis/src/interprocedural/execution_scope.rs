@@ -13,12 +13,12 @@ use parser::frontend::{AssignmentOperator, BinaryOperator};
 use crate::hir_cfg::{build_cfg, Constraint, CfgNodeKind, DefinitionCfg};
 use crate::hir_facts::{AnalysisFacts, FieldContext, Range};
 use crate::interprocedural::{
-    CallContext, CallOwner, CallProvenance, CallSite, ContextEvidence, ProjectSummaries,
+    CallContext, CallOwner, CallProvenance, CallSite, ContextEvidence, ProjectAnalysis,
     SummaryBlocker,
 };
 use crate::interprocedural::summary::certified;
 
-impl ProjectSummaries<'_> {
+impl ProjectAnalysis<'_> {
     /// Reject a bound definition scope with invalid source or a known failure path.
     ///
     /// Unknown-type regions may remain. Passing this check does not prove
@@ -66,7 +66,7 @@ impl ProjectSummaries<'_> {
 }
 
 // Proven failures invalidate independent certificates; uncertainty alone does not.
-impl ProjectSummaries<'_> {
+impl ProjectAnalysis<'_> {
     pub(super) fn definition_definitely_fails(
         &self,
         facts: &AnalysisFacts<'_>,
@@ -290,7 +290,7 @@ fn required_node(facts: &AnalysisFacts<'_>, node: NodeId) -> bool {
 }
 
 // Complete return evidence requires every reachable function operation to be supported.
-impl ProjectSummaries<'_> {
+impl ProjectAnalysis<'_> {
     pub(super) fn may_fail_before_return(
         &self,
         id: FunctionId,
@@ -408,7 +408,7 @@ impl ProjectSummaries<'_> {
 }
 
 // Negative project-use claims require supported complete template execution.
-impl ProjectSummaries<'_> {
+impl ProjectAnalysis<'_> {
     pub(super) fn check_complete_template_execution(
         &self,
         cfg: &DefinitionCfg,

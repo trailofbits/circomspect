@@ -9,7 +9,7 @@ use crate::scalar_evidence::ScalarExpressionEvidence;
 use crate::hir_cfg::{build_cfg_with_exact_calls, CfgNodeKind, DefinitionCfg};
 use crate::hir_facts::{AnalysisFacts, FieldValue, OwnedAnalysisOptions, Range};
 use crate::hir_facts::analyze_owned_with_scalar_calls;
-use crate::interprocedural::{CallContext, CallOwner, CallProvenance, CallSite, ProjectSummaries};
+use crate::interprocedural::{CallContext, CallOwner, CallProvenance, CallSite, ProjectAnalysis};
 use crate::interprocedural::SummaryBlocker;
 use parser::hir::SymbolId;
 use std::collections::BTreeMap;
@@ -19,7 +19,7 @@ enum Visit {
     Leave(FunctionId),
 }
 
-impl ProjectSummaries<'_> {
+impl ProjectAnalysis<'_> {
     pub(super) fn with_refined_facts<T>(
         &self,
         context: &CallContext,
@@ -361,9 +361,9 @@ mod tests {
     use crate::hir_cfg::build_cfg;
     use crate::hir_facts::{FieldContext, Range};
     use crate::interprocedural::{
-        ArgumentValue, CallOwner, CallReachability, ProjectSummaries, SummaryBlocker,
+        ArgumentValue, CallOwner, CallReachability, ProjectAnalysis, SummaryBlocker,
     };
-    use crate::new_rules::{run_registered, RuleContext, RuleKind};
+    use crate::rules::{run_registered, RuleContext, RuleKind};
 
     fn fixture(source: &str, name: &str) -> parser::hir::LiftedProject {
         let directory = std::env::temp_dir().join(format!(
@@ -382,7 +382,7 @@ mod tests {
     fn cloned_site_with_mutated_source_span_cannot_authorize_exact_context() {
         let source = "function F(){return 7;} template T(){var x=F();}";
         let lifted = fixture(source, "mutated-span");
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let parent = lifted.hir.definition("T").unwrap();
         let caller = provider.symbolic_root(parent).unwrap();
         let cfg = build_cfg(&lifted.hir, parent).unwrap();
@@ -403,7 +403,7 @@ mod tests {
             "function Noisy(){log(1);return 7;}function Check(){var y=Noisy();return 7;}",
             "impure-return",
         );
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let definition = lifted.hir.definition("Check").unwrap();
         let evidence = provider.symbolic_root(definition).unwrap();
         let cfg = build_cfg(&lifted.hir, definition).unwrap();
@@ -424,7 +424,7 @@ mod tests {
             "component main=Check(1);"
         );
         let lifted = fixture(source, "bound-proof");
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let definition = lifted.hir.definition("Check").unwrap();
         let main = provider.graph().calls_from(CallOwner::Main(0))[0];
         let CallReachability::Reachable(call) =
@@ -444,7 +444,7 @@ mod tests {
             .context_for(definition, vec![ArgumentValue::Scalar(field.canonical(2.into()))])
             .unwrap();
         assert!(!provider.certified_scalar_evidence(&sibling, &facts).removable_call(expression));
-        let other_curve = ProjectSummaries::build(&lifted, Curve::Goldilocks).unwrap();
+        let other_curve = ProjectAnalysis::build(&lifted, Curve::Goldilocks).unwrap();
         let curve_context = other_curve
             .context_for(
                 definition,
@@ -457,7 +457,7 @@ mod tests {
             .certified_scalar_evidence(&curve_context, &facts)
             .removable_call(expression));
         let other_project = fixture(source, "foreign-proof");
-        let foreign = ProjectSummaries::build(&other_project, Curve::Bn254).unwrap();
+        let foreign = ProjectAnalysis::build(&other_project, Curve::Bn254).unwrap();
         let foreign_definition = other_project.hir.definition("Check").unwrap();
         let foreign_context = foreign
             .context_for(foreign_definition, vec![ArgumentValue::Scalar(field.canonical(1.into()))])
@@ -481,7 +481,7 @@ mod tests {
             ),
         ] {
             let lifted = fixture(source, name);
-            let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+            let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
             let definition = lifted.hir.definition("Check").unwrap();
             let evidence = provider.symbolic_root(definition).unwrap();
             let cfg = build_cfg(&lifted.hir, definition).unwrap();
@@ -508,7 +508,7 @@ mod tests {
              template Check(){var y=Good();}",
             "unrelated-invalid-definition",
         );
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let definition = lifted.hir.definition("Check").unwrap();
         let evidence = provider.symbolic_root(definition).unwrap();
         let cfg = build_cfg(&lifted.hir, definition).unwrap();

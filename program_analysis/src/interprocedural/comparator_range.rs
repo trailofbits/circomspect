@@ -9,7 +9,7 @@ use parser::frontend::Span;
 
 use crate::hir_cfg::Origin;
 use crate::hir_facts::{AccessKey, AnalysisFacts, BitDecomposition, FieldValue, ProofBudget};
-use crate::interprocedural::{AppliedComponentPort, ProjectSummaries, SummaryBlocker, SummaryFact};
+use crate::interprocedural::{AppliedComponentPort, ProjectAnalysis, SummaryBlocker, SummaryFact};
 
 /// A generated-fixed comparator input outside the proved integer comparison range.
 ///
@@ -57,7 +57,7 @@ impl ComparatorRangeViolation {
     }
 }
 
-impl ProjectSummaries<'_> {
+impl ProjectAnalysis<'_> {
     /// Prove generated-fixed inputs outside a generated comparator's safe range.
     ///
     /// The applied output must belong to the sole comparator under this exact

@@ -16,7 +16,7 @@ use crate::interprocedural::output_enumeration::{
 };
 use crate::interprocedural::summary::certified;
 use crate::interprocedural::{
-    CallReachability, ContextEvidence, ProjectSummaries, SummaryBlocker, ValidatedComponentPorts,
+    CallReachability, ContextEvidence, ProjectAnalysis, SummaryBlocker, ValidatedComponentPorts,
 };
 
 pub(in crate::interprocedural) struct PortAlias {
@@ -82,7 +82,7 @@ impl ReadyGeneratedInputs {
     }
 }
 
-impl ProjectSummaries<'_> {
+impl ProjectAnalysis<'_> {
     pub(in crate::interprocedural) fn ready_generated_instance(
         &self,
         facts: &AnalysisFacts<'_>,

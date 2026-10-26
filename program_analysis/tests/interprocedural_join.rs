@@ -13,7 +13,7 @@ use std::fs;
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::hir_facts::FieldContext;
 use circomspect_program_analysis::interprocedural::{
-    CallOwner, CallReachability, ComposedConstraintFixedOutput, ProjectSummaries, SummaryBlocker,
+    CallOwner, CallReachability, ComposedConstraintFixedOutput, ProjectAnalysis, SummaryBlocker,
 };
 use parser::hir::{lift_project, DefinitionRef, LiftedProject};
 use parser::frontend::{load_sources, PortDirection, Version, VersionPolicy};
@@ -37,7 +37,7 @@ fn composed(
     budget: Option<usize>,
 ) -> Result<ComposedConstraintFixedOutput, BTreeSet<SummaryBlocker>> {
     let lifted = fixture(source);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
     let DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap() else {
         panic!("Child must be a template")

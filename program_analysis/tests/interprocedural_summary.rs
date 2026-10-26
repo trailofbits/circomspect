@@ -10,7 +10,7 @@
 )]
 use circomspect_program_analysis::hir_facts::{FieldContext, Incidence, Range};
 use circomspect_program_analysis::interprocedural::{
-    ArgumentValue, FunctionEffect, ProjectSummaries, ReturnEvidence, SummaryBlocker,
+    ArgumentValue, FunctionEffect, ProjectAnalysis, ReturnEvidence, SummaryBlocker,
     WitnessProvenance,
 };
 use parser::hir::{lift_project, DefinitionRef, Effect, ExprKind, LiftedProject};
@@ -53,7 +53,7 @@ fn invalid_declaration_dimensions_cannot_certify_function_completion() {
         ));
         assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
         assert!(lifted.syntax_diagnostics.is_empty());
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         for name in ["F", "Caller"] {
             let definition = lifted.hir.definition(name).unwrap();
             let DefinitionRef::Function(function) = definition else { panic!("function") };
@@ -71,7 +71,7 @@ fn invalid_declaration_dimensions_cannot_certify_function_completion() {
 fn declaration_dimensions_are_checked_in_the_function_context() {
     let lifted = fixture("function F(n){var x[n];return 7;}");
     assert!(lifted.diagnostics.is_empty());
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("F").unwrap();
     let DefinitionRef::Function(function) = definition else { panic!("function") };
     let field = FieldContext::for_curve(Curve::Bn254);
@@ -95,7 +95,7 @@ fn declaration_dimensions_are_checked_in_the_function_context() {
 #[test]
 fn concrete_scalar_function_summary_specializes_return_and_branch() {
     let lifted = fixture("function F(n){if(n){return n+2;}return 2;}");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let DefinitionRef::Function(function) = lifted.hir.definition("F").unwrap() else {
         panic!("function F")
     };
@@ -134,7 +134,7 @@ fn concrete_scalar_function_summary_specializes_return_and_branch() {
 #[test]
 fn deferred_variable_guard_specializes_for_scalar_but_not_symbolic_argument() {
     let lifted = fixture("function F(n){var x=n;if(x){return 1;}return 2;}");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let DefinitionRef::Function(function) = lifted.hir.definition("F").unwrap() else {
         panic!("function F")
     };
@@ -173,7 +173,7 @@ fn deferred_variable_guard_specializes_for_scalar_but_not_symbolic_argument() {
 #[test]
 fn deferred_assignment_is_checked_even_when_later_overwritten() {
     let lifted = fixture("function F(n){var x=n;x=1;return x;}");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let DefinitionRef::Function(function) = lifted.hir.definition("F").unwrap() else {
         panic!("function F")
     };
@@ -205,7 +205,7 @@ fn deferred_assignment_is_checked_even_when_later_overwritten() {
 #[test]
 fn unused_array_argument_does_not_block_a_constant_return() {
     let lifted = fixture("function F(n){return 7;}");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let DefinitionRef::Function(function) = lifted.hir.definition("F").unwrap() else {
         panic!("function F")
     };
@@ -230,7 +230,7 @@ fn constant_return_survives_an_unrelated_opaque_call() {
         ("function F(n){if(n+Missing()){return 1;}return 7;}", None),
     ] {
         let lifted = fixture(source);
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let DefinitionRef::Function(function) = lifted.hir.definition("F").unwrap() else {
             panic!("F must be a function")
         };
@@ -253,7 +253,7 @@ fn constant_return_survives_an_unrelated_opaque_call() {
 #[test]
 fn a_constant_value_after_an_opaque_call_is_conditional() {
     let lifted = fixture("function F(){var t=Missing();return 7;}");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else { panic!("F") };
     let context = provider.symbolic_context_for(DefinitionRef::Function(f)).unwrap();
     let summary = provider.function(f, &context);
@@ -267,7 +267,7 @@ fn a_constant_value_after_an_opaque_call_is_conditional() {
 #[test]
 fn a_failing_assertion_cannot_certify_a_later_return() {
     let lifted = fixture("function F(){assert(0);return 7;}");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else { panic!("F") };
     let context = provider.symbolic_context_for(DefinitionRef::Function(f)).unwrap();
     let summary = provider.function(f, &context);
@@ -280,7 +280,7 @@ fn assertion_coverage_uses_the_bound_context_and_reachable_branch() {
         "function F(n){if(n){assert(n);}return 7;} \
          function G(n){if(n){assert(0);}return 7;}",
     );
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else { panic!("F") };
     let DefinitionRef::Function(g) = lifted.hir.definition("G").unwrap() else { panic!("G") };
     let field = FieldContext::for_curve(Curve::Bn254);
@@ -310,7 +310,7 @@ fn assertion_coverage_uses_the_bound_context_and_reachable_branch() {
 #[test]
 fn checked_true_assertion_retains_complete_return_evidence() {
     let lifted = fixture("function F(){assert(1);return 7;}");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else { panic!("F") };
     let context = provider.symbolic_context_for(DefinitionRef::Function(f)).unwrap();
     let summary = provider.function(f, &context);
@@ -321,7 +321,7 @@ fn checked_true_assertion_retains_complete_return_evidence() {
 #[test]
 fn opaque_assertion_effect_cannot_certify_a_later_return() {
     let lifted = fixture("function F(){assert([1,2]);return 7;}");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else { panic!("F") };
     let context = provider.symbolic_context_for(DefinitionRef::Function(f)).unwrap();
     let summary = provider.function(f, &context);
@@ -332,7 +332,7 @@ fn opaque_assertion_effect_cannot_certify_a_later_return() {
 fn division_by_zero_before_return_does_not_certify_completion() {
     for (denominator, complete) in [(0, false), (1, true)] {
         let lifted = fixture(&format!("function F(){{var x=1/{denominator};return 7;}}"));
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else { panic!("F") };
         let context = provider.symbolic_context_for(DefinitionRef::Function(f)).unwrap();
         let summary = provider.function(f, &context);
@@ -354,7 +354,7 @@ fn compound_assignments_cannot_borrow_plain_assignment_return_facts() {
     ];
     for (source, complete) in cases {
         let lifted = fixture(source);
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else { panic!("F") };
         let context = provider.symbolic_context_for(DefinitionRef::Function(f)).unwrap();
         let summary = provider.function(f, &context);
@@ -388,7 +388,7 @@ fn indexed_reads_and_writes_need_proved_bounds_before_complete_return() {
     for (source, complete) in cases {
         let lifted = fixture(source);
         assert!(lifted.diagnostics.is_empty(), "{source}: {:?}", lifted.diagnostics);
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else { panic!("F") };
         let context = provider.symbolic_context_for(DefinitionRef::Function(f)).unwrap();
         let summary = provider.function(f, &context);
@@ -404,7 +404,7 @@ fn indexed_reads_and_writes_need_proved_bounds_before_complete_return() {
 #[test]
 fn indexed_bounds_follow_the_bound_parameter_context() {
     let lifted = fixture("function F(n){var x[n];x[0]=1;return 7;}");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else { panic!("F") };
     let field = FieldContext::for_curve(Curve::Bn254);
     let expected = Range::Exact(field.canonical(7.into()));
@@ -432,7 +432,7 @@ fn indexed_bounds_follow_the_bound_parameter_context() {
 fn conditional_return_coverage_propagates_through_a_direct_call() {
     let field = FieldContext::for_curve(Curve::Bn254);
     let lifted = fixture("function G(){var t=Missing();return 7;} function F(){return G();}");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else { panic!("F") };
     let context = provider.symbolic_context_for(DefinitionRef::Function(f)).unwrap();
     let summary = provider.function(f, &context);
@@ -446,7 +446,7 @@ fn conditional_return_coverage_propagates_through_a_direct_call() {
 #[test]
 fn a_structural_fallthrough_path_cannot_supply_complete_return_evidence() {
     let lifted = fixture("function F(n){if(n){return 7;}}");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else { panic!("F") };
     let field = FieldContext::for_curve(Curve::Bn254);
     let one = provider
@@ -473,7 +473,7 @@ fn a_structural_fallthrough_path_cannot_supply_complete_return_evidence() {
 #[test]
 fn foreign_and_non_scalar_contexts_never_certify_function_returns() {
     let lifted = fixture("function F(n){return n;}");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let DefinitionRef::Function(function) = lifted.hir.definition("F").unwrap() else {
         panic!("function F")
     };
@@ -494,7 +494,7 @@ fn foreign_and_non_scalar_contexts_never_certify_function_returns() {
 #[test]
 fn symbolic_library_root_certifies_a_parameter_independent_return() {
     let lifted = fixture("function F(n){return 7;}");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let DefinitionRef::Function(function) = lifted.hir.definition("F").unwrap() else {
         panic!("function F")
     };
@@ -511,7 +511,7 @@ fn symbolic_library_root_certifies_a_parameter_independent_return() {
 #[test]
 fn scalar_context_cannot_validate_an_indexed_parameter_use() {
     let lifted = fixture("function F(n){return n[0];}");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let DefinitionRef::Function(function) = lifted.hir.definition("F").unwrap() else {
         panic!("function F")
     };
@@ -528,7 +528,7 @@ fn scalar_context_cannot_validate_an_indexed_parameter_use() {
 #[test]
 fn direct_resolved_function_call_agrees_with_inlined_return() {
     let lifted = fixture("function Id(a){return a;} function Outer(n){return Id(n);}");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let DefinitionRef::Function(outer) = lifted.hir.definition("Outer").unwrap() else {
         panic!("function Outer")
     };
@@ -560,7 +560,7 @@ fn included_function_summary_composes_across_source_files() {
         "function Id(a){return a;}",
         "include \"lib.circom\"; function Outer(n){return Id(n);}",
     );
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let DefinitionRef::Function(outer) = lifted.hir.definition("Outer").unwrap() else {
         panic!("Outer")
     };
@@ -580,7 +580,7 @@ fn included_function_summary_composes_across_source_files() {
 #[test]
 fn finite_recursive_contexts_reach_a_base_case_without_certifying_a_cycle() {
     let lifted = fixture("function F(n){if(n){return F(n-1);}return 0;}");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let DefinitionRef::Function(function) = lifted.hir.definition("F").unwrap() else {
         panic!("function F")
     };
@@ -614,7 +614,7 @@ fn finite_recursive_contexts_reach_a_base_case_without_certifying_a_cycle() {
     );
 
     let cyclic = fixture("function F(n){return F(n);}");
-    let cyclic_provider = ProjectSummaries::build(&cyclic, Curve::Bn254).unwrap();
+    let cyclic_provider = ProjectAnalysis::build(&cyclic, Curve::Bn254).unwrap();
     let DefinitionRef::Function(cyclic_id) = cyclic.hir.definition("F").unwrap() else {
         panic!("cyclic F")
     };
@@ -636,7 +636,7 @@ fn mutual_recursion_with_repeated_context_abstains_from_return_value() {
         "function F(n){if(n){return G(n);}return 7;} \
          function G(n){if(n){return F(n);}return 7;}",
     );
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else {
         panic!("function F")
     };
@@ -669,7 +669,7 @@ fn mutually_recursive_concrete_contexts_reach_the_same_base_return() {
         "function F(n){if(n){return G(n-1);}return 0;} \
          function G(n){if(n){return F(n-1);}return 0;}",
     );
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else { panic!("F") };
     let DefinitionRef::Function(g) = lifted.hir.definition("G").unwrap() else { panic!("G") };
     let field = FieldContext::for_curve(Curve::Bn254);
@@ -695,7 +695,7 @@ fn mutually_recursive_concrete_contexts_reach_the_same_base_return() {
 #[test]
 fn a_self_call_before_a_constant_return_cannot_certify_termination() {
     let lifted = fixture("function F(){var ignored=F();return 7;}");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else { panic!("F") };
     let context = provider.symbolic_context_for(DefinitionRef::Function(f)).unwrap();
     assert!(provider.function(f, &context).unavailable().is_some());
@@ -707,7 +707,7 @@ fn recursive_scc_effects_reach_a_least_fixed_point() {
         "function F(n){if(n){return G(n);}return 0;} \
          function G(n){log(n);if(n){return F(n);}return 0;}",
     );
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else { panic!("F") };
     let DefinitionRef::Function(g) = lifted.hir.definition("G").unwrap() else { panic!("G") };
     let field = FieldContext::for_curve(Curve::Bn254);
@@ -748,7 +748,7 @@ fn unreachable_and_unrelated_opaque_calls_do_not_invent_effects() {
          function Clean(){if(0){return G();}return 1;} \
          function Broken(){return Missing();}",
     );
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let DefinitionRef::Function(clean) = lifted.hir.definition("Clean").unwrap() else {
         panic!("Clean")
     };
@@ -770,7 +770,7 @@ fn unreachable_and_unrelated_opaque_calls_do_not_invent_effects() {
 #[test]
 fn template_port_summary_specializes_constraint_provenance() {
     let lifted = fixture("template T(n){signal output x;if(n){x<==1;}else{x<--1;}}");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let DefinitionRef::Template(template) = lifted.hir.definition("T").unwrap() else {
         panic!("template T")
     };
@@ -808,7 +808,7 @@ fn complete_call_result_through_local_access_agrees_with_inlining() {
             "function F(){{return 7;}} template T(){{var x={value};signal output out;out<==x;}}"
         );
         let lifted = fixture(&source);
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let DefinitionRef::Template(template) = lifted.hir.definition("T").unwrap() else {
             panic!("template T")
         };
@@ -824,7 +824,7 @@ fn complete_call_result_through_local_access_agrees_with_inlining() {
 #[test]
 fn deferred_variable_guard_specializes_template_constraint_incidence() {
     let lifted = fixture("template T(n){var x=n;signal output y;if(x){y<==1;}else{y<--1;}}");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let DefinitionRef::Template(template) = lifted.hir.definition("T").unwrap() else {
         panic!("template T")
     };
@@ -849,7 +849,7 @@ fn deferred_variable_guard_specializes_template_constraint_incidence() {
 #[test]
 fn template_port_summary_keeps_witness_and_read_evidence_separate() {
     let lifted = fixture("template T(){signal input x;signal output y,z;y<--x;z<==1;}");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let DefinitionRef::Template(template) = lifted.hir.definition("T").unwrap() else {
         panic!("template T")
     };
@@ -887,7 +887,7 @@ fn template_port_summary_keeps_witness_and_read_evidence_separate() {
 #[test]
 fn opaque_witness_write_cannot_certify_an_empty_witness_summary() {
     let lifted = fixture("template T(){signal output y;y<--Missing();}");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let DefinitionRef::Template(template) = lifted.hir.definition("T").unwrap() else {
         panic!("template T")
     };
@@ -900,7 +900,7 @@ fn opaque_witness_write_cannot_certify_an_empty_witness_summary() {
 #[test]
 fn exact_array_port_summaries_retain_distinct_element_identity() {
     let lifted = fixture("template T(){signal output out[2];out[0]<==1;out[1]<--2;}");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let DefinitionRef::Template(template) = lifted.hir.definition("T").unwrap() else {
         panic!("template T")
     };
@@ -914,7 +914,7 @@ fn exact_array_port_summaries_retain_distinct_element_identity() {
     assert_eq!(second.certified().unwrap().incidence(), Incidence::Zero);
     assert_eq!(provider.template_port_at(template, &context, port, &[0]), first);
     assert_eq!(provider.template_port_at(template, &context, port, &[1]), second);
-    let other_curve = ProjectSummaries::build(&lifted, Curve::Goldilocks).unwrap();
+    let other_curve = ProjectAnalysis::build(&lifted, Curve::Goldilocks).unwrap();
     let foreign_context =
         other_curve.symbolic_context_for(DefinitionRef::Template(template)).unwrap();
     assert_eq!(
@@ -926,7 +926,7 @@ fn exact_array_port_summaries_retain_distinct_element_identity() {
 #[test]
 fn cached_function_families_keep_concrete_and_symbolic_contexts_separate() {
     let lifted = fixture("function F(n){if(n){log(n);}return n;}");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let DefinitionRef::Function(function) = lifted.hir.definition("F").unwrap() else {
         panic!("function F")
     };
@@ -971,8 +971,8 @@ fn cached_function_families_keep_concrete_and_symbolic_contexts_separate() {
 #[test]
 fn cached_queries_reject_foreign_curve_version_and_project_contexts() {
     let lifted = fixture("function F(){return -1;}");
-    let bn = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
-    let goldilocks = ProjectSummaries::build(&lifted, Curve::Goldilocks).unwrap();
+    let bn = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
+    let goldilocks = ProjectAnalysis::build(&lifted, Curve::Goldilocks).unwrap();
     let DefinitionRef::Function(function) = lifted.hir.definition("F").unwrap() else {
         panic!("function F")
     };
@@ -997,7 +997,7 @@ fn cached_queries_reject_foreign_curve_version_and_project_contexts() {
 
     let mut changed_version = lifted.clone();
     changed_version.version = Version::new(2, 1, 0);
-    let older = ProjectSummaries::build(&changed_version, Curve::Bn254).unwrap();
+    let older = ProjectAnalysis::build(&changed_version, Curve::Bn254).unwrap();
     let older_context = older.context_for(definition, vec![]).unwrap();
     assert_ne!(bn_context, older_context);
     assert_eq!(
@@ -1006,7 +1006,7 @@ fn cached_queries_reject_foreign_curve_version_and_project_contexts() {
     );
 
     let foreign_lifted = fixture("function F(){return -1;}");
-    let foreign = ProjectSummaries::build(&foreign_lifted, Curve::Bn254).unwrap();
+    let foreign = ProjectAnalysis::build(&foreign_lifted, Curve::Bn254).unwrap();
     let DefinitionRef::Function(foreign_id) = foreign_lifted.hir.definition("F").unwrap() else {
         panic!("foreign F")
     };
@@ -1024,7 +1024,7 @@ fn complete_call_result_agrees_with_inlined_template_constraint() {
          template Inline(){signal output out;out<==7;} \
          template Called(){signal output out;out<==F();}",
     );
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let field = FieldContext::for_curve(Curve::Bn254);
     for name in ["Inline", "Called"] {
         let DefinitionRef::Template(template) = lifted.hir.definition(name).unwrap() else {
@@ -1053,7 +1053,7 @@ fn complete_call_result_flows_through_a_local_variable() {
          function Inline(){var t=7;return t;} \
          function Called(){var t=F();return t;}",
     );
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let expected = Range::Exact(FieldContext::for_curve(Curve::Bn254).canonical(7.into()));
     for name in ["Inline", "Called"] {
         let DefinitionRef::Function(function) = lifted.hir.definition(name).unwrap() else {
@@ -1072,7 +1072,7 @@ fn complete_call_result_flows_through_a_local_variable() {
 #[test]
 fn specialized_call_retains_its_return_argument_dependency() {
     let lifted = fixture("function Id(a){return a;} function G(n){var t=Id(n);return t;}");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let DefinitionRef::Function(g) = lifted.hir.definition("G").unwrap() else {
         panic!("function G")
     };
@@ -1095,7 +1095,7 @@ fn deferred_assertion_uses_the_concrete_scalar_context() {
         "function F(n){assert(n);return 7;} \
          template T(n){signal output out;out<==F(n);}",
     );
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else {
         panic!("function F")
     };

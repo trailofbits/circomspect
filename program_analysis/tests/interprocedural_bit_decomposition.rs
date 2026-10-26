@@ -12,9 +12,9 @@ use std::fs;
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::hir_facts::BitDecomposition;
 use circomspect_program_analysis::interprocedural::{
-    CallOwner, CallReachability, ProjectSummaries, SummaryFact,
+    CallOwner, CallReachability, ProjectAnalysis, SummaryFact,
 };
-use circomspect_program_analysis::new_rules::RuleContext;
+use circomspect_program_analysis::rules::RuleContext;
 use parser::hir::{lift_project, AccessPath, AccessStep, ArrayIndex, HirProject, LiftedProject};
 use parser::frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
@@ -65,7 +65,7 @@ fn query(extra: &str, budget: Option<usize>) -> SummaryFact<Option<BitDecomposit
 
 fn query_source(source: &str, budget: Option<usize>) -> SummaryFact<Option<BitDecomposition>> {
     let lifted = fixture(source);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("Bits").unwrap();
     let evidence = if lifted.hir.mains().is_empty() {
         provider.symbolic_root(definition).unwrap()
@@ -111,7 +111,7 @@ fn known_execution_failure_and_incomplete_source_withhold_scoped_relation() {
 fn custom_template_header_withholds_scoped_relation() {
     let source = format!("pragma custom_templates;template custom Bits(){{{BODY}}}");
     let lifted = fixture(&source);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("Bits").unwrap();
     let evidence = provider.symbolic_root(definition).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
@@ -132,7 +132,7 @@ fn incomplete_solver_cannot_release_a_scoped_relation() {
 fn foreign_curve_and_project_cannot_rebind_a_scoped_relation() {
     let source = format!("template Bits(){{{BODY}}}");
     let lifted = fixture(&source);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("Bits").unwrap();
     let evidence = provider.symbolic_root(definition).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
@@ -140,12 +140,12 @@ fn foreign_curve_and_project_cannot_rebind_a_scoped_relation() {
     let input = path(&lifted.hir, "in", None);
     let bits = [path(&lifted.hir, "bits", Some(0))];
 
-    let other_curve = ProjectSummaries::build(&lifted, Curve::Goldilocks).unwrap();
+    let other_curve = ProjectAnalysis::build(&lifted, Curve::Goldilocks).unwrap();
     let result = other_curve.template_bit_decomposition(&facts, &evidence, &input, &bits);
     assert!(result.unavailable().is_some(), "{result:?}");
 
     let foreign = fixture(&source);
-    let other_project = ProjectSummaries::build(&foreign, Curve::Bn254).unwrap();
+    let other_project = ProjectAnalysis::build(&foreign, Curve::Bn254).unwrap();
     let result = other_project.template_bit_decomposition(&facts, &evidence, &input, &bits);
     assert!(result.unavailable().is_some(), "{result:?}");
 }
@@ -154,7 +154,7 @@ fn foreign_curve_and_project_cannot_rebind_a_scoped_relation() {
 fn evidence_from_another_definition_cannot_rebind_facts() {
     let source = format!("template Bits(){{{BODY}}}template Other(){{}}");
     let lifted = fixture(&source);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("Bits").unwrap();
     let evidence = provider.symbolic_root(definition).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
@@ -172,7 +172,7 @@ fn called_scope_abstains_until_incoming_constraints_are_proved() {
         "template Bits(){{{BODY}}}template T(){{component c=Bits();c.in<==0;}}component main=T();"
     );
     let lifted = fixture(&source);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let main_site = provider.graph().calls_from(CallOwner::Main(0))[0];
     let CallReachability::Reachable(main_call) =
         provider.graph().reachable_main_call(main_site.id(), &lifted.hir)

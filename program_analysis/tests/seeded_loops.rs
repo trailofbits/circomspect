@@ -13,7 +13,7 @@ use std::fs;
 use abstract_interpretation::graph::FlowGraph;
 use circomspect_program_analysis::hir_cfg::{build_cfg, CfgNodeKind, DefinitionCfg};
 use circomspect_program_analysis::hir_facts::{analyze, AnalysisError, FieldContext};
-use circomspect_program_analysis::interprocedural::{CallOwner, CallReachability, ProjectSummaries};
+use circomspect_program_analysis::interprocedural::{CallOwner, CallReachability, ProjectAnalysis};
 use parser::hir::{lift_project, LiftedProject};
 use parser::frontend::{load_sources, Version, VersionPolicy};
 use parser::frontend::AssignmentOperator;
@@ -76,7 +76,7 @@ fn provider_cfg_with_loop(argument: &str, body: &str, initial: &str, step: &str)
 
 fn provider_cfg_source(source: &str) -> DefinitionCfg {
     let lifted = fixture(source);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let site = provider.graph().calls_from(CallOwner::Main(0))[0];
     let CallReachability::Reachable(call) =
         provider.graph().reachable_main_call(site.id(), &lifted.hir)
@@ -115,7 +115,7 @@ fn unsupported_or_nonterminating_bounds_keep_a_real_loop() {
 #[test]
 fn symbolic_library_parameter_keeps_a_real_loop() {
     let lifted = fixture("template Loop(n){var sum=0;for(var i=0;i<n;i++){sum+=i;}}");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("Loop").unwrap();
     let evidence = provider.symbolic_root(definition).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();

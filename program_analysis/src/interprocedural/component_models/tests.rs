@@ -8,7 +8,7 @@ use program_structure::utils::constants::Curve;
 use crate::hir_cfg::build_cfg;
 use crate::hir_facts::{analyze_with_scalar_parameters, FieldContext, ProofBudget};
 use crate::interprocedural::component_models::{checked_bit_port_handles, RequestedBits};
-use crate::interprocedural::{CallOwner, CallReachability, ProjectSummaries, SummaryBlocker};
+use crate::interprocedural::{CallOwner, CallReachability, ProjectAnalysis, SummaryBlocker};
 
 #[test]
 fn checked_port_candidates_use_the_selected_child_parameter_shape_and_roles() {
@@ -27,7 +27,7 @@ fn checked_port_candidates_use_the_selected_child_parameter_shape_and_roles() {
         &[directory],
         VersionPolicy::new(Version::new(2, 2, 3)),
     ));
-    let provider = ProjectSummaries::build(&project, Curve::Goldilocks).unwrap();
+    let provider = ProjectAnalysis::build(&project, Curve::Goldilocks).unwrap();
     let site = provider.graph().calls_from(CallOwner::Main(0))[0];
     let CallReachability::Reachable(call) =
         provider.graph().reachable_main_call(site.id(), &project.hir)
@@ -79,7 +79,7 @@ fn closure_collection_charges_shared_site_term_key_and_operation_budgets() {
         &[directory],
         VersionPolicy::new(Version::new(2, 2, 3)),
     ));
-    let provider = ProjectSummaries::build(&project, Curve::Goldilocks).unwrap();
+    let provider = ProjectAnalysis::build(&project, Curve::Goldilocks).unwrap();
     let site = provider.graph().calls_from(CallOwner::Main(0))[0];
     let CallReachability::Reachable(call) =
         provider.graph().reachable_main_call(site.id(), &project.hir)
@@ -143,7 +143,7 @@ fn checked_port_mapping_keeps_identical_template_instances_separate() {
         &[directory],
         VersionPolicy::new(Version::new(2, 2, 3)),
     ));
-    let provider = ProjectSummaries::build(&project, Curve::Goldilocks).unwrap();
+    let provider = ProjectAnalysis::build(&project, Curve::Goldilocks).unwrap();
     let site = provider.graph().calls_from(CallOwner::Main(0))[0];
     let CallReachability::Reachable(call) =
         provider.graph().reachable_main_call(site.id(), &project.hir)
@@ -195,7 +195,7 @@ fn component_port_expansion_preserves_exact_boundaries_and_handle_order() {
     ];
     for (shape, expected) in cases {
         let project = crate::test_fixtures::port_project(shape);
-        let provider = ProjectSummaries::build(&project, Curve::Goldilocks).unwrap();
+        let provider = ProjectAnalysis::build(&project, Curve::Goldilocks).unwrap();
         let definition = project.hir.definition("T").unwrap();
         let evidence = provider.symbolic_root(definition).unwrap();
         let cfg = build_cfg(&project.hir, definition).unwrap();

@@ -10,7 +10,7 @@
 use abstract_interpretation::graph::FlowGraph;
 use circomspect_program_analysis::hir_cfg::{Constraint, build_cfg, CfgNodeKind};
 use circomspect_program_analysis::interprocedural::{
-    AnalyzeEvidenceError, CallOwner, CallReachability, ProjectSummaries, SummaryBlocker,
+    AnalyzeEvidenceError, CallOwner, CallReachability, ProjectAnalysis, SummaryBlocker,
 };
 use parser::hir::{lift_project, LiftedProject};
 use parser::frontend::{load_sources, Version, VersionPolicy};
@@ -42,7 +42,7 @@ fn lift(source: &str) -> LiftedProject {
 fn specialized_nodes(source: &str) -> Option<Vec<CfgNodeKind>> {
     let lifted = lift(source);
     assert!(lifted.syntax_diagnostics.is_empty(), "{:?}", lifted.syntax_diagnostics);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let main = provider.graph().calls_from(CallOwner::Main(0))[0];
     let CallReachability::Reachable(call) =
         provider.graph().reachable_main_call(main.id(), &lifted.hir)
@@ -153,7 +153,7 @@ fn bus_valued_child_output_cannot_become_a_scalar_answer_constraint() {
 
 fn checked_child_bit_zero(argument: &str) -> bool {
     let lifted = lift(&source(argument));
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let main = provider.graph().calls_from(CallOwner::Main(0))[0];
     let CallReachability::Reachable(main) =
         provider.graph().reachable_main_call(main.id(), &lifted.hir)
@@ -185,9 +185,9 @@ fn child_port_binding_checks_the_parameterized_dimension() {
 fn exact_scalar_seed_cannot_cross_provider_curve_or_project_identity() {
     let first = lift(&source("8"));
     let second = lift(&source("8"));
-    let bn = ProjectSummaries::build(&first, Curve::Bn254).unwrap();
-    let gold = ProjectSummaries::build(&first, Curve::Goldilocks).unwrap();
-    let foreign = ProjectSummaries::build(&second, Curve::Bn254).unwrap();
+    let bn = ProjectAnalysis::build(&first, Curve::Bn254).unwrap();
+    let gold = ProjectAnalysis::build(&first, Curve::Goldilocks).unwrap();
+    let foreign = ProjectAnalysis::build(&second, Curve::Bn254).unwrap();
     let main = bn.graph().calls_from(CallOwner::Main(0))[0];
     let CallReachability::Reachable(main) = bn.graph().reachable_main_call(main.id(), &first.hir)
     else {

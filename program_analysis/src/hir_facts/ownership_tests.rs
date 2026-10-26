@@ -11,7 +11,7 @@ use crate::hir_facts::{
     analyze_owned_with_scalar_calls, analyze_seeded, AnalysisError, AnalysisOptions, FieldContext,
     OwnedAnalysisOptions,
 };
-use crate::interprocedural::{ArgumentValue, ProjectSummaries};
+use crate::interprocedural::{ArgumentValue, ProjectAnalysis};
 use crate::scalar_evidence::ScalarExpressionEvidence;
 
 fn fixture() -> LiftedProject {
@@ -32,7 +32,7 @@ fn fixture() -> LiftedProject {
 fn borrowed_and_owned_facts_preserve_complete_and_pending_results() {
     let lifted = fixture();
     let hir = &lifted.hir;
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = hir.definition("Check").unwrap();
     let DefinitionRef::Template(template) = definition else { panic!("template") };
     let parameter = hir.template(template).unwrap().parameters[0];
@@ -115,7 +115,7 @@ fn owned_analysis_rejects_project_then_calls_then_scalar_seeds() {
     let lifted = fixture();
     let other = fixture();
     let hir = &lifted.hir;
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = hir.definition("Check").unwrap();
     let DefinitionRef::Template(template) = definition else { panic!("template") };
     let field = FieldContext::for_curve(Curve::Bn254);

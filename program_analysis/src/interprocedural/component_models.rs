@@ -16,7 +16,7 @@ use crate::hir_facts::{
 };
 use crate::interprocedural::component_models::models::{prove_closure_models, ClosureEquations};
 use crate::interprocedural::summary::certified;
-use crate::interprocedural::{AppliedComponentPort, ProjectSummaries, SummaryBlocker, SummaryFact};
+use crate::interprocedural::{AppliedComponentPort, ProjectAnalysis, SummaryBlocker, SummaryFact};
 
 pub(crate) use crate::interprocedural::component_models::ports::ValidatedComponentPorts;
 
@@ -113,7 +113,7 @@ enum RequestedBits<'a> {
     Ports { input: PortId, bits: PortId },
 }
 
-impl ProjectSummaries<'_> {
+impl ProjectAnalysis<'_> {
     /// Prove two constraint models for one exact leaf child under an instantiated main.
     ///
     /// `applied` must identify that main's sole child. `input` and the ordered `bits`

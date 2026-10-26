@@ -12,9 +12,9 @@ use std::fs;
 
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::interprocedural::{
-    CallOwner, CallReachability, ProjectSummaries, SummaryBlocker,
+    CallOwner, CallReachability, ProjectAnalysis, SummaryBlocker,
 };
-use circomspect_program_analysis::new_rules::{RuleContext, RuleContextError};
+use circomspect_program_analysis::rules::{RuleContext, RuleContextError};
 use parser::hir::lift_project;
 use parser::frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
@@ -38,7 +38,7 @@ fn main_and_child_paths_have_exact_source_order_and_symbolic_roots_are_empty() {
         "template Leaf(n){var x=n;} template Parent(n){component c=Leaf(n);}\
          component main=Parent(7);",
     );
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
     let leaf = lifted.hir.definition("Leaf").unwrap();
     let root_evidence = provider.symbolic_root(leaf).unwrap();
@@ -86,7 +86,7 @@ fn equal_callee_arguments_do_not_exchange_caller_provenance() {
         "template Leaf(n){var x=n;} template Left(){component c=Leaf(7);}\
          template Right(){component c=Leaf(7);}",
     );
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let leaf = lifted.hir.definition("Leaf").unwrap();
     let leaf_cfg = build_cfg(&lifted.hir, leaf).unwrap();
     let mut evidence = Vec::new();

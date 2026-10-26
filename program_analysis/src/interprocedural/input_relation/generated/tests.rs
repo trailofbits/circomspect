@@ -10,7 +10,7 @@ use crate::hir_cfg::{build_cfg, CfgNodeKind, Constraint};
 use crate::hir_facts::{AnalysisFacts, FactBlocker, GeneratedInputEquation, ProofBudget};
 use crate::interprocedural::input_relation::ReadyGeneratedInputs;
 use crate::interprocedural::output_enumeration::EnumeratedComponentInstance;
-use crate::interprocedural::{CallOwner, CallReachability, ProjectSummaries, SummaryBlocker};
+use crate::interprocedural::{CallOwner, CallReachability, ProjectAnalysis, SummaryBlocker};
 
 fn inspect(binding: &str, dimension: &str) -> Result<Vec<GeneratedInputEquation>, SummaryBlocker> {
     let directory = std::env::temp_dir().join(format!(
@@ -35,7 +35,7 @@ fn inspect(binding: &str, dimension: &str) -> Result<Vec<GeneratedInputEquation>
         &[directory],
         VersionPolicy::new(Version::new(2, 2, 3)),
     ));
-    let provider = ProjectSummaries::build(&project, Curve::Goldilocks).unwrap();
+    let provider = ProjectAnalysis::build(&project, Curve::Goldilocks).unwrap();
     let site = provider.graph().calls_from(CallOwner::Main(0))[0];
     let CallReachability::Reachable(call) =
         provider.graph().reachable_main_call(site.id(), &project.hir)
@@ -69,7 +69,7 @@ fn inspect(binding: &str, dimension: &str) -> Result<Vec<GeneratedInputEquation>
     let completed = provider.completed_generated_child(&facts, &instance, completed, &ready)?;
     provider.completed_generated_template(&facts, &[completed], &ready)?;
     assert_eq!(facts.no_possible_repeated_body_writes().certified().copied(), before);
-    let other_curve = ProjectSummaries::build(&project, Curve::Bn254).unwrap();
+    let other_curve = ProjectAnalysis::build(&project, Curve::Bn254).unwrap();
     assert!(other_curve
         .ready_generated_instance(&facts, &child, &instance, &mut ProofBudget::default())
         .is_err());
@@ -107,7 +107,7 @@ fn inspect(binding: &str, dimension: &str) -> Result<Vec<GeneratedInputEquation>
 }
 
 fn check_refusals(
-    provider: &ProjectSummaries<'_>,
+    provider: &ProjectAnalysis<'_>,
     facts: &AnalysisFacts<'_>,
     child: &AnalysisFacts<'_>,
     instance: &EnumeratedComponentInstance,
@@ -229,7 +229,7 @@ fn a_symbolic_input_index_retains_its_expression_blocker() {
         &[directory],
         VersionPolicy::new(Version::new(2, 2, 3)),
     ));
-    let provider = ProjectSummaries::build(&project, Curve::Goldilocks).unwrap();
+    let provider = ProjectAnalysis::build(&project, Curve::Goldilocks).unwrap();
     let site = provider.graph().calls_from(CallOwner::Main(0))[0];
     let CallReachability::Reachable(call) =
         provider.graph().reachable_main_call(site.id(), &project.hir)

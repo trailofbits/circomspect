@@ -472,7 +472,7 @@ mod tests {
     use crate::hir_facts::access::key_for_path;
     use crate::hir_facts::demand::{DemandAnalysis, DemandState};
     use crate::hir_facts::FieldContext;
-    use crate::interprocedural::ProjectSummaries;
+    use crate::interprocedural::ProjectAnalysis;
 
     #[test]
     fn production_assignment_transfer_is_monotone_over_finite_demand_states() {
@@ -563,7 +563,7 @@ mod tests {
         fs::write(&path, source).unwrap();
         let loaded = load_sources(&[path], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
         let lifted = lift_project(&loaded);
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let definition = lifted.hir.definition("Check").unwrap();
         let evidence = provider.symbolic_root(definition).unwrap();
         let cfg = build_cfg(&lifted.hir, definition).unwrap();

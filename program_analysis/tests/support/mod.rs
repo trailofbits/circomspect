@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use circomspect_program_analysis::new_rules::{Finding, RenderError, SourceMap};
+use circomspect_program_analysis::rules::{Finding, RenderError, SourceMap};
 use program_structure::report::{MessageCategory, Report};
 use program_structure::writers::{OutputPolicy, ReportWriter, SarifWriter, StdoutWriter};
 

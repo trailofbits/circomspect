@@ -9,7 +9,7 @@ use crate::hir_cfg::build_cfg;
 use crate::hir_facts::relations::complete::ProofBudget;
 use crate::hir_facts::relations::NormalizedEquation;
 use crate::hir_facts::FactBlocker;
-use crate::interprocedural::ProjectSummaries;
+use crate::interprocedural::ProjectAnalysis;
 
 #[derive(Debug)]
 struct Snapshot {
@@ -34,7 +34,7 @@ fn inspect(
     let loaded = load_sources(&[path], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
     let lifted = lift_project(&loaded);
     assert!(lifted.syntax_diagnostics.is_empty());
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("T").unwrap();
     let evidence = provider.symbolic_root(definition).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();

@@ -4,11 +4,11 @@ use parser::hir::{AccessPath, DefinitionRef, SymbolKind};
 
 use crate::hir_facts::{AnalysisFacts, Incidence};
 use crate::interprocedural::{
-    ContextEvidence, ContextOrigin, ProjectSummaries, SummaryBlocker, SummaryFact,
+    ContextEvidence, ContextOrigin, ProjectAnalysis, SummaryBlocker, SummaryFact,
 };
 use crate::interprocedural::summary::certified;
 
-impl ProjectSummaries<'_> {
+impl ProjectAnalysis<'_> {
     /// Prove generated-constraint incidence for one exact internal signal source path.
     ///
     /// Facts must belong to this provider-issued scope. Failed execution, custom templates,

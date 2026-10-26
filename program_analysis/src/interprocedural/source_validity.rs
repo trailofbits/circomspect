@@ -11,7 +11,7 @@ use parser::frontend::{AssignmentOperator, SourceId, Span};
 
 use crate::hir_cfg::{Constraint, CfgNodeKind, Origin};
 use crate::hir_facts::{AnalysisFacts, Range};
-use crate::interprocedural::{CallOwner, ProjectSummaries, SummaryBlocker};
+use crate::interprocedural::{CallOwner, ProjectAnalysis, SummaryBlocker};
 
 /// A checked function or template header bound to this HIR project.
 /// Callers cannot construct a validation certificate from a parameter count.
@@ -105,7 +105,7 @@ impl SourceScope {
     }
 }
 
-impl ProjectSummaries<'_> {
+impl ProjectAnalysis<'_> {
     pub(super) fn source_complete(&self) -> bool {
         self.lifted_project().diagnostics.is_empty()
             && self.lifted_project().syntax_diagnostics.is_empty()

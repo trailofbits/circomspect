@@ -8,7 +8,7 @@ use crate::hir_facts::{AccessHandle, AnalysisFacts, BodyWriteStatus, FieldValue,
 use crate::interprocedural::summary::certified;
 use crate::interprocedural::cache::PortKey;
 use crate::interprocedural::{
-    CallContext, ContextEvidence, ProjectSummaries, SummaryBlocker, SummaryFact,
+    CallContext, ContextEvidence, ProjectAnalysis, SummaryBlocker, SummaryFact,
 };
 
 /// Certified generated-constraint relation for one declared template port.
@@ -74,7 +74,7 @@ impl WitnessSite {
     }
 }
 
-impl ProjectSummaries<'_> {
+impl ProjectAnalysis<'_> {
     fn checked_port_key(
         &self,
         id: TemplateId,

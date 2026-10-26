@@ -13,7 +13,7 @@ use std::fs;
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::hir_facts::Incidence;
 use circomspect_program_analysis::interprocedural::{
-    CallOwner, CallReachability, PortSummary, ProjectSummaries, SummaryBlocker, SummaryFact,
+    CallOwner, CallReachability, PortSummary, ProjectAnalysis, SummaryBlocker, SummaryFact,
 };
 use parser::hir::{lift_project, LiftedProject, PortId};
 use parser::frontend::{load_sources, Version, VersionPolicy};
@@ -46,7 +46,7 @@ fn port(lifted: &LiftedProject, name: &str) -> PortId {
 
 fn scoped_port(source: &str, budget: Option<usize>, indices: &[usize]) -> SummaryFact<PortSummary> {
     let lifted = fixture(source);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("T").unwrap();
     let evidence = provider.symbolic_root(definition).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
@@ -96,7 +96,7 @@ fn scoped_ports_check_exact_rank_bounds_and_generated_constraints() {
 fn scoped_port_queries_bind_provider_curve_context_and_definition() {
     let source = "template T(){signal output x;x<--1;}template U(){signal output y;y<--1;}";
     let lifted = fixture(source);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("T").unwrap();
     let evidence = provider.symbolic_root(definition).unwrap();
     let other = provider.symbolic_root(lifted.hir.definition("U").unwrap()).unwrap();
@@ -107,13 +107,13 @@ fn scoped_port_queries_bind_provider_curve_context_and_definition() {
     assert!(result.unavailable().unwrap().contains(&SummaryBlocker::WrongContext));
     let result = provider.template_port_for_evidence(&facts, &evidence, port(&lifted, "y"), &[]);
     assert!(result.unavailable().is_some(), "foreign port cannot be certified");
-    let other_curve = ProjectSummaries::build(&lifted, Curve::Bls12_381).unwrap();
+    let other_curve = ProjectAnalysis::build(&lifted, Curve::Bls12_381).unwrap();
     assert!(other_curve
         .template_port_for_evidence(&facts, &evidence, x, &[])
         .unavailable()
         .is_some());
     let copied = fixture(source);
-    let other_project = ProjectSummaries::build(&copied, Curve::Bn254).unwrap();
+    let other_project = ProjectAnalysis::build(&copied, Curve::Bn254).unwrap();
     assert!(other_project
         .template_port_for_evidence(&facts, &evidence, x, &[])
         .unavailable()
@@ -123,7 +123,7 @@ fn scoped_port_queries_bind_provider_curve_context_and_definition() {
 #[test]
 fn scoped_port_queries_keep_the_supplied_budget_after_cache_warmup() {
     let lifted = fixture("template T(){signal output x;x<--1;}");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("T").unwrap();
     let evidence = provider.symbolic_root(definition).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
@@ -151,7 +151,7 @@ fn scoped_port_queries_preserve_main_but_refuse_incoming_call_closure() {
         "template T(){signal output x;x<--1;component c=Child();}component main=T();"
     );
     let lifted = fixture(source);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let main = provider.graph().calls_from(CallOwner::Main(0))[0];
     let CallReachability::Reachable(main) =
         provider.graph().reachable_main_call(main.id(), provider.hir())

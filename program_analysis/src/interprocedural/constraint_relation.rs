@@ -3,7 +3,7 @@
 use abstract_interpretation::graph::NodeId;
 
 use crate::hir_facts::{AnalysisFacts, GeneratedEquation};
-use crate::interprocedural::{ContextEvidence, ProjectSummaries, SummaryBlocker, SummaryFact};
+use crate::interprocedural::{ContextEvidence, ProjectAnalysis, SummaryBlocker, SummaryFact};
 use crate::interprocedural::summary::certified;
 
 /// Equation queries tied to one immutable fact snapshot and its checked scope.
@@ -28,7 +28,7 @@ impl GeneratedEquationQueries<'_, '_> {
     }
 }
 
-impl ProjectSummaries<'_> {
+impl ProjectAnalysis<'_> {
     /// Validate a root template scope for a batch of generated equation queries.
     ///
     /// Each batch borrows one exact fact snapshot. Complete solving and no known

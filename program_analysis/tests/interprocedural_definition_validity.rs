@@ -11,8 +11,8 @@
 use std::fs;
 
 use circomspect_program_analysis::hir_cfg::build_cfg;
-use circomspect_program_analysis::interprocedural::{ProjectSummaries, SummaryBlocker};
-use circomspect_program_analysis::new_rules::RuleContext;
+use circomspect_program_analysis::interprocedural::{ProjectAnalysis, SummaryBlocker};
+use circomspect_program_analysis::rules::RuleContext;
 use parser::hir::{lift_project, DefinitionRef, LiftedProject};
 use parser::frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
@@ -34,7 +34,7 @@ fn with_scope(source: &str, test: impl FnOnce(&RuleContext<'_, '_, '_>)) {
     let lifted = fixture(source);
     let definition = lifted.hir.definition("Check").unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let evidence = provider.symbolic_root(definition).unwrap();
     let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let context = RuleContext::new(&facts, &provider, &evidence).unwrap();
@@ -116,7 +116,7 @@ fn budget_limited_call_result_cannot_validate_a_partial_definition() {
         fixture("function F(){return 7;} template Check(){var x=F();signal output out;out<==x;}");
     let definition = lifted.hir.definition("Check").unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let evidence = provider.symbolic_root(definition).unwrap();
     let facts = provider.analyze_for_evidence(&cfg, &evidence, Some(1)).unwrap();
     let context = RuleContext::new(&facts, &provider, &evidence).unwrap();
@@ -148,7 +148,7 @@ fn incomplete_included_library_does_not_invalidate_a_clean_definition() {
     assert!(!lifted.incomplete.is_empty());
     let definition = lifted.hir.definition("Check").unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let evidence = provider.symbolic_root(definition).unwrap();
     let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let context = RuleContext::new(&facts, &provider, &evidence).unwrap();

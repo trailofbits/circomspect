@@ -12,7 +12,7 @@ use abstract_interpretation::graph::FlowGraph;
 use circomspect_program_analysis::hir_facts::{FieldContext, Range};
 use circomspect_program_analysis::interprocedural::{
     AnalyzeEvidenceError, ArgumentShape, ArgumentValue, CallOwner, CallReachability, ContextOrigin,
-    ProjectSummaries, SummaryBlocker,
+    ProjectAnalysis, SummaryBlocker,
 };
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::hir_facts::analyze;
@@ -40,7 +40,7 @@ fn parameter_writes_cannot_certify_the_stale_incoming_value() {
         let source = format!("template T(n){{{statement}var x=n;}} component main=T(2);");
         let lifted = fixture(&source, Version::new(2, 2, 3));
         assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
-        let summaries = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let summaries = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let site = summaries.graph().calls_from(CallOwner::Main(0))[0];
         let CallReachability::Reachable(call) =
             summaries.graph().reachable_main_call(site.id(), &lifted.hir)
@@ -71,8 +71,8 @@ fn context_keys_bind_project_curve_version_shape_and_canonical_values() {
     let version = Version::new(2, 2, 3);
     let lifted = fixture("function F(n){return n;} template T(n){}", version);
     let function = lifted.hir.definition("F").unwrap();
-    let bn = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
-    let gold = ProjectSummaries::build(&lifted, Curve::Goldilocks).unwrap();
+    let bn = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
+    let gold = ProjectAnalysis::build(&lifted, Curve::Goldilocks).unwrap();
     let bn_field = FieldContext::for_curve(Curve::Bn254);
     let gold_field = FieldContext::for_curve(Curve::Goldilocks);
     let negative = bn
@@ -101,7 +101,7 @@ fn context_keys_bind_project_curve_version_shape_and_canonical_values() {
 fn symbolic_library_context_needs_no_main_and_rejects_foreign_ids() {
     let lifted = fixture("template T(n,m){signal output y;y<==1;}", Version::new(2, 2, 3));
     let foreign = fixture("template T(n,m){}", Version::new(2, 2, 3));
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("T").unwrap();
     let context = provider.symbolic_context_for(definition).unwrap();
     assert_eq!(
@@ -129,7 +129,7 @@ fn evidence_scope_distinguishes_universal_root_from_a_reachable_call() {
          component main=Parent();",
         Version::new(2, 2, 3),
     );
-    let summaries = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let summaries = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let child = lifted.hir.definition("Child").unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
     let root = summaries.symbolic_root(child).unwrap();
@@ -178,7 +178,7 @@ fn unbound_local_facts_cannot_mint_reachable_child_evidence() {
         "template Child(n){} template Parent(){component c=Child(2);}",
         Version::new(2, 2, 3),
     );
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
     let field = FieldContext::for_curve(Curve::Bn254);
@@ -210,7 +210,7 @@ fn specializing_two_calls_keeps_one_source_diagnostic_for_a_missing_callee() {
             .count()
     };
     assert_eq!(missing(), 1);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
     let child = lifted.hir.definition("Child").unwrap();
     let main_site = provider.graph().calls_from(CallOwner::Main(0))[0];
@@ -245,7 +245,7 @@ fn reachable_array_call_preserves_shape_and_emits_a_located_assignment_error() {
         "template Parent(){component c=Child([1,2]);} component main=Parent();"
     );
     let lifted = fixture(source, Version::new(2, 2, 3));
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
     let child = lifted.hir.definition("Child").unwrap();
     let parent_cfg = build_cfg(&lifted.hir, parent).unwrap();
@@ -291,7 +291,7 @@ fn scalar_main_specializes_deferred_guard_while_symbolic_library_scope_abstains(
          component main=T(0);",
         Version::new(2, 2, 3),
     );
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("T").unwrap();
     let parser::hir::DefinitionRef::Template(template) = definition else {
         panic!("T must be a template")
@@ -329,7 +329,7 @@ fn aggregate_argument_in_dead_arm_or_call_argument_is_not_a_scalar_assignment_er
          component main=T([1,2]);",
     ] {
         let lifted = fixture(source, Version::new(2, 2, 3));
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let definition = lifted.hir.definition("T").unwrap();
         let cfg = build_cfg(&lifted.hir, definition).unwrap();
         let site = provider.graph().calls_from(CallOwner::Main(0))[0];
@@ -351,7 +351,7 @@ fn concrete_taken_branch_rejects_a_scalar_assignment_from_an_array() {
          component main=T([1,2]);",
         Version::new(2, 2, 3),
     );
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("T").unwrap();
     let parser::hir::DefinitionRef::Template(template) = definition else {
         panic!("T must be a template")
@@ -379,7 +379,7 @@ fn hypothetical_context_does_not_create_a_reachable_scope() {
         "template Child(n){} template Parent(){if(0){component dead=Child(2);}}",
         Version::new(2, 2, 3),
     );
-    let summaries = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let summaries = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let child = lifted.hir.definition("Child").unwrap();
     let field = FieldContext::for_curve(Curve::Bn254);
     let hypothetical = summaries
@@ -403,7 +403,7 @@ fn local_facts_must_match_the_exact_evidence_scope() {
          template Parent(){component a=T(1);} component main=Parent();",
         Version::new(2, 2, 3),
     );
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let template = lifted.hir.definition("T").unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
     let parent_cfg = build_cfg(&lifted.hir, parent).unwrap();
@@ -450,7 +450,7 @@ fn local_facts_must_match_the_exact_evidence_scope() {
 fn parameter_operation_error(source: &str) -> Option<AnalyzeEvidenceError> {
     let lifted = fixture(source, Version::new(2, 2, 3));
     assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let site = provider.graph().calls_from(CallOwner::Main(0))[0];
     let CallReachability::Reachable(call) =
         provider.graph().reachable_main_call(site.id(), provider.hir())
@@ -518,7 +518,7 @@ fn unrolled_scalar_checks_do_not_certify_a_budget_limited_range() {
         "component main=T(3);"
     );
     let lifted = fixture(source, Version::new(2, 2, 3));
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let site = provider.graph().calls_from(CallOwner::Main(0))[0];
     let CallReachability::Reachable(call) =
         provider.graph().reachable_main_call(site.id(), provider.hir())
@@ -545,7 +545,7 @@ fn public_cfg_queries_follow_the_specialized_control_flow() {
         "if(0){x=1;}else{x=2;}} component main=T();"
     );
     let lifted = fixture(source, Version::new(2, 2, 3));
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let site = provider.graph().calls_from(CallOwner::Main(0))[0];
     let CallReachability::Reachable(call) =
         provider.graph().reachable_main_call(site.id(), provider.hir())
@@ -601,7 +601,7 @@ fn optional_bad_access_cannot_become_a_definite_error_at_low_budget() {
         let source = format!("template T(n){{signal input c;{body}}} component main=T(1);");
         let lifted = fixture(&source, Version::new(2, 2, 3));
         assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let site = provider.graph().calls_from(CallOwner::Main(0))[0];
         let CallReachability::Reachable(call) =
             provider.graph().reachable_main_call(site.id(), provider.hir())
@@ -630,7 +630,7 @@ fn fallthrough_value_effects_do_not_prune_unknown_control_or_indices() {
         let source = format!("template T(n){{signal input c;{body}}} component main=T([2]);");
         let lifted = fixture(&source, Version::new(2, 2, 3));
         assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let site = provider.graph().calls_from(CallOwner::Main(0))[0];
         let CallReachability::Reachable(call) =
             provider.graph().reachable_main_call(site.id(), provider.hir())

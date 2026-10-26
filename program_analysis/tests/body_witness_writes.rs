@@ -12,7 +12,7 @@ use std::fs;
 use abstract_interpretation::graph::FlowGraph;
 use circomspect_program_analysis::hir_cfg::{build_cfg, CfgNodeKind};
 use circomspect_program_analysis::hir_facts::{BodyWriteStatus, Fact, FactBlocker, WitnessWriteIssue};
-use circomspect_program_analysis::interprocedural::ProjectSummaries;
+use circomspect_program_analysis::interprocedural::ProjectAnalysis;
 use parser::hir::{lift_project, DefinitionRef};
 use parser::frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
@@ -38,7 +38,7 @@ fn status_with_diagnostics(source: &str) -> (Fact<BodyWriteStatus>, usize) {
     let diagnostics = lifted.diagnostics.len();
     let definition = lifted.hir.definition("T").unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let evidence = provider.symbolic_root(definition).unwrap();
     let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let target = cfg
@@ -69,7 +69,7 @@ fn port_availability(source: &str, names: &[&str]) -> Vec<bool> {
     assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
     let definition = lifted.hir.definition("T").unwrap();
     let DefinitionRef::Template(id) = definition else { panic!("template") };
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let evidence = provider.symbolic_root(definition).unwrap();
     let ports = &lifted.hir.template(id).unwrap().ports;
     names

@@ -12,7 +12,7 @@ use crate::hir_facts::relations::ambiguity::{
 };
 use crate::hir_facts::relations::complete::ProofBudget;
 use crate::hir_facts::{AnalysisFacts, BitAmbiguityOutcome, FieldContext};
-use crate::interprocedural::ProjectSummaries;
+use crate::interprocedural::ProjectAnalysis;
 
 fn path(hir: &HirProject, name: &str, index: Option<usize>) -> AccessPath {
     let symbol = hir.symbols().iter().find(|symbol| symbol.name == name).unwrap();
@@ -58,7 +58,7 @@ fn with_facts(action: impl FnOnce(&AnalysisFacts<'_>, &AccessPath, &[AccessPath]
         load_sources(&[source_path], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
     let lifted = lift_project(&loaded);
     assert!(lifted.syntax_diagnostics.is_empty());
-    let provider = ProjectSummaries::build(&lifted, Curve::Goldilocks).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Goldilocks).unwrap();
     let definition = lifted.hir.definition("T").unwrap();
     let evidence = provider.symbolic_root(definition).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();

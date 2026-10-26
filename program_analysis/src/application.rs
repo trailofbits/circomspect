@@ -15,8 +15,8 @@ use program_structure::report::Report;
 
 use crate::application::diagnostics::Diagnostics;
 use crate::application::scopes::ScopeRunner;
-use crate::interprocedural::ProjectSummaries;
-use crate::new_rules::{RenderError, SourceMap};
+use crate::interprocedural::ProjectAnalysis;
+use crate::rules::{RenderError, SourceMap};
 
 /// Source reports and completed definition analyses in deterministic source order.
 pub struct AnalysisOutput {
@@ -62,7 +62,7 @@ pub fn analyze_files(
         }
     }
     diagnostics.frontend(&loaded, &lifted)?;
-    let summaries = ProjectSummaries::build(&lifted, curve)
+    let summaries = ProjectAnalysis::build(&lifted, curve)
         .map_err(|error| ApplicationError::Invariant(format!("invalid call graph: {error:?}")))?;
     let mut runner = ScopeRunner::new(&summaries, &sources, &mut diagnostics);
     runner.analyze()?;

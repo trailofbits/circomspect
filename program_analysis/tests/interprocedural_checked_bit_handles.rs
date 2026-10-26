@@ -12,9 +12,9 @@ use std::fs;
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::hir_facts::BitDecomposition;
 use circomspect_program_analysis::interprocedural::{
-    CallOwner, CallReachability, ContextEvidence, ProjectSummaries, SummaryFact,
+    CallOwner, CallReachability, ContextEvidence, ProjectAnalysis, SummaryFact,
 };
-use circomspect_program_analysis::new_rules::RuleContext;
+use circomspect_program_analysis::rules::RuleContext;
 use parser::hir::{lift_project, DefinitionRef, HirProject, PortId};
 use parser::frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
@@ -32,7 +32,7 @@ fn port(hir: &HirProject, name: &str) -> PortId {
     panic!("port {name} must exist")
 }
 
-fn main_evidence(provider: &ProjectSummaries<'_>, hir: &HirProject) -> ContextEvidence {
+fn main_evidence(provider: &ProjectAnalysis<'_>, hir: &HirProject) -> ContextEvidence {
     let site = provider.graph().calls_from(CallOwner::Main(0))[0];
     let CallReachability::Reachable(call) = provider.graph().reachable_main_call(site.id(), hir)
     else {
@@ -57,7 +57,7 @@ fn scoped(extra: &str) -> SummaryFact<Option<BitDecomposition>> {
     fs::write(&file, source).unwrap();
     let loaded = load_sources(&[file], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
     let lifted = lift_project(&loaded);
-    let provider = ProjectSummaries::build(&lifted, Curve::Goldilocks).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Goldilocks).unwrap();
     let evidence = main_evidence(&provider, &lifted.hir);
     let cfg = build_cfg(&lifted.hir, evidence.context().definition()).unwrap();
     let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
@@ -102,11 +102,11 @@ fn a_checked_handle_from_another_curve_cannot_authorize_the_relation() {
     let lifted = lift_project(&loaded);
     let definition = lifted.hir.definition("Bits").unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
-    let gold = ProjectSummaries::build(&lifted, Curve::Goldilocks).unwrap();
+    let gold = ProjectAnalysis::build(&lifted, Curve::Goldilocks).unwrap();
     let gold_evidence = main_evidence(&gold, &lifted.hir);
     let gold_facts = gold.analyze_for_evidence(&cfg, &gold_evidence, None).unwrap();
     let context = RuleContext::new(&gold_facts, &gold, &gold_evidence).unwrap();
-    let bn = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let bn = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let bn_evidence = main_evidence(&bn, &lifted.hir);
     let bn_facts = bn.analyze_for_evidence(&cfg, &bn_evidence, None).unwrap();
     let input = bn_facts.port_handle(port(&lifted.hir, "in"), &[]).unwrap();

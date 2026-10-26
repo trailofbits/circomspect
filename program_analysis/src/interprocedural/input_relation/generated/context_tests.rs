@@ -5,12 +5,12 @@ use program_structure::utils::constants::Curve;
 use crate::hir_cfg::build_cfg;
 use crate::hir_facts::AnalysisFacts;
 use crate::interprocedural::output_enumeration::EnumeratedComponentInstance;
-use crate::interprocedural::{CallOwner, CallReachability, ProjectSummaries, SummaryBlocker};
+use crate::interprocedural::{CallOwner, CallReachability, ProjectAnalysis, SummaryBlocker};
 
 fn with_instance(
     source: &str,
     work: impl FnOnce(
-        &ProjectSummaries<'_>,
+        &ProjectAnalysis<'_>,
         &AnalysisFacts<'_>,
         &AnalysisFacts<'_>,
         EnumeratedComponentInstance,
@@ -29,7 +29,7 @@ fn with_instance(
         diagnostics: Vec::new(),
     });
     assert!(project.syntax_diagnostics.is_empty(), "{:?}", project.syntax_diagnostics);
-    let provider = ProjectSummaries::build(&project, Curve::Goldilocks).unwrap();
+    let provider = ProjectAnalysis::build(&project, Curve::Goldilocks).unwrap();
     let definition = project.hir.definition("Parent").unwrap();
     let caller = provider.symbolic_root(definition).unwrap();
     let cfg = build_cfg(&project.hir, definition).unwrap();

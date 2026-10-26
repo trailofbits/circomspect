@@ -14,7 +14,7 @@ use std::fs;
 use circomspect_program_analysis::hir_facts::{FieldContext, Range};
 use circomspect_program_analysis::interprocedural::{
     ArgumentValue, CallContext, CallOwner, CallProvenance, FunctionEffect, FunctionEffects,
-    FunctionSummary, ProjectSummaries, SummaryBlocker, SummaryFact,
+    FunctionSummary, ProjectAnalysis, SummaryBlocker, SummaryFact,
 };
 use parser::hir::{lift_project, DefinitionRef, FunctionId, LiftedProject};
 use parser::frontend::{load_sources, Version, VersionPolicy};
@@ -52,7 +52,7 @@ fn function(project: &LiftedProject, name: &str) -> FunctionId {
     function
 }
 
-fn contexts(provider: &ProjectSummaries<'_>, function: FunctionId, count: u32) -> Vec<CallContext> {
+fn contexts(provider: &ProjectAnalysis<'_>, function: FunctionId, count: u32) -> Vec<CallContext> {
     let field = FieldContext::for_curve(Curve::Bn254);
     let mut contexts = Vec::new();
     for argument in 0..count {
@@ -84,7 +84,7 @@ fn assert_log_effect(effects: &SummaryFact<FunctionEffects>) {
     assert!(!effects.contains(FunctionEffect::Assert));
 }
 
-fn assert_recursive_sites(provider: &ProjectSummaries<'_>, function: FunctionId, count: usize) {
+fn assert_recursive_sites(provider: &ProjectAnalysis<'_>, function: FunctionId, count: usize) {
     let sites =
         provider.graph().calls_from(CallOwner::Definition(DefinitionRef::Function(function)));
     assert_eq!(sites.len(), count);
@@ -99,7 +99,7 @@ fn return_discovery_preserves_exact_context_budget_boundary() {
     let lifted = fixture(CHAIN);
     let function = function(&lifted, "F");
     for count in [63, 64, 65] {
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         assert_recursive_sites(&provider, function, 1);
         let contexts = contexts(&provider, function, count);
         let context = contexts.last().unwrap();
@@ -119,7 +119,7 @@ fn effect_discovery_preserves_exact_context_budget_boundary() {
     let lifted = fixture(CHAIN);
     let function = function(&lifted, "F");
     for count in [63, 64, 65] {
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         assert_recursive_sites(&provider, function, 1);
         let contexts = contexts(&provider, function, count);
         let context = contexts.last().unwrap();
@@ -138,7 +138,7 @@ fn effect_discovery_preserves_exact_context_budget_boundary() {
 fn return_discovery_ignores_pending_duplicates_at_capacity() {
     let lifted = fixture(DUPLICATES);
     let function = function(&lifted, "F");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     assert_recursive_sites(&provider, function, 2);
     let contexts = contexts(&provider, function, 64);
     assert!(contexts[0] < contexts[62]);
@@ -151,7 +151,7 @@ fn return_discovery_ignores_pending_duplicates_at_capacity() {
 fn effect_discovery_ignores_pending_duplicates_at_capacity() {
     let lifted = fixture(DUPLICATES);
     let function = function(&lifted, "F");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     assert_recursive_sites(&provider, function, 2);
     let contexts = contexts(&provider, function, 64);
     assert!(contexts[0] < contexts[62]);
@@ -164,7 +164,7 @@ fn effect_discovery_ignores_pending_duplicates_at_capacity() {
 fn return_and_effect_queries_keep_their_distinct_entry_error_order() {
     let lifted = fixture("function F(n){return n;}");
     let foreign = fixture("function F(n){return n;}");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let context = provider.symbolic_context_for(lifted.hir.definition("F").unwrap()).unwrap();
     let function = function(&foreign, "F");
     assert_eq!(
@@ -181,7 +181,7 @@ fn return_and_effect_queries_keep_their_distinct_entry_error_order() {
 fn recursive_returns_refuse_while_effects_solve_the_repeated_context() {
     let lifted = fixture("function F(n){log(1);return F(n);}");
     let function = function(&lifted, "F");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let contexts = contexts(&provider, function, 1);
     assert_eq!(
         provider.function(function, &contexts[0]).unavailable(),

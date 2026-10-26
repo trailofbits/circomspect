@@ -768,7 +768,7 @@ mod tests {
     use crate::hir_cfg::{build_cfg, CfgNodeKind, DefinitionCfg};
     use crate::hir_facts::write_validity::WriteState;
     use crate::hir_facts::{analyze_with_scalar_parameters, AccessKey, BodyWriteStatus, FieldContext};
-    use crate::interprocedural::ProjectSummaries;
+    use crate::interprocedural::ProjectAnalysis;
 
     fn with_fixture(
         source: &str,
@@ -893,7 +893,7 @@ mod tests {
                 panic!("unbound no-repeat expected: {before:?}");
             };
             assert!(before.evidence.is_none());
-            let provider = ProjectSummaries::build(lifted, Curve::Goldilocks).unwrap();
+            let provider = ProjectAnalysis::build(lifted, Curve::Goldilocks).unwrap();
             let evidence = provider.symbolic_root(cfg.definition()).unwrap();
             facts.bind_evidence(evidence.clone());
             let after = facts.body_write_status(target);

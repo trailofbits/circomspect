@@ -8,7 +8,7 @@ use crate::hir_cfg::build_cfg;
 use crate::interprocedural::input_relation::{
     ready_enumerated_instance, ready_witness_instance, WitnessInputValue,
 };
-use crate::interprocedural::{CallOwner, CallReachability, ProjectSummaries, SummaryBlocker};
+use crate::interprocedural::{CallOwner, CallReachability, ProjectAnalysis, SummaryBlocker};
 
 fn inspect(binding: &str, extra: &str) -> Result<Vec<WitnessInputValue>, SummaryBlocker> {
     let directory = std::env::temp_dir().join(format!(
@@ -32,7 +32,7 @@ fn inspect(binding: &str, extra: &str) -> Result<Vec<WitnessInputValue>, Summary
         &[directory],
         VersionPolicy::new(Version::new(2, 2, 3)),
     ));
-    let provider = ProjectSummaries::build(&project, Curve::Goldilocks).unwrap();
+    let provider = ProjectAnalysis::build(&project, Curve::Goldilocks).unwrap();
     let site = provider.graph().calls_from(CallOwner::Main(0))[0];
     let CallReachability::Reachable(call) =
         provider.graph().reachable_main_call(site.id(), &project.hir)

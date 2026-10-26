@@ -6,7 +6,7 @@ use program_structure::utils::constants::Curve;
 
 use crate::hir_cfg::{build_cfg, Origin};
 use crate::hir_facts::{AnalysisFacts, ProofBudget};
-use crate::interprocedural::{AppliedComponentPort, CallOwner, CallReachability, ProjectSummaries};
+use crate::interprocedural::{AppliedComponentPort, CallOwner, CallReachability, ProjectAnalysis};
 
 const SOURCE: &str = "template Encoding(){signal input x;signal output y[3];var sum=0;\
     for(var i=0;i<3;i++){y[i]<--(x>>i)&1;y[i]*(y[i]-1)===0;sum+=y[i]*(2**i);}x===sum;}\
@@ -18,8 +18,8 @@ const SOURCE: &str = "template Encoding(){signal input x;signal output y[3];var 
 fn with_query<T>(
     source: &str,
     work: impl FnOnce(
-        &ProjectSummaries<'_>,
-        &ProjectSummaries<'_>,
+        &ProjectAnalysis<'_>,
+        &ProjectAnalysis<'_>,
         &AnalysisFacts<'_>,
         &AppliedComponentPort,
     ) -> T,
@@ -38,7 +38,7 @@ fn with_query<T>(
         VersionPolicy::new(Version::new(2, 2, 3)),
     ));
     assert!(project.syntax_diagnostics.is_empty(), "{:?}", project.syntax_diagnostics);
-    let provider = ProjectSummaries::build(&project, Curve::Goldilocks).unwrap();
+    let provider = ProjectAnalysis::build(&project, Curve::Goldilocks).unwrap();
     let main = provider.graph().calls_from(CallOwner::Main(0))[0];
     let CallReachability::Reachable(call) =
         provider.graph().reachable_main_call(main.id(), &project.hir)
@@ -50,7 +50,7 @@ fn with_query<T>(
     let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let outputs = provider.exact_component_outputs(&facts, &evidence);
     let applied = outputs.certified().unwrap()[0].applied_port();
-    let other = ProjectSummaries::build(&project, Curve::Bn254).unwrap();
+    let other = ProjectAnalysis::build(&project, Curve::Bn254).unwrap();
     work(&provider, &other, &facts, applied)
 }
 

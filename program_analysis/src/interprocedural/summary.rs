@@ -12,7 +12,7 @@ use crate::hir_cfg::{CfgNodeKind, DefinitionCfg};
 use crate::hir_facts::{exact_compile_time, AnalysisFacts, Fact, FieldContext, Range};
 
 use crate::interprocedural::{
-    CallContext, CallOwner, CallReachability, ProjectSummaries, SummaryBlocker,
+    CallContext, CallOwner, CallReachability, ProjectAnalysis, SummaryBlocker,
 };
 
 /// Provider-owned evidence for a scoped summary; value-specific coverage remains explicit.
@@ -245,7 +245,7 @@ impl Transfer<ReturnAnalysis, FunctionSummary, SummaryBlocker> for ReturnEdge {
     }
 }
 
-impl ProjectSummaries<'_> {
+impl ProjectAnalysis<'_> {
     /// Summarize a scalar function using checked CFG reachability and resolved call sites.
     pub fn function(&self, id: FunctionId, context: &CallContext) -> SummaryFact<FunctionSummary> {
         if self.hir().function(id).is_none() {

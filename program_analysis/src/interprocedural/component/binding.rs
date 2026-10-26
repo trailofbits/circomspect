@@ -13,12 +13,12 @@ use crate::interprocedural::output_enumeration::{
 };
 use crate::interprocedural::template::port_summary;
 use crate::interprocedural::{
-    CallSiteId, ContextEvidence, PortSummary, ProjectSummaries, ReachableCall, SummaryBlocker,
+    CallSiteId, ContextEvidence, PortSummary, ProjectAnalysis, ReachableCall, SummaryBlocker,
 };
 
 #[derive(Clone)]
 pub(in crate::interprocedural) struct CheckedCallContext<'query, 'project> {
-    provider: &'query ProjectSummaries<'project>,
+    provider: &'query ProjectAnalysis<'project>,
     facts: &'query AnalysisFacts<'query>,
     caller: &'query ContextEvidence,
     callee: ContextEvidence,
@@ -29,7 +29,7 @@ pub(in crate::interprocedural) struct CheckedCallContext<'query, 'project> {
 
 impl<'query, 'project> CheckedCallContext<'query, 'project> {
     pub(in crate::interprocedural) fn new(
-        provider: &'query ProjectSummaries<'project>,
+        provider: &'query ProjectAnalysis<'project>,
         facts: &'query AnalysisFacts<'query>,
         caller: &'query ContextEvidence,
         call: &ReachableCall<'_>,
@@ -39,7 +39,7 @@ impl<'query, 'project> CheckedCallContext<'query, 'project> {
     }
 
     fn from_evidence(
-        provider: &'query ProjectSummaries<'project>,
+        provider: &'query ProjectAnalysis<'project>,
         facts: &'query AnalysisFacts<'query>,
         caller: &'query ContextEvidence,
         call: &ReachableCall<'_>,
@@ -57,7 +57,7 @@ impl<'query, 'project> CheckedCallContext<'query, 'project> {
     }
 
     pub(in crate::interprocedural) fn for_model(
-        provider: &'query ProjectSummaries<'project>,
+        provider: &'query ProjectAnalysis<'project>,
         facts: &'query AnalysisFacts<'query>,
         applied: &'query AppliedComponentPort,
     ) -> Result<Self, SummaryBlocker> {
@@ -173,7 +173,7 @@ pub(in crate::interprocedural) struct CheckedComponentCall<'query, 'project> {
 
 impl<'query, 'project> CheckedComponentCall<'query, 'project> {
     pub(in crate::interprocedural) fn for_enumeration(
-        provider: &'query ProjectSummaries<'project>,
+        provider: &'query ProjectAnalysis<'project>,
         facts: &'query AnalysisFacts<'query>,
         caller: &'query ContextEvidence,
         call: &ReachableCall<'_>,
@@ -252,7 +252,7 @@ impl<'query, 'project> CheckedComponentCall<'query, 'project> {
     }
 }
 
-impl ProjectSummaries<'_> {
+impl ProjectAnalysis<'_> {
     pub(in crate::interprocedural::component) fn component_output_result(
         &self,
         facts: &AnalysisFacts<'_>,

@@ -11,7 +11,7 @@ use std::fs;
 
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::hir_facts::{BitDecomposition, Fact};
-use circomspect_program_analysis::interprocedural::{CallOwner, CallReachability, ProjectSummaries};
+use circomspect_program_analysis::interprocedural::{CallOwner, CallReachability, ProjectAnalysis};
 use parser::hir::{lift_project, AccessStep, ArrayIndex, DefinitionRef, ExprKind, HirProject, PortId};
 use parser::frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
@@ -52,7 +52,7 @@ fn inspect_with_extra(count: usize, curve: Curve, extra: &str) -> Fact<Option<Bi
     let lifted = lift_project(&loaded);
     assert!(lifted.syntax_diagnostics.is_empty(), "{:?}", lifted.syntax_diagnostics);
     assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
-    let provider = ProjectSummaries::build(&lifted, curve).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, curve).unwrap();
     let site = provider.graph().calls_from(CallOwner::Main(0))[0];
     let CallReachability::Reachable(call) =
         provider.graph().reachable_main_call(site.id(), &lifted.hir)
@@ -138,7 +138,7 @@ fn symbolic_library_root_cannot_name_a_parameter_sized_bit() {
     let loaded = load_sources(&[file], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
     let lifted = lift_project(&loaded);
     let definition = lifted.hir.definition("Bits").unwrap();
-    let provider = ProjectSummaries::build(&lifted, Curve::Goldilocks).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Goldilocks).unwrap();
     let evidence = provider.symbolic_root(definition).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
     let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();

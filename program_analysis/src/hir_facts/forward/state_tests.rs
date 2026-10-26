@@ -378,10 +378,10 @@ fn local_join_reports_every_property_change_with_exact_results() {
 fn constraint_join_reports_each_set_and_provenance_change() {
     let (hir, cfg, field) = fixture(SOURCE);
     let left = seeded_state(&hir, &cfg, &field);
-    let new_site = NodeId::new(999);
+    let additional_constraint_site = NodeId::new(999);
     let right_states = [
         altered(&left, |facts| {
-            facts.constraints.may_constraints.insert(new_site);
+            facts.constraints.may_constraints.insert(additional_constraint_site);
         }),
         altered(&left, |facts| {
             facts.constraints.must_constraints.clear();
@@ -400,11 +400,11 @@ fn constraint_join_reports_each_set_and_provenance_change() {
             };
             assert_eq!(equations.len(), 1);
             for origins in equations.values_mut() {
-                origins.insert(new_site);
+                origins.insert(additional_constraint_site);
             }
         }),
         altered(&left, |facts| {
-            Arc::make_mut(&mut facts.constraints.must_equations).block(new_site);
+            Arc::make_mut(&mut facts.constraints.must_equations).block(additional_constraint_site);
         }),
         altered(&left, |facts| {
             let MustEquations::Reached { equations, .. } =

@@ -226,14 +226,14 @@ impl AnalyzeEvidenceError {
 }
 
 /// Owns the validated field and graph used to construct summary contexts.
-pub struct ProjectSummaries<'a> {
+pub struct ProjectAnalysis<'a> {
     lifted: &'a LiftedProject,
     field: FieldContext,
     graph: CallGraph,
     pub(super) caches: SummaryCaches,
 }
 
-impl<'a> ProjectSummaries<'a> {
+impl<'a> ProjectAnalysis<'a> {
     /// Build a provider for one selected compiler curve and the lifted language version.
     ///
     /// # Errors
@@ -688,7 +688,7 @@ mod tests {
 
     use crate::hir_cfg::build_cfg;
     use crate::interprocedural::{
-        ArgumentValue, CallOwner, CallReachability, ProjectSummaries, SummaryBlocker,
+        ArgumentValue, CallOwner, CallReachability, ProjectAnalysis, SummaryBlocker,
     };
 
     #[test]
@@ -708,7 +708,7 @@ mod tests {
         let loaded = load_sources(&[file], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
         let lifted = lift_project(&loaded);
         let foreign = lift_project(&loaded);
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         for (name, count) in [("F", 2), ("T", 3), ("B", 1)] {
             let definition = lifted.hir.definition(name).unwrap();
             assert_eq!(provider.parameter_count(definition), Some(count));
@@ -732,7 +732,7 @@ mod tests {
         let loaded =
             load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
         let lifted = lift_project(&loaded);
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let DefinitionRef::Template(template) = lifted.hir.definition("T").unwrap() else {
             panic!("template T")
         };
@@ -767,7 +767,7 @@ mod tests {
         let loaded =
             load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
         let lifted = lift_project(&loaded);
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let definition = lifted.hir.definition("T").unwrap();
         let main = provider.graph.calls_from(CallOwner::Main(0))[0];
         let CallReachability::Reachable(call) =
@@ -813,7 +813,7 @@ mod tests {
         let loaded =
             load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
         let lifted = lift_project(&loaded);
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let site = provider.graph.calls_from(CallOwner::Main(0))[0];
         let CallReachability::Reachable(call) =
             provider.graph.reachable_main_call(site.id(), provider.hir())

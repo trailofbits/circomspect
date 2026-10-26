@@ -14,10 +14,10 @@ use std::fs;
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::hir_facts::{analyze, FactBlocker, FieldContext, Incidence, Range};
 use circomspect_program_analysis::interprocedural::{
-    ArgumentValue, CallOwner, CallReachability, ContextEvidence, FunctionEffect, ProjectSummaries,
+    ArgumentValue, CallOwner, CallReachability, ContextEvidence, FunctionEffect, ProjectAnalysis,
     ReturnEvidence, SummaryBlocker, WitnessProvenance,
 };
-use circomspect_program_analysis::new_rules::{RuleContext, RuleContextError};
+use circomspect_program_analysis::rules::{RuleContext, RuleContextError};
 use parser::hir::{lift_project, DefinitionRef, ExprId, LiftedProject};
 use parser::frontend::{load_sources, Span, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
@@ -114,7 +114,7 @@ fn function_records() -> Vec<Value> {
         "function Noisy(){assert(1);log(7);return 7;}"
     );
     let lifted = fixture(source);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let field = FieldContext::for_curve(Curve::Bn254);
     let mut records = Vec::new();
     for name in ["Exact", "Conditional", "Empty", "Noisy"] {
@@ -184,7 +184,7 @@ fn incidence_record(incidence: Incidence) -> &'static str {
 fn port_records() -> Vec<Value> {
     let source = "template T(){signal input x;signal output y,z;y<--x;z<==1;}";
     let lifted = fixture(source);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("T").unwrap();
     let DefinitionRef::Template(template) = definition else { panic!("template T") };
     let context = provider.symbolic_context_for(definition).unwrap();
@@ -226,7 +226,7 @@ fn port_records() -> Vec<Value> {
 
 fn array_port_records() -> Vec<Value> {
     let lifted = fixture("template T(){signal output out[2];out[0]<==1;out[1]<--2;}");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("T").unwrap();
     let DefinitionRef::Template(template) = definition else { panic!("template T") };
     let port = lifted.hir.template(template).unwrap().ports[0];
@@ -250,9 +250,9 @@ fn context_records() -> Vec<Value> {
     let source = "function F(n){return n;}";
     let first = fixture(source);
     let second = fixture(source);
-    let bn = ProjectSummaries::build(&first, Curve::Bn254).unwrap();
-    let twin = ProjectSummaries::build(&second, Curve::Bn254).unwrap();
-    let gold = ProjectSummaries::build(&first, Curve::Goldilocks).unwrap();
+    let bn = ProjectAnalysis::build(&first, Curve::Bn254).unwrap();
+    let twin = ProjectAnalysis::build(&second, Curve::Bn254).unwrap();
+    let gold = ProjectAnalysis::build(&first, Curve::Goldilocks).unwrap();
     let definition = first.hir.definition("F").unwrap();
     let local = bn.symbolic_context_for(definition).unwrap();
     let same = bn.symbolic_context_for(definition).unwrap();
@@ -276,7 +276,7 @@ fn context_records() -> Vec<Value> {
     })]
 }
 
-fn child_evidence(provider: &ProjectSummaries<'_>, name: &str) -> ContextEvidence {
+fn child_evidence(provider: &ProjectAnalysis<'_>, name: &str) -> ContextEvidence {
     let definition = provider.hir().definition(name).unwrap();
     let caller = provider.symbolic_root(definition).unwrap();
     let cfg = build_cfg(provider.hir(), definition).unwrap();
@@ -295,7 +295,7 @@ fn ancestry_records() -> Vec<Value> {
         "template Left(){component c=Leaf(7);}",
         "template Right(){component c=Leaf(7);}"
     ));
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let left = child_evidence(&provider, "Left");
     let right = child_evidence(&provider, "Right");
     let cfg = build_cfg(&lifted.hir, left.context().definition()).unwrap();

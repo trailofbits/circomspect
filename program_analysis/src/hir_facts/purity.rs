@@ -104,7 +104,7 @@ mod tests {
 
     use crate::hir_cfg::{build_cfg, CfgNodeKind};
     use crate::hir_facts::forward::ForwardState;
-    use crate::interprocedural::ProjectSummaries;
+    use crate::interprocedural::ProjectAnalysis;
 
     #[test]
     fn every_specialized_loop_site_must_have_safe_exact_evaluation() {
@@ -123,7 +123,7 @@ mod tests {
         .unwrap();
         let loaded = load_sources(&[path], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
         let lifted = lift_project(&loaded);
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let definition = lifted.hir.definition("Check").unwrap();
         let evidence = provider.symbolic_root(definition).unwrap();
         let cfg = build_cfg(&lifted.hir, definition).unwrap();

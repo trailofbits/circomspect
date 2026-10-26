@@ -11,7 +11,7 @@ use crate::interprocedural::input_relation::ready_enumerated_instance;
 use crate::interprocedural::output_enumeration::EnumeratedComponentInstance;
 use crate::interprocedural::project_use::{ProjectInstanceStep, ProjectOutputEvidence};
 use crate::interprocedural::{
-    CallContext, ContextEvidence, ProjectOutputStatus, ProjectOutputUse, ProjectSummaries,
+    CallContext, ContextEvidence, ProjectOutputStatus, ProjectOutputUse, ProjectAnalysis,
     SummaryBlocker, SummaryFact,
 };
 
@@ -52,7 +52,7 @@ impl Closure {
     }
 }
 
-impl ProjectSummaries<'_> {
+impl ProjectAnalysis<'_> {
     /// Certify all exact component-output uses under one closed instantiated main.
     ///
     /// Every returned negative use is bound to a checked instance chain. Missing
@@ -201,7 +201,7 @@ impl ProjectSummaries<'_> {
 #[cfg(test)]
 mod tests {
     use crate::interprocedural::project_output_closure::Closure;
-    use crate::interprocedural::ProjectSummaries;
+    use crate::interprocedural::ProjectAnalysis;
     use parser::hir::lift_project;
     use parser::frontend::{load_sources, Version, VersionPolicy};
     use program_structure::utils::constants::Curve;
@@ -215,7 +215,7 @@ mod tests {
         std::fs::write(&file, "template Main(){} component main=Main();").unwrap();
         let loaded = load_sources(&[file], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
         let lifted = lift_project(&loaded);
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let definition = lifted.hir.definition("Main").unwrap();
         let main = provider.symbolic_root(definition).unwrap();
         let mut closure = Closure::new(&main);

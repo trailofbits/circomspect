@@ -12,10 +12,10 @@ use std::fs;
 
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::interprocedural::{
-    CallOwner, CallReachability, EnumeratedComponentOutput, ProjectOutputStatus, ProjectSummaries,
+    CallOwner, CallReachability, EnumeratedComponentOutput, ProjectOutputStatus, ProjectAnalysis,
     SummaryBlocker, SummaryFact,
 };
-use circomspect_program_analysis::new_rules::RuleContext;
+use circomspect_program_analysis::rules::RuleContext;
 use parser::hir::{lift_project, LiftedProject};
 use parser::frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
@@ -35,7 +35,7 @@ fn fixture(source: &str) -> LiftedProject {
 
 fn enumerated(source: &str) -> SummaryFact<Vec<EnumeratedComponentOutput>> {
     let lifted = fixture(source);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
     let root = if lifted.hir.mains().is_empty() {
         provider.symbolic_root(parent).unwrap()
@@ -145,7 +145,7 @@ fn unbound_child_input_enumerates_a_candidate_but_cannot_prove_project_unused() 
         "template Parent(){component c=Child();} component main=Parent();"
     );
     let lifted = fixture(source);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
     let site = provider.graph().calls_from(CallOwner::Main(0))[0];
     let CallReachability::Reachable(main) =
@@ -181,7 +181,7 @@ fn enumerated_outputs_retain_closed_project_use_provenance() {
         "component main=Parent();"
     );
     let lifted = fixture(source);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
     let site = provider.graph().calls_from(CallOwner::Main(0))[0];
     let CallReachability::Reachable(main) =

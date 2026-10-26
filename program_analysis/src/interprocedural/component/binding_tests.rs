@@ -9,7 +9,7 @@ use crate::hir_cfg::component_fixture::repeat_constructor_source;
 use crate::hir_cfg::{build_cfg, CfgNodeKind};
 use crate::hir_facts::{analyze, AnalysisFacts, FieldContext};
 use crate::interprocedural::{
-    CallOwner, CallReachability, ContextEvidence, ProjectSummaries, SummaryBlocker,
+    CallOwner, CallReachability, ContextEvidence, ProjectAnalysis, SummaryBlocker,
 };
 
 fn project() -> LiftedProject {
@@ -39,7 +39,7 @@ fn project() -> LiftedProject {
 }
 
 fn check_binding(
-    provider: &ProjectSummaries<'_>,
+    provider: &ProjectAnalysis<'_>,
     facts: &AnalysisFacts<'_>,
     caller: &ContextEvidence,
     repeated: bool,
@@ -106,7 +106,7 @@ fn check_binding(
 #[test]
 fn repeated_source_and_selected_instance_uniqueness_are_distinct() {
     let project = project();
-    let provider = ProjectSummaries::build(&project, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&project, Curve::Bn254).unwrap();
     let site = provider.graph().calls_from(CallOwner::Main(0))[0];
     let CallReachability::Reachable(main) =
         provider.graph().reachable_main_call(site.id(), &project.hir)

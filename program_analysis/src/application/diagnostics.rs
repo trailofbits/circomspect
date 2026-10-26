@@ -6,7 +6,7 @@ use program_structure::report::Report;
 use program_structure::report_code::ReportCode;
 
 use crate::interprocedural::{ContextEvidence, SummaryBlocker};
-use crate::new_rules::{AbstentionReason, RenderError, RuleKind, SourceMap};
+use crate::rules::{AbstentionReason, RenderError, RuleKind, SourceMap};
 
 pub(super) struct Diagnostics<'a, 'b> {
     sources: &'a SourceMap<'b>,

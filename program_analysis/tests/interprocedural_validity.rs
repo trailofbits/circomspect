@@ -11,7 +11,7 @@
 use std::fs;
 
 use circomspect_program_analysis::hir_facts::{FieldContext, Incidence};
-use circomspect_program_analysis::interprocedural::{ArgumentValue, ProjectSummaries};
+use circomspect_program_analysis::interprocedural::{ArgumentValue, ProjectAnalysis};
 use parser::hir::{lift_project, DefinitionRef, LiftedProject};
 use parser::frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
@@ -48,7 +48,7 @@ fn definitely_invalid_templates_cannot_certify_ports_reads_or_witnesses() {
         let lifted = fixture(&format!("template T(){{{statement}signal output y;y<==1;}}"));
         assert!(lifted.diagnostics.is_empty(), "{statement}: {:?}", lifted.diagnostics);
         assert!(lifted.syntax_diagnostics.is_empty());
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let definition = lifted.hir.definition("T").unwrap();
         let DefinitionRef::Template(template) = definition else { panic!("template T") };
         let context = provider.symbolic_context_for(definition).unwrap();
@@ -67,7 +67,7 @@ fn invalid_bus_field_dimensions_block_unrelated_port_certificates() {
             let lifted =
                 fixture(&format!("{bus} template T(){{{declaration}signal output y;y<==1;}}"));
             assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
-            let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+            let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
             let definition = lifted.hir.definition("T").unwrap();
             let DefinitionRef::Template(template) = definition else { panic!("template T") };
             let context = provider.symbolic_context_for(definition).unwrap();
@@ -80,7 +80,7 @@ fn invalid_bus_field_dimensions_block_unrelated_port_certificates() {
 #[test]
 fn an_unused_invalid_bus_definition_preserves_independent_template_facts() {
     let lifted = fixture("bus B(){signal x[-1];} template T(){signal output y;y<==1;}");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("T").unwrap();
     let DefinitionRef::Template(template) = definition else { panic!("template T") };
     let context = provider.symbolic_context_for(definition).unwrap();
@@ -96,7 +96,7 @@ fn custom_and_external_templates_never_supply_trusted_port_effects() {
             "pragma custom_templates; template {modifier} T(){{signal output y;y<==1;}}"
         ));
         assert!(lifted.syntax_diagnostics.is_empty(), "{:?}", lifted.syntax_diagnostics);
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let definition = lifted.hir.definition("T").unwrap();
         let DefinitionRef::Template(template) = definition else { panic!("template T") };
         let declaration = lifted.hir.template(template).unwrap();
@@ -119,7 +119,7 @@ fn literal_dimensions_use_canonical_field_values() {
             [(negative.as_bigint().to_string(), true), (modulus.to_string(), false)]
         {
             let lifted = fixture(&format!("template T(){{var x[{size}];signal output y;y<==1;}}"));
-            let provider = ProjectSummaries::build(&lifted, curve.clone()).unwrap();
+            let provider = ProjectAnalysis::build(&lifted, curve.clone()).unwrap();
             let definition = lifted.hir.definition("T").unwrap();
             let DefinitionRef::Template(template) = definition else { panic!("template T") };
             let context = provider.symbolic_context_for(definition).unwrap();
@@ -137,7 +137,7 @@ fn declaration_validity_uses_the_selected_curve_and_parameter_context() {
     let DefinitionRef::Template(template) = definition else { panic!("template T") };
     let output = lifted.hir.template(template).unwrap().ports[0];
     for curve in [Curve::Bn254, Curve::Bls12_381, Curve::Goldilocks] {
-        let provider = ProjectSummaries::build(&lifted, curve.clone()).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, curve.clone()).unwrap();
         let field = FieldContext::for_curve(curve);
         for size in [-1, 0, 1, 2] {
             let context = provider
@@ -168,7 +168,7 @@ fn valid_execution_and_unrelated_opacity_preserve_independent_port_facts() {
         "var x=Missing();",
     ] {
         let lifted = fixture(&format!("template T(){{{statement}signal output y;y<==1;}}"));
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let definition = lifted.hir.definition("T").unwrap();
         let DefinitionRef::Template(template) = definition else { panic!("template T") };
         let context = provider.symbolic_context_for(definition).unwrap();
@@ -190,7 +190,7 @@ fn unproved_access_bounds_do_not_invalidate_independent_port_facts() {
             "template T(n){{var values[1]=[2];var value=values[{index}];signal output y;y<==1;}}"
         );
         let lifted = fixture(&source);
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let definition = lifted.hir.definition("T").unwrap();
         let DefinitionRef::Template(template) = definition else { panic!("template T") };
         let context = provider.symbolic_context_for(definition).unwrap();

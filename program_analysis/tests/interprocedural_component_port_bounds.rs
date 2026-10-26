@@ -13,7 +13,7 @@ use abstract_interpretation::graph::NodeId;
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::hir_facts::{AccessHandle, AnalysisFacts, FactBlocker};
 use circomspect_program_analysis::interprocedural::{
-    CallOwner, CallReachability, ContextEvidence, ProjectSummaries, SummaryBlocker, SummaryFact,
+    CallOwner, CallReachability, ContextEvidence, ProjectAnalysis, SummaryBlocker, SummaryFact,
 };
 use parser::hir::{lift_project, LiftedProject};
 use parser::frontend::{load_sources, Version, VersionPolicy};
@@ -32,7 +32,7 @@ fn fixture(source: &str) -> LiftedProject {
     lift_project(&loaded)
 }
 
-fn main_evidence(provider: &ProjectSummaries<'_>, project: &LiftedProject) -> ContextEvidence {
+fn main_evidence(provider: &ProjectAnalysis<'_>, project: &LiftedProject) -> ContextEvidence {
     let site = provider.graph().calls_from(CallOwner::Main(0))[0];
     let CallReachability::Reachable(call) =
         provider.graph().reachable_main_call(site.id(), &project.hir)
@@ -45,9 +45,9 @@ fn main_evidence(provider: &ProjectSummaries<'_>, project: &LiftedProject) -> Co
 fn with_parent<T>(
     project: &LiftedProject,
     curve: Curve,
-    work: impl FnOnce(&ProjectSummaries<'_>, &AnalysisFacts<'_>, &ContextEvidence) -> T,
+    work: impl FnOnce(&ProjectAnalysis<'_>, &AnalysisFacts<'_>, &ContextEvidence) -> T,
 ) -> T {
-    let provider = ProjectSummaries::build(project, curve).unwrap();
+    let provider = ProjectAnalysis::build(project, curve).unwrap();
     let caller = main_evidence(&provider, project);
     let definition = project.hir.definition("Parent").unwrap();
     let cfg = build_cfg(&project.hir, definition).unwrap();
@@ -102,7 +102,7 @@ fn exact_child_parameter_checks_output_port_dimensions() {
              template Parent(){{component c=Child(2);}}component main=Parent();"
         );
         let project = fixture(&source);
-        let provider = ProjectSummaries::build(&project, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&project, Curve::Bn254).unwrap();
         let main = main_evidence(&provider, &project);
         let definition = project.hir.definition("Parent").unwrap();
         let cfg = build_cfg(&project.hir, definition).unwrap();
@@ -118,7 +118,7 @@ fn provider_binds_a_parameter_checked_local_output_to_its_exact_call() {
         "template Child(n){signal output bits[n];bits[0]<==0;bits[1]<==1;}",
         "template Parent(){component c=Child(2);}component main=Parent();"
     ));
-    let provider = ProjectSummaries::build(&project, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&project, Curve::Bn254).unwrap();
     let caller = main_evidence(&provider, &project);
     let definition = project.hir.definition("Parent").unwrap();
     let cfg = build_cfg(&project.hir, definition).unwrap();

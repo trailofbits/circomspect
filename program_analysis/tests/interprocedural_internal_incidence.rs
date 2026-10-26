@@ -12,7 +12,7 @@ use std::fs;
 
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::hir_facts::Incidence;
-use circomspect_program_analysis::interprocedural::{CallOwner, CallReachability, ProjectSummaries};
+use circomspect_program_analysis::interprocedural::{CallOwner, CallReachability, ProjectAnalysis};
 use parser::hir::{lift_project, AccessPath, LiftedProject};
 use parser::frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
@@ -35,7 +35,7 @@ fn fixture(source: &str) -> LiftedProject {
 
 fn internal_incidence(source: &str, budget: Option<usize>) -> Option<Incidence> {
     let lifted = fixture(source);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("T").unwrap();
     let evidence = provider.symbolic_root(definition).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
@@ -108,7 +108,7 @@ fn main_and_called_contexts_keep_their_own_scope() {
         "template T(){signal t;t<--1;component c=Child();} component main=T();"
     );
     let lifted = fixture(source);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("T").unwrap();
     let main = provider.graph().calls_from(CallOwner::Main(0))[0];
     let CallReachability::Reachable(main) =
@@ -162,7 +162,7 @@ fn internal_arrays_keep_element_context_and_failure_scope() {
         ("signal s[2];s[0]<--1;var x=Missing();", None),
     ] {
         let lifted = fixture(&format!("template T(){{{body}}}"));
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let definition = lifted.hir.definition("T").unwrap();
         let evidence = provider.symbolic_root(definition).unwrap();
         let cfg = build_cfg(&lifted.hir, definition).unwrap();

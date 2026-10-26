@@ -5,9 +5,9 @@ use parser::frontend::PortDirection;
 
 use crate::hir_facts::{AccessHandle, AnalysisFacts};
 use crate::interprocedural::output_enumeration::EnumeratedComponentInstance;
-use crate::interprocedural::{AppliedComponentPort, ContextEvidence, ProjectSummaries, SummaryBlocker};
+use crate::interprocedural::{AppliedComponentPort, ContextEvidence, ProjectAnalysis, SummaryBlocker};
 
-impl ProjectSummaries<'_> {
+impl ProjectAnalysis<'_> {
     pub(super) fn check_comparator_output(
         &self,
         facts: &AnalysisFacts<'_>,

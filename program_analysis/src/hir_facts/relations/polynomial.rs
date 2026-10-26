@@ -801,7 +801,7 @@ mod tests {
         let loaded = load_sources(&[path], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
         let lifted = lift_project(&loaded);
         let provider =
-            crate::interprocedural::ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+            crate::interprocedural::ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let hir = &lifted.hir;
         let definition = hir.definition("T").unwrap();
         let x = hir.symbols().iter().find(|symbol| symbol.name == "x").unwrap().id;

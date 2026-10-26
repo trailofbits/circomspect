@@ -12,7 +12,7 @@ use std::fs;
 
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::interprocedural::{
-    CallOwner, CallReachability, ContextEvidence, ProjectOutputStatus, ProjectSummaries,
+    CallOwner, CallReachability, ContextEvidence, ProjectOutputStatus, ProjectAnalysis,
     SummaryBlocker, SummaryFact,
 };
 use parser::hir::{lift_project, DefinitionRef, LiftedProject};
@@ -32,7 +32,7 @@ fn fixture(source: &str) -> LiftedProject {
     lift_project(&loaded)
 }
 
-fn main_evidence(provider: &ProjectSummaries<'_>, project: &LiftedProject) -> ContextEvidence {
+fn main_evidence(provider: &ProjectAnalysis<'_>, project: &LiftedProject) -> ContextEvidence {
     let site = provider.graph().calls_from(CallOwner::Main(0))[0];
     let CallReachability::Reachable(call) =
         provider.graph().reachable_main_call(site.id(), &project.hir)
@@ -42,7 +42,7 @@ fn main_evidence(provider: &ProjectSummaries<'_>, project: &LiftedProject) -> Co
     provider.main_evidence(&call).unwrap()
 }
 
-fn middle_evidence(provider: &ProjectSummaries<'_>, project: &LiftedProject) -> ContextEvidence {
+fn middle_evidence(provider: &ProjectAnalysis<'_>, project: &LiftedProject) -> ContextEvidence {
     let main = main_evidence(provider, project);
     let parent = project.hir.definition("Parent").unwrap();
     let cfg = build_cfg(&project.hir, parent).unwrap();
@@ -60,7 +60,7 @@ fn nested_uses(
 ) -> SummaryFact<Vec<circomspect_program_analysis::interprocedural::ProjectOutputUse>> {
     let project = fixture(source);
     assert!(project.diagnostics.is_empty(), "{:?}", project.diagnostics);
-    let provider = ProjectSummaries::build(&project, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&project, Curve::Bn254).unwrap();
     let main = main_evidence(&provider, &project);
     let definition = project.hir.definition("Parent").unwrap();
     let cfg = build_cfg(&project.hir, definition).unwrap();
@@ -125,7 +125,7 @@ fn one_loop_call_site_cannot_merge_distinct_array_instances() {
         "for(var i=0;i<2;i++){c[i]=Leaf();}} component main=Parent();"
     );
     let project = fixture(source);
-    let provider = ProjectSummaries::build(&project, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&project, Curve::Bn254).unwrap();
     let main = main_evidence(&provider, &project);
     let definition = project.hir.definition("Parent").unwrap();
     let cfg = build_cfg(&project.hir, definition).unwrap();
@@ -308,7 +308,7 @@ fn the_combined_instance_and_output_budget_is_all_or_nothing() {
         )
     };
     let complete = fixture(&source(255));
-    let provider = ProjectSummaries::build(&complete, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&complete, Curve::Bn254).unwrap();
     let main = main_evidence(&provider, &complete);
     let definition = complete.hir.definition("Parent").unwrap();
     let cfg = build_cfg(&complete.hir, definition).unwrap();
@@ -317,7 +317,7 @@ fn the_combined_instance_and_output_budget_is_all_or_nothing() {
     assert_eq!(result.certified().map(Vec::len), Some(255), "{result:?}");
 
     let over = fixture(&source(256));
-    let provider = ProjectSummaries::build(&over, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&over, Curve::Bn254).unwrap();
     let main = main_evidence(&provider, &over);
     let definition = over.hir.definition("Parent").unwrap();
     let cfg = build_cfg(&over.hir, definition).unwrap();
@@ -368,7 +368,7 @@ fn a_symbolic_library_parent_cannot_claim_nested_unused_output() {
         "template Leaf(){signal output out;out<==1;} ",
         "template Middle(){component c=Leaf();}"
     ));
-    let provider = ProjectSummaries::build(&project, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&project, Curve::Bn254).unwrap();
     let definition = project.hir.definition("Middle").unwrap();
     let evidence = provider.symbolic_root(definition).unwrap();
     let cfg = build_cfg(&project.hir, definition).unwrap();
@@ -385,8 +385,8 @@ fn foreign_project_facts_and_evidence_cannot_close_an_equal_source_project() {
     );
     let first = fixture(source);
     let second = fixture(source);
-    let first_provider = ProjectSummaries::build(&first, Curve::Bn254).unwrap();
-    let second_provider = ProjectSummaries::build(&second, Curve::Bn254).unwrap();
+    let first_provider = ProjectAnalysis::build(&first, Curve::Bn254).unwrap();
+    let second_provider = ProjectAnalysis::build(&second, Curve::Bn254).unwrap();
     let main = main_evidence(&first_provider, &first);
     let definition = first.hir.definition("Parent").unwrap();
     let cfg = build_cfg(&first.hir, definition).unwrap();
@@ -406,7 +406,7 @@ fn a_nested_known_output_read_survives_an_opaque_sibling() {
         "component bad=Missing();} ",
         "template Parent(){component m=Middle();} component main=Parent();"
     ));
-    let provider = ProjectSummaries::build(&project, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&project, Curve::Bn254).unwrap();
     let middle = middle_evidence(&provider, &project);
     let definition = project.hir.definition("Middle").unwrap();
     let cfg = build_cfg(&project.hir, definition).unwrap();

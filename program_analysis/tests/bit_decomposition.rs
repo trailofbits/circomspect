@@ -12,7 +12,7 @@ use std::fs;
 
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::hir_facts::{BitDecomposition, Fact, FactBlocker};
-use circomspect_program_analysis::interprocedural::ProjectSummaries;
+use circomspect_program_analysis::interprocedural::ProjectAnalysis;
 use num_bigint_dig::BigInt;
 use parser::hir::{lift_project, AccessPath, AccessStep, ArrayIndex, HirProject, SymbolKind};
 use parser::frontend::{load_sources, Version, VersionPolicy};
@@ -151,7 +151,7 @@ fn inspect_indices_with_budget(
     assert!(lifted.syntax_diagnostics.is_empty(), "{:?}", lifted.syntax_diagnostics);
     assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
     let definition = lifted.hir.definition("Bits").unwrap();
-    let provider = ProjectSummaries::build(&lifted, curve).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, curve).unwrap();
     let evidence = provider.symbolic_root(definition).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
     let facts = provider.analyze_for_evidence(&cfg, &evidence, budget).unwrap();

@@ -12,9 +12,9 @@ use std::fs;
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::hir_facts::{BitAmbiguityOutcome, NoBitAmbiguityCertificate};
 use circomspect_program_analysis::interprocedural::{
-    CallOwner, CallReachability, ContextEvidence, ProjectSummaries, SummaryFact,
+    CallOwner, CallReachability, ContextEvidence, ProjectAnalysis, SummaryFact,
 };
-use circomspect_program_analysis::new_rules::RuleContext;
+use circomspect_program_analysis::rules::RuleContext;
 use parser::hir::{lift_project, DefinitionRef, HirProject, LiftedProject, PortId};
 use parser::frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
@@ -56,7 +56,7 @@ fn port(hir: &HirProject, name: &str) -> PortId {
     panic!("port {name} must exist")
 }
 
-fn main_evidence(provider: &ProjectSummaries<'_>, hir: &HirProject) -> ContextEvidence {
+fn main_evidence(provider: &ProjectAnalysis<'_>, hir: &HirProject) -> ContextEvidence {
     let site = provider.graph().calls_from(CallOwner::Main(0))[0];
     let CallReachability::Reachable(call) = provider.graph().reachable_main_call(site.id(), hir)
     else {
@@ -72,7 +72,7 @@ fn inspect(
     budget: Option<usize>,
 ) -> SummaryFact<BitAmbiguityOutcome> {
     let lifted = fixture(source);
-    let provider = ProjectSummaries::build(&lifted, curve).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, curve).unwrap();
     let evidence = main_evidence(&provider, &lifted.hir);
     let cfg = build_cfg(&lifted.hir, evidence.context().definition()).unwrap();
     let complete = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
@@ -184,7 +184,7 @@ fn checked_models_withhold_incomplete_analysis() {
 #[test]
 fn checked_handles_enforce_context_curve_project_and_bounds() {
     let lifted = fixture(&source(3, ""));
-    let gold = ProjectSummaries::build(&lifted, Curve::Goldilocks).unwrap();
+    let gold = ProjectAnalysis::build(&lifted, Curve::Goldilocks).unwrap();
     let evidence = main_evidence(&gold, &lifted.hir);
     let cfg = build_cfg(&lifted.hir, evidence.context().definition()).unwrap();
     let facts = gold.analyze_for_evidence(&cfg, &evidence, None).unwrap();
@@ -197,7 +197,7 @@ fn checked_handles_enforce_context_curve_project_and_bounds() {
     }
     assert!(facts.port_handle(output_port, &[3]).is_err());
     let context = RuleContext::new(&facts, &gold, &evidence).unwrap();
-    let bn = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let bn = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let bn_evidence = main_evidence(&bn, &lifted.hir);
     let bn_facts = bn.analyze_for_evidence(&cfg, &bn_evidence, None).unwrap();
     let bn_input = bn_facts.port_handle(input_port, &[]).unwrap();
@@ -205,7 +205,7 @@ fn checked_handles_enforce_context_curve_project_and_bounds() {
     let symbolic = gold.analyze_for_evidence(&cfg, &different_context, None).unwrap();
     let symbolic_input = symbolic.port_handle(input_port, &[]).unwrap();
     let foreign = fixture(&source(3, ""));
-    let foreign_provider = ProjectSummaries::build(&foreign, Curve::Goldilocks).unwrap();
+    let foreign_provider = ProjectAnalysis::build(&foreign, Curve::Goldilocks).unwrap();
     let foreign_evidence = main_evidence(&foreign_provider, &foreign.hir);
     let foreign_cfg = build_cfg(&foreign.hir, foreign_evidence.context().definition()).unwrap();
     let foreign_facts =
@@ -226,7 +226,7 @@ fn checked_models_refuse_called_and_symbolic_parameter_scopes() {
         "template Parent(){component c=Bits(3);}component main=Parent();",
     );
     let lifted = fixture(&child_source);
-    let provider = ProjectSummaries::build(&lifted, Curve::Goldilocks).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Goldilocks).unwrap();
     let parent = main_evidence(&provider, &lifted.hir);
     let parent_cfg = build_cfg(&lifted.hir, parent.context().definition()).unwrap();
     let parent_facts = provider.analyze_for_evidence(&parent_cfg, &parent, None).unwrap();
@@ -246,7 +246,7 @@ fn checked_models_refuse_called_and_symbolic_parameter_scopes() {
     assert!(called.unavailable().is_some(), "{called:?}");
 
     let symbolic = fixture("template Bits(n){signal input in;signal output out[3];}");
-    let provider = ProjectSummaries::build(&symbolic, Curve::Goldilocks).unwrap();
+    let provider = ProjectAnalysis::build(&symbolic, Curve::Goldilocks).unwrap();
     let definition = symbolic.hir.definition("Bits").unwrap();
     let evidence = provider.symbolic_root(definition).unwrap();
     let cfg = build_cfg(&symbolic.hir, definition).unwrap();

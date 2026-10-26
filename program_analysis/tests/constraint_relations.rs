@@ -12,7 +12,7 @@ use std::fs;
 use abstract_interpretation::graph::{FlowGraph, NodeId};
 use circomspect_program_analysis::hir_cfg::{build_cfg, CfgNodeKind, DefinitionCfg};
 use circomspect_program_analysis::hir_facts::{AnalysisFacts, Fact, FactBlocker, GeneratedEquation};
-use circomspect_program_analysis::interprocedural::{ContextOrigin, ProjectSummaries};
+use circomspect_program_analysis::interprocedural::{ContextOrigin, ProjectAnalysis};
 use parser::hir::lift_project;
 use parser::frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
@@ -46,7 +46,7 @@ fn inspect_with_budget(
     assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
     let definition = lifted.hir.definition("T").unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
-    let provider = ProjectSummaries::build(&lifted, curve).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, curve).unwrap();
     let evidence = provider.symbolic_root(definition).unwrap();
     let facts: AnalysisFacts<'_> = provider.analyze_for_evidence(&cfg, &evidence, budget).unwrap();
     facts.must_equation_for_witness(witness(&cfg))
@@ -249,7 +249,7 @@ fn querying_independent_writes_in_either_order_keeps_the_same_certificates() {
     assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
     let definition = lifted.hir.definition("T").unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let evidence = provider.symbolic_root(definition).unwrap();
     let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let witnesses: Vec<_> = cfg

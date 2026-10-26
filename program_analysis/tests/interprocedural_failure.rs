@@ -10,7 +10,7 @@
 use std::fs;
 
 use circomspect_program_analysis::hir_facts::Incidence;
-use circomspect_program_analysis::interprocedural::{ProjectSummaries, SummaryBlocker};
+use circomspect_program_analysis::interprocedural::{ProjectAnalysis, SummaryBlocker};
 use parser::hir::{lift_project, DefinitionRef, LiftedProject};
 use parser::frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
@@ -32,7 +32,7 @@ fn fixture(source: &str) -> LiftedProject {
 
 fn assert_output_availability(source: &str, available: bool) {
     let lifted = fixture(source);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("T").unwrap();
     let DefinitionRef::Template(template) = definition else { panic!("template T") };
     let context = provider.symbolic_context_for(definition).unwrap();
@@ -118,7 +118,7 @@ fn failure_scan_budget_cannot_certify_a_template() {
         "function F(n){if(n){return F(n-1);}assert(0);return 7;}",
         "template T(){var unused=F(64);signal output out;out<==1;}"
     ));
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("T").unwrap();
     let DefinitionRef::Template(template) = definition else { panic!("template T") };
     let context = provider.symbolic_context_for(definition).unwrap();

@@ -15,7 +15,7 @@ use crate::interprocedural::input_relation::{
 };
 use crate::interprocedural::{
     AppliedComponentPort, CallOwner, CallReachability, CallSiteId, ContextEvidence,
-    ProjectSummaries, SummaryBlocker,
+    ProjectAnalysis, SummaryBlocker,
 };
 use crate::interprocedural::output_enumeration::EnumeratedComponentInstance;
 use crate::interprocedural::summary::certified;
@@ -105,7 +105,7 @@ impl ValidatedConstructorReads {
     }
 }
 
-impl ProjectSummaries<'_> {
+impl ProjectAnalysis<'_> {
     pub(super) fn completed_project_child(
         &self,
         facts: &AnalysisFacts<'_>,

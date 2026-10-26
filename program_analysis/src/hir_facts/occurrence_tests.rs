@@ -134,12 +134,12 @@ fn compare_occurrence_index(hir: &HirProject, cfg: &crate::hir_cfg::DefinitionCf
 
 #[test]
 fn occurrence_slices_belong_to_each_ordinary_or_specialized_cfg() {
-    use crate::interprocedural::{CallOwner, CallReachability, ProjectSummaries};
+    use crate::interprocedural::{CallOwner, CallReachability, ProjectAnalysis};
 
     let source = "template Check(n){signal output y[n];\
         for(var i=0;i<n;i++){y[i]<==i+9;}}component main=Check(2);";
     let project = fixture(source);
-    let provider = ProjectSummaries::build(&project, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&project, Curve::Bn254).unwrap();
     let site = provider.graph().calls_from(CallOwner::Main(0))[0];
     let CallReachability::Reachable(call) =
         provider.graph().reachable_main_call(site.id(), &project.hir)

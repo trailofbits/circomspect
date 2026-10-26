@@ -7,10 +7,10 @@ use crate::hir_facts::{
 };
 use crate::interprocedural::summary::certified;
 use crate::interprocedural::{
-    ContextEvidence, ContextOrigin, ProjectSummaries, SummaryBlocker, SummaryFact,
+    ContextEvidence, ContextOrigin, ProjectAnalysis, SummaryBlocker, SummaryFact,
 };
 
-impl ProjectSummaries<'_> {
+impl ProjectAnalysis<'_> {
     /// Prove two complete models of a validated leaf template's generated equations.
     ///
     /// The bounded candidates share every external input. Unknown control, called

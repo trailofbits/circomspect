@@ -12,7 +12,7 @@ use crate::interprocedural::component::binding::CheckedComponentCall;
 
 use crate::interprocedural::{
     AppliedComponentPort, CallBlocker, CallOwner, CallReachability, CallSiteId, ContextEvidence,
-    ProjectSummaries, ReachableCall, SummaryBlocker, SummaryFact,
+    ProjectAnalysis, ReachableCall, SummaryBlocker, SummaryFact,
 };
 
 const MAX_OUTPUT_HANDLES: usize = 256;
@@ -73,7 +73,7 @@ impl Enumeration {
     }
 }
 
-impl ProjectSummaries<'_> {
+impl ProjectAnalysis<'_> {
     /// Enumerate all checked direct-child output paths in this exact source scope.
     ///
     /// A certificate means every reachable template call, instance index, and

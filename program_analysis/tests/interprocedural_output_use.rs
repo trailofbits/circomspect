@@ -13,7 +13,7 @@ use std::fs;
 
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::interprocedural::{
-    CallOwner, CallReachability, ProjectOutputStatus, ProjectOutputUse, ProjectSummaries,
+    CallOwner, CallReachability, ProjectOutputStatus, ProjectOutputUse, ProjectAnalysis,
     SummaryBlocker,
 };
 use parser::hir::{lift_project, DefinitionRef, LiftedProject};
@@ -84,7 +84,7 @@ fn internal_use_at_option(
     budget: Option<usize>,
 ) -> Option<SelectedUse> {
     let lifted = fixture(source);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
     let DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap() else {
         panic!("Child must be a template")
@@ -224,7 +224,7 @@ fn symbolic_facts_cannot_borrow_a_concrete_main_output_use_proof() {
         "template Child(){signal output out;out<==1;} ",
         "template Parent(n){component c;c=Child();} component main=Parent(0);"
     ));
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
     let site = provider.graph().calls_from(CallOwner::Main(0))[0];
     let CallReachability::Reachable(main) =
@@ -586,7 +586,7 @@ fn a_symbolic_indirect_child_cannot_borrow_main_output_use() {
         "template Parent(){component c=Child();c.in<==1;} ",
         "template Grand(){component p=Parent();} component main=Grand();"
     ));
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
     let root = provider.symbolic_root(parent).unwrap();
@@ -695,7 +695,7 @@ fn an_exhausted_local_budget_cannot_prove_an_unused_output() {
 #[test]
 fn an_exported_main_output_is_an_environment_read() {
     let lifted = fixture("template Parent(){signal output y;} component main=Parent();");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
     let DefinitionRef::Template(template) = parent else { panic!("Parent must be a template") };
     let site = provider.graph().calls_from(CallOwner::Main(0))[0];
@@ -716,7 +716,7 @@ fn an_exported_main_output_is_an_environment_read() {
 #[test]
 fn a_main_input_cannot_be_mislabeled_as_an_exported_output() {
     let lifted = fixture("template Parent(){signal input x;} component main=Parent();");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
     let DefinitionRef::Template(template) = parent else { panic!("Parent must be a template") };
     let site = provider.graph().calls_from(CallOwner::Main(0))[0];
@@ -736,7 +736,7 @@ fn a_main_input_cannot_be_mislabeled_as_an_exported_output() {
 #[test]
 fn an_exact_exported_main_output_array_element_is_environment_read() {
     let lifted = fixture("template Parent(){signal output y[2];} component main=Parent();");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
     let DefinitionRef::Template(template) = parent else { panic!("Parent must be a template") };
     let site = provider.graph().calls_from(CallOwner::Main(0))[0];

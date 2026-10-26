@@ -11,7 +11,7 @@ use crate::hir_facts::{AccessHandle, AnalysisFacts};
 use crate::interprocedural::component::LocalOutputUse;
 use crate::interprocedural::summary::certified;
 use crate::interprocedural::{
-    AppliedComponentPort, CallOwner, CallSiteId, ContextEvidence, ContextOrigin, ProjectSummaries,
+    AppliedComponentPort, CallOwner, CallSiteId, ContextEvidence, ContextOrigin, ProjectAnalysis,
     SummaryBlocker, SummaryFact,
 };
 
@@ -158,7 +158,7 @@ impl ProjectOutputUse {
     }
 }
 
-impl ProjectSummaries<'_> {
+impl ProjectAnalysis<'_> {
     pub(super) fn check_parent_components_complete(
         &self,
         facts: &AnalysisFacts<'_>,

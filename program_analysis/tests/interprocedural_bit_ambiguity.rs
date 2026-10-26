@@ -15,9 +15,9 @@ use circomspect_program_analysis::hir_facts::{
     BitAmbiguity, BitAmbiguityOutcome, FieldContext, NoBitAmbiguityCertificate,
 };
 use circomspect_program_analysis::interprocedural::{
-    CallOwner, CallReachability, ProjectSummaries, SummaryFact,
+    CallOwner, CallReachability, ProjectAnalysis, SummaryFact,
 };
-use circomspect_program_analysis::new_rules::RuleContext;
+use circomspect_program_analysis::rules::RuleContext;
 use num_bigint_dig::BigInt;
 use parser::hir::{lift_project, AccessPath, AccessStep, ArrayIndex, HirProject, LiftedProject};
 use parser::frontend::{load_sources, Version, VersionPolicy};
@@ -80,7 +80,7 @@ fn inspect(
     budget: Option<usize>,
 ) -> SummaryFact<BitAmbiguityOutcome> {
     let lifted = fixture(source);
-    let provider = ProjectSummaries::build(&lifted, curve).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, curve).unwrap();
     let definition = lifted.hir.definition("T").unwrap();
     let evidence = if lifted.hir.mains().is_empty() {
         provider.symbolic_root(definition).unwrap()
@@ -285,21 +285,21 @@ fn absent_boolean_relation_and_changed_weight_cannot_prove_ambiguity() {
 fn binding_cannot_be_reused_for_another_field_project_or_definition() {
     let source = format!("{}template Other(){{}}", source(64, ""));
     let lifted = fixture(&source);
-    let provider = ProjectSummaries::build(&lifted, Curve::Goldilocks).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Goldilocks).unwrap();
     let definition = lifted.hir.definition("T").unwrap();
     let evidence = provider.symbolic_root(definition).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
     let facts = provider.analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let input = path(&lifted.hir, "in", None);
     let bits: Vec<_> = (0..64).map(|index| path(&lifted.hir, "bits", Some(index))).collect();
-    let other_curve = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let other_curve = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let result = other_curve.template_bit_ambiguity(&facts, &evidence, &input, &bits);
     assert!(result.unavailable().is_some(), "{result:?}");
     let other_evidence = provider.symbolic_root(lifted.hir.definition("Other").unwrap()).unwrap();
     let result = provider.template_bit_ambiguity(&facts, &other_evidence, &input, &bits);
     assert!(result.unavailable().is_some(), "{result:?}");
     let foreign = fixture(&source);
-    let foreign_provider = ProjectSummaries::build(&foreign, Curve::Goldilocks).unwrap();
+    let foreign_provider = ProjectAnalysis::build(&foreign, Curve::Goldilocks).unwrap();
     let result = foreign_provider.template_bit_ambiguity(&facts, &evidence, &input, &bits);
     assert!(result.unavailable().is_some(), "{result:?}");
     let foreign_input = path(&foreign.hir, "in", None);
@@ -319,7 +319,7 @@ fn a_called_leaf_does_not_claim_its_callers_constraint_domain_is_closed() {
         source(64, "")
     );
     let lifted = fixture(&source);
-    let provider = ProjectSummaries::build(&lifted, Curve::Goldilocks).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Goldilocks).unwrap();
     let main_site = provider.graph().calls_from(CallOwner::Main(0))[0];
     let CallReachability::Reachable(main_call) =
         provider.graph().reachable_main_call(main_site.id(), &lifted.hir)
@@ -361,7 +361,7 @@ fn a_rejected_default_candidate_does_not_prove_the_relation_is_unique() {
 #[test]
 fn exact_bounds_and_order_are_part_of_the_requested_relation() {
     let lifted = fixture(&source(64, ""));
-    let provider = ProjectSummaries::build(&lifted, Curve::Goldilocks).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Goldilocks).unwrap();
     let definition = lifted.hir.definition("T").unwrap();
     let evidence = provider.symbolic_root(definition).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();

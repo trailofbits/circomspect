@@ -13,7 +13,7 @@ use crate::hir_facts::Range;
 
 use super::summary::certified;
 use super::{
-    CallBlocker, CallContext, CallOwner, CallReachability, ProjectSummaries, SummaryBlocker,
+    CallBlocker, CallContext, CallOwner, CallReachability, ProjectAnalysis, SummaryBlocker,
     SummaryFact,
 };
 
@@ -87,7 +87,7 @@ impl Transfer<EffectAnalysis, Set<FunctionEffect>, ()> for EffectEdge {
     }
 }
 
-impl ProjectSummaries<'_> {
+impl ProjectAnalysis<'_> {
     /// Solve reachable function effects to a least fixed point, including recursive SCCs.
     pub fn function_effects(
         &self,

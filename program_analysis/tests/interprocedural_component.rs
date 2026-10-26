@@ -12,7 +12,7 @@ use circomspect_program_analysis::hir_facts::{
     analyze, FactBlocker, FieldContext, Incidence, WitnessWriteIssue,
 };
 use circomspect_program_analysis::interprocedural::{
-    CallOwner, CallReachability, CallerOutputRead, ProjectSummaries, SummaryBlocker, SummaryFact,
+    CallOwner, CallReachability, CallerOutputRead, ProjectAnalysis, SummaryBlocker, SummaryFact,
 };
 use parser::hir::{lift_project, DefinitionRef, LiftedProject};
 use parser::frontend::{load_sources, Version, VersionPolicy};
@@ -34,7 +34,7 @@ fn fixture(source: &str) -> LiftedProject {
 
 fn output_read(source: &str, instance: usize) -> SummaryFact<CallerOutputRead> {
     let lifted = fixture(source);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
     let DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap() else {
         panic!("Child must be a template")
@@ -139,7 +139,7 @@ fn exact_array_instances_keep_distinct_parameterized_output_values() {
         "template Child(n){signal output out;if(n){out<==1;}else{out<==0;}} ",
         "template Parent(){component c[2];c[0]=Child(0);c[1]=Child(1);}"
     ));
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
     let DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap() else {
         panic!("Child must be a template")
@@ -175,7 +175,7 @@ fn a_reachable_call_cannot_borrow_another_instance_output() {
         "template Child(n){signal output out;if(n){out<==1;}else{out<==0;}} ",
         "template Parent(){component c[2];c[0]=Child(0);c[1]=Child(1);}"
     ));
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
     let DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap() else {
         panic!("Child must be a template")
@@ -214,7 +214,7 @@ fn duplicate_instantiation_cannot_double_apply_one_child_summary() {
         "template Child(){signal output out;out<==1;} ",
         "template Parent(){component c=Child();c=Child();}"
     ));
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
     let DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap() else {
         panic!("Child must be a template")
@@ -244,7 +244,7 @@ fn symbolic_instance_index_cannot_borrow_an_exact_output_handle() {
         "template Child(){signal output out;out<==1;} ",
         "template Parent(){var i=0;component c[2];c[i]=Child();}"
     ));
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
     let DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap() else {
         panic!("Child must be a template")
@@ -273,7 +273,7 @@ fn unknown_template_argument_keeps_output_application_unavailable() {
         "template Child(n){signal output out;if(n){out<==1;}else{out<==0;}} ",
         "template Parent(n){component c=Child(n);}"
     ));
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
     let DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap() else {
         panic!("Child must be a template")
@@ -302,7 +302,7 @@ fn checked_input_relation_agrees_with_direct_inline_output() {
         "template Parent(){component c=Child();c.in<==7;} ",
         "template Inline(){signal output out;out<==7;}"
     ));
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
     let DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap() else {
         panic!("Child must be a template")
@@ -346,7 +346,7 @@ fn witness_only_input_does_not_fix_child_output() {
         "template Parent(){signal input x;component c=Child();c.in<--x;",
         "signal output y;y<==c.out;}"
     ));
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
     let DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap() else {
         panic!("Child must be a template")
@@ -379,7 +379,7 @@ fn repeated_instances_compose_only_their_own_checked_inputs() {
         "template Parent(){component c[2];c[0]=Child();c[1]=Child();",
         "c[0].in<==3;c[1].in<==5;}"
     ));
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
     let DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap() else {
         panic!("Child must be a template")
@@ -428,7 +428,7 @@ fn duplicate_and_missing_input_bindings_cannot_fix_an_output() {
              template Parent(){{component c=Child();{assignments}}}"
         );
         let lifted = fixture(&source);
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let parent = lifted.hir.definition("Parent").unwrap();
         let DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap() else {
             panic!("Child must be a template")
@@ -461,7 +461,7 @@ fn a_may_reachable_branch_instantiation_does_not_fix_an_output() {
         "template Child(){signal input in;signal output out;out<==in;} ",
         "template Parent(){component c;if(1 << 513){c=Child();c.in<==7;}}"
     ));
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
     let DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap() else {
         panic!("Child must be a template")
@@ -491,7 +491,7 @@ fn disagreeing_branch_input_bindings_cannot_fix_an_output() {
         "template Parent(){component c=Child();",
         "if(1 << 513){c.in<==7;}else{c.in<==8;}}"
     ));
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
     let DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap() else {
         panic!("Child must be a template")
@@ -521,7 +521,7 @@ fn unrelated_branch_preserves_the_later_checked_input_value() {
         "template Parent(){component c=Child();if(1 << 513){log(1);}",
         "c.in<==7;}"
     ));
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
     let DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap() else {
         panic!("Child must be a template")
@@ -554,7 +554,7 @@ fn equality_without_output_witness_is_not_promoted_as_a_value_write() {
         "template Child(){signal input in;signal output out;out===in;} ",
         "template Parent(){component c=Child();c.in<==7;}"
     ));
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
     let DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap() else {
         panic!("Child must be a template")
@@ -589,7 +589,7 @@ fn nested_output_read_before_input_binding_blocks_composition() {
         "template Parent(){component c=Child();signal output y;",
         "y<==c.out+1;c.in<==7;}"
     ));
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
     let DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap() else {
         panic!("Child must be a template")
@@ -619,7 +619,7 @@ fn every_required_child_input_must_precede_the_output_read() {
         "template Parent(){component c=Child();c.a<==7;signal output y;",
         "y<==c.out;c.b<==1;}"
     ));
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
     let DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap() else {
         panic!("Child must be a template")
@@ -648,7 +648,7 @@ fn opaque_competing_input_write_blocks_a_fixed_output() {
         "template Child(){signal input in;signal output out;out<==in;} ",
         "template Parent(){component c=Child();c.in<==7;c.in<==Missing();}"
     ));
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
     let DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap() else {
         panic!("Child must be a template")
@@ -679,7 +679,7 @@ fn symbolic_component_index_may_alias_a_checked_input_binding() {
         "template Parent(k){component c[2];c[0]=Child();c[1]=Child();",
         "c[0].in<==7;c[k].in<==8;}"
     ));
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
     let DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap() else {
         panic!("Child must be a template")
@@ -711,7 +711,7 @@ fn competing_child_output_writes_cannot_borrow_the_first_equality() {
              template Parent(){{component c=Child();c.in<==7;}}"
         );
         let lifted = fixture(&source);
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let parent = lifted.hir.definition("Parent").unwrap();
         let DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap() else {
             panic!("Child must be a template")
@@ -750,7 +750,7 @@ fn repeated_loop_output_effects_cannot_be_counted_as_one_write() {
         "for(var i=0;i<2;i++){out<==in;}} ",
         "template Parent(){component c=Child();c.in<==7;}"
     ));
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
     let DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap() else {
         panic!("Child must be a template")
@@ -780,7 +780,7 @@ fn dynamic_child_loop_has_a_typed_write_blocker() {
         "for(var i=0;i<17;i++){i=16;out<==in;}} ",
         "template Parent(){component c=Child();c.in<==7;}"
     ));
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
     let DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap() else {
         panic!("Child must be a template")

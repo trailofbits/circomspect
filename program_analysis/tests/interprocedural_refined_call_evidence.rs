@@ -13,9 +13,9 @@ use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::hir_facts::FactBlocker;
 use circomspect_program_analysis::interprocedural::{
     AnalyzeEvidenceError, ArgumentValue, CallBlocker, CallOwner, CallProvenance, CallReachability,
-    ContextOrigin, ProjectSummaries, SummaryBlocker,
+    ContextOrigin, ProjectAnalysis, SummaryBlocker,
 };
-use circomspect_program_analysis::new_rules::{run_registered, RuleContext, RuleKind};
+use circomspect_program_analysis::rules::{run_registered, RuleContext, RuleKind};
 use parser::hir::{lift_project, IncompleteReason, LiftedProject, SemanticCode};
 use parser::frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
@@ -43,7 +43,7 @@ fn exact_provisional_function_call_carries_main_ancestry_to_numeric_rule() {
     let lifted = fixture(source);
     assert!(lifted.syntax_diagnostics.is_empty(), "{:?}", lifted.syntax_diagnostics);
     assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bls12_381).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bls12_381).unwrap();
     let parent = lifted.hir.definition("T").unwrap();
     let child = lifted.hir.definition("F").unwrap();
     let main = provider.graph().calls_from(CallOwner::Main(0))[0];
@@ -83,7 +83,7 @@ fn exact_provisional_function_call_carries_main_ancestry_to_numeric_rule() {
 #[test]
 fn exact_function_call_in_a_library_retains_symbolic_parent_ancestry() {
     let lifted = fixture("function F(){return 7;} template T(){var x=F();}");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("T").unwrap();
     let caller = provider.symbolic_root(parent).unwrap();
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
@@ -101,7 +101,7 @@ fn exact_function_call_in_a_library_retains_symbolic_parent_ancestry() {
 
 fn refined_call_after(source: &str) -> Result<(), SummaryBlocker> {
     let lifted = fixture(source);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("T").unwrap();
     let caller = provider.symbolic_root(parent).unwrap();
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
@@ -133,7 +133,7 @@ fn known_caller_failure_cannot_mint_refined_child_evidence() {
 #[test]
 fn warning_scope_rejects_custom_templates_before_rules_run() {
     let lifted = fixture("pragma custom_templates;template custom T(){signal s;}");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("T").unwrap();
     let evidence = provider.symbolic_root(definition).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
@@ -152,7 +152,7 @@ fn symbolic_scalar_parameter_does_not_fail_warning_scope_validation() {
         "{:?}",
         lifted.incomplete
     );
-    let provider = ProjectSummaries::build(&lifted, Curve::Goldilocks).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Goldilocks).unwrap();
     let definition = lifted.hir.definition("T").unwrap();
     let evidence = provider.symbolic_root(definition).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
@@ -163,7 +163,7 @@ fn symbolic_scalar_parameter_does_not_fail_warning_scope_validation() {
 
 fn warning_scope_result(source: &str) -> Result<(), SummaryBlocker> {
     let lifted = fixture(source);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("T").unwrap();
     let evidence = provider.symbolic_root(definition).unwrap();
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
@@ -185,7 +185,7 @@ fn warning_scope_keeps_missing_callee_and_source_errors_blocked() {
 
 fn ordinary_call_after(source: &str) -> Result<(), SummaryBlocker> {
     let lifted = fixture(source);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("T").unwrap();
     let caller = provider.symbolic_root(parent).unwrap();
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
@@ -215,7 +215,7 @@ fn known_caller_failure_cannot_mint_ordinary_child_evidence() {
 #[test]
 fn foreign_site_or_caller_cannot_authorize_a_refined_call() {
     let lifted = fixture("function F(){return 7;} template T(){var x=F();}component main=T();");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("T").unwrap();
     let site = provider.graph().calls_from(CallOwner::Main(0))[0];
     let CallReachability::Reachable(main) =
@@ -232,13 +232,13 @@ fn foreign_site_or_caller_cannot_authorize_a_refined_call() {
         provider.refined_function_call_evidence(site.id(), &facts, &wrong_caller),
         Err(SummaryBlocker::WrongContext)
     );
-    let foreign = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let foreign = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let foreign_site = foreign.graph().calls_from(CallOwner::Definition(parent))[0];
     assert_eq!(
         provider.refined_function_call_evidence(foreign_site.id(), &facts, &caller),
         Err(SummaryBlocker::ForeignCall)
     );
-    let wrong_curve = ProjectSummaries::build(&lifted, Curve::Bls12_381).unwrap();
+    let wrong_curve = ProjectAnalysis::build(&lifted, Curve::Bls12_381).unwrap();
     assert_eq!(
         wrong_curve.refined_function_call_evidence(site.id(), &facts, &caller),
         Err(SummaryBlocker::WrongContext)
@@ -250,7 +250,7 @@ fn dead_provisional_call_never_becomes_a_reachable_child_scope() {
     let source =
         concat!("function F(){return 7;} template T(){if(0){var x=F();}}", "component main=T();");
     let lifted = fixture(source);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("T").unwrap();
     let main = provider.graph().calls_from(CallOwner::Main(0))[0];
     let CallReachability::Reachable(main) =
@@ -271,7 +271,7 @@ fn dead_provisional_call_never_becomes_a_reachable_child_scope() {
 #[test]
 fn unknown_argument_and_budgeted_facts_cannot_mint_a_child_scope() {
     let lifted = fixture("function F(n){return n;} template T(p){var x=F(p);}");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("T").unwrap();
     let caller = provider.symbolic_root(parent).unwrap();
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
@@ -283,7 +283,7 @@ fn unknown_argument_and_budgeted_facts_cannot_mint_a_child_scope() {
     );
 
     let lifted = fixture("function F(){return 7;} template T(){var x=F();}");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("T").unwrap();
     let caller = provider.symbolic_root(parent).unwrap();
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
@@ -305,7 +305,7 @@ fn preserved_index_call_requires_checked_reachability_instead_of_refinement() {
         "function F(n){return n;} ",
         "template T(){signal output y[2];y[F(0)]<==1;}"
     ));
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("T").unwrap();
     let caller = provider.symbolic_root(parent).unwrap();
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
@@ -336,7 +336,7 @@ fn unattached_anonymous_input_call_cannot_mint_refined_evidence() {
         "template Child(){signal input in;signal output out;out<==in;}",
         "template T(){signal output y;y<==Child()(in<==F());}"
     ));
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("T").unwrap();
     let caller = provider.symbolic_root(parent).unwrap();
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
@@ -357,7 +357,7 @@ fn unattached_anonymous_input_call_cannot_mint_refined_evidence() {
 #[test]
 fn invalid_array_target_cannot_mint_evidence() {
     let lifted = fixture("function F(){return 7;} template T(){var x[2];x=F();}");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("T").unwrap();
     let caller = provider.symbolic_root(parent).unwrap();
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
@@ -375,7 +375,7 @@ fn invalid_array_target_cannot_mint_evidence() {
 #[test]
 fn unresolved_function_name_cannot_be_authorized_by_a_provisional_site() {
     let lifted = fixture("template T(){var x=Missing();}");
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("T").unwrap();
     let caller = provider.symbolic_root(parent).unwrap();
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
@@ -396,7 +396,7 @@ fn independent_argument_kinds_and_nested_calls_keep_exact_ancestry() {
         "function G(){return 2;}function F(n){return n+1;}template T(){var x=F(G());}",
     ] {
         let lifted = fixture(source);
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let parent = lifted.hir.definition("T").unwrap();
         let caller = provider.symbolic_root(parent).unwrap();
         let cfg = build_cfg(&lifted.hir, parent).unwrap();
@@ -424,7 +424,7 @@ fn independent_budget_matrix_never_certifies_multivalued_or_unknown_arguments() 
         "function F(n){return 7;}template T(p){var x=F([1,p]);}",
     ] {
         let lifted = fixture(source);
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let parent = lifted.hir.definition("T").unwrap();
         let caller = provider.symbolic_root(parent).unwrap();
         let cfg = build_cfg(&lifted.hir, parent).unwrap();
@@ -444,7 +444,7 @@ fn independent_budget_matrix_never_certifies_multivalued_or_unknown_arguments() 
 fn independent_same_definition_different_scope_and_project_are_rejected() {
     let source = "function F(){return 7;}template T(){var x=F();}component main=T();";
     let lifted = fixture(source);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("T").unwrap();
     let root = provider.symbolic_root(parent).unwrap();
     let main_site = provider.graph().calls_from(CallOwner::Main(0))[0];
@@ -462,7 +462,7 @@ fn independent_same_definition_different_scope_and_project_are_rejected() {
         Err(SummaryBlocker::WrongContext)
     );
     let foreign_lifted = fixture(source);
-    let foreign = ProjectSummaries::build(&foreign_lifted, Curve::Bn254).unwrap();
+    let foreign = ProjectAnalysis::build(&foreign_lifted, Curve::Bn254).unwrap();
     assert!(foreign.refined_function_call_evidence(site.id(), &facts, &main).is_err());
 }
 
@@ -471,7 +471,7 @@ fn independent_required_failure_before_call_cannot_certify_reachable_child() {
     for prefix in ["assert(0);", "var z=1/0;"] {
         let source = format!("function F(){{return 7;}}template T(){{{prefix}var x=F();}}");
         let lifted = fixture(&source);
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let parent = lifted.hir.definition("T").unwrap();
         let caller = provider.symbolic_root(parent).unwrap();
         let cfg = build_cfg(&lifted.hir, parent).unwrap();
@@ -497,7 +497,7 @@ fn independent_impossible_child_calls_do_not_emit_numeric_warnings() {
             prefix = prefix
         );
         let lifted = fixture(&source);
-        let provider = ProjectSummaries::build(&lifted, Curve::Bls12_381).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bls12_381).unwrap();
         let parent = lifted.hir.definition("T").unwrap();
         let caller = provider.symbolic_root(parent).unwrap();
         let cfg = build_cfg(&lifted.hir, parent).unwrap();
@@ -529,7 +529,7 @@ fn independent_function_caller_required_failure_cannot_certify_a_child() {
         let source =
             format!("function F(){{return 7;}}function T(){{{prefix}var x=F();return x;}}");
         let lifted = fixture(&source);
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let parent = lifted.hir.definition("T").unwrap();
         let caller = provider.symbolic_root(parent).unwrap();
         let cfg = build_cfg(&lifted.hir, parent).unwrap();
@@ -553,7 +553,7 @@ fn independent_ordinary_calls_cannot_authorize_warnings_after_known_failure() {
             prefix = prefix
         );
         let lifted = fixture(&source);
-        let provider = ProjectSummaries::build(&lifted, Curve::Bls12_381).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bls12_381).unwrap();
         let parent = lifted.hir.definition("T").unwrap();
         let caller = provider.symbolic_root(parent).unwrap();
         let cfg = build_cfg(&lifted.hir, parent).unwrap();
@@ -597,7 +597,7 @@ fn independent_scope_refusal_keeps_dead_and_unknown_failures_distinct() {
         ("template T(){var x=Missing();}", false),
     ] {
         let lifted = fixture(source);
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let parent = lifted.hir.definition("T").unwrap();
         let caller = provider.symbolic_root(parent).unwrap();
         let cfg = build_cfg(&lifted.hir, parent).unwrap();
@@ -617,7 +617,7 @@ fn independent_partial_callers_keep_exact_calls_but_block_scope_warnings() {
         "template F(){signal output x;x<==7;}template T(){component c=F();var z=Missing();}",
     ] {
         let lifted = fixture(source);
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let definition = lifted.hir.definition("T").unwrap();
         let caller = provider.symbolic_root(definition).unwrap();
         let cfg = build_cfg(&lifted.hir, definition).unwrap();
@@ -644,7 +644,7 @@ fn independent_warning_refusal_prioritizes_binding_then_failure_over_partial_sou
     let source =
         "function F(){return 7;}template T(){assert(0);var x=F();var z=Missing();}template U(){}";
     let lifted = fixture(source);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("T").unwrap();
     let caller = provider.symbolic_root(definition).unwrap();
     let other = provider.symbolic_root(lifted.hir.definition("U").unwrap()).unwrap();

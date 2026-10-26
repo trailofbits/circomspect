@@ -42,13 +42,13 @@ mod tests {
 
     use crate::hir_cfg::build_cfg;
     use crate::hir_facts::RankOnePortError;
-    use crate::interprocedural::ProjectSummaries;
+    use crate::interprocedural::ProjectAnalysis;
 
     #[test]
     fn expansion_rejects_scalar_and_rank_two_ports_before_width_checks() {
         for shape in ["", "[2][3]", "[0][1]", "[513][1]"] {
             let project = crate::test_fixtures::port_project(shape);
-            let provider = ProjectSummaries::build(&project, Curve::Goldilocks).unwrap();
+            let provider = ProjectAnalysis::build(&project, Curve::Goldilocks).unwrap();
             let definition = project.hir.definition("T").unwrap();
             let evidence = provider.symbolic_root(definition).unwrap();
             let cfg = build_cfg(&project.hir, definition).unwrap();

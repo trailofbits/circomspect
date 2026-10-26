@@ -13,9 +13,9 @@ use std::fs;
 
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::interprocedural::{
-    AnalyzeEvidenceError, CallOwner, CallReachability, ProjectSummaries,
+    AnalyzeEvidenceError, CallOwner, CallReachability, ProjectAnalysis,
 };
-use circomspect_program_analysis::new_rules::SourceMap;
+use circomspect_program_analysis::rules::SourceMap;
 use parser::hir::{lift_project, SemanticCode, SemanticDiagnostic, Severity};
 use parser::frontend::{load_sources, LoadedProject, SourceId, Span, Version, VersionPolicy};
 use program_structure::report::MessageCategory;
@@ -42,7 +42,7 @@ fn reachable_array_argument_renders_t2000_with_exact_source_location() {
     );
     let loaded = fixture(source);
     let lifted = lift_project(&loaded);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Parent").unwrap();
     let child = lifted.hir.definition("Child").unwrap();
     let parent_cfg = build_cfg(&lifted.hir, parent).unwrap();
@@ -250,10 +250,10 @@ fn semantic_converter_rejects_unknown_and_invalid_source_spans() {
     for (span, expected) in [
         (
             unknown,
-            circomspect_program_analysis::new_rules::RenderError::UnknownSource(unknown.source()),
+            circomspect_program_analysis::rules::RenderError::UnknownSource(unknown.source()),
         ),
-        (oversized, circomspect_program_analysis::new_rules::RenderError::InvalidSpan(oversized)),
-        (split_utf8, circomspect_program_analysis::new_rules::RenderError::InvalidSpan(split_utf8)),
+        (oversized, circomspect_program_analysis::rules::RenderError::InvalidSpan(oversized)),
+        (split_utf8, circomspect_program_analysis::rules::RenderError::InvalidSpan(split_utf8)),
     ] {
         let mut invalid = diagnostic.clone();
         invalid.span = span;
@@ -266,7 +266,7 @@ fn concrete_parameter_index_error_uses_terminal_and_sarif_source_ranges() {
     let source = "template T(n){n[1]=1;} component main=T([2]);";
     let loaded = fixture(source);
     let lifted = lift_project(&loaded);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let site = provider.graph().calls_from(CallOwner::Main(0))[0];
     let CallReachability::Reachable(call) =
         provider.graph().reachable_main_call(site.id(), provider.hir())

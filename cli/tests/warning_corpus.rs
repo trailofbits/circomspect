@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
 
-use program_analysis::new_rules::RuleKind;
+use program_analysis::rules::RuleKind;
 use serde_json::{json, Value};
 
 fn root() -> PathBuf {

@@ -14,7 +14,7 @@ use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::hir_facts::{FieldContext, NoBitAmbiguityCertificate};
 use circomspect_program_analysis::interprocedural::{
     CallOwner, CallReachability, ComponentBitAmbiguity, ComponentBitAmbiguityOutcome,
-    ProjectSummaries,
+    ProjectAnalysis,
 };
 use num_bigint_dig::BigInt;
 use parser::hir::{lift_project, AccessPath, AccessStep, ArrayIndex, HirProject, LiftedProject};
@@ -93,7 +93,7 @@ fn inspect_with(
     form: QueryForm,
 ) -> Option<ComponentBitAmbiguityOutcome> {
     let project = fixture(source);
-    let provider = ProjectSummaries::build(&project, curve).unwrap();
+    let provider = ProjectAnalysis::build(&project, curve).unwrap();
     let main = provider.graph().calls_from(CallOwner::Main(0))[0];
     let CallReachability::Reachable(call) =
         provider.graph().reachable_main_call(main.id(), &project.hir)
@@ -141,10 +141,9 @@ fn inspect_with(
                 .map(|index| child.port_handle(port.id, &[index]))
                 .collect::<Result<Vec<_>, _>>()
                 .ok()?;
-            let context = circomspect_program_analysis::new_rules::RuleContext::new(
-                &facts, &provider, &caller,
-            )
-            .ok()?;
+            let context =
+                circomspect_program_analysis::rules::RuleContext::new(&facts, &provider, &caller)
+                    .ok()?;
             context.component_bit_ambiguity_handles(applied, &input, &bits)
         }
     };
@@ -372,7 +371,7 @@ fn all_parent_and_child_restrictive_equations_survive_source_site_collection() {
 fn checked_requests_reject_foreign_context_curve_project_and_input_bits() {
     let text = source_width(1, "component c=Convert(1);c.in<==0;", "in*(in-1)===0;");
     let project = fixture(&text);
-    let provider = ProjectSummaries::build(&project, Curve::Goldilocks).unwrap();
+    let provider = ProjectAnalysis::build(&project, Curve::Goldilocks).unwrap();
     let main = provider.graph().calls_from(CallOwner::Main(0))[0];
     let CallReachability::Reachable(main_call) =
         provider.graph().reachable_main_call(main.id(), &project.hir)
@@ -436,7 +435,7 @@ fn checked_requests_reject_foreign_context_curve_project_and_input_bits() {
         .is_some());
     for curve in [Curve::Bn254, Curve::Goldilocks] {
         let foreign = fixture(&text);
-        let other = ProjectSummaries::build(&foreign, curve).unwrap();
+        let other = ProjectAnalysis::build(&foreign, curve).unwrap();
         let definition = foreign.hir.definition("Convert").unwrap();
         let evidence = other.symbolic_root(definition).unwrap();
         let cfg = build_cfg(&foreign.hir, definition).unwrap();
@@ -451,7 +450,7 @@ fn checked_requests_reject_foreign_context_curve_project_and_input_bits() {
             .unavailable()
             .is_some());
     }
-    let other = ProjectSummaries::build(&project, Curve::Bn254).unwrap();
+    let other = ProjectAnalysis::build(&project, Curve::Bn254).unwrap();
     assert!(other
         .component_bit_ambiguity_ports(&facts, applied, input_port, output_port)
         .unavailable()

@@ -14,9 +14,9 @@ use std::fs;
 
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::interprocedural::{
-    CallOwner, CallReachability, ProjectSummaries, SummaryBlocker,
+    CallOwner, CallReachability, ProjectAnalysis, SummaryBlocker,
 };
-use circomspect_program_analysis::new_rules::{
+use circomspect_program_analysis::rules::{
     run_registered, RuleContext, RuleKind, RuleResult, SourceMap,
 };
 use parser::hir::lift_project;
@@ -47,7 +47,7 @@ fn inspect_loaded(
 ) -> Result<RuleResult, SummaryBlocker> {
     let lifted = lift_project(loaded);
     assert!(lifted.syntax_diagnostics.is_empty(), "{:?}", lifted.syntax_diagnostics);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let parent = lifted.hir.definition("Main").unwrap();
     let sites = provider.graph().calls_from(CallOwner::Main(0));
     let parent_evidence = if let Some(site) = sites.first() {

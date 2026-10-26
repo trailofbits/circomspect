@@ -6,7 +6,7 @@ use crate::hir_cfg::build_cfg;
 use crate::hir_facts::{AccessHandle, AnalysisFacts};
 use crate::interprocedural::component::binding::CheckedCallContext;
 use crate::interprocedural::{
-    AnalyzeEvidenceError, AppliedComponentPort, ContextEvidence, ProjectSummaries, ReachableCall,
+    AnalyzeEvidenceError, AppliedComponentPort, ContextEvidence, ProjectAnalysis, ReachableCall,
     SummaryBlocker, SummaryFact,
 };
 
@@ -16,7 +16,7 @@ pub(super) struct LocalOutputPort<'a, 'hir> {
     pub handle: &'a AccessHandle,
 }
 
-impl ProjectSummaries<'_> {
+impl ProjectAnalysis<'_> {
     /// Bind a callee-local output handle to its exact source component call.
     ///
     /// Caller instance indices and callee port indices are checked in their own

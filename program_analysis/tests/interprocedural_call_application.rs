@@ -12,10 +12,10 @@ use std::fs;
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::hir_facts::{FieldContext, Incidence, Range};
 use circomspect_program_analysis::interprocedural::{
-    ArgumentValue, FunctionEffect, FunctionSummary, PortSummary, ProjectSummaries, SummaryFact,
+    ArgumentValue, FunctionEffect, FunctionSummary, PortSummary, ProjectAnalysis, SummaryFact,
     WitnessSite,
 };
-use circomspect_program_analysis::new_rules::RuleContext;
+use circomspect_program_analysis::rules::RuleContext;
 use parser::hir::{lift_project, DefinitionRef, LiftedProject};
 use parser::frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
@@ -37,7 +37,7 @@ fn fixture(source: &str) -> LiftedProject {
 
 fn function_summary(source: &str, name: &str) -> SummaryFact<FunctionSummary> {
     let lifted = fixture(source);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition(name).unwrap();
     let DefinitionRef::Function(function) = definition else { panic!("function") };
     let context = provider.symbolic_context_for(definition).unwrap();
@@ -52,7 +52,7 @@ struct OutputFacts {
 
 fn output_facts(source: &str, arguments: Option<&[i64]>, indices: &[usize]) -> OutputFacts {
     let lifted = fixture(source);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("T").unwrap();
     let DefinitionRef::Template(template) = definition else { panic!("template T") };
     let context = match arguments {
@@ -104,7 +104,7 @@ fn template_call_rhs_uses_the_exact_parameter_context() {
     let source =
         concat!("function F(n){return n+1;}", "template T(n){signal output out;out<==F(n);}");
     let lifted = fixture(source);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("T").unwrap();
     let DefinitionRef::Template(template) = definition else { panic!("template T") };
     let output = lifted.hir.template(template).unwrap().ports[0];
@@ -220,7 +220,7 @@ fn specializing_a_return_value_preserves_callee_logging_effects() {
     let source =
         concat!("function Log(x){log(x);return 7;}", "function G(){var unused=Log(9);return 1;}");
     let lifted = fixture(source);
-    let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+    let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let definition = lifted.hir.definition("G").unwrap();
     let DefinitionRef::Function(function) = definition else { panic!("function G") };
     let context = provider.symbolic_context_for(definition).unwrap();
@@ -241,7 +241,7 @@ fn resolved_calls_do_not_leave_a_spurious_incomplete_definition() {
             "function F(){{return 7;}} template T(){{var x={value};signal output out;out<==x;}}"
         );
         let lifted = fixture(&source);
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let definition = lifted.hir.definition("T").unwrap();
         let cfg = build_cfg(&lifted.hir, definition).unwrap();
         let evidence = provider.symbolic_root(definition).unwrap();

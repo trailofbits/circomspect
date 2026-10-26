@@ -12,10 +12,10 @@ use crate::interprocedural::component::binding::CheckedCallContext;
 use crate::interprocedural::output_enumeration::EnumeratedComponentInstance;
 use crate::interprocedural::summary::certified;
 use crate::interprocedural::{
-    AppliedComponentPort, CallReachability, ProjectSummaries, ReachableCall, SummaryBlocker,
+    AppliedComponentPort, CallReachability, ProjectAnalysis, ReachableCall, SummaryBlocker,
 };
 
-impl ProjectSummaries<'_> {
+impl ProjectAnalysis<'_> {
     pub(in crate::interprocedural) fn single_model_call<'a>(
         &'a self,
         facts: &AnalysisFacts<'_>,

@@ -2,7 +2,7 @@ use parser::hir::DefinitionRef;
 use program_structure::utils::constants::Curve;
 
 use crate::hir_cfg::build_cfg;
-use crate::interprocedural::{ProjectSummaries, SummaryBlocker};
+use crate::interprocedural::{ProjectAnalysis, SummaryBlocker};
 
 use crate::interprocedural::comparator_range::source::bit_handles;
 
@@ -19,7 +19,7 @@ fn comparator_port_expansion_preserves_exact_boundaries_and_handle_order() {
     ];
     for (shape, expected) in cases {
         let project = crate::test_fixtures::port_project(shape);
-        let provider = ProjectSummaries::build(&project, Curve::Goldilocks).unwrap();
+        let provider = ProjectAnalysis::build(&project, Curve::Goldilocks).unwrap();
         let definition = project.hir.definition("T").unwrap();
         let evidence = provider.symbolic_root(definition).unwrap();
         let cfg = build_cfg(&project.hir, definition).unwrap();

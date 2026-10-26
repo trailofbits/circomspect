@@ -11,7 +11,7 @@ use crate::interprocedural::comparator_range::ComparatorRangeViolation;
 use crate::interprocedural::comparator_range::pattern::ComparatorPattern;
 use crate::interprocedural::input_relation::ReadyGeneratedInputs;
 use crate::interprocedural::summary::certified;
-use crate::interprocedural::{AppliedComponentPort, ProjectSummaries, SummaryBlocker};
+use crate::interprocedural::{AppliedComponentPort, ProjectAnalysis, SummaryBlocker};
 
 pub(super) struct ComparatorScope<'a> {
     pub(super) facts: &'a AnalysisFacts<'a>,
@@ -61,7 +61,7 @@ impl CheckedComparatorClosure<'_> {
     }
 }
 
-impl ProjectSummaries<'_> {
+impl ProjectAnalysis<'_> {
     pub(super) fn with_checked_comparator_closure<T, F>(
         &self,
         facts: &AnalysisFacts<'_>,

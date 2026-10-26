@@ -882,7 +882,7 @@ mod tests {
 
     use crate::hir_cfg::build_cfg;
     use crate::hir_facts::{FieldContext, FieldValue, GeneratedInputEquation, ProofBudget};
-    use crate::interprocedural::{CallOwner, CallReachability, ProjectSummaries};
+    use crate::interprocedural::{CallOwner, CallReachability, ProjectAnalysis};
 
     use crate::interprocedural::input_relation::{
         BindingPolicy, BindingValue, GeneratedInputValue, InputPortElement, InputState,
@@ -975,7 +975,7 @@ mod tests {
         .unwrap();
         let loaded = load_sources(&[file], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
         let lifted = lift_project(&loaded);
-        let provider = ProjectSummaries::build(&lifted, Curve::Bn254).unwrap();
+        let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let parent = lifted.hir.definition("Parent").unwrap();
         let DefinitionRef::Template(child) = lifted.hir.definition("Child").unwrap() else {
             panic!("Child must be a template")

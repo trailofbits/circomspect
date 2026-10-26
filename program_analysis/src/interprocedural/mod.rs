@@ -29,7 +29,7 @@ pub(crate) use crate::interprocedural::constructor_readiness::ValidatedConstruct
 
 pub use context::{
     AnalyzeEvidenceError, ArgumentShape, ArgumentValue, CallContext, CallPathSite, ContextEvidence,
-    ContextOrigin, ProjectSummaries, SummaryBlocker,
+    ContextOrigin, ProjectAnalysis, SummaryBlocker,
 };
 
 pub use graph::{
