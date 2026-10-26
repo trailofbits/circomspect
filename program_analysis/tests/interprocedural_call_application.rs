@@ -41,7 +41,7 @@ fn function_summary(source: &str, name: &str) -> SummaryFact<FunctionSummary> {
     let definition = lifted.hir.definition(name).unwrap();
     let DefinitionRef::Function(function) = definition else { panic!("function") };
     let context = provider.contexts().symbolic_context_for(definition).unwrap();
-    provider.function(function, &context)
+    provider.functions().function(function, &context)
 }
 
 struct OutputFacts {
@@ -225,9 +225,9 @@ fn specializing_a_return_value_preserves_callee_logging_effects() {
     let definition = lifted.hir.definition("G").unwrap();
     let DefinitionRef::Function(function) = definition else { panic!("function G") };
     let context = provider.contexts().symbolic_context_for(definition).unwrap();
-    let effects = provider.function_effects(function, &context);
+    let effects = provider.functions().function_effects(function, &context);
     assert!(effects.certified().unwrap().contains(FunctionEffect::Log));
-    let summary = provider.function(function, &context);
+    let summary = provider.functions().function(function, &context);
     let field = FieldContext::for_curve(Curve::Bn254);
     assert_eq!(
         summary.certified().and_then(FunctionSummary::complete_return),

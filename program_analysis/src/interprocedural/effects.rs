@@ -11,9 +11,9 @@ use parser::frontend::AssignmentOperator;
 use crate::hir_cfg::CfgNodeKind;
 use crate::hir_facts::Range;
 
-use super::summary::certified;
-use super::{
-    CallBlocker, CallContext, CallOwner, CallReachability, ProjectAnalysis, SummaryBlocker,
+use crate::interprocedural::summary::certified;
+use crate::interprocedural::{
+    CallBlocker, CallContext, CallOwner, CallReachability, FunctionQueries, SummaryBlocker,
     SummaryFact,
 };
 
@@ -91,8 +91,9 @@ impl Transfer<EffectAnalysis, Set<FunctionEffect>, ()> for EffectEdge {
     }
 }
 
-impl ProjectAnalysis<'_> {
+impl FunctionQueries<'_, '_> {
     /// Solve reachable function effects to a least fixed point, including recursive SCCs.
+    #[must_use]
     pub fn function_effects(
         &self,
         id: FunctionId,
@@ -101,13 +102,13 @@ impl ProjectAnalysis<'_> {
         if context.definition() != DefinitionRef::Function(id) {
             return SummaryFact::from_result(Err(SummaryBlocker::WrongContext));
         }
-        if self.hir().function(id).is_none() {
+        if self.analysis.hir().function(id).is_none() {
             return SummaryFact::from_result(Err(SummaryBlocker::ForeignDefinition));
         }
-        if let Err(blocker) = self.contexts().check_context(context) {
+        if let Err(blocker) = self.analysis.contexts().check_context(context) {
             return SummaryFact::from_result(Err(blocker));
         }
-        self.caches.effects.get_or_compute(context.clone(), || {
+        self.analysis.caches.effects.get_or_compute(context.clone(), || {
             SummaryFact::from_result(self.compute_function_effects(context))
         })
     }
@@ -182,12 +183,12 @@ impl ProjectAnalysis<'_> {
             }
             let mut callees = BTreeSet::new();
             let owner = CallOwner::Definition(DefinitionRef::Function(id));
-            for site in self.graph().calls_from(owner) {
-                let context = match self.graph().reachable_call(site.id(), facts) {
+            for site in self.analysis.graph().calls_from(owner) {
+                let context = match self.analysis.graph().reachable_call(site.id(), facts) {
                     CallReachability::Unreachable => continue,
                     CallReachability::Reachable(call) => {
                         if let DefinitionRef::Function(_) = call.callee() {
-                            self.contexts().call_context(&call, facts)?
+                            self.analysis.contexts().call_context(&call, facts)?
                         } else {
                             return Err(SummaryBlocker::ExternalSummary);
                         }

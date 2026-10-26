@@ -268,7 +268,7 @@ impl ProjectAnalysis<'_> {
             return Err(SummaryBlocker::ExternalSummary);
         }
         let parameters = context.scalar_seeds(&template.parameters);
-        self.with_refined_facts(context, &parameters, |cfg, facts| {
+        self.functions().with_refined_facts(context, &parameters, |cfg, facts| {
             if let Some(failure) =
                 self.contexts().invalid_value_use(&template.parameters, context, facts)
             {

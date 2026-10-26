@@ -364,7 +364,7 @@ impl<'session, 'hir: 'session> ContextQueries<'session, 'hir> {
     ) -> Result<ContextEvidence, SummaryBlocker> {
         self.check_facts_for_evidence(facts, caller)?;
         let site = self.analysis.graph().site(site).ok_or(SummaryBlocker::ForeignCall)?;
-        let context = self.analysis.exact_site_context(site, facts)?;
+        let context = self.analysis.functions().exact_site_context(site, facts)?;
         self.analysis.check_call_execution_scope(facts, caller)?;
         self.extend_call_evidence(site, context, caller)
     }
@@ -526,6 +526,7 @@ impl<'session, 'hir: 'session> ContextQueries<'session, 'hir> {
         let seeds = evidence.context.scalar_seeds(parameters);
         let mut facts = self
             .analysis
+            .functions()
             .refined_facts(evidence.context(), &seeds, budget)
             .map_err(AnalyzeEvidenceError::Blocked)?;
         if let Some(failure) = self.invalid_value_use(parameters, evidence.context(), &facts) {

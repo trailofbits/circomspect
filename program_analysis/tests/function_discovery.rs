@@ -105,8 +105,8 @@ fn return_discovery_preserves_exact_context_budget_boundary() {
         assert_recursive_sites(&provider, function, 1);
         let contexts = contexts(&provider, function, count);
         let context = contexts.last().unwrap();
-        let first = provider.function(function, context);
-        let repeated = provider.function(function, context);
+        let first = provider.functions().function(function, context);
+        let repeated = provider.functions().function(function, context);
         assert_eq!(first, repeated);
         if count == 65 {
             assert_eq!(first.unavailable(), Some(&BTreeSet::from([SummaryBlocker::ContextBudget])));
@@ -125,8 +125,8 @@ fn effect_discovery_preserves_exact_context_budget_boundary() {
         assert_recursive_sites(&provider, function, 1);
         let contexts = contexts(&provider, function, count);
         let context = contexts.last().unwrap();
-        let first = provider.function_effects(function, context);
-        let repeated = provider.function_effects(function, context);
+        let first = provider.functions().function_effects(function, context);
+        let repeated = provider.functions().function_effects(function, context);
         assert_eq!(first, repeated);
         if count == 65 {
             assert_eq!(first.unavailable(), Some(&BTreeSet::from([SummaryBlocker::ContextBudget])));
@@ -144,9 +144,9 @@ fn return_discovery_ignores_pending_duplicates_at_capacity() {
     assert_recursive_sites(&provider, function, 2);
     let contexts = contexts(&provider, function, 64);
     assert!(contexts[0] < contexts[62]);
-    let first = provider.function(function, &contexts[63]);
+    let first = provider.functions().function(function, &contexts[63]);
     assert_exact_return(&first);
-    assert_eq!(first, provider.function(function, &contexts[63]));
+    assert_eq!(first, provider.functions().function(function, &contexts[63]));
 }
 
 #[test]
@@ -157,9 +157,9 @@ fn effect_discovery_ignores_pending_duplicates_at_capacity() {
     assert_recursive_sites(&provider, function, 2);
     let contexts = contexts(&provider, function, 64);
     assert!(contexts[0] < contexts[62]);
-    let first = provider.function_effects(function, &contexts[63]);
+    let first = provider.functions().function_effects(function, &contexts[63]);
     assert_log_effect(&first);
-    assert_eq!(first, provider.function_effects(function, &contexts[63]));
+    assert_eq!(first, provider.functions().function_effects(function, &contexts[63]));
 }
 
 #[test]
@@ -171,11 +171,11 @@ fn return_and_effect_queries_keep_their_distinct_entry_error_order() {
         provider.contexts().symbolic_context_for(lifted.hir.definition("F").unwrap()).unwrap();
     let function = function(&foreign, "F");
     assert_eq!(
-        provider.function(function, &context).unavailable(),
+        provider.functions().function(function, &context).unavailable(),
         Some(&BTreeSet::from([SummaryBlocker::ForeignDefinition]))
     );
     assert_eq!(
-        provider.function_effects(function, &context).unavailable(),
+        provider.functions().function_effects(function, &context).unavailable(),
         Some(&BTreeSet::from([SummaryBlocker::WrongContext]))
     );
 }
@@ -187,8 +187,8 @@ fn recursive_returns_refuse_while_effects_solve_the_repeated_context() {
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let contexts = contexts(&provider, function, 1);
     assert_eq!(
-        provider.function(function, &contexts[0]).unavailable(),
+        provider.functions().function(function, &contexts[0]).unavailable(),
         Some(&BTreeSet::from([SummaryBlocker::RecursiveCycle]))
     );
-    assert_log_effect(&provider.function_effects(function, &contexts[0]));
+    assert_log_effect(&provider.functions().function_effects(function, &contexts[0]));
 }

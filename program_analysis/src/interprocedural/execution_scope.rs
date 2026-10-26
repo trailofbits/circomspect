@@ -184,7 +184,7 @@ impl ProjectAnalysis<'_> {
                 return Err(SummaryBlocker::ContextBudget);
             }
             let DefinitionRef::Function(id) = context.definition() else { continue };
-            let failure = self.with_local_function(id, &context, |_, _, facts| {
+            let failure = self.functions().with_local_function(id, &context, |_, _, facts| {
                 self.collect_required_functions(facts, &mut pending);
                 Ok(self.required_local_failure(facts))
             });

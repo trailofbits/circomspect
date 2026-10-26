@@ -58,7 +58,7 @@ fn invalid_declaration_dimensions_cannot_certify_function_completion() {
             let definition = lifted.hir.definition(name).unwrap();
             let DefinitionRef::Function(function) = definition else { panic!("function") };
             let context = provider.contexts().symbolic_context_for(definition).unwrap();
-            let summary = provider.function(function, &context);
+            let summary = provider.functions().function(function, &context);
             assert!(
                 summary.certified().and_then(|summary| summary.complete_return()).is_none(),
                 "{declaration}: {name}: {summary:?}"
@@ -80,7 +80,7 @@ fn declaration_dimensions_are_checked_in_the_function_context() {
             .contexts()
             .context_for(definition, vec![ArgumentValue::Scalar(field.canonical(argument.into()))])
             .unwrap();
-        let summary = provider.function(function, &context);
+        let summary = provider.functions().function(function, &context);
         let result = summary.certified().and_then(|summary| summary.complete_return());
         if argument < 0 {
             assert!(result.is_none(), "{summary:?}");
@@ -89,7 +89,7 @@ fn declaration_dimensions_are_checked_in_the_function_context() {
         }
     }
     let symbolic = provider.contexts().symbolic_context_for(definition).unwrap();
-    let summary = provider.function(function, &symbolic);
+    let summary = provider.functions().function(function, &symbolic);
     assert!(summary.certified().and_then(|summary| summary.complete_return()).is_none());
 }
 
@@ -115,8 +115,8 @@ fn concrete_scalar_function_summary_specializes_return_and_branch() {
             vec![ArgumentValue::Scalar(field.canonical(1.into()))],
         )
         .unwrap();
-    let zero_summary = provider.function(function, &zero);
-    let one_summary = provider.function(function, &one);
+    let zero_summary = provider.functions().function(function, &zero);
+    let one_summary = provider.functions().function(function, &one);
     assert_eq!(
         zero_summary.certified().unwrap().complete_return().unwrap(),
         &Range::Exact(field.canonical(2.into()))
@@ -126,6 +126,7 @@ fn concrete_scalar_function_summary_specializes_return_and_branch() {
         &Range::Exact(field.canonical(3.into()))
     );
     assert!(provider
+        .functions()
         .function(
             function,
             &provider.contexts().symbolic_context_for(DefinitionRef::Function(function)).unwrap()
@@ -152,6 +153,7 @@ fn deferred_variable_guard_specializes_for_scalar_but_not_symbolic_argument() {
             .unwrap();
         assert_eq!(
             provider
+                .functions()
                 .function(function, &context)
                 .certified()
                 .map(|fact| fact.complete_return().unwrap()),
@@ -160,7 +162,7 @@ fn deferred_variable_guard_specializes_for_scalar_but_not_symbolic_argument() {
     }
     let symbolic =
         provider.contexts().symbolic_context_for(DefinitionRef::Function(function)).unwrap();
-    assert!(provider.function(function, &symbolic).unavailable().is_some());
+    assert!(provider.functions().function(function, &symbolic).unavailable().is_some());
     let array = provider
         .contexts()
         .context_for(
@@ -169,6 +171,7 @@ fn deferred_variable_guard_specializes_for_scalar_but_not_symbolic_argument() {
         )
         .unwrap();
     assert!(provider
+        .functions()
         .function(function, &array)
         .unavailable()
         .unwrap()
@@ -192,6 +195,7 @@ fn deferred_assignment_is_checked_even_when_later_overwritten() {
         )
         .unwrap();
     assert!(provider
+        .functions()
         .function(function, &array)
         .unavailable()
         .unwrap()
@@ -205,7 +209,13 @@ fn deferred_assignment_is_checked_even_when_later_overwritten() {
         )
         .unwrap();
     assert_eq!(
-        provider.function(function, &scalar).certified().unwrap().complete_return().unwrap(),
+        provider
+            .functions()
+            .function(function, &scalar)
+            .certified()
+            .unwrap()
+            .complete_return()
+            .unwrap(),
         &Range::Exact(field.canonical(1.into()))
     );
 }
@@ -226,7 +236,13 @@ fn unused_array_argument_does_not_block_a_constant_return() {
         )
         .unwrap();
     assert_eq!(
-        provider.function(function, &context).certified().unwrap().complete_return().unwrap(),
+        provider
+            .functions()
+            .function(function, &context)
+            .certified()
+            .unwrap()
+            .complete_return()
+            .unwrap(),
         &Range::Exact(field.canonical(7.into()))
     );
 }
@@ -245,7 +261,7 @@ fn constant_return_survives_an_unrelated_opaque_call() {
         };
         let context =
             provider.contexts().symbolic_context_for(DefinitionRef::Function(function)).unwrap();
-        let summary = provider.function(function, &context);
+        let summary = provider.functions().function(function, &context);
         let field = FieldContext::for_curve(Curve::Bn254);
         match expected {
             Some(value) => {
@@ -266,7 +282,7 @@ fn a_constant_value_after_an_opaque_call_is_conditional() {
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else { panic!("F") };
     let context = provider.contexts().symbolic_context_for(DefinitionRef::Function(f)).unwrap();
-    let summary = provider.function(f, &context);
+    let summary = provider.functions().function(f, &context);
     let expected = Range::Exact(FieldContext::for_curve(Curve::Bn254).canonical(7.into()));
     assert_eq!(
         summary.certified().unwrap().return_evidence(),
@@ -280,7 +296,7 @@ fn a_failing_assertion_cannot_certify_a_later_return() {
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else { panic!("F") };
     let context = provider.contexts().symbolic_context_for(DefinitionRef::Function(f)).unwrap();
-    let summary = provider.function(f, &context);
+    let summary = provider.functions().function(f, &context);
     assert!(summary.certified().and_then(|value| value.complete_return()).is_none());
 }
 
@@ -302,7 +318,7 @@ fn assertion_coverage_uses_the_bound_context_and_reachable_branch() {
                 vec![ArgumentValue::Scalar(field.canonical(value.into()))],
             )
             .unwrap();
-        let summary = provider.function(function, &context);
+        let summary = provider.functions().function(function, &context);
         assert_eq!(
             summary.certified().and_then(|item| item.complete_return()).is_some(),
             complete,
@@ -312,6 +328,7 @@ fn assertion_coverage_uses_the_bound_context_and_reachable_branch() {
     }
     let symbolic = provider.contexts().symbolic_context_for(DefinitionRef::Function(f)).unwrap();
     assert!(provider
+        .functions()
         .function(f, &symbolic)
         .certified()
         .and_then(|item| item.complete_return())
@@ -324,7 +341,7 @@ fn checked_true_assertion_retains_complete_return_evidence() {
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else { panic!("F") };
     let context = provider.contexts().symbolic_context_for(DefinitionRef::Function(f)).unwrap();
-    let summary = provider.function(f, &context);
+    let summary = provider.functions().function(f, &context);
     let expected = Range::Exact(FieldContext::for_curve(Curve::Bn254).canonical(7.into()));
     assert_eq!(summary.certified().and_then(|item| item.complete_return()), Some(&expected));
 }
@@ -335,7 +352,7 @@ fn opaque_assertion_effect_cannot_certify_a_later_return() {
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else { panic!("F") };
     let context = provider.contexts().symbolic_context_for(DefinitionRef::Function(f)).unwrap();
-    let summary = provider.function(f, &context);
+    let summary = provider.functions().function(f, &context);
     assert!(summary.certified().and_then(|item| item.complete_return()).is_none());
 }
 
@@ -346,7 +363,7 @@ fn division_by_zero_before_return_does_not_certify_completion() {
         let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else { panic!("F") };
         let context = provider.contexts().symbolic_context_for(DefinitionRef::Function(f)).unwrap();
-        let summary = provider.function(f, &context);
+        let summary = provider.functions().function(f, &context);
         assert_eq!(
             summary.certified().and_then(|item| item.complete_return()).is_some(),
             complete,
@@ -368,7 +385,7 @@ fn compound_assignments_cannot_borrow_plain_assignment_return_facts() {
         let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else { panic!("F") };
         let context = provider.contexts().symbolic_context_for(DefinitionRef::Function(f)).unwrap();
-        let summary = provider.function(f, &context);
+        let summary = provider.functions().function(f, &context);
         let exact_one = Range::Exact(FieldContext::for_curve(Curve::Bn254).canonical(1.into()));
         assert_eq!(
             summary.certified().and_then(|item| item.complete_return()),
@@ -402,7 +419,7 @@ fn indexed_reads_and_writes_need_proved_bounds_before_complete_return() {
         let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else { panic!("F") };
         let context = provider.contexts().symbolic_context_for(DefinitionRef::Function(f)).unwrap();
-        let summary = provider.function(f, &context);
+        let summary = provider.functions().function(f, &context);
         assert_eq!(
             summary.certified().and_then(|item| item.complete_return()),
             if complete { Some(&expected) } else { None },
@@ -427,7 +444,7 @@ fn indexed_bounds_follow_the_bound_parameter_context() {
                 vec![ArgumentValue::Scalar(field.canonical(size.into()))],
             )
             .unwrap();
-        let summary = provider.function(f, &context);
+        let summary = provider.functions().function(f, &context);
         assert_eq!(
             summary.certified().and_then(|item| item.complete_return()),
             if complete { Some(&expected) } else { None },
@@ -436,7 +453,7 @@ fn indexed_bounds_follow_the_bound_parameter_context() {
         );
     }
     let symbolic = provider.contexts().symbolic_context_for(DefinitionRef::Function(f)).unwrap();
-    let summary = provider.function(f, &symbolic);
+    let summary = provider.functions().function(f, &symbolic);
     assert!(summary.certified().and_then(|item| item.complete_return()).is_none());
 }
 
@@ -447,7 +464,7 @@ fn conditional_return_coverage_propagates_through_a_direct_call() {
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else { panic!("F") };
     let context = provider.contexts().symbolic_context_for(DefinitionRef::Function(f)).unwrap();
-    let summary = provider.function(f, &context);
+    let summary = provider.functions().function(f, &context);
     let expected = Range::Exact(field.canonical(7.into()));
     assert_eq!(
         summary.certified().unwrap().return_evidence(),
@@ -468,14 +485,14 @@ fn a_structural_fallthrough_path_cannot_supply_complete_return_evidence() {
             vec![ArgumentValue::Scalar(field.canonical(1.into()))],
         )
         .unwrap();
-    let summary = provider.function(f, &one);
+    let summary = provider.functions().function(f, &one);
     let expected = Range::Exact(field.canonical(7.into()));
     assert_eq!(
         summary.certified().unwrap().return_evidence(),
         ReturnEvidence::Conditional(&expected)
     );
     let symbolic = provider.contexts().symbolic_context_for(DefinitionRef::Function(f)).unwrap();
-    let symbolic_summary = provider.function(f, &symbolic);
+    let symbolic_summary = provider.functions().function(f, &symbolic);
     if let Some(summary) = symbolic_summary.certified() {
         let ReturnEvidence::Conditional(_) = summary.return_evidence() else {
             panic!("symbolic fallthrough cannot prove a complete return")
@@ -494,13 +511,13 @@ fn foreign_and_non_scalar_contexts_never_certify_function_returns() {
         .contexts()
         .context_for(DefinitionRef::Function(function), vec![ArgumentValue::Array(vec![])])
         .unwrap();
-    assert!(provider.function(function, &array).unavailable().is_some());
+    assert!(provider.functions().function(function, &array).unavailable().is_some());
     let other = fixture("function F(n){return 1;}");
     let DefinitionRef::Function(foreign) = other.hir.definition("F").unwrap() else {
         panic!("foreign function F")
     };
     assert_eq!(
-        provider.function(foreign, &array).unavailable(),
+        provider.functions().function(foreign, &array).unavailable(),
         Some(&std::collections::BTreeSet::from([SummaryBlocker::ForeignDefinition]))
     );
 }
@@ -514,7 +531,7 @@ fn symbolic_library_root_certifies_a_parameter_independent_return() {
     };
     let context =
         provider.contexts().symbolic_context_for(DefinitionRef::Function(function)).unwrap();
-    let summary = provider.function(function, &context);
+    let summary = provider.functions().function(function, &context);
     let field = FieldContext::for_curve(Curve::Bn254);
     assert_eq!(
         summary.certified().unwrap().complete_return().unwrap(),
@@ -538,7 +555,7 @@ fn scalar_context_cannot_validate_an_indexed_parameter_use() {
             vec![ArgumentValue::Scalar(field.canonical(1.into()))],
         )
         .unwrap();
-    assert!(provider.function(function, &context).unavailable().is_some());
+    assert!(provider.functions().function(function, &context).unavailable().is_some());
 }
 
 #[test]
@@ -560,7 +577,7 @@ fn direct_resolved_function_call_agrees_with_inlined_return() {
             vec![ArgumentValue::Scalar(field.canonical(5.into()))],
         )
         .unwrap();
-    let summary = provider.function(outer, &context);
+    let summary = provider.functions().function(outer, &context);
     assert_eq!(
         summary.certified().unwrap().complete_return().unwrap(),
         &Range::Exact(field.canonical(5.into()))
@@ -590,7 +607,13 @@ fn included_function_summary_composes_across_source_files() {
         )
         .unwrap();
     assert_eq!(
-        provider.function(outer, &context).certified().unwrap().complete_return().unwrap(),
+        provider
+            .functions()
+            .function(outer, &context)
+            .certified()
+            .unwrap()
+            .complete_return()
+            .unwrap(),
         &Range::Exact(field.canonical(9.into()))
     );
 }
@@ -610,7 +633,7 @@ fn finite_recursive_contexts_reach_a_base_case_without_certifying_a_cycle() {
             vec![ArgumentValue::Scalar(field.canonical(3.into()))],
         )
         .unwrap();
-    let summary = provider.function(function, &concrete);
+    let summary = provider.functions().function(function, &concrete);
     assert_eq!(
         summary.certified().map(|item| item.complete_return().unwrap()),
         Some(&Range::Exact(field.canonical(0.into()))),
@@ -625,11 +648,11 @@ fn finite_recursive_contexts_reach_a_base_case_without_certifying_a_cycle() {
         )
         .unwrap();
     assert_eq!(
-        provider.function(function, &too_deep).unavailable(),
+        provider.functions().function(function, &too_deep).unavailable(),
         Some(&std::collections::BTreeSet::from([SummaryBlocker::ContextBudget]))
     );
     assert_eq!(
-        provider.function(function, &too_deep).unavailable(),
+        provider.functions().function(function, &too_deep).unavailable(),
         Some(&std::collections::BTreeSet::from([SummaryBlocker::ContextBudget]))
     );
 
@@ -646,7 +669,7 @@ fn finite_recursive_contexts_reach_a_base_case_without_certifying_a_cycle() {
         )
         .unwrap();
     assert_eq!(
-        cyclic_provider.function(cyclic_id, &context).unavailable(),
+        cyclic_provider.functions().function(cyclic_id, &context).unavailable(),
         Some(&std::collections::BTreeSet::from([SummaryBlocker::RecursiveCycle]))
     );
 }
@@ -673,13 +696,17 @@ fn mutual_recursion_with_repeated_context_abstains_from_return_value() {
     let g_cycle = provider.contexts().context_for(DefinitionRef::Function(g), vec![one]).unwrap();
 
     assert_eq!(
-        provider.function(f, &base).certified().and_then(|summary| summary.complete_return()),
+        provider
+            .functions()
+            .function(f, &base)
+            .certified()
+            .and_then(|summary| summary.complete_return()),
         Some(&Range::Exact(field.canonical(7.into())))
     );
     // Repeating the same immutable argument tuple proves no terminating return path.
     for (function, context) in [(f, cycle), (g, g_cycle)] {
         assert_eq!(
-            provider.function(function, &context).unavailable(),
+            provider.functions().function(function, &context).unavailable(),
             Some(&std::collections::BTreeSet::from([SummaryBlocker::RecursiveCycle]))
         );
     }
@@ -703,7 +730,7 @@ fn mutually_recursive_concrete_contexts_reach_the_same_base_return() {
                 vec![ArgumentValue::Scalar(field.canonical(value.into()))],
             )
             .unwrap();
-        let summary = provider.function(function, &context);
+        let summary = provider.functions().function(function, &context);
         assert_eq!(
             summary.certified().map(|item| item.complete_return().unwrap()),
             Some(&Range::Exact(field.canonical(0.into()))),
@@ -712,7 +739,7 @@ fn mutually_recursive_concrete_contexts_reach_the_same_base_return() {
         );
     }
     let symbolic = provider.contexts().symbolic_context_for(DefinitionRef::Function(f)).unwrap();
-    assert!(provider.function(f, &symbolic).unavailable().is_some());
+    assert!(provider.functions().function(f, &symbolic).unavailable().is_some());
 }
 
 #[test]
@@ -721,7 +748,7 @@ fn a_self_call_before_a_constant_return_cannot_certify_termination() {
     let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
     let DefinitionRef::Function(f) = lifted.hir.definition("F").unwrap() else { panic!("F") };
     let context = provider.contexts().symbolic_context_for(DefinitionRef::Function(f)).unwrap();
-    assert!(provider.function(f, &context).unavailable().is_some());
+    assert!(provider.functions().function(f, &context).unavailable().is_some());
 }
 
 #[test]
@@ -739,17 +766,19 @@ fn recursive_scc_effects_reach_a_least_fixed_point() {
         provider.contexts().context_for(DefinitionRef::Function(f), vec![one.clone()]).unwrap();
     let g_one = provider.contexts().context_for(DefinitionRef::Function(g), vec![one]).unwrap();
     assert!(provider
+        .functions()
         .function_effects(f, &f_one)
         .certified()
         .unwrap()
         .contains(FunctionEffect::Log));
     assert!(provider
+        .functions()
         .function_effects(g, &g_one)
         .certified()
         .unwrap()
         .contains(FunctionEffect::Log));
     assert_eq!(
-        provider.function(f, &f_one).unavailable(),
+        provider.functions().function(f, &f_one).unavailable(),
         Some(&std::collections::BTreeSet::from([SummaryBlocker::RecursiveCycle]))
     );
     let f_zero = provider
@@ -760,6 +789,7 @@ fn recursive_scc_effects_reach_a_least_fixed_point() {
         )
         .unwrap();
     assert!(!provider
+        .functions()
         .function_effects(f, &f_zero)
         .certified()
         .unwrap()
@@ -784,12 +814,18 @@ fn unreachable_and_unrelated_opaque_calls_do_not_invent_effects() {
         provider.contexts().symbolic_context_for(DefinitionRef::Function(clean)).unwrap();
     let broken_context =
         provider.contexts().symbolic_context_for(DefinitionRef::Function(broken)).unwrap();
-    let clean_effects = provider.function_effects(clean, &clean_context);
+    let clean_effects = provider.functions().function_effects(clean, &clean_context);
     assert!(!clean_effects.certified().unwrap().contains(FunctionEffect::Log));
-    assert!(provider.function_effects(broken, &broken_context).unavailable().is_some());
-    assert!(provider.function_effects(broken, &broken_context).unavailable().is_some());
+    assert!(provider.functions().function_effects(broken, &broken_context).unavailable().is_some());
+    assert!(provider.functions().function_effects(broken, &broken_context).unavailable().is_some());
     assert_eq!(
-        provider.function(clean, &clean_context).certified().unwrap().complete_return().unwrap(),
+        provider
+            .functions()
+            .function(clean, &clean_context)
+            .certified()
+            .unwrap()
+            .complete_return()
+            .unwrap(),
         &Range::Exact(FieldContext::for_curve(Curve::Bn254).canonical(1.into()))
     );
 }
@@ -985,11 +1021,12 @@ fn cached_function_families_keep_concrete_and_symbolic_contexts_separate() {
         let expected = context.arguments()[0].clone();
         let ArgumentValue::Scalar(expected) = expected else { panic!("scalar context") };
         assert_eq!(
-            provider.function(function, context).certified().unwrap().complete_return(),
+            provider.functions().function(function, context).certified().unwrap().complete_return(),
             Some(&Range::Exact(expected.clone()))
         );
         assert_eq!(
             provider
+                .functions()
                 .function_effects(function, context)
                 .certified()
                 .unwrap()
@@ -999,10 +1036,10 @@ fn cached_function_families_keep_concrete_and_symbolic_contexts_separate() {
     }
     let symbolic =
         provider.contexts().symbolic_context_for(DefinitionRef::Function(function)).unwrap();
-    assert!(provider.function(function, &symbolic).unavailable().is_some());
-    assert!(provider.function(function, &symbolic).unavailable().is_some());
+    assert!(provider.functions().function(function, &symbolic).unavailable().is_some());
+    assert!(provider.functions().function(function, &symbolic).unavailable().is_some());
     assert_eq!(
-        provider.function(function, &one).certified().unwrap().complete_return(),
+        provider.functions().function(function, &one).certified().unwrap().complete_return(),
         Some(&Range::Exact(field.canonical(1.into())))
     );
 }
@@ -1019,18 +1056,18 @@ fn cached_queries_reject_foreign_curve_version_and_project_contexts() {
     let bn_context = bn.contexts().context_for(definition, vec![]).unwrap();
     let goldilocks_context = goldilocks.contexts().context_for(definition, vec![]).unwrap();
     assert_ne!(bn_context, goldilocks_context);
-    let bn_return = bn.function(function, &bn_context);
-    let goldilocks_return = goldilocks.function(function, &goldilocks_context);
+    let bn_return = bn.functions().function(function, &bn_context);
+    let goldilocks_return = goldilocks.functions().function(function, &goldilocks_context);
     assert_ne!(
         bn_return.certified().unwrap().complete_return(),
         goldilocks_return.certified().unwrap().complete_return()
     );
     assert_eq!(
-        bn.function(function, &goldilocks_context).unavailable(),
+        bn.functions().function(function, &goldilocks_context).unavailable(),
         Some(&std::collections::BTreeSet::from([SummaryBlocker::WrongContext]))
     );
     assert_eq!(
-        bn.function_effects(function, &goldilocks_context).unavailable(),
+        bn.functions().function_effects(function, &goldilocks_context).unavailable(),
         Some(&std::collections::BTreeSet::from([SummaryBlocker::WrongContext]))
     );
 
@@ -1040,7 +1077,7 @@ fn cached_queries_reject_foreign_curve_version_and_project_contexts() {
     let older_context = older.contexts().context_for(definition, vec![]).unwrap();
     assert_ne!(bn_context, older_context);
     assert_eq!(
-        bn.function(function, &older_context).unavailable(),
+        bn.functions().function(function, &older_context).unavailable(),
         Some(&std::collections::BTreeSet::from([SummaryBlocker::WrongContext]))
     );
 
@@ -1052,7 +1089,7 @@ fn cached_queries_reject_foreign_curve_version_and_project_contexts() {
     let foreign_context =
         foreign.contexts().context_for(DefinitionRef::Function(foreign_id), vec![]).unwrap();
     assert_eq!(
-        bn.function(function, &foreign_context).unavailable(),
+        bn.functions().function(function, &foreign_context).unavailable(),
         Some(&std::collections::BTreeSet::from([SummaryBlocker::WrongContext]))
     );
 }
@@ -1102,7 +1139,7 @@ fn complete_call_result_flows_through_a_local_variable() {
         };
         let context =
             provider.contexts().symbolic_context_for(DefinitionRef::Function(function)).unwrap();
-        let summary = provider.function(function, &context);
+        let summary = provider.functions().function(function, &context);
         assert_eq!(
             summary.certified().and_then(|item| item.complete_return()),
             Some(&expected),
@@ -1126,7 +1163,7 @@ fn specialized_call_retains_its_return_argument_dependency() {
             vec![ArgumentValue::Scalar(field.canonical(5.into()))],
         )
         .unwrap();
-    let summary = provider.function(g, &context);
+    let summary = provider.functions().function(g, &context);
     let summary = summary.certified().unwrap();
     assert_eq!(summary.complete_return(), Some(&Range::Exact(field.canonical(5.into()))));
     assert_eq!(summary.input_dependencies(), &std::collections::BTreeSet::from([0]));
@@ -1160,10 +1197,15 @@ fn deferred_assertion_uses_the_concrete_scalar_context() {
     let f_zero =
         provider.contexts().context_for(DefinitionRef::Function(f), vec![zero.clone()]).unwrap();
     assert_eq!(
-        provider.function(f, &f_one).certified().and_then(|item| item.complete_return()),
+        provider
+            .functions()
+            .function(f, &f_one)
+            .certified()
+            .and_then(|item| item.complete_return()),
         Some(&Range::Exact(field.canonical(7.into())))
     );
     assert!(provider
+        .functions()
         .function(f, &f_zero)
         .certified()
         .and_then(|item| item.complete_return())
@@ -1171,11 +1213,16 @@ fn deferred_assertion_uses_the_concrete_scalar_context() {
     let f_negative_one =
         provider.contexts().context_for(DefinitionRef::Function(f), vec![negative_one]).unwrap();
     assert_eq!(
-        provider.function(f, &f_negative_one).certified().and_then(|item| item.complete_return()),
+        provider
+            .functions()
+            .function(f, &f_negative_one)
+            .certified()
+            .and_then(|item| item.complete_return()),
         Some(&Range::Exact(field.canonical(7.into())))
     );
     let f_prime = provider.contexts().context_for(DefinitionRef::Function(f), vec![prime]).unwrap();
     assert!(provider
+        .functions()
         .function(f, &f_prime)
         .certified()
         .and_then(|item| item.complete_return())
@@ -1188,6 +1235,7 @@ fn deferred_assertion_uses_the_concrete_scalar_context() {
         )
         .unwrap();
     assert!(provider
+        .functions()
         .function(f, &f_array)
         .certified()
         .and_then(|item| item.complete_return())
@@ -1202,6 +1250,7 @@ fn deferred_assertion_uses_the_concrete_scalar_context() {
     assert!(provider.template_port(t, &t_zero, output).certified().is_none());
     let symbolic = provider.contexts().symbolic_context_for(DefinitionRef::Function(f)).unwrap();
     assert!(provider
+        .functions()
         .function(f, &symbolic)
         .certified()
         .and_then(|item| item.complete_return())

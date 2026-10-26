@@ -350,14 +350,14 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
     #[must_use]
     pub fn function_summary(&self) -> Option<SummaryFact<FunctionSummary>> {
         let DefinitionRef::Function(id) = self.call_context().definition() else { return None };
-        Some(self.summaries.function(id, self.call_context()))
+        Some(self.summaries.functions().function(id, self.call_context()))
     }
 
     /// Return effects only for the active function specialization.
     #[must_use]
     pub fn function_effects(&self) -> Option<SummaryFact<FunctionEffects>> {
         let DefinitionRef::Function(id) = self.call_context().definition() else { return None };
-        Some(self.summaries.function_effects(id, self.call_context()))
+        Some(self.summaries.functions().function_effects(id, self.call_context()))
     }
 
     /// Return generated-constraint facts for an active template's declared port element.

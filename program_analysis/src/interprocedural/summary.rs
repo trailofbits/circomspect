@@ -255,19 +255,25 @@ impl Transfer<ReturnAnalysis, FunctionSummary, SummaryBlocker> for ReturnEdge {
     }
 }
 
-impl ProjectAnalysis<'_> {
+/// Function returns, effects, and scalar refinement borrowed from one session.
+pub struct FunctionQueries<'session, 'hir> {
+    pub(super) analysis: &'session ProjectAnalysis<'hir>,
+}
+
+impl FunctionQueries<'_, '_> {
     /// Summarize a scalar function using checked CFG reachability and resolved call sites.
+    #[must_use]
     pub fn function(&self, id: FunctionId, context: &CallContext) -> SummaryFact<FunctionSummary> {
-        if self.hir().function(id).is_none() {
+        if self.analysis.hir().function(id).is_none() {
             return SummaryFact::blocked(SummaryBlocker::ForeignDefinition);
         }
         if context.definition() != DefinitionRef::Function(id) {
             return SummaryFact::blocked(SummaryBlocker::WrongContext);
         }
-        if let Err(blocker) = self.contexts().check_context(context) {
+        if let Err(blocker) = self.analysis.contexts().check_context(context) {
             return SummaryFact::blocked(blocker);
         }
-        self.caches.returns.get_or_compute(context.clone(), || {
+        self.analysis.caches.returns.get_or_compute(context.clone(), || {
             SummaryFact::from_result(self.compute_function(context))
         })
     }
@@ -305,7 +311,9 @@ impl ProjectAnalysis<'_> {
         self.with_local_function(id, context, |function, cfg, facts| {
             let calls = self.reachable_function_calls(id, function, facts)?;
             let (mut local, return_calls) = self.local_returns(function, cfg, facts, &calls)?;
-            if self.may_fail_before_return(id, cfg, facts) || has_unreturned_path(cfg, facts) {
+            if self.analysis.may_fail_before_return(id, cfg, facts)
+                || has_unreturned_path(cfg, facts)
+            {
                 local.coverage = ReturnCoverage::Conditional;
             }
             let control_callees = calls.values().map(|call| call.callee.clone()).collect();
@@ -314,7 +322,7 @@ impl ProjectAnalysis<'_> {
     }
 
     fn closed_constant_return(&self, cfg: &DefinitionCfg) -> Option<FunctionSummary> {
-        let field = FieldContext::for_curve(self.curve().clone());
+        let field = FieldContext::for_curve(self.analysis.curve().clone());
         let mut value = None;
         let mut current = cfg.entry();
         let mut visited = BTreeSet::new();
@@ -327,7 +335,7 @@ impl ProjectAnalysis<'_> {
                 return None;
             }
             if let CfgNodeKind::Return(expression) = &node.kind {
-                value = Some(exact_compile_time(self.hir(), &field, *expression)?);
+                value = Some(exact_compile_time(self.analysis.hir(), &field, *expression)?);
             }
             let mut next = None;
             for id in cfg.edges() {
@@ -351,17 +359,17 @@ impl ProjectAnalysis<'_> {
         context: &CallContext,
         work: impl FnOnce(&Function, &DefinitionCfg, &AnalysisFacts<'_>) -> Result<T, SummaryBlocker>,
     ) -> Result<T, SummaryBlocker> {
-        let Some(function) = self.hir().function(id) else {
+        let Some(function) = self.analysis.hir().function(id) else {
             return Err(SummaryBlocker::ForeignDefinition);
         };
         if context.definition() != DefinitionRef::Function(id) {
             return Err(SummaryBlocker::WrongContext);
         }
-        self.contexts().check_context(context)?;
+        self.analysis.contexts().check_context(context)?;
         let parameters = context.scalar_seeds(&function.parameters);
         self.with_refined_facts(context, &parameters, |cfg, facts| {
             if let Some(failure) =
-                self.contexts().invalid_value_use(&function.parameters, context, facts)
+                self.analysis.contexts().invalid_value_use(&function.parameters, context, facts)
             {
                 return Err(failure.summary_blocker());
             }
@@ -378,25 +386,25 @@ impl ProjectAnalysis<'_> {
     ) -> Result<BTreeMap<ExprId, ReturnCall>, SummaryBlocker> {
         let owner = CallOwner::Definition(DefinitionRef::Function(id));
         let mut calls = BTreeMap::new();
-        for site in self.graph().calls_from(owner) {
+        for site in self.analysis.graph().calls_from(owner) {
             let Some(DefinitionRef::Function(_)) = site.resolved() else { continue };
             if site.provenance == super::CallProvenance::Provisional
                 && site.expression.is_some_and(|id| facts.exact_call_value(id).is_some())
             {
                 continue;
             }
-            let call = match self.graph().reachable_call(site.id(), facts) {
+            let call = match self.analysis.graph().reachable_call(site.id(), facts) {
                 CallReachability::Unreachable => continue,
                 CallReachability::Reachable(call) => call,
                 CallReachability::Unavailable(_) => return Err(SummaryBlocker::ExternalSummary),
             };
             let expression = site.expression.ok_or(SummaryBlocker::UnsupportedCallForm)?;
             let Some(ExprKind::Call { arguments, .. }) =
-                self.hir().expression(expression).map(|expr| &expr.kind)
+                self.analysis.hir().expression(expression).map(|expr| &expr.kind)
             else {
                 return Err(SummaryBlocker::UnsupportedCallForm);
             };
-            let callee = self.contexts().call_context(&call, facts)?;
+            let callee = self.analysis.contexts().call_context(&call, facts)?;
             let arguments = Self::argument_dependencies(function, arguments, facts);
             calls.insert(expression, ReturnCall { callee, arguments });
         }
@@ -455,7 +463,7 @@ impl ProjectAnalysis<'_> {
                 continue;
             }
             if let Some(ExprKind::Call { .. }) =
-                self.hir().expression(*expression).map(|expr| &expr.kind)
+                self.analysis.hir().expression(*expression).map(|expr| &expr.kind)
             {
                 if facts.exact_call_value(*expression).is_none() {
                     return Err(SummaryBlocker::ExternalSummary);

@@ -128,8 +128,8 @@ fn function_records() -> Vec<Value> {
             provider.contexts().symbolic_context_for(definition)
         }
         .unwrap();
-        let summary = provider.function(function, &context);
-        assert_eq!(summary, provider.function(function, &context));
+        let summary = provider.functions().function(function, &context);
+        assert_eq!(summary, provider.functions().function(function, &context));
         let summary = summary.certified().unwrap_or_else(|| panic!("{name}: {summary:?}"));
         let (coverage, value) = match summary.return_evidence() {
             ReturnEvidence::Complete(value) => ("complete", value),
@@ -139,8 +139,8 @@ fn function_records() -> Vec<Value> {
             "id": format!("return.{name}"), "state": "certified", "coverage": coverage,
             "value": range_record(value), "dependencies": summary.input_dependencies()
         }));
-        let effects = provider.function_effects(function, &context);
-        assert_eq!(effects, provider.function_effects(function, &context));
+        let effects = provider.functions().function_effects(function, &context);
+        assert_eq!(effects, provider.functions().function_effects(function, &context));
         if name == "Conditional" {
             assert_eq!(
                 effects.unavailable(),
@@ -161,12 +161,12 @@ fn function_records() -> Vec<Value> {
     let definition = lifted.hir.definition("Cycle").unwrap();
     let DefinitionRef::Function(function) = definition else { panic!("Cycle") };
     let context = provider.contexts().symbolic_context_for(definition).unwrap();
-    let summary = provider.function(function, &context);
+    let summary = provider.functions().function(function, &context);
     assert_eq!(summary.unavailable(), Some(&BTreeSet::from([SummaryBlocker::RecursiveCycle])));
     records.push(json!({
         "id": "return.Cycle", "state": "unavailable", "blockers": ["RecursiveCycle"]
     }));
-    let effects = provider.function_effects(function, &context);
+    let effects = provider.functions().function_effects(function, &context);
     let effects = effects.certified().unwrap();
     records.push(json!({
         "id": "effects.Cycle", "state": "certified", "empty": effects.is_empty(),
