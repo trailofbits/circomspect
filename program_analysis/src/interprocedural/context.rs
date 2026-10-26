@@ -1,22 +1,14 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 
-use parser::hir::{
-    DefinitionRef, ExprId, ExprKind, HirProject, LiftedProject, ProjectIdentity,
-    SemanticDiagnostic, SymbolId,
-};
+use parser::hir::{DefinitionRef, ExprId, ExprKind, ProjectIdentity, SemanticDiagnostic, SymbolId};
 use parser::frontend::{Span, Version};
 use program_structure::utils::constants::Curve;
 
 use crate::hir_cfg::DefinitionCfg;
-use crate::hir_facts::{
-    exact_compile_time, AnalysisFacts, FactBlocker, FieldContext, FieldValue, Range,
-};
+use crate::hir_facts::{exact_compile_time, AnalysisFacts, FactBlocker, FieldValue, Range};
 
-use crate::interprocedural::{
-    build_call_graph, CallGraph, CallGraphError, CallOwner, CallSite, CallSiteId, ReachableCall,
-};
-use crate::interprocedural::cache::SummaryCaches;
+use crate::interprocedural::{CallOwner, CallSite, CallSiteId, ProjectAnalysis, ReachableCall};
 
 const MAX_ARGUMENT_NODES: usize = 4096;
 pub(super) const MAX_ARGUMENT_DEPTH: usize = 64;
@@ -233,52 +225,7 @@ impl AnalyzeEvidenceError {
     }
 }
 
-/// Owns the validated field and graph used to construct summary contexts.
-pub struct ProjectAnalysis<'a> {
-    lifted: &'a LiftedProject,
-    field: FieldContext,
-    graph: CallGraph,
-    pub(super) caches: SummaryCaches,
-}
-
-impl<'a> ProjectAnalysis<'a> {
-    /// Build a provider for one selected compiler curve and the lifted language version.
-    ///
-    /// # Errors
-    /// Returns a graph error if a call site references an invalid HIR identity.
-    pub fn build(lifted: &'a LiftedProject, curve: Curve) -> Result<Self, CallGraphError> {
-        let graph = build_call_graph(&lifted.hir)?;
-        Ok(Self {
-            lifted,
-            field: FieldContext::for_curve(curve),
-            graph,
-            caches: SummaryCaches::default(),
-        })
-    }
-
-    #[must_use]
-    pub fn hir(&self) -> &HirProject {
-        &self.lifted.hir
-    }
-
-    pub(super) fn lifted_project(&self) -> &LiftedProject {
-        self.lifted
-    }
-
-    #[must_use]
-    pub fn graph(&self) -> &CallGraph {
-        &self.graph
-    }
-
-    #[must_use]
-    pub fn curve(&self) -> &Curve {
-        self.field.curve()
-    }
-
-    pub(crate) fn field_context(&self) -> &FieldContext {
-        &self.field
-    }
-
+impl ProjectAnalysis<'_> {
     /// Construct a key only when the definition and parameter count belong to this HIR.
     ///
     /// # Errors
@@ -294,10 +241,10 @@ impl<'a> ProjectAnalysis<'a> {
         }
         let arguments = arguments.into_iter().map(|value| self.canonicalize(value)).collect();
         Ok(CallContext {
-            project: self.lifted.hir.identity(),
+            project: self.hir().identity(),
             definition,
-            curve: self.field.curve().into(),
-            version: self.lifted.version,
+            curve: self.curve().into(),
+            version: self.lifted_project().version,
             arguments,
         })
     }
@@ -319,9 +266,9 @@ impl<'a> ProjectAnalysis<'a> {
     /// # Errors
     /// Returns a blocker for a different project, curve, version, definition, or arity.
     pub fn check_context(&self, context: &CallContext) -> Result<(), SummaryBlocker> {
-        if context.project != self.lifted.hir.identity()
-            || context.curve != self.field.curve().into()
-            || context.version != self.lifted.version
+        if context.project != self.hir().identity()
+            || context.curve != self.curve().into()
+            || context.version != self.lifted_project().version
         {
             return Err(SummaryBlocker::WrongContext);
         }
@@ -359,7 +306,7 @@ impl<'a> ProjectAnalysis<'a> {
     ) -> Result<ContextEvidence, SummaryBlocker> {
         let site = call.site();
         let CallOwner::Main(index) = site.owner else { return Err(SummaryBlocker::ForeignCall) };
-        if self.graph.site(site.id()) != Some(site) {
+        if self.graph().site(site.id()) != Some(site) {
             return Err(SummaryBlocker::ForeignCall);
         }
         let main = self.hir().mains().get(index).ok_or(SummaryBlocker::ForeignCall)?;
@@ -409,7 +356,7 @@ impl<'a> ProjectAnalysis<'a> {
         caller: &ContextEvidence,
     ) -> Result<ContextEvidence, SummaryBlocker> {
         self.check_facts_for_evidence(facts, caller)?;
-        let site = self.graph.site(site).ok_or(SummaryBlocker::ForeignCall)?;
+        let site = self.graph().site(site).ok_or(SummaryBlocker::ForeignCall)?;
         let context = self.exact_site_context(site, facts)?;
         self.check_call_execution_scope(facts, caller)?;
         self.extend_call_evidence(site, context, caller)
@@ -437,7 +384,7 @@ impl<'a> ProjectAnalysis<'a> {
         let site = call.site();
         if self.hir().identity() != facts.hir().identity()
             || self.curve() != facts.curve()
-            || self.graph.site(site.id()) != Some(site)
+            || self.graph().site(site.id()) != Some(site)
         {
             return Err(SummaryBlocker::ForeignCall);
         }
@@ -537,7 +484,7 @@ impl<'a> ProjectAnalysis<'a> {
         step: CallPathSite,
         previous: Option<DefinitionRef>,
     ) -> Result<DefinitionRef, SummaryBlocker> {
-        let site = self.graph.site(step.site).ok_or(SummaryBlocker::ForeignCall)?;
+        let site = self.graph().site(step.site).ok_or(SummaryBlocker::ForeignCall)?;
         if CallPathSite::from_site(site)? != step {
             return Err(SummaryBlocker::ForeignCall);
         }
@@ -643,7 +590,7 @@ impl<'a> ProjectAnalysis<'a> {
             return Ok(ArgumentValue::Array(values));
         }
         let Some(facts) = facts else {
-            let value = exact_compile_time(self.hir(), &self.field, expression)
+            let value = exact_compile_time(self.hir(), self.field_context(), expression)
                 .ok_or(SummaryBlocker::UnprovenArgument(expression))?;
             return Ok(ArgumentValue::Scalar(value));
         };
@@ -675,7 +622,7 @@ impl<'a> ProjectAnalysis<'a> {
     fn canonicalize(&self, value: ArgumentValue) -> ArgumentValue {
         match value {
             ArgumentValue::Scalar(value) => {
-                ArgumentValue::Scalar(self.field.canonical(value.as_bigint().clone()))
+                ArgumentValue::Scalar(self.field_context().canonical(value.as_bigint().clone()))
             }
             ArgumentValue::Array(items) => ArgumentValue::Array(
                 items.into_iter().map(|item| self.canonicalize(item)).collect(),
@@ -744,9 +691,9 @@ mod tests {
         let DefinitionRef::Template(template) = lifted.hir.definition("T").unwrap() else {
             panic!("template T")
         };
-        let site = provider.graph.calls_from(CallOwner::Main(0))[0];
+        let site = provider.graph().calls_from(CallOwner::Main(0))[0];
         let CallReachability::Reachable(call) =
-            provider.graph.reachable_main_call(site.id(), provider.hir())
+            provider.graph().reachable_main_call(site.id(), provider.hir())
         else {
             panic!("main call")
         };
@@ -777,9 +724,9 @@ mod tests {
         let lifted = lift_project(&loaded);
         let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
         let definition = lifted.hir.definition("T").unwrap();
-        let main = provider.graph.calls_from(CallOwner::Main(0))[0];
+        let main = provider.graph().calls_from(CallOwner::Main(0))[0];
         let CallReachability::Reachable(call) =
-            provider.graph.reachable_main_call(main.id(), provider.hir())
+            provider.graph().reachable_main_call(main.id(), provider.hir())
         else {
             panic!("main call")
         };
@@ -787,8 +734,8 @@ mod tests {
         assert_eq!(
             evidence.context().arguments(),
             [ArgumentValue::Array(vec![
-                ArgumentValue::Scalar(provider.field.canonical(1.into())),
-                ArgumentValue::Scalar(provider.field.canonical(2.into())),
+                ArgumentValue::Scalar(provider.field_context().canonical(1.into())),
+                ArgumentValue::Scalar(provider.field_context().canonical(2.into())),
             ])]
         );
         let cfg = build_cfg(provider.hir(), definition).unwrap();
@@ -822,9 +769,9 @@ mod tests {
             load_sources(&[source], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
         let lifted = lift_project(&loaded);
         let provider = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
-        let site = provider.graph.calls_from(CallOwner::Main(0))[0];
+        let site = provider.graph().calls_from(CallOwner::Main(0))[0];
         let CallReachability::Reachable(call) =
-            provider.graph.reachable_main_call(site.id(), provider.hir())
+            provider.graph().reachable_main_call(site.id(), provider.hir())
         else {
             panic!("main call must be reachable")
         };

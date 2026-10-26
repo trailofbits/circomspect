@@ -100,7 +100,7 @@ impl ProjectAnalysis<'_> {
         closure: &mut Closure,
     ) -> Result<CompletedTemplate, SummaryBlocker> {
         self.check_facts_for_evidence(facts, evidence)?;
-        self.validated_definition(facts)?;
+        self.sources().validated_definition(facts)?;
         self.check_warning_execution_scope(facts, evidence)?;
         self.check_complete_template_execution(facts.cfg(), facts)?;
         self.check_parent_components_complete(facts)?;

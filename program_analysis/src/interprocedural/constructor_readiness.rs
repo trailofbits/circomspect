@@ -281,7 +281,7 @@ impl ProjectAnalysis<'_> {
         ports: Option<&ValidatedComponentPorts>,
     ) -> Result<CompletedTemplate, SummaryBlocker> {
         self.check_facts_for_evidence(facts, evidence)?;
-        self.validated_definition(facts)?;
+        self.sources().validated_definition(facts)?;
         self.check_warning_execution_scope(facts, evidence)?;
         if certified(&facts.reachable_node(facts.cfg().exit()))? != &true {
             return Err(SummaryBlocker::UnsupportedContext);
@@ -406,7 +406,7 @@ impl ProjectAnalysis<'_> {
             SummaryBlocker::LocalAnalysis(format!("leaf constructor analysis: {error:?}"))
         })?;
         self.check_warning_execution_scope(&facts, evidence)?;
-        self.validated_definition(&facts)?;
+        self.sources().validated_definition(&facts)?;
         if certified(&facts.reachable_node(facts.cfg().exit()))? != &true {
             return Err(SummaryBlocker::UnsupportedContext);
         }

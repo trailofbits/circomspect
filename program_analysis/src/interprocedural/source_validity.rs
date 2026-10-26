@@ -114,11 +114,15 @@ impl SourceScope {
     }
 }
 
-impl ProjectAnalysis<'_> {
+pub(crate) struct SourceQueries<'session, 'hir> {
+    pub(super) analysis: &'session ProjectAnalysis<'hir>,
+}
+
+impl<'session> SourceQueries<'session, '_> {
     pub(super) fn source_complete(&self) -> bool {
-        self.lifted_project().diagnostics.is_empty()
-            && self.lifted_project().syntax_diagnostics.is_empty()
-            && self.lifted_project().incomplete.is_empty()
+        self.analysis.lifted_project().diagnostics.is_empty()
+            && self.analysis.lifted_project().syntax_diagnostics.is_empty()
+            && self.analysis.lifted_project().incomplete.is_empty()
     }
 
     pub(super) fn model_source_complete(
@@ -126,16 +130,16 @@ impl ProjectAnalysis<'_> {
         active: DefinitionRef,
         completed: Option<&crate::interprocedural::constructor_readiness::CompletedTemplate>,
     ) -> bool {
-        if !self.lifted_project().syntax_diagnostics.is_empty() {
+        if !self.analysis.lifted_project().syntax_diagnostics.is_empty() {
             return false;
         }
         let connected = self.connected_definitions(active);
-        for diagnostic in &self.lifted_project().diagnostics {
+        for diagnostic in &self.analysis.lifted_project().diagnostics {
             if !self.other_definition_body_contains(diagnostic.span, &connected) {
                 return false;
             }
         }
-        for region in &self.lifted_project().incomplete {
+        for region in &self.analysis.lifted_project().incomplete {
             let scoped = match &region.reason {
                 IncompleteReason::Syntax | IncompleteReason::Include => false,
                 IncompleteReason::UnknownType => region.span().is_some_and(|span| {
@@ -165,11 +169,11 @@ impl ProjectAnalysis<'_> {
         span: Span,
         completed: &crate::interprocedural::constructor_readiness::CompletedTemplate,
     ) -> bool {
-        for template in self.hir().templates() {
+        for template in self.analysis.hir().templates() {
             if !completed.contains_checked_definition(DefinitionRef::Template(template.id)) {
                 continue;
             }
-            let Some(body) = self.hir().block(template.body) else { continue };
+            let Some(body) = self.analysis.hir().block(template.body) else { continue };
             if SourceScope::from_span(body.span).contains(span) {
                 return true;
             }
@@ -184,7 +188,7 @@ impl ProjectAnalysis<'_> {
             if !connected.insert(definition) {
                 continue;
             }
-            for site in self.graph().calls_from(CallOwner::Definition(definition)) {
+            for site in self.analysis.graph().calls_from(CallOwner::Definition(definition)) {
                 if let Some(callee) = site.resolved() {
                     pending.push(callee);
                 }
@@ -198,20 +202,20 @@ impl ProjectAnalysis<'_> {
         span: Span,
         connected: &BTreeSet<DefinitionRef>,
     ) -> bool {
-        for function in self.hir().functions() {
+        for function in self.analysis.hir().functions() {
             if connected.contains(&DefinitionRef::Function(function.id)) {
                 continue;
             }
-            let Some(body) = self.hir().block(function.body) else { continue };
+            let Some(body) = self.analysis.hir().block(function.body) else { continue };
             if SourceScope::from_span(body.span).contains(span) {
                 return true;
             }
         }
-        for template in self.hir().templates() {
+        for template in self.analysis.hir().templates() {
             if connected.contains(&DefinitionRef::Template(template.id)) {
                 continue;
             }
-            let Some(body) = self.hir().block(template.body) else { continue };
+            let Some(body) = self.analysis.hir().block(template.body) else { continue };
             if SourceScope::from_span(body.span).contains(span) {
                 return true;
             }
@@ -224,7 +228,8 @@ impl ProjectAnalysis<'_> {
         definition: DefinitionRef,
     ) -> Result<ValidatedHeader, SummaryBlocker> {
         let parts = self.definition_parts(definition)?;
-        let body = self.hir().block(parts.body).ok_or(SummaryBlocker::IncompleteDefinition)?;
+        let body =
+            self.analysis.hir().block(parts.body).ok_or(SummaryBlocker::IncompleteDefinition)?;
         let definition_scope = SourceScope::from_span(parts.span);
         if !definition_scope.contains(parts.name_span)
             || !definition_scope.contains(body.span)
@@ -253,7 +258,9 @@ impl ProjectAnalysis<'_> {
         facts: &AnalysisFacts<'_>,
     ) -> Result<ValidatedDefinition, SummaryBlocker> {
         let definition = facts.definition();
-        if facts.hir().identity() != self.hir().identity() || facts.curve() != self.curve() {
+        if facts.hir().identity() != self.analysis.hir().identity()
+            || facts.curve() != self.analysis.curve()
+        {
             return Err(SummaryBlocker::WrongContext);
         }
         let header = self.validated_header(definition)?;
@@ -267,10 +274,11 @@ impl ProjectAnalysis<'_> {
     fn definition_parts(
         &self,
         definition: DefinitionRef,
-    ) -> Result<DefinitionParts<'_>, SummaryBlocker> {
+    ) -> Result<DefinitionParts<'session>, SummaryBlocker> {
         let parts = match definition {
             DefinitionRef::Function(id) => {
-                let item = self.hir().function(id).ok_or(SummaryBlocker::ForeignDefinition)?;
+                let item =
+                    self.analysis.hir().function(id).ok_or(SummaryBlocker::ForeignDefinition)?;
                 DefinitionParts {
                     name: &item.name,
                     name_span: item.name_span,
@@ -280,7 +288,8 @@ impl ProjectAnalysis<'_> {
                 }
             }
             DefinitionRef::Template(id) => {
-                let item = self.hir().template(id).ok_or(SummaryBlocker::ForeignDefinition)?;
+                let item =
+                    self.analysis.hir().template(id).ok_or(SummaryBlocker::ForeignDefinition)?;
                 DefinitionParts {
                     name: &item.name,
                     name_span: item.name_span,
@@ -297,7 +306,7 @@ impl ProjectAnalysis<'_> {
     fn parameters_valid(&self, parameters: &[SymbolId], header: SourceScope) -> bool {
         let mut names = BTreeSet::new();
         for id in parameters {
-            let Some(symbol) = self.hir().symbol(*id) else { return false };
+            let Some(symbol) = self.analysis.hir().symbol(*id) else { return false };
             if symbol.kind != SymbolKind::Parameter
                 || !header.contains(symbol.span)
                 || !names.insert(symbol.name.as_str())
@@ -311,6 +320,7 @@ impl ProjectAnalysis<'_> {
     fn scope_has_issue(&self, scope: SourceScope) -> bool {
         self.scope_has_diagnostic(scope)
             || self
+                .analysis
                 .lifted_project()
                 .incomplete
                 .iter()
@@ -319,7 +329,7 @@ impl ProjectAnalysis<'_> {
 
     fn scope_has_issue_with_facts(&self, scope: SourceScope, facts: &AnalysisFacts<'_>) -> bool {
         self.scope_has_diagnostic(scope)
-            || self.lifted_project().incomplete.iter().any(|region| {
+            || self.analysis.lifted_project().incomplete.iter().any(|region| {
                 region.span().is_some_and(|span| scope.overlaps(span))
                     && !self.resolved_unknown_region(region, facts)
                     && !self.dead_unknown_region(region, facts)
@@ -335,19 +345,19 @@ impl ProjectAnalysis<'_> {
         if self.scope_has_diagnostic(scope) {
             return Ok(true);
         }
-        Ok(self.lifted_project().incomplete.iter().any(|region| {
+        Ok(self.analysis.lifted_project().incomplete.iter().any(|region| {
             region.reason != IncompleteReason::UnknownType
                 && region.span().is_some_and(|span| scope.overlaps(span))
         }))
     }
 
     fn scope_has_diagnostic(&self, scope: SourceScope) -> bool {
-        for diagnostic in &self.lifted_project().syntax_diagnostics {
+        for diagnostic in &self.analysis.lifted_project().syntax_diagnostics {
             if diagnostic.span().is_some_and(|span| scope.overlaps(span)) {
                 return true;
             }
         }
-        self.lifted_project().diagnostics.iter().any(|diagnostic| {
+        self.analysis.lifted_project().diagnostics.iter().any(|diagnostic| {
             diagnostic.severity == Severity::Error && scope.overlaps(diagnostic.span)
         })
     }
@@ -400,7 +410,7 @@ impl ProjectAnalysis<'_> {
     }
 
     fn is_deferred_effect_at(&self, origin: Origin, span: Span) -> bool {
-        let Some(block) = self.hir().block(origin.block) else { return false };
+        let Some(block) = self.analysis.hir().block(origin.block) else { return false };
         let Some(Effect::DeferredVariableAssignment { span: effect_span, .. }) =
             block.effects.get(origin.effect_index)
         else {
@@ -438,8 +448,11 @@ impl ProjectAnalysis<'_> {
         }
         let Some(Effect::OpaqueEquality {
             left, right, reason: IncompleteReason::UnknownType, ..
-        }) =
-            self.hir().block(origin.block).and_then(|block| block.effects.get(origin.effect_index))
+        }) = self
+            .analysis
+            .hir()
+            .block(origin.block)
+            .and_then(|block| block.effects.get(origin.effect_index))
         else {
             return false;
         };
@@ -454,7 +467,7 @@ impl ProjectAnalysis<'_> {
     }
 
     fn resolved_access_region(&self, span: Span, facts: &AnalysisFacts<'_>) -> bool {
-        for expression in self.hir().expressions() {
+        for expression in self.analysis.hir().expressions() {
             if expression.span != span {
                 continue;
             }
@@ -483,8 +496,11 @@ impl ProjectAnalysis<'_> {
         if origin.span != span || facts.reachable_node(id).certified() != Some(&true) {
             return false;
         }
-        let Some(effect) =
-            self.hir().block(origin.block).and_then(|block| block.effects.get(origin.effect_index))
+        let Some(effect) = self
+            .analysis
+            .hir()
+            .block(origin.block)
+            .and_then(|block| block.effects.get(origin.effect_index))
         else {
             return false;
         };
@@ -577,5 +593,43 @@ impl ProjectAnalysis<'_> {
             | AssignmentOperator::BitOr
             | AssignmentOperator::BitXor => false,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use parser::frontend::{parse_source, LoadedProject, SourceFile, SourceId, Version, VersionPolicy};
+    use parser::hir::lift_project;
+    use program_structure::utils::constants::Curve;
+
+    use crate::interprocedural::ProjectAnalysis;
+
+    #[test]
+    fn temporary_source_views_preserve_definition_borrows() {
+        let source = "template T(n){}";
+        let policy = VersionPolicy::new(Version::new(2, 2, 3));
+        let id = SourceId::new(0);
+        let loaded = LoadedProject {
+            policy,
+            diagnostics: Vec::new(),
+            files: vec![SourceFile {
+                id,
+                path: "source-view.circom".into(),
+                text: source.into(),
+                outcome: parse_source(id, source, policy),
+            }],
+        };
+        let project = lift_project(&loaded);
+        let analysis = ProjectAnalysis::build(&project, Curve::Bn254).unwrap();
+        let definition = project.hir.definition("T").unwrap();
+        let first = analysis.sources().definition_parts(definition).unwrap();
+        let second = {
+            let queries = analysis.sources();
+            queries.definition_parts(definition).unwrap()
+        };
+        assert_eq!(first.name, "T");
+        assert_eq!(first.parameters.len(), 1);
+        assert_eq!(second.name, first.name);
+        assert_eq!(second.parameters, first.parameters);
     }
 }

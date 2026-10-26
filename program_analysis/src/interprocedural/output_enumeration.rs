@@ -113,7 +113,7 @@ impl ProjectAnalysis<'_> {
         mut visit: impl FnMut(&ReachableCall<'_>) -> Result<(), SummaryBlocker>,
     ) -> Result<(), SummaryBlocker> {
         self.check_facts_for_evidence(facts, caller)?;
-        self.validated_definition(facts)?;
+        self.sources().validated_definition(facts)?;
         let owner = CallOwner::Definition(facts.definition());
         for site in self.graph().calls_from(owner) {
             let Some(expression) = site.expression else {

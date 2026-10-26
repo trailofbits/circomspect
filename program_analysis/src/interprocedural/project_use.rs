@@ -344,12 +344,12 @@ impl ProjectAnalysis<'_> {
     ) -> Result<(), SummaryBlocker> {
         self.check_facts_for_evidence(facts, main)?;
         let complete = match source {
-            MainSourceScope::WholeProject => self.source_complete(),
+            MainSourceScope::WholeProject => self.sources().source_complete(),
             MainSourceScope::ModelDefinitions => {
-                self.model_source_complete(facts.definition(), None)
+                self.sources().model_source_complete(facts.definition(), None)
             }
             MainSourceScope::CompletedModel(completed) => {
-                self.model_source_complete(facts.definition(), Some(completed))
+                self.sources().model_source_complete(facts.definition(), Some(completed))
             }
         };
         if !complete || self.hir().mains().len() != 1 {

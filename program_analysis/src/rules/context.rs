@@ -88,7 +88,7 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
     /// # Errors
     /// Returns a blocker when source recovery or validation prevents a complete header proof.
     pub fn validated_header(&self) -> Result<ValidatedHeader, SummaryBlocker> {
-        self.summaries.validated_header(self.call_context().definition())
+        self.summaries.sources().validated_header(self.call_context().definition())
     }
 
     /// Validate source recovery across this active definition's body and header.
@@ -96,7 +96,7 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
     /// # Errors
     /// Returns a blocker when source recovery leaves the active definition incomplete.
     pub fn validated_definition(&self) -> Result<ValidatedDefinition, SummaryBlocker> {
-        self.summaries.validated_definition(self.facts)
+        self.summaries.sources().validated_definition(self.facts)
     }
 
     /// Refuse claims in an active scope with a known execution failure path.

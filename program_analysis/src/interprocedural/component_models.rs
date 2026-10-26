@@ -194,7 +194,7 @@ impl ProjectAnalysis<'_> {
             }
         }
         self.check_model_main_root(facts, applied.caller_evidence())?;
-        self.validated_definition(facts)?;
+        self.sources().validated_definition(facts)?;
         self.check_warning_execution_scope(facts, applied.caller_evidence())?;
         self.check_parent_components_complete(facts)?;
         self.single_model_call(facts, applied)?;

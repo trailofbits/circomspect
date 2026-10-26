@@ -32,6 +32,7 @@ mod summary;
 mod effects;
 mod template;
 mod context;
+mod project;
 mod source_validity;
 mod component;
 mod component_port;
@@ -54,7 +55,7 @@ pub(crate) use crate::interprocedural::constructor_readiness::ValidatedConstruct
 
 pub use context::{
     AnalyzeEvidenceError, ArgumentShape, ArgumentValue, CallContext, CallPathSite, ContextEvidence,
-    ContextOrigin, ProjectAnalysis, SummaryBlocker,
+    ContextOrigin, SummaryBlocker,
 };
 
 pub use graph::{
@@ -75,3 +76,5 @@ pub use crate::interprocedural::component_models::{
 };
 
 pub use crate::interprocedural::source_validity::{ValidatedDefinition, ValidatedHeader};
+
+pub use crate::interprocedural::project::ProjectAnalysis;

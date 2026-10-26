@@ -238,8 +238,8 @@ impl ProjectAnalysis<'_> {
         facts: &AnalysisFacts<'_>,
     ) -> Option<(FieldValue, BTreeSet<usize>, CallContext)> {
         let definition = DefinitionRef::Function(callee);
-        self.validated_header(definition).ok()?;
-        if self.definition_has_hard_source_issue(definition).ok()? {
+        self.sources().validated_header(definition).ok()?;
+        if self.sources().definition_has_hard_source_issue(definition).ok()? {
             return None;
         }
         let arguments = self.exact_call_arguments(arguments, facts).ok()?;
@@ -259,7 +259,7 @@ impl ProjectAnalysis<'_> {
     ) -> bool {
         if self
             .with_local_function(callee, context, |_, _, facts| {
-                self.validated_definition(facts).map(|_| ())
+                self.sources().validated_definition(facts).map(|_| ())
             })
             .is_err()
         {
