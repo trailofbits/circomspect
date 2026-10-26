@@ -184,6 +184,7 @@ dependencies = [
  "codespan-reporting",
  "log",
  "num-bigint-dig",
+ "serde",
  "serde-sarif",
  "serde_json",
  "termcolor",
