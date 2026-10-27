@@ -40,10 +40,16 @@ impl ProjectAnalysis<'_> {
         self.check_model_main_root(&facts, &parent)?;
         let instance = self.sole_child_instance(&facts, &parent, evidence)?;
         let ready = ready_witness_instance(&facts, &parent, &instance)?;
-        let completed = self.completed_project_template(child, evidence, &[])?;
-        let completed = self.completed_witness_child(&facts, &instance, completed, &ready)?;
-        self.completed_project_template(&facts, &parent, std::slice::from_ref(&completed))?;
-        let constructors = self.completed_constructor_reads(&facts, &parent, &[completed])?;
+        let completed = self.execution().completed_project_template(child, evidence, &[])?;
+        let completed =
+            self.execution().completed_witness_child(&facts, &instance, completed, &ready)?;
+        self.execution().completed_project_template(
+            &facts,
+            &parent,
+            std::slice::from_ref(&completed),
+        )?;
+        let constructors =
+            self.execution().completed_constructor_reads(&facts, &parent, &[completed])?;
         let mut budget = ProofBudget::default();
         child.unique_generation_path(&mut budget).map_err(SummaryBlocker::LocalFacts)?;
         facts

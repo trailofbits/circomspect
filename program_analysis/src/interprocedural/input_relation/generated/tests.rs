@@ -67,9 +67,11 @@ fn inspect(binding: &str, dimension: &str) -> Result<Vec<GeneratedInputEquation>
         &instance,
         &mut ProofBudget::default(),
     )?;
-    let completed = provider.completed_project_template(&child, &instance.callee, &[])?;
-    let completed = provider.completed_generated_child(&facts, &instance, completed, &ready)?;
-    provider.completed_generated_template(&facts, &[completed], &ready)?;
+    let completed =
+        provider.execution().completed_project_template(&child, &instance.callee, &[])?;
+    let completed =
+        provider.execution().completed_generated_child(&facts, &instance, completed, &ready)?;
+    provider.execution().completed_generated_template(&facts, &[completed], &ready)?;
     assert_eq!(facts.no_possible_repeated_body_writes().certified().copied(), before);
     let other_curve = ProjectAnalysis::build(&project, Curve::Bn254).unwrap();
     assert!(other_curve

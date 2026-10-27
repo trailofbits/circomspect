@@ -616,7 +616,7 @@ fn independent_scope_refusal_keeps_dead_and_unknown_failures_distinct() {
         let cfg = build_cfg(&lifted.hir, parent).unwrap();
         let facts = provider.contexts().analyze_for_evidence(&cfg, &caller, None).unwrap();
         assert_eq!(
-            provider.check_warning_execution_scope(&facts, &caller).is_ok(),
+            provider.execution().check_warning_execution_scope(&facts, &caller).is_ok(),
             accepted,
             "{source}"
         );
@@ -648,7 +648,7 @@ fn independent_partial_callers_keep_exact_calls_but_block_scope_warnings() {
         };
         assert!(child.is_ok(), "{source}: {child:?}");
         assert_eq!(
-            provider.check_warning_execution_scope(&facts, &caller),
+            provider.execution().check_warning_execution_scope(&facts, &caller),
             Err(SummaryBlocker::IncompleteDefinition)
         );
     }
@@ -666,11 +666,11 @@ fn independent_warning_refusal_prioritizes_binding_then_failure_over_partial_sou
     let cfg = build_cfg(&lifted.hir, definition).unwrap();
     let facts = provider.contexts().analyze_for_evidence(&cfg, &caller, None).unwrap();
     assert_eq!(
-        provider.check_warning_execution_scope(&facts, &other),
+        provider.execution().check_warning_execution_scope(&facts, &other),
         Err(SummaryBlocker::WrongContext)
     );
     assert_eq!(
-        provider.check_warning_execution_scope(&facts, &caller),
+        provider.execution().check_warning_execution_scope(&facts, &caller),
         Err(SummaryBlocker::UnsupportedContext)
     );
     let site = provider.graph().calls_from(CallOwner::Definition(definition))[0];

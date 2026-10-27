@@ -67,9 +67,11 @@ fn inspect(binding: &str, extra: &str) -> Result<Vec<WitnessInputValue>, Summary
         .contexts()
         .analyze_for_evidence(&cfg, &instance.callee, None)
         .map_err(|_| SummaryBlocker::UnsupportedContext)?;
-    let completed = provider.completed_project_template(&child, &instance.callee, &[])?;
-    let completed = provider.completed_witness_child(&facts, &instance, completed, &ready)?;
-    provider.completed_project_template(&facts, &caller, &[completed])?;
+    let completed =
+        provider.execution().completed_project_template(&child, &instance.callee, &[])?;
+    let completed =
+        provider.execution().completed_witness_child(&facts, &instance, completed, &ready)?;
+    provider.execution().completed_project_template(&facts, &caller, &[completed])?;
     let port = project
         .hir
         .ports()

@@ -81,7 +81,7 @@ impl ComponentQueries<'_, '_> {
                     }
                 }
             })?;
-        self.analysis.check_call_execution_scope(&facts, callee)?;
+        self.analysis.execution().check_call_execution_scope(&facts, callee)?;
         work(&facts)
     }
 

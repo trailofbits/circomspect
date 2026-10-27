@@ -311,7 +311,7 @@ impl FunctionQueries<'_, '_> {
         self.with_local_function(id, context, |function, cfg, facts| {
             let calls = self.reachable_function_calls(id, function, facts)?;
             let (mut local, return_calls) = self.local_returns(function, cfg, facts, &calls)?;
-            if self.analysis.may_fail_before_return(id, cfg, facts)
+            if self.analysis.execution().may_fail_before_return(id, cfg, facts)
                 || has_unreturned_path(cfg, facts)
             {
                 local.coverage = ReturnCoverage::Conditional;

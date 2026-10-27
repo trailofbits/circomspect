@@ -344,7 +344,7 @@ impl<'session, 'hir: 'session> ContextQueries<'session, 'hir> {
         }
         self.check_facts_for_evidence(facts, caller)?;
         let context = self.call_context(call, facts)?;
-        self.analysis.check_call_execution_scope(facts, caller)?;
+        self.analysis.execution().check_call_execution_scope(facts, caller)?;
         self.extend_call_evidence(call.site(), context, caller)
     }
 
@@ -365,7 +365,7 @@ impl<'session, 'hir: 'session> ContextQueries<'session, 'hir> {
         self.check_facts_for_evidence(facts, caller)?;
         let site = self.analysis.graph().site(site).ok_or(SummaryBlocker::ForeignCall)?;
         let context = self.analysis.functions().exact_site_context(site, facts)?;
-        self.analysis.check_call_execution_scope(facts, caller)?;
+        self.analysis.execution().check_call_execution_scope(facts, caller)?;
         self.extend_call_evidence(site, context, caller)
     }
 

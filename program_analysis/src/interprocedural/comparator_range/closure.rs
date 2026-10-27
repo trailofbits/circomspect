@@ -92,18 +92,34 @@ impl ProjectAnalysis<'_> {
                     &nested,
                     budget,
                 )?;
+                let completed = self.execution().completed_project_template(
+                    decomposition,
+                    &nested.callee,
+                    &[],
+                )?;
+                let children = [self
+                    .execution()
+                    .completed_generated_child(comparison, &nested, completed, &ready)?];
+                let constructors = self.execution().completed_constructor_reads(
+                    comparison,
+                    &instance.callee,
+                    &children,
+                )?;
                 let completed =
-                    self.completed_project_template(decomposition, &nested.callee, &[])?;
-                let children =
-                    [self.completed_generated_child(comparison, &nested, completed, &ready)?];
-                let constructors =
-                    self.completed_constructor_reads(comparison, &instance.callee, &children)?;
-                let completed = self.completed_generated_template(comparison, &children, &ready)?;
-                let children =
-                    [self.completed_generated_child(facts, &instance, completed, &main_ready)?];
-                let parent_constructors =
-                    self.completed_constructor_reads(facts, applied.caller_evidence(), &children)?;
-                let completed = self.completed_generated_template(facts, &children, &main_ready)?;
+                    self.execution().completed_generated_template(comparison, &children, &ready)?;
+                let children = [self.execution().completed_generated_child(
+                    facts,
+                    &instance,
+                    completed,
+                    &main_ready,
+                )?];
+                let parent_constructors = self.execution().completed_constructor_reads(
+                    facts,
+                    applied.caller_evidence(),
+                    &children,
+                )?;
+                let completed =
+                    self.execution().completed_generated_template(facts, &children, &main_ready)?;
                 self.check_completed_model_main(facts, applied.caller_evidence(), &completed)?;
                 let paths = [
                     facts.unique_generation_path_with(budget, &parent_constructors),

@@ -107,7 +107,7 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
     /// # Errors
     /// Returns a blocker for an invalid source scope or a proved execution failure.
     pub fn check_warning_execution_scope(&self) -> Result<(), SummaryBlocker> {
-        self.summaries.check_warning_execution_scope(self.facts, self.evidence)
+        self.summaries.execution().check_warning_execution_scope(self.facts, self.evidence)
     }
 
     /// Prove observable demand for a source-matched scalar assignment.

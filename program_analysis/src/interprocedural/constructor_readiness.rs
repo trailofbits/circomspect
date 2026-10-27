@@ -15,7 +15,7 @@ use crate::interprocedural::input_relation::{
 };
 use crate::interprocedural::{
     AppliedComponentPort, CallOwner, CallReachability, CallSiteId, ContextEvidence,
-    ProjectAnalysis, SummaryBlocker,
+    ExecutionQueries, SummaryBlocker,
 };
 use crate::interprocedural::output_enumeration::EnumeratedComponentInstance;
 use crate::interprocedural::summary::certified;
@@ -117,7 +117,7 @@ impl ValidatedConstructorReads {
     }
 }
 
-impl ProjectAnalysis<'_> {
+impl ExecutionQueries<'_, '_> {
     pub(super) fn completed_project_child(
         &self,
         facts: &AnalysisFacts<'_>,
@@ -146,7 +146,7 @@ impl ProjectAnalysis<'_> {
         instance: &EnumeratedComponentInstance,
         completion: ChildCompletion,
     ) -> Result<(CompletedChild, ReadyInstanceAtUse), SummaryBlocker> {
-        self.contexts().check_facts_for_evidence(facts, caller)?;
+        self.analysis.contexts().check_facts_for_evidence(facts, caller)?;
         let (completed, ready) = match completion {
             ChildCompletion::ProjectOutput(completed) => {
                 (completed, ready_enumerated_instance(facts, instance)?)
@@ -192,19 +192,20 @@ impl ProjectAnalysis<'_> {
         instance: &EnumeratedComponentInstance,
         completed: CompletedTemplate,
     ) -> Result<CompletedChild, SummaryBlocker> {
-        self.contexts().check_facts_for_evidence(facts, caller)?;
+        self.analysis.contexts().check_facts_for_evidence(facts, caller)?;
         if completed.evidence != instance.callee {
             return Err(SummaryBlocker::WrongContext);
         }
-        let site = self.graph().site(instance.site).ok_or(SummaryBlocker::ForeignCall)?;
+        let site = self.analysis.graph().site(instance.site).ok_or(SummaryBlocker::ForeignCall)?;
         if site.owner != CallOwner::Definition(facts.definition()) {
             return Err(SummaryBlocker::ForeignCall);
         }
-        let CallReachability::Reachable(call) = self.graph().reachable_call(instance.site, facts)
+        let CallReachability::Reachable(call) =
+            self.analysis.graph().reachable_call(instance.site, facts)
         else {
             return Err(SummaryBlocker::ForeignCall);
         };
-        if self.contexts().call_evidence(&call, facts, caller)? != completed.evidence {
+        if self.analysis.contexts().call_evidence(&call, facts, caller)? != completed.evidence {
             return Err(SummaryBlocker::WrongContext);
         }
         let DefinitionRef::Template(_) = completed.evidence.context().definition() else {
@@ -235,7 +236,7 @@ impl ProjectAnalysis<'_> {
                 continue;
             };
             let Some(ExprKind::Access(path)) =
-                self.hir().expression(*expression).map(|expr| &expr.kind)
+                self.analysis.hir().expression(*expression).map(|expr| &expr.kind)
             else {
                 continue;
             };
@@ -280,8 +281,8 @@ impl ProjectAnalysis<'_> {
         children: &[CompletedChild],
         ports: Option<&ValidatedComponentPorts>,
     ) -> Result<CompletedTemplate, SummaryBlocker> {
-        self.contexts().check_facts_for_evidence(facts, evidence)?;
-        self.sources().validated_definition(facts)?;
+        self.analysis.contexts().check_facts_for_evidence(facts, evidence)?;
+        self.analysis.sources().validated_definition(facts)?;
         self.check_warning_execution_scope(facts, evidence)?;
         if certified(&facts.reachable_node(facts.cfg().exit()))? != &true {
             return Err(SummaryBlocker::UnsupportedContext);
@@ -318,7 +319,7 @@ impl ProjectAnalysis<'_> {
             if &child.caller != evidence || !instances.insert((child.site, child.indices.clone())) {
                 return Err(SummaryBlocker::WrongContext);
             }
-            let site = self.graph().site(child.site).ok_or(SummaryBlocker::ForeignCall)?;
+            let site = self.analysis.graph().site(child.site).ok_or(SummaryBlocker::ForeignCall)?;
             if child.completed.evidence.context().definition()
                 != site.resolved().ok_or(SummaryBlocker::ForeignCall)?
             {
@@ -336,9 +337,9 @@ impl ProjectAnalysis<'_> {
         facts: &AnalysisFacts<'_>,
         calls: &BTreeSet<ExprId>,
     ) -> Result<(), SummaryBlocker> {
-        for site in self.graph().calls_from(CallOwner::Definition(facts.definition())) {
+        for site in self.analysis.graph().calls_from(CallOwner::Definition(facts.definition())) {
             let Some(DefinitionRef::Template(_)) = site.resolved() else { continue };
-            match self.graph().reachable_call(site.id(), facts) {
+            match self.analysis.graph().reachable_call(site.id(), facts) {
                 CallReachability::Reachable(_) => {
                     let expression = site.expression.ok_or(SummaryBlocker::ForeignCall)?;
                     if !calls.contains(&expression) {
@@ -357,7 +358,7 @@ impl ProjectAnalysis<'_> {
         facts: &AnalysisFacts<'_>,
         evidence: &ContextEvidence,
     ) -> Result<(), SummaryBlocker> {
-        self.check_template_constraint_scope(facts, evidence)?;
+        self.analysis.check_template_constraint_scope(facts, evidence)?;
         let constructors = self.validated_constructor_reads(facts, evidence)?;
         certified(&facts.body_signal_reads_ready_with(&constructors))?;
         certified(&facts.generated_constraints_valid())?;
@@ -371,9 +372,9 @@ impl ProjectAnalysis<'_> {
     ) -> Result<ValidatedConstructorReads, SummaryBlocker> {
         const MAX_CONSTRUCTORS: usize = 64;
         let mut calls = BTreeSet::new();
-        for site in self.graph().calls_from(CallOwner::Definition(facts.definition())) {
+        for site in self.analysis.graph().calls_from(CallOwner::Definition(facts.definition())) {
             let Some(DefinitionRef::Template(_)) = site.resolved() else { continue };
-            let call = match self.graph().reachable_call(site.id(), facts) {
+            let call = match self.analysis.graph().reachable_call(site.id(), facts) {
                 CallReachability::Reachable(call) => call,
                 CallReachability::Unreachable => continue,
                 CallReachability::Unavailable(_) => return Err(SummaryBlocker::UnsupportedContext),
@@ -381,7 +382,7 @@ impl ProjectAnalysis<'_> {
             if calls.len() >= MAX_CONSTRUCTORS {
                 return Err(SummaryBlocker::ContextBudget);
             }
-            let child = self.contexts().call_evidence(&call, facts, evidence)?;
+            let child = self.analysis.contexts().call_evidence(&call, facts, evidence)?;
             self.check_leaf_constructor(&child)?;
             calls.insert(site.expression.ok_or(SummaryBlocker::ForeignCall)?);
         }
@@ -392,22 +393,22 @@ impl ProjectAnalysis<'_> {
         let DefinitionRef::Template(id) = evidence.context().definition() else {
             return Err(SummaryBlocker::WrongContext);
         };
-        let template = self.hir().template(id).ok_or(SummaryBlocker::ForeignDefinition)?;
+        let template = self.analysis.hir().template(id).ok_or(SummaryBlocker::ForeignDefinition)?;
         for port in &template.ports {
-            let port = self.hir().port(*port).ok_or(SummaryBlocker::ForeignDefinition)?;
+            let port = self.analysis.hir().port(*port).ok_or(SummaryBlocker::ForeignDefinition)?;
             if port.direction == Some(PortDirection::Input) {
                 return Err(SummaryBlocker::MissingInputBinding);
             }
         }
-        let cfg = build_cfg(self.hir(), evidence.context().definition()).map_err(|error| {
-            SummaryBlocker::LocalAnalysis(format!("leaf constructor analysis: {error:?}"))
-        })?;
-        let facts =
-            self.contexts().analyze_for_evidence(&cfg, evidence, None).map_err(|error| {
+        let cfg =
+            build_cfg(self.analysis.hir(), evidence.context().definition()).map_err(|error| {
                 SummaryBlocker::LocalAnalysis(format!("leaf constructor analysis: {error:?}"))
             })?;
+        let facts = self.analysis.contexts().analyze_for_evidence(&cfg, evidence, None).map_err(
+            |error| SummaryBlocker::LocalAnalysis(format!("leaf constructor analysis: {error:?}")),
+        )?;
         self.check_warning_execution_scope(&facts, evidence)?;
-        self.sources().validated_definition(&facts)?;
+        self.analysis.sources().validated_definition(&facts)?;
         if certified(&facts.reachable_node(facts.cfg().exit()))? != &true {
             return Err(SummaryBlocker::UnsupportedContext);
         }
@@ -415,5 +416,68 @@ impl ProjectAnalysis<'_> {
         certified(&facts.generated_constraints_valid())?;
         certified(&facts.no_possible_repeated_body_writes())?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use parser::frontend::{parse_source, LoadedProject, SourceFile, SourceId, Version, VersionPolicy};
+    use parser::hir::lift_project;
+    use program_structure::utils::constants::Curve;
+
+    use crate::hir_cfg::build_cfg;
+    use crate::interprocedural::{CallOwner, CallReachability, ProjectAnalysis};
+
+    #[test]
+    fn temporary_execution_views_retain_owned_completion_evidence() {
+        let source = concat!(
+            "template Child(){signal output out;out<==1;}",
+            "template Parent(){component c=Child();signal output y;y<==c.out;}"
+        );
+        let policy = VersionPolicy::new(Version::new(2, 2, 3));
+        let id = SourceId::new(0);
+        let project = lift_project(&LoadedProject {
+            policy,
+            files: vec![SourceFile {
+                id,
+                path: "completion-views.circom".into(),
+                text: source.into(),
+                outcome: parse_source(id, source, policy),
+            }],
+            diagnostics: Vec::new(),
+        });
+        assert!(project.syntax_diagnostics.is_empty());
+        let analysis = ProjectAnalysis::build(&project, Curve::Bn254).unwrap();
+        let definition = project.hir.definition("Parent").unwrap();
+        let evidence = analysis.contexts().symbolic_root(definition).unwrap();
+        let cfg = build_cfg(&project.hir, definition).unwrap();
+        let facts = analysis.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
+        let site = analysis.graph().calls_from(CallOwner::Definition(definition))[0];
+        let CallReachability::Reachable(call) = analysis.graph().reachable_call(site.id(), &facts)
+        else {
+            panic!("child call")
+        };
+        let instance = analysis.components().enumerate_call(&facts, &evidence, &call, 4).unwrap();
+        let completed = analysis
+            .components()
+            .with_component_port_facts(&instance.callee, |child| {
+                analysis.execution().completed_project_template(child, &instance.callee, &[])
+            })
+            .unwrap();
+        assert_eq!(completed.evidence, instance.callee);
+        assert!(completed.contains_checked_definition(instance.callee.context().definition()));
+        let child = {
+            let queries = analysis.execution();
+            queries.completed_project_child(&facts, &evidence, &instance, completed).unwrap()
+        };
+        assert_eq!(child.caller, evidence);
+        assert_eq!(child.site, instance.site);
+        assert_eq!(child.indices, instance.indices);
+        assert_eq!(child.outputs.len(), 1);
+        let completed =
+            analysis.execution().completed_project_template(&facts, &evidence, &[child]).unwrap();
+        assert!(completed.matches(&facts));
+        assert!(completed.contains_checked_definition(definition));
+        assert!(completed.contains_checked_definition(instance.callee.context().definition()));
     }
 }

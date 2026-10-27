@@ -31,7 +31,7 @@ impl ProjectAnalysis<'_> {
         evidence: &ContextEvidence,
         path: &AccessPath,
     ) -> Result<Incidence, SummaryBlocker> {
-        self.check_template_incidence_scope(facts, evidence)?;
+        self.execution().check_template_incidence_scope(facts, evidence)?;
         self.check_internal_signal(path)?;
         certified(&facts.exact_access_key(path))?;
         Ok(*certified(&facts.incidence(path))?)
@@ -62,7 +62,7 @@ impl ProjectAnalysis<'_> {
         let DefinitionRef::Template(_) = facts.definition() else {
             return Err(SummaryBlocker::WrongContext);
         };
-        self.check_warning_execution_scope(facts, evidence)?;
+        self.execution().check_warning_execution_scope(facts, evidence)?;
         self.sources().validated_definition(facts)?;
         match evidence.origin() {
             ContextOrigin::SymbolicRoot | ContextOrigin::Main(_) => {}

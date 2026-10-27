@@ -101,8 +101,8 @@ impl ProjectAnalysis<'_> {
     ) -> Result<CompletedTemplate, SummaryBlocker> {
         self.contexts().check_facts_for_evidence(facts, evidence)?;
         self.sources().validated_definition(facts)?;
-        self.check_warning_execution_scope(facts, evidence)?;
-        self.check_complete_template_execution(facts.cfg(), facts)?;
+        self.execution().check_warning_execution_scope(facts, evidence)?;
+        self.execution().check_complete_template_execution(facts.cfg(), facts)?;
         self.check_parent_components_complete(facts)?;
         let mut children = Vec::new();
         self.components().visit_component_calls(facts, evidence, |call| {
@@ -113,7 +113,7 @@ impl ProjectAnalysis<'_> {
             children.push(self.visit_instance(facts, evidence, &instance, closure)?);
             Ok(())
         })?;
-        self.completed_project_template(facts, evidence, &children)
+        self.execution().completed_project_template(facts, evidence, &children)
     }
 
     fn visit_instance(
@@ -135,7 +135,7 @@ impl ProjectAnalysis<'_> {
         ));
         let result = self.visit_instance_body(facts, instance, child, closure);
         closure.path.pop();
-        self.completed_project_child(facts, caller, instance, result?)
+        self.execution().completed_project_child(facts, caller, instance, result?)
     }
 
     fn visit_instance_body(

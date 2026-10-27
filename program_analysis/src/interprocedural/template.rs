@@ -152,6 +152,7 @@ impl TemplateQueries<'_, '_> {
         }
         let result = self
             .analysis
+            .execution()
             .check_template_incidence_scope(facts, evidence)
             .and_then(|()| port_summary(facts, evidence.context(), port, indices));
         SummaryFact::from_result(result)
@@ -288,7 +289,7 @@ impl TemplateQueries<'_, '_> {
                 return Err(failure.summary_blocker());
             }
 
-            if self.analysis.definition_definitely_fails(facts)? {
+            if self.analysis.execution().definition_definitely_fails(facts)? {
                 return Err(SummaryBlocker::UnsupportedContext);
             }
             work(template, cfg, facts)

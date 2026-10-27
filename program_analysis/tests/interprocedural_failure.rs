@@ -173,3 +173,25 @@ fn only_required_ternary_arms_propagate_execution_failure() {
         assert_output_availability(&source, available);
     }
 }
+
+#[test]
+fn temporary_execution_views_preserve_owned_scope_results() {
+    for (statement, expected) in
+        [("", Ok(())), ("assert(0);", Err(SummaryBlocker::UnsupportedContext))]
+    {
+        let lifted = fixture(&format!("template T(){{{statement}signal output out;out<==1;}}"));
+        let analysis = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
+        let definition = lifted.hir.definition("T").unwrap();
+        let evidence = analysis.contexts().symbolic_root(definition).unwrap();
+        let cfg =
+            circomspect_program_analysis::hir_cfg::build_cfg(&lifted.hir, definition).unwrap();
+        let facts = analysis.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
+        let first = analysis.execution().check_warning_execution_scope(&facts, &evidence);
+        let second = {
+            let queries = analysis.execution();
+            queries.check_warning_execution_scope(&facts, &evidence)
+        };
+        assert_eq!(first, expected);
+        assert_eq!(second, expected);
+    }
+}

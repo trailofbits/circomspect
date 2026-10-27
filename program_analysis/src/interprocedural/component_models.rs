@@ -195,16 +195,24 @@ impl ProjectAnalysis<'_> {
         }
         self.check_model_main_root(facts, applied.caller_evidence())?;
         self.sources().validated_definition(facts)?;
-        self.check_warning_execution_scope(facts, applied.caller_evidence())?;
+        self.execution().check_warning_execution_scope(facts, applied.caller_evidence())?;
         self.check_parent_components_complete(facts)?;
         self.single_model_call(facts, applied)?;
         self.components().with_component_port_facts(applied.callee_evidence(), |child| {
             let instance = self.model_source_instance(facts, child, applied, budget)?;
-            let completed = self.completed_project_template(child, &instance.callee, &[])?;
-            let (completed, ready) =
-                self.completed_model_child(facts, applied.caller_evidence(), &instance, completed)?;
-            let constructors =
-                self.completed_constructor_reads(facts, applied.caller_evidence(), &[completed])?;
+            let completed =
+                self.execution().completed_project_template(child, &instance.callee, &[])?;
+            let (completed, ready) = self.execution().completed_model_child(
+                facts,
+                applied.caller_evidence(),
+                &instance,
+                completed,
+            )?;
+            let constructors = self.execution().completed_constructor_reads(
+                facts,
+                applied.caller_evidence(),
+                &[completed],
+            )?;
             certified(&facts.body_signal_reads_ready_with(&constructors))?;
             certified(&facts.no_possible_repeated_body_writes())?;
             let relation = match requested {

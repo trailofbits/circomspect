@@ -18,7 +18,12 @@ use crate::interprocedural::{
 };
 use crate::interprocedural::summary::certified;
 
-impl ProjectAnalysis<'_> {
+/// Execution failure checks and constructor completion queries for one session.
+pub struct ExecutionQueries<'session, 'hir> {
+    pub(super) analysis: &'session ProjectAnalysis<'hir>,
+}
+
+impl ExecutionQueries<'_, '_> {
     /// Reject a bound definition scope with invalid source or a known failure path.
     ///
     /// Unknown-type regions may remain. Passing this check does not prove
@@ -34,7 +39,7 @@ impl ProjectAnalysis<'_> {
         evidence: &ContextEvidence,
     ) -> Result<(), SummaryBlocker> {
         self.check_call_execution_scope(facts, evidence)?;
-        if self.sources().definition_has_hard_source_issue(facts.definition())? {
+        if self.analysis.sources().definition_has_hard_source_issue(facts.definition())? {
             return Err(SummaryBlocker::IncompleteDefinition);
         }
         Ok(())
@@ -46,12 +51,13 @@ impl ProjectAnalysis<'_> {
         facts: &AnalysisFacts<'_>,
         evidence: &ContextEvidence,
     ) -> Result<(), SummaryBlocker> {
-        self.contexts().check_facts_for_evidence(facts, evidence)?;
-        self.sources().validated_header(facts.definition())?;
+        self.analysis.contexts().check_facts_for_evidence(facts, evidence)?;
+        self.analysis.sources().validated_header(facts.definition())?;
         match facts.definition() {
             DefinitionRef::Function(_) => {}
             DefinitionRef::Template(id) => {
-                let template = self.hir().template(id).ok_or(SummaryBlocker::ForeignDefinition)?;
+                let template =
+                    self.analysis.hir().template(id).ok_or(SummaryBlocker::ForeignDefinition)?;
                 if template.custom || template.external {
                     return Err(SummaryBlocker::ExternalSummary);
                 }
@@ -66,7 +72,7 @@ impl ProjectAnalysis<'_> {
 }
 
 // Proven failures invalidate independent certificates; uncertainty alone does not.
-impl ProjectAnalysis<'_> {
+impl ExecutionQueries<'_, '_> {
     pub(super) fn definition_definitely_fails(
         &self,
         facts: &AnalysisFacts<'_>,
@@ -93,9 +99,11 @@ impl ProjectAnalysis<'_> {
         pending: &mut Vec<BusId>,
     ) -> Result<bool, SummaryBlocker> {
         let definition = DefinitionRef::Bus(id);
-        let Ok(cfg) = build_cfg(self.hir(), definition) else { return Ok(false) };
-        let Ok(evidence) = self.contexts().symbolic_root(definition) else { return Ok(false) };
-        let Ok(facts) = self.contexts().analyze_for_evidence(&cfg, &evidence, None) else {
+        let Ok(cfg) = build_cfg(self.analysis.hir(), definition) else { return Ok(false) };
+        let Ok(evidence) = self.analysis.contexts().symbolic_root(definition) else {
+            return Ok(false);
+        };
+        let Ok(facts) = self.analysis.contexts().analyze_for_evidence(&cfg, &evidence, None) else {
             return Ok(false);
         };
         Ok(self.has_proven_failure(&facts, pending) || self.required_functions_fail(&facts)?)
@@ -153,7 +161,7 @@ impl ProjectAnalysis<'_> {
     }
 
     fn expression_definitely_fails(&self, expression: ExprId, facts: &AnalysisFacts<'_>) -> bool {
-        let Some(expression) = self.hir().expression(expression) else { return false };
+        let Some(expression) = self.analysis.hir().expression(expression) else { return false };
         if let ExprKind::Access(path) = &expression.kind {
             return facts
                 .checked_access_bounds(path)
@@ -184,10 +192,11 @@ impl ProjectAnalysis<'_> {
                 return Err(SummaryBlocker::ContextBudget);
             }
             let DefinitionRef::Function(id) = context.definition() else { continue };
-            let failure = self.functions().with_local_function(id, &context, |_, _, facts| {
-                self.collect_required_functions(facts, &mut pending);
-                Ok(self.required_local_failure(facts))
-            });
+            let failure =
+                self.analysis.functions().with_local_function(id, &context, |_, _, facts| {
+                    self.collect_required_functions(facts, &mut pending);
+                    Ok(self.required_local_failure(facts))
+                });
             // Unavailable function facts cannot prove failure or invalidate independent facts.
             if failure == Ok(true) {
                 return Ok(true);
@@ -220,7 +229,7 @@ impl ProjectAnalysis<'_> {
         pending: &mut Vec<CallContext>,
     ) {
         let owner = CallOwner::Definition(facts.definition());
-        for site in self.graph().calls_from(owner) {
+        for site in self.analysis.graph().calls_from(owner) {
             if let Some(context) = self.required_function_context(site, facts) {
                 pending.push(context);
             }
@@ -257,7 +266,7 @@ impl ProjectAnalysis<'_> {
         facts: &AnalysisFacts<'_>,
     ) -> Option<CallContext> {
         let Some(ExprKind::Call { target: CallTarget::Function(function), arguments }) =
-            self.hir().expression(expression).map(|expression| &expression.kind)
+            self.analysis.hir().expression(expression).map(|expression| &expression.kind)
         else {
             return None;
         };
@@ -267,8 +276,8 @@ impl ProjectAnalysis<'_> {
         }
         // A call is evaluated before its still-untyped assignment consumes the return value.
         // This proves only required evaluation, not a valid assignment or usable call result.
-        let arguments = self.contexts().exact_call_arguments(arguments, facts).ok()?;
-        self.contexts().context_for(definition, arguments).ok()
+        let arguments = self.analysis.contexts().exact_call_arguments(arguments, facts).ok()?;
+        self.analysis.contexts().context_for(definition, arguments).ok()
     }
 
     fn proven_zero(expression: ExprId, facts: &AnalysisFacts<'_>) -> bool {
@@ -278,9 +287,9 @@ impl ProjectAnalysis<'_> {
     }
 
     fn collect_bus(&self, symbol: SymbolId, buses: &mut Vec<BusId>) {
-        let Some(symbol) = self.hir().symbol(symbol) else { return };
+        let Some(symbol) = self.analysis.hir().symbol(symbol) else { return };
         let Some(BusTarget::Bus(id)) = &symbol.bus_type else { return };
-        let Some(bus) = self.hir().bus(*id) else { return };
+        let Some(bus) = self.analysis.hir().bus(*id) else { return };
         if bus.parameters.is_empty() && symbol.bus_arguments.is_empty() {
             buses.push(*id);
         }
@@ -292,7 +301,7 @@ fn required_node(facts: &AnalysisFacts<'_>, node: NodeId) -> bool {
 }
 
 // Complete return evidence requires every reachable function operation to be supported.
-impl ProjectAnalysis<'_> {
+impl ExecutionQueries<'_, '_> {
     pub(super) fn may_fail_before_return(
         &self,
         id: FunctionId,
@@ -300,7 +309,7 @@ impl ProjectAnalysis<'_> {
         facts: &AnalysisFacts<'_>,
     ) -> bool {
         let owner = CallOwner::Definition(DefinitionRef::Function(id));
-        for site in self.graph().calls_from(owner) {
+        for site in self.analysis.graph().calls_from(owner) {
             if let Some(DefinitionRef::Function(_)) = site.resolved() {
                 continue;
             }
@@ -309,7 +318,7 @@ impl ProjectAnalysis<'_> {
                 return true;
             }
         }
-        let field = FieldContext::for_curve(self.curve().clone());
+        let field = FieldContext::for_curve(self.analysis.curve().clone());
         for id in cfg.nodes() {
             let Some(node) = cfg.node(*id) else { return true };
             match facts.reachable_node(*id).certified() {
@@ -370,7 +379,7 @@ impl ProjectAnalysis<'_> {
         facts: &AnalysisFacts<'_>,
         field: &FieldContext,
     ) -> bool {
-        let Some(expression) = self.hir().expression(id) else { return true };
+        let Some(expression) = self.analysis.hir().expression(id) else { return true };
         match &expression.kind {
             ExprKind::Call { target: CallTarget::Function(_), .. }
             | ExprKind::Number(_)
@@ -410,13 +419,13 @@ impl ProjectAnalysis<'_> {
 }
 
 // Negative project-use claims require supported complete template execution.
-impl ProjectAnalysis<'_> {
+impl ExecutionQueries<'_, '_> {
     pub(super) fn check_complete_template_execution(
         &self,
         cfg: &DefinitionCfg,
         facts: &AnalysisFacts<'_>,
     ) -> Result<(), SummaryBlocker> {
-        let field = FieldContext::for_curve(self.curve().clone());
+        let field = FieldContext::for_curve(self.analysis.curve().clone());
         for id in cfg.nodes() {
             let node = cfg.node(*id).ok_or(SummaryBlocker::ExternalSummary)?;
             if !*certified(&facts.reachable_node(*id))? {
@@ -480,7 +489,7 @@ impl ProjectAnalysis<'_> {
     }
 
     pub(super) fn declaration_may_fail(&self, id: SymbolId, facts: &AnalysisFacts<'_>) -> bool {
-        let Some(symbol) = self.hir().symbol(id) else { return true };
+        let Some(symbol) = self.analysis.hir().symbol(id) else { return true };
         if facts.checked_symbol_dimensions(id).is_err() {
             return true;
         }
@@ -492,17 +501,17 @@ impl ProjectAnalysis<'_> {
 
     fn bus_schema_may_fail(&self, symbol: &Symbol) -> bool {
         let Some(BusTarget::Bus(id)) = &symbol.bus_type else { return true };
-        let Some(bus) = self.hir().bus(*id) else { return true };
+        let Some(bus) = self.analysis.hir().bus(*id) else { return true };
         if !bus.parameters.is_empty() || !symbol.bus_arguments.is_empty() {
             return true;
         }
         let definition = DefinitionRef::Bus(*id);
-        let Ok(cfg) = build_cfg(self.hir(), definition) else { return true };
-        let Ok(evidence) = self.contexts().symbolic_root(definition) else { return true };
-        let Ok(facts) = self.contexts().analyze_for_evidence(&cfg, &evidence, None) else {
+        let Ok(cfg) = build_cfg(self.analysis.hir(), definition) else { return true };
+        let Ok(evidence) = self.analysis.contexts().symbolic_root(definition) else { return true };
+        let Ok(facts) = self.analysis.contexts().analyze_for_evidence(&cfg, &evidence, None) else {
             return true;
         };
-        let field = FieldContext::for_curve(self.curve().clone());
+        let field = FieldContext::for_curve(self.analysis.curve().clone());
         for id in cfg.nodes() {
             let Some(node) = cfg.node(*id) else { return true };
             if facts.reachable_node(*id).certified() != Some(&true) {
@@ -516,7 +525,7 @@ impl ProjectAnalysis<'_> {
                     }
                 }
                 CfgNodeKind::Declaration { symbol } => {
-                    let Some(field) = self.hir().symbol(symbol) else { return true };
+                    let Some(field) = self.analysis.hir().symbol(symbol) else { return true };
                     if field.kind == SymbolKind::Bus
                         || facts.checked_symbol_dimensions(symbol).is_err()
                     {
@@ -550,7 +559,7 @@ impl ProjectAnalysis<'_> {
         facts: &AnalysisFacts<'_>,
         field: &FieldContext,
     ) -> bool {
-        let Some(expression) = self.hir().expression(id) else { return true };
+        let Some(expression) = self.analysis.hir().expression(id) else { return true };
         if let ExprKind::Call { target: CallTarget::Template(_), .. } = &expression.kind {
             return !cfg.nodes().iter().any(|node| {
                 if let Some(CfgNodeKind::Instantiate { value, .. }) =
