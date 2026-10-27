@@ -26,7 +26,7 @@ const SOURCE: &str = concat!(
 #[derive(Clone, Copy)]
 enum Expected {
     RangeViolation,
-    NoViolation,
+    NoCertificate,
 }
 
 fn check(source: &str, expected: Expected) -> ExampleResult {
@@ -95,7 +95,7 @@ fn check(source: &str, expected: Expected) -> ExampleResult {
             let sources = SourceMap::from_loaded(&loaded, &[loaded.files[0].id])?;
             assert_eq!(findings[0].to_report(&sources)?.id(), "CS0014");
         }
-        Expected::NoViolation => {
+        Expected::NoCertificate => {
             // This query certifies an empty result. It does not prove safe inputs, uniqueness,
             // or unsatisfiability.
             assert_eq!(violations.as_slice(), []);
@@ -107,7 +107,7 @@ fn check(source: &str, expected: Expected) -> ExampleResult {
 
 fn main() -> ExampleResult {
     check(SOURCE, Expected::RangeViolation)?;
-    check(&SOURCE.replace("y<==c.y;", "y<==c.y;y===1;"), Expected::NoViolation)
+    check(&SOURCE.replace("y<==c.y;", "y<==c.y;y===1;"), Expected::NoCertificate)
 }
 
 #[test]
