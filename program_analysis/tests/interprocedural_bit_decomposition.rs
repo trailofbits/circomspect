@@ -7,6 +7,10 @@
     clippy::panic_in_result_fn,
     clippy::unwrap_used
 )]
+#[path = "support/access_paths.rs"]
+mod access_paths;
+
+use crate::access_paths::path;
 use std::fs;
 
 use circomspect_program_analysis::hir_cfg::build_cfg;
@@ -15,7 +19,7 @@ use circomspect_program_analysis::interprocedural::{
     CallOwner, CallReachability, ProjectAnalysis, SummaryFact,
 };
 use circomspect_program_analysis::rules::RuleContext;
-use parser::hir::{lift_project, AccessPath, AccessStep, ArrayIndex, HirProject, LiftedProject};
+use parser::hir::{lift_project, LiftedProject};
 use parser::frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
 
@@ -37,25 +41,6 @@ fn fixture(source: &str) -> LiftedProject {
     let lifted = lift_project(&loaded);
     assert!(lifted.syntax_diagnostics.is_empty(), "{:?}", lifted.syntax_diagnostics);
     lifted
-}
-
-fn path(hir: &HirProject, name: &str, index: Option<usize>) -> AccessPath {
-    let symbol = hir.symbols().iter().find(|symbol| symbol.name == name).unwrap();
-    let mut steps = Vec::new();
-    if let Some(index) = index {
-        steps.push(AccessStep::Index {
-            index: ArrayIndex::Constant(index.to_string()),
-            span: symbol.span,
-        });
-    }
-    AccessPath {
-        root: symbol.id,
-        terminal: symbol.id,
-        steps,
-        component_input: false,
-        component_output: false,
-        span: symbol.span,
-    }
 }
 
 fn query(extra: &str, budget: Option<usize>) -> SummaryFact<Option<BitDecomposition>> {
