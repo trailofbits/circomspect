@@ -16,7 +16,7 @@ use crate::interprocedural::output_enumeration::{
 };
 use crate::interprocedural::summary::certified;
 use crate::interprocedural::{
-    CallReachability, ContextEvidence, ProjectAnalysis, SummaryBlocker, ValidatedComponentPorts,
+    CallReachability, ContextEvidence, ComponentQueries, SummaryBlocker, ValidatedComponentPorts,
 };
 
 pub(in crate::interprocedural) struct PortAlias {
@@ -90,7 +90,7 @@ impl ReadyGeneratedInputs {
     }
 }
 
-impl ProjectAnalysis<'_> {
+impl ComponentQueries<'_, '_> {
     pub(in crate::interprocedural) fn ready_generated_instance(
         &self,
         facts: &AnalysisFacts<'_>,
@@ -126,16 +126,17 @@ impl ProjectAnalysis<'_> {
     ) -> Result<ContextEvidence, SummaryBlocker> {
         let first = instance.outputs.first().ok_or(SummaryBlocker::UnsupportedContext)?;
         let caller = first.applied_port().caller_evidence();
-        self.contexts().check_facts_for_evidence(facts, caller)?;
-        self.contexts().check_facts_for_evidence(child, &instance.callee)?;
+        self.analysis.contexts().check_facts_for_evidence(facts, caller)?;
+        self.analysis.contexts().check_facts_for_evidence(child, &instance.callee)?;
         if certified(&facts.reachable_node(facts.cfg().exit()))? != &true {
             return Err(SummaryBlocker::UnsupportedContext);
         }
-        let CallReachability::Reachable(call) = self.graph().reachable_call(instance.site, facts)
+        let CallReachability::Reachable(call) =
+            self.analysis.graph().reachable_call(instance.site, facts)
         else {
             return Err(SummaryBlocker::ForeignCall);
         };
-        let context = CheckedCallContext::new(self, facts, caller, &call)?;
+        let context = CheckedCallContext::new(self.analysis, facts, caller, &call)?;
         if context.callee() != &instance.callee {
             return Err(SummaryBlocker::WrongContext);
         }
@@ -174,13 +175,13 @@ impl ProjectAnalysis<'_> {
         let DefinitionRef::Template(id) = child.definition() else {
             return Err(SummaryBlocker::WrongInstance);
         };
-        let template = self.hir().template(id).ok_or(SummaryBlocker::ForeignDefinition)?;
+        let template = self.analysis.hir().template(id).ok_or(SummaryBlocker::ForeignDefinition)?;
         let mut inputs = BTreeMap::new();
         for id in &template.ports {
             if !budget.reserve_control_step() {
                 return Err(SummaryBlocker::ContextBudget);
             }
-            let port = self.hir().port(*id).ok_or(SummaryBlocker::ForeignDefinition)?;
+            let port = self.analysis.hir().port(*id).ok_or(SummaryBlocker::ForeignDefinition)?;
             if port.direction != Some(PortDirection::Input) {
                 continue;
             }

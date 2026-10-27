@@ -337,7 +337,7 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
     /// unavailable, so a rule cannot treat a partial list as complete.
     #[must_use]
     pub fn exact_component_outputs(&self) -> SummaryFact<Vec<EnumeratedComponentOutput>> {
-        self.summaries.exact_component_outputs(self.facts, self.evidence)
+        self.summaries.components().exact_component_outputs(self.facts, self.evidence)
     }
 
     /// Prove that an exact exported output of the active main is read by its environment.

@@ -12,7 +12,7 @@ use crate::interprocedural::component::binding::CheckedComponentCall;
 
 use crate::interprocedural::{
     AppliedComponentPort, CallBlocker, CallOwner, CallReachability, CallSiteId, ContextEvidence,
-    ProjectAnalysis, ReachableCall, SummaryBlocker, SummaryFact,
+    ComponentQueries, ReachableCall, SummaryBlocker, SummaryFact,
 };
 
 const MAX_OUTPUT_HANDLES: usize = 256;
@@ -73,7 +73,7 @@ impl Enumeration {
     }
 }
 
-impl ProjectAnalysis<'_> {
+impl ComponentQueries<'_, '_> {
     /// Enumerate all checked direct-child output paths in this exact source scope.
     ///
     /// A certificate means every reachable template call, instance index, and
@@ -112,10 +112,10 @@ impl ProjectAnalysis<'_> {
         caller: &ContextEvidence,
         mut visit: impl FnMut(&ReachableCall<'_>) -> Result<(), SummaryBlocker>,
     ) -> Result<(), SummaryBlocker> {
-        self.contexts().check_facts_for_evidence(facts, caller)?;
-        self.sources().validated_definition(facts)?;
+        self.analysis.contexts().check_facts_for_evidence(facts, caller)?;
+        self.analysis.sources().validated_definition(facts)?;
         let owner = CallOwner::Definition(facts.definition());
-        for site in self.graph().calls_from(owner) {
+        for site in self.analysis.graph().calls_from(owner) {
             let Some(expression) = site.expression else {
                 return Err(SummaryBlocker::UnsupportedCallForm);
             };
@@ -125,7 +125,7 @@ impl ProjectAnalysis<'_> {
             if let Some(DefinitionRef::Function(_) | DefinitionRef::Bus(_)) = site.resolved() {
                 continue;
             }
-            let call = self.graph().reachable_call(site.id(), facts);
+            let call = self.analysis.graph().reachable_call(site.id(), facts);
             match call {
                 CallReachability::Reachable(call) => visit(&call)?,
                 CallReachability::Unreachable => {}
@@ -142,7 +142,7 @@ impl ProjectAnalysis<'_> {
         call: &ReachableCall<'_>,
         limit: usize,
     ) -> Result<EnumeratedComponentInstance, SummaryBlocker> {
-        let checked = CheckedComponentCall::for_enumeration(self, facts, caller, call)?;
+        let checked = CheckedComponentCall::for_enumeration(self.analysis, facts, caller, call)?;
         let DefinitionRef::Template(child) = call.callee() else {
             return Err(SummaryBlocker::UnsupportedCallForm);
         };
@@ -190,6 +190,7 @@ impl ProjectAnalysis<'_> {
                 Some(true) => {}
             }
             let found = self
+                .analysis
                 .hir()
                 .components()
                 .iter()
@@ -207,10 +208,11 @@ impl ProjectAnalysis<'_> {
         child: parser::hir::TemplateId,
         facts: &AnalysisFacts<'_>,
     ) -> Result<Vec<(PortId, Vec<usize>)>, SummaryBlocker> {
-        let template = self.hir().template(child).ok_or(SummaryBlocker::ForeignDefinition)?;
+        let template =
+            self.analysis.hir().template(child).ok_or(SummaryBlocker::ForeignDefinition)?;
         let mut ports = Vec::new();
         for id in &template.ports {
-            let port = self.hir().port(*id).ok_or(SummaryBlocker::ForeignDefinition)?;
+            let port = self.analysis.hir().port(*id).ok_or(SummaryBlocker::ForeignDefinition)?;
             if port.direction != Some(PortDirection::Output) {
                 continue;
             }

@@ -160,7 +160,7 @@ fn checked_port_mapping_keeps_identical_template_instances_separate() {
         else {
             panic!("child call")
         };
-        instances.push(provider.enumerate_call(&facts, &caller, &call, 1).unwrap());
+        instances.push(provider.components().enumerate_call(&facts, &caller, &call, 1).unwrap());
     }
     let first = &instances[0];
     let cfg = build_cfg(&project.hir, first.callee.context().definition()).unwrap();

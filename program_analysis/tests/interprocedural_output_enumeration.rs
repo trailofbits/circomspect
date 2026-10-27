@@ -156,7 +156,7 @@ fn unbound_child_input_enumerates_a_candidate_but_cannot_prove_project_unused() 
     let root = provider.contexts().main_evidence(&main).unwrap();
     let cfg = build_cfg(provider.hir(), parent).unwrap();
     let facts = provider.contexts().analyze_for_evidence(&cfg, &root, None).unwrap();
-    let outputs = provider.exact_component_outputs(&facts, &root);
+    let outputs = provider.components().exact_component_outputs(&facts, &root);
     let outputs = outputs.certified().unwrap();
     assert_eq!(outputs.len(), 1);
     let use_fact = provider.closed_project_output_uses(&facts, &root);
@@ -192,7 +192,7 @@ fn enumerated_outputs_retain_closed_project_use_provenance() {
     let root = provider.contexts().main_evidence(&main).unwrap();
     let cfg = build_cfg(provider.hir(), parent).unwrap();
     let facts = provider.contexts().analyze_for_evidence(&cfg, &root, None).unwrap();
-    let result = provider.exact_component_outputs(&facts, &root);
+    let result = provider.components().exact_component_outputs(&facts, &root);
     let outputs = result.certified().unwrap();
     let project_uses = provider.closed_project_output_uses(&facts, &root);
     let project_uses = project_uses.certified().unwrap();
@@ -229,4 +229,47 @@ fn late_invalid_output_dimensions_precede_selected_instance_conflicts() {
         result.unavailable(),
         Some(&std::collections::BTreeSet::from([SummaryBlocker::UnsupportedContext,]))
     );
+}
+
+#[test]
+fn temporary_component_views_preserve_owned_output_enumeration() {
+    let source = concat!(
+        "template Child(){signal output out[2];out[0]<==1;out[1]<==2;}",
+        "template Parent(){component c[2];c[0]=Child();c[1]=Child();}",
+        "component main=Parent();"
+    );
+    let lifted = fixture(source);
+    let analysis = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
+    let site = analysis.graph().calls_from(CallOwner::Main(0))[0];
+    let CallReachability::Reachable(main) =
+        analysis.graph().reachable_main_call(site.id(), analysis.hir())
+    else {
+        panic!("main must be reachable")
+    };
+    let caller = analysis.contexts().main_evidence(&main).unwrap();
+    let cfg = build_cfg(analysis.hir(), caller.context().definition()).unwrap();
+    let facts = analysis.contexts().analyze_for_evidence(&cfg, &caller, None).unwrap();
+    let first = analysis.components().exact_component_outputs(&facts, &caller);
+    let second = {
+        let queries = analysis.components();
+        queries.exact_component_outputs(&facts, &caller)
+    };
+    assert_eq!(first, second);
+    let outputs = first.certified().unwrap();
+    assert_eq!(outputs.len(), 4);
+    assert_eq!(outputs[0].site(), outputs[1].site());
+    assert_ne!(outputs[0].site(), outputs[2].site());
+    for output in outputs {
+        assert_eq!(output.applied_port().caller_evidence(), &caller);
+    }
+    for left in 0..outputs.len() {
+        for right in left + 1..outputs.len() {
+            assert_ne!(
+                outputs[left].applied_port().handle(),
+                outputs[right].applied_port().handle()
+            );
+        }
+    }
+    assert_eq!(outputs[0].applied_port().port_summary().indices(), &[0]);
+    assert_eq!(outputs[1].applied_port().port_summary().indices(), &[1]);
 }

@@ -105,9 +105,10 @@ impl ProjectAnalysis<'_> {
         self.check_complete_template_execution(facts.cfg(), facts)?;
         self.check_parent_components_complete(facts)?;
         let mut children = Vec::new();
-        self.visit_component_calls(facts, evidence, |call| {
+        self.components().visit_component_calls(facts, evidence, |call| {
             closure.reserve(1)?;
-            let instance = self.enumerate_call(facts, evidence, call, closure.remaining())?;
+            let instance =
+                self.components().enumerate_call(facts, evidence, call, closure.remaining())?;
             closure.reserve(instance.outputs.len())?;
             children.push(self.visit_instance(facts, evidence, &instance, closure)?);
             Ok(())

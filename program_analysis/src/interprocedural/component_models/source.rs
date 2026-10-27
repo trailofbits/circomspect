@@ -22,7 +22,7 @@ impl ProjectAnalysis<'_> {
         applied: &AppliedComponentPort,
     ) -> Result<ReachableCall<'a>, SummaryBlocker> {
         let mut found = None;
-        self.visit_component_calls(facts, applied.caller_evidence(), |call| {
+        self.components().visit_component_calls(facts, applied.caller_evidence(), |call| {
             if found.replace(call.site().id()).is_some() {
                 return Err(SummaryBlocker::UnsupportedContext);
             }

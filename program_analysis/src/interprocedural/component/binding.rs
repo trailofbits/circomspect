@@ -84,7 +84,7 @@ impl<'query, 'project> CheckedCallContext<'query, 'project> {
         check_source: impl FnOnce(ComponentId, &AccessPath, NodeId) -> Result<(), SummaryBlocker>,
     ) -> Result<CheckedComponentCall<'query, 'project>, SummaryBlocker> {
         let (component, target, instantiation) =
-            self.provider.instantiated_component(self.facts, self.expression)?;
+            self.provider.components().instantiated_component(self.facts, self.expression)?;
         check_source(component, &target, instantiation)?;
         let bounds = self
             .facts
@@ -190,7 +190,7 @@ impl<'query, 'project> CheckedComponentCall<'query, 'project> {
             return Err(SummaryBlocker::UnsupportedCallForm);
         };
         let (component, target, instantiation) =
-            provider.instantiated_component(facts, call.site().expression)?;
+            provider.components().instantiated_component(facts, call.site().expression)?;
         let bounds =
             facts.component_bounds(component).map_err(|_| SummaryBlocker::UnsupportedContext)?;
         let indices = exact_instance_indices(facts, &target, &bounds)?;

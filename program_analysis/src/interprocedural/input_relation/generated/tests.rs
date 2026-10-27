@@ -54,14 +54,14 @@ fn inspect(binding: &str, dimension: &str) -> Result<Vec<GeneratedInputEquation>
     else {
         return Err(SummaryBlocker::ForeignCall);
     };
-    let instance = provider.enumerate_call(&facts, &caller, &call, 4)?;
+    let instance = provider.components().enumerate_call(&facts, &caller, &call, 4)?;
     let cfg = build_cfg(&project.hir, call.callee()).unwrap();
     let child = provider
         .contexts()
         .analyze_for_evidence(&cfg, &instance.callee, None)
         .map_err(|_| SummaryBlocker::UnsupportedContext)?;
     let before = facts.no_possible_repeated_body_writes().certified().copied();
-    let ready = provider.ready_generated_instance(
+    let ready = provider.components().ready_generated_instance(
         &facts,
         &child,
         &instance,
@@ -73,6 +73,7 @@ fn inspect(binding: &str, dimension: &str) -> Result<Vec<GeneratedInputEquation>
     assert_eq!(facts.no_possible_repeated_body_writes().certified().copied(), before);
     let other_curve = ProjectAnalysis::build(&project, Curve::Bn254).unwrap();
     assert!(other_curve
+        .components()
         .ready_generated_instance(&facts, &child, &instance, &mut ProofBudget::default())
         .is_err());
     let mut equations = Vec::new();
@@ -119,22 +120,28 @@ fn check_refusals(
         [ProofBudget::limited(512, 4096, 0, 4096), ProofBudget::limited(512, 4096, 512, 0)]
     {
         let mut budget = budget;
-        assert!(provider.ready_generated_instance(facts, child, instance, &mut budget).is_err());
+        assert!(provider
+            .components()
+            .ready_generated_instance(facts, child, instance, &mut budget)
+            .is_err());
     }
     let wrong = provider.contexts().symbolic_root(child.definition()).unwrap();
     let wrong = provider.contexts().analyze_for_evidence(child.cfg(), &wrong, None).unwrap();
     assert!(provider
+        .components()
         .ready_generated_instance(facts, &wrong, instance, &mut ProofBudget::default())
         .is_err());
     let mut other = instance.clone();
     other.indices.push(0);
     assert!(!ready.matches(facts, &other));
     assert!(provider
+        .components()
         .ready_generated_instance(facts, child, &other, &mut ProofBudget::default())
         .is_err());
     let partial =
         provider.contexts().analyze_for_evidence(facts.cfg(), ready.caller(), Some(0)).unwrap();
     assert!(provider
+        .components()
         .ready_generated_instance(&partial, child, instance, &mut ProofBudget::default())
         .is_err());
 }
@@ -248,7 +255,7 @@ fn a_symbolic_input_index_retains_its_expression_blocker() {
     else {
         panic!("child must be reachable");
     };
-    let instance = provider.enumerate_call(&facts, &caller, &call, 4).unwrap();
+    let instance = provider.components().enumerate_call(&facts, &caller, &call, 4).unwrap();
     let cfg = build_cfg(&project.hir, call.callee()).unwrap();
     let child = provider.contexts().analyze_for_evidence(&cfg, &instance.callee, None).unwrap();
     let offset = source.find("values[x]").unwrap() + "values[".len();
@@ -258,8 +265,12 @@ fn a_symbolic_input_index_retains_its_expression_blocker() {
         .iter()
         .find(|expression| expression.span.start() == offset && expression.span.end() == offset + 1)
         .unwrap();
-    let result =
-        provider.ready_generated_instance(&facts, &child, &instance, &mut ProofBudget::default());
+    let result = provider.components().ready_generated_instance(
+        &facts,
+        &child,
+        &instance,
+        &mut ProofBudget::default(),
+    );
     assert_eq!(
         result.err(),
         Some(SummaryBlocker::LocalFacts(BTreeSet::from([FactBlocker::OpaqueExpression(

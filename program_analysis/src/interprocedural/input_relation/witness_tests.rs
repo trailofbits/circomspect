@@ -51,7 +51,7 @@ fn inspect(binding: &str, extra: &str) -> Result<Vec<WitnessInputValue>, Summary
     else {
         return Err(SummaryBlocker::ForeignCall);
     };
-    let instance = provider.enumerate_call(&facts, &caller, &call, 4)?;
+    let instance = provider.components().enumerate_call(&facts, &caller, &call, 4)?;
     let ready = ready_witness_instance(&facts, &caller, &instance)?;
     assert!(ready_enumerated_instance(&facts, &instance).is_err());
     let symbolic = provider.contexts().symbolic_root(definition).unwrap();

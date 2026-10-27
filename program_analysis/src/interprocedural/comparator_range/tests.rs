@@ -48,7 +48,7 @@ fn with_query<T>(
     let evidence = provider.contexts().main_evidence(&call).unwrap();
     let cfg = build_cfg(&project.hir, evidence.context().definition()).unwrap();
     let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
-    let outputs = provider.exact_component_outputs(&facts, &evidence);
+    let outputs = provider.components().exact_component_outputs(&facts, &evidence);
     let applied = outputs.certified().unwrap()[0].applied_port();
     let other = ProjectAnalysis::build(&project, Curve::Bn254).unwrap();
     work(&provider, &other, &facts, applied)

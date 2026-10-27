@@ -1013,11 +1013,12 @@ mod tests {
         else {
             panic!("expected a checked instantiation");
         };
-        let instance = provider.enumerate_call(&facts, &caller, &call, 4).unwrap();
+        let instance = provider.components().enumerate_call(&facts, &caller, &call, 4).unwrap();
         let child_cfg = build_cfg(&lifted.hir, call.callee()).unwrap();
         let child =
             provider.contexts().analyze_for_evidence(&child_cfg, &instance.callee, None).unwrap();
         let ready = provider
+            .components()
             .ready_generated_instance(&facts, &child, &instance, &mut ProofBudget::default())
             .unwrap();
         let equation = ready.bindings().values().next().unwrap().value.clone();

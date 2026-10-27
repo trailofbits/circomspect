@@ -100,11 +100,11 @@ impl ProjectAnalysis<'_> {
         child: &ContextEvidence,
     ) -> Result<EnumeratedComponentInstance, SummaryBlocker> {
         let mut instance = None;
-        self.visit_component_calls(facts, parent, |call| {
+        self.components().visit_component_calls(facts, parent, |call| {
             if instance.is_some() || self.contexts().call_evidence(call, facts, parent)? != *child {
                 return Err(SummaryBlocker::UnsupportedContext);
             }
-            instance = Some(self.enumerate_call(facts, parent, call, 256)?);
+            instance = Some(self.components().enumerate_call(facts, parent, call, 256)?);
             Ok(())
         })?;
         instance.ok_or(SummaryBlocker::WrongInstance)

@@ -97,7 +97,7 @@ fn check_binding(
             })
             .unwrap();
     }
-    let outputs = provider.exact_component_outputs(facts, caller);
+    let outputs = provider.components().exact_component_outputs(facts, caller);
     if repeated {
         assert_eq!(
             outputs.unavailable(),

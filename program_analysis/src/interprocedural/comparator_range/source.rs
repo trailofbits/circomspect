@@ -43,11 +43,11 @@ impl ProjectAnalysis<'_> {
     ) -> Result<EnumeratedComponentInstance, SummaryBlocker> {
         self.check_parent_components_complete(facts)?;
         let mut child = None;
-        self.visit_component_calls(facts, evidence, |call| {
+        self.components().visit_component_calls(facts, evidence, |call| {
             if child.is_some() {
                 return Err(SummaryBlocker::UnsupportedContext);
             }
-            child = Some(self.enumerate_call(facts, evidence, call, 512)?);
+            child = Some(self.components().enumerate_call(facts, evidence, call, 512)?);
             Ok(())
         })?;
         child.ok_or(SummaryBlocker::UnsupportedContext)

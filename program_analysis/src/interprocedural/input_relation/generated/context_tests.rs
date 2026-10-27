@@ -39,7 +39,7 @@ fn with_instance(
     else {
         panic!("first constructor must be reachable")
     };
-    let instance = provider.enumerate_call(&facts, &caller, &call, 4).unwrap();
+    let instance = provider.components().enumerate_call(&facts, &caller, &call, 4).unwrap();
     provider
         .components()
         .with_component_port_facts(&instance.callee.clone(), |child| {
@@ -57,11 +57,11 @@ fn generated_context_requires_an_output_before_checking_child_identity() {
         with_instance(&source, |provider, facts, child, instance| {
             assert!(instance.outputs.is_empty());
             assert_eq!(
-                provider.generated_input_context(facts, child, &instance),
+                provider.components().generated_input_context(facts, child, &instance),
                 Err(SummaryBlocker::UnsupportedContext)
             );
             assert_eq!(
-                provider.generated_input_context(facts, facts, &instance),
+                provider.components().generated_input_context(facts, facts, &instance),
                 Err(SummaryBlocker::UnsupportedContext)
             );
         });
@@ -84,8 +84,10 @@ fn generated_source_identity_precedes_unproved_component_bounds() {
                 panic!("second constructor must be reachable")
             };
             let callee = provider.contexts().call_evidence(&call, facts, &caller).unwrap();
-            let (component, target, instantiation) =
-                provider.instantiated_component(facts, call.site().expression).unwrap();
+            let (component, target, instantiation) = provider
+                .components()
+                .instantiated_component(facts, call.site().expression)
+                .unwrap();
             assert!(facts.component_bounds(component).is_err());
             assert_eq!(facts.reachable_node(instantiation).certified(), Some(&true));
             instance.site = site.id();
@@ -98,12 +100,12 @@ fn generated_source_identity_precedes_unproved_component_bounds() {
                 .with_component_port_facts(&callee, |child| {
                     assert_ne!(instance.target, target);
                     assert_eq!(
-                        provider.generated_input_context(facts, child, &instance),
+                        provider.components().generated_input_context(facts, child, &instance),
                         Err(SummaryBlocker::WrongInstance)
                     );
                     instance.target = target;
                     assert_eq!(
-                        provider.generated_input_context(facts, child, &instance),
+                        provider.components().generated_input_context(facts, child, &instance),
                         Err(SummaryBlocker::UnsupportedContext)
                     );
                     Ok(())
@@ -123,14 +125,14 @@ fn generated_context_rechecks_the_current_analysis_after_success() {
         |provider, facts, child, instance| {
             let caller = instance.outputs[0].applied_port().caller_evidence();
             assert_eq!(
-                provider.generated_input_context(facts, child, &instance),
+                provider.components().generated_input_context(facts, child, &instance),
                 Ok(caller.clone())
             );
             let pending =
                 provider.contexts().analyze_for_evidence(facts.cfg(), caller, Some(0)).unwrap();
             let blockers = pending.reachable_node(pending.cfg().exit()).into_result().unwrap_err();
             assert_eq!(
-                provider.generated_input_context(&pending, child, &instance),
+                provider.components().generated_input_context(&pending, child, &instance),
                 Err(SummaryBlocker::LocalFacts(blockers))
             );
         },

@@ -48,7 +48,7 @@ fn check(source: &str, expected: Expected) -> ExampleResult {
         .contexts()
         .analyze_for_evidence(&cfg, &evidence, None)
         .map_err(|error| format!("local facts: {error:?}"))?;
-    let outputs = analysis.exact_component_outputs(&facts, &evidence);
+    let outputs = analysis.components().exact_component_outputs(&facts, &evidence);
     let outputs = outputs.certified().ok_or("component outputs unavailable")?;
     assert_eq!(outputs.len(), 1);
     let applied = outputs[0].applied_port();

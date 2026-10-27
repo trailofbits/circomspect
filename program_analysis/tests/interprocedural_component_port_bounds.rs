@@ -107,7 +107,7 @@ fn exact_child_parameter_checks_output_port_dimensions() {
         let definition = project.hir.definition("Parent").unwrap();
         let cfg = build_cfg(&project.hir, definition).unwrap();
         let facts = provider.contexts().analyze_for_evidence(&cfg, &main, None).unwrap();
-        let outputs = provider.exact_component_outputs(&facts, &main);
+        let outputs = provider.components().exact_component_outputs(&facts, &main);
         assert_eq!(outputs.certified().map(Vec::len), Some(2), "{dimension}: {outputs:?}");
     }
 }
@@ -165,7 +165,7 @@ fn differing_parameter_instances_keep_contexts_and_port_bounds_separate() {
                 assert_eq!(applied.certified().is_some(), index == site_index, "{applied:?}");
             }
         }
-        let outputs = provider.exact_component_outputs(facts, caller);
+        let outputs = provider.components().exact_component_outputs(facts, caller);
         let outputs = outputs.certified().unwrap_or_else(|| panic!("{outputs:?}"));
         assert_eq!(outputs.len(), 3);
         assert_eq!(outputs[0].applied_port().port_summary().indices(), [0]);
@@ -276,7 +276,7 @@ fn source_instance_bounds_and_child_failures_still_block_enumeration() {
     ] {
         let project = fixture(source);
         with_parent(&project, Curve::Bn254, |provider, facts, caller| {
-            let result = provider.exact_component_outputs(facts, caller);
+            let result = provider.components().exact_component_outputs(facts, caller);
             assert!(result.unavailable().is_some(), "{source}: {result:?}");
         });
     }
@@ -290,7 +290,7 @@ fn parameterized_multidimensional_ports_keep_all_checked_indices() {
         "template Parent(){component c=Child(2);}component main=Parent();"
     ));
     with_parent(&project, Curve::Bn254, |provider, facts, caller| {
-        let outputs = provider.exact_component_outputs(facts, caller);
+        let outputs = provider.components().exact_component_outputs(facts, caller);
         let outputs = outputs.certified().unwrap_or_else(|| panic!("{outputs:?}"));
         let indices: Vec<_> =
             outputs.iter().map(|output| output.applied_port().port_summary().indices()).collect();
@@ -330,7 +330,7 @@ fn same_parameter_instances_stay_distinct_and_late_bad_shapes_withhold_all_outpu
         );
         let project = fixture(&source);
         with_parent(&project, Curve::Bn254, |provider, facts, caller| {
-            let outputs = provider.exact_component_outputs(facts, caller);
+            let outputs = provider.components().exact_component_outputs(facts, caller);
             if complete {
                 let outputs = outputs.certified().unwrap_or_else(|| panic!("{outputs:?}"));
                 assert_eq!(outputs.len(), 2);
@@ -358,7 +358,7 @@ fn component_instantiation_in_a_loop_remains_unavailable() {
         "component main=Parent(2);"
     ));
     with_parent(&project, Curve::Bn254, |provider, facts, caller| {
-        let result = provider.exact_component_outputs(facts, caller);
+        let result = provider.components().exact_component_outputs(facts, caller);
         assert_blocked(
             &result,
             SummaryBlocker::LocalFacts(std::collections::BTreeSet::from([
@@ -400,7 +400,10 @@ fn competing_assignments_keep_selected_instance_refusals_on_every_entry() {
             ] {
                 assert_blocked(&result, blocker.clone());
             }
-            assert_blocked(&provider.exact_component_outputs(facts, caller), blocker.clone());
+            assert_blocked(
+                &provider.components().exact_component_outputs(facts, caller),
+                blocker.clone(),
+            );
         });
     }
 }
