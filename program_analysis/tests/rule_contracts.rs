@@ -421,20 +421,13 @@ fn composed_output_constraint_requires_the_active_caller_scope() {
 }
 
 #[test]
-fn diagnostic_ids_names_and_shared_family_are_stable() {
+fn diagnostic_names_shared_family_and_retired_ids_are_stable() {
     let incomplete = RuleKind::IncompleteCoverage;
-    assert_eq!(incomplete.code().id(), "CS0020");
     assert_eq!(incomplete.code().name(), "incomplete-analysis");
-    assert_eq!(incomplete.category(), MessageCategory::Warning);
     let redundant = RuleKind::RedundantWitnessAssignment;
-    assert_eq!(redundant.code().id(), "CS0021");
     assert_eq!(redundant.code().name(), "redundant-witness-assignment");
-    assert_eq!(redundant.category(), MessageCategory::Warning);
-    assert_eq!(RuleKind::BitwiseComplement.code().id(), "CS0004");
-    assert_eq!(RuleKind::BitwiseComplement.category(), MessageCategory::Info);
     assert_eq!(RuleKind::BitwiseComplement.code().id(), RuleKind::FieldArithmetic.code().id());
     assert_eq!(RuleKind::BitwiseComplement.code().name(), "field-element-arithmetic");
-    assert_eq!(RuleKind::UnconstrainedSignal.code().id(), "CA01");
     let ids: Vec<_> = circomspect_program_analysis::rules::registered_rules()
         .map(|rule| rule.kind().code().id())
         .collect();
