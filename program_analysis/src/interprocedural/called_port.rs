@@ -39,7 +39,7 @@ impl ComponentQueries<'_, '_> {
             self.analysis.contexts().analyze_for_evidence(&cfg, &parent, None).map_err(
                 |error| SummaryBlocker::LocalAnalysis(format!("caller facts: {error:?}")),
             )?;
-        self.analysis.check_model_main_root(&facts, &parent)?;
+        self.analysis.project_uses().check_model_main_root(&facts, &parent)?;
         let instance = self.sole_child_instance(&facts, &parent, evidence)?;
         let ready = ready_witness_instance(&facts, &parent, &instance)?;
         let completed =

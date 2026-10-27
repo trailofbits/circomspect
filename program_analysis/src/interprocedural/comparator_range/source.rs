@@ -41,7 +41,7 @@ impl ComparatorQuery<'_, '_> {
         facts: &AnalysisFacts<'_>,
         evidence: &ContextEvidence,
     ) -> Result<EnumeratedComponentInstance, SummaryBlocker> {
-        self.analysis.check_parent_components_complete(facts)?;
+        self.analysis.project_uses().check_parent_components_complete(facts)?;
         let mut child = None;
         self.analysis.components().visit_component_calls(facts, evidence, |call| {
             if child.is_some() {

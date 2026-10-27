@@ -242,7 +242,7 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
     /// evidence. Positive local reads remain available independently.
     #[must_use]
     pub fn closed_project_output_uses(&self) -> SummaryFact<Vec<ProjectOutputUse>> {
-        self.summaries.closed_project_output_uses(self.facts, self.evidence)
+        self.summaries.project_uses().closed_project_output_uses(self.facts, self.evidence)
     }
 
     /// Prove incidence for an exact internal signal in this validated root template.
@@ -251,13 +251,17 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
         &self,
         path: &parser::hir::AccessPath,
     ) -> SummaryFact<crate::hir_facts::Incidence> {
-        self.summaries.template_internal_signal_incidence(self.facts, self.evidence, path)
+        self.summaries.templates().template_internal_signal_incidence(
+            self.facts,
+            self.evidence,
+            path,
+        )
     }
 
     /// Validate this fact snapshot once for a batch of generated equation queries.
     #[must_use]
     pub fn template_generated_equations(&self) -> GeneratedEquationQueries<'a, 'facts> {
-        self.summaries.template_generated_equations(self.facts, self.evidence)
+        self.summaries.templates().template_generated_equations(self.facts, self.evidence)
     }
 
     /// Request two complete satisfying bit models in a validated leaf root scope.
@@ -362,7 +366,7 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
     /// Inputs, foreign handles, and library roots produce unavailable evidence.
     #[must_use]
     pub fn exported_main_output_use(&self, handle: &AccessHandle) -> SummaryFact<ProjectOutputUse> {
-        self.summaries.exported_main_output_use(self.facts, self.evidence, handle)
+        self.summaries.project_uses().exported_main_output_use(self.facts, self.evidence, handle)
     }
 
     /// Return a summary only for the active function specialization.

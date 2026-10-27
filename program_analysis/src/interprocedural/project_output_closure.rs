@@ -11,7 +11,7 @@ use crate::interprocedural::input_relation::ready_enumerated_instance;
 use crate::interprocedural::output_enumeration::EnumeratedComponentInstance;
 use crate::interprocedural::project_use::{ProjectInstanceStep, ProjectOutputEvidence};
 use crate::interprocedural::{
-    CallContext, ContextEvidence, ProjectOutputStatus, ProjectOutputUse, ProjectAnalysis,
+    CallContext, ContextEvidence, ProjectOutputStatus, ProjectOutputUse, ProjectUseQueries,
     SummaryBlocker, SummaryFact,
 };
 
@@ -52,7 +52,7 @@ impl Closure {
     }
 }
 
-impl ProjectAnalysis<'_> {
+impl ProjectUseQueries<'_, '_> {
     /// Certify all exact component-output uses under one closed instantiated main.
     ///
     /// Every returned negative use is bound to a checked instance chain. Missing
@@ -99,21 +99,25 @@ impl ProjectAnalysis<'_> {
         evidence: &ContextEvidence,
         closure: &mut Closure,
     ) -> Result<CompletedTemplate, SummaryBlocker> {
-        self.contexts().check_facts_for_evidence(facts, evidence)?;
-        self.sources().validated_definition(facts)?;
-        self.execution().check_warning_execution_scope(facts, evidence)?;
-        self.execution().check_complete_template_execution(facts.cfg(), facts)?;
+        self.analysis.contexts().check_facts_for_evidence(facts, evidence)?;
+        self.analysis.sources().validated_definition(facts)?;
+        self.analysis.execution().check_warning_execution_scope(facts, evidence)?;
+        self.analysis.execution().check_complete_template_execution(facts.cfg(), facts)?;
         self.check_parent_components_complete(facts)?;
         let mut children = Vec::new();
-        self.components().visit_component_calls(facts, evidence, |call| {
+        self.analysis.components().visit_component_calls(facts, evidence, |call| {
             closure.reserve(1)?;
-            let instance =
-                self.components().enumerate_call(facts, evidence, call, closure.remaining())?;
+            let instance = self.analysis.components().enumerate_call(
+                facts,
+                evidence,
+                call,
+                closure.remaining(),
+            )?;
             closure.reserve(instance.outputs.len())?;
             children.push(self.visit_instance(facts, evidence, &instance, closure)?);
             Ok(())
         })?;
-        self.execution().completed_project_template(facts, evidence, &children)
+        self.analysis.execution().completed_project_template(facts, evidence, &children)
     }
 
     fn visit_instance(
@@ -135,7 +139,7 @@ impl ProjectAnalysis<'_> {
         ));
         let result = self.visit_instance_body(facts, instance, child, closure);
         closure.path.pop();
-        self.execution().completed_project_child(facts, caller, instance, result?)
+        self.analysis.execution().completed_project_child(facts, caller, instance, result?)
     }
 
     fn visit_instance_body(
@@ -148,18 +152,18 @@ impl ProjectAnalysis<'_> {
         for output in &instance.outputs {
             self.record_output(facts, output, child, closure)?;
         }
-        let cfg = build_cfg(self.hir(), DefinitionRef::Template(child))
+        let cfg = build_cfg(self.analysis.hir(), DefinitionRef::Template(child))
             .map_err(|_| SummaryBlocker::IncompleteDefinition)?;
-        let child_facts = self
-            .contexts()
-            .analyze_for_evidence(&cfg, &instance.callee, None)
-            .map_err(|error| match error {
-                crate::interprocedural::AnalyzeEvidenceError::Blocked(blocker) => blocker,
-                crate::interprocedural::AnalyzeEvidenceError::InvalidAssignment { .. }
-                | crate::interprocedural::AnalyzeEvidenceError::InvalidValueUse { .. } => {
-                    SummaryBlocker::IncompleteDefinition
-                }
-            })?;
+        let child_facts =
+            self.analysis.contexts().analyze_for_evidence(&cfg, &instance.callee, None).map_err(
+                |error| match error {
+                    crate::interprocedural::AnalyzeEvidenceError::Blocked(blocker) => blocker,
+                    crate::interprocedural::AnalyzeEvidenceError::InvalidAssignment { .. }
+                    | crate::interprocedural::AnalyzeEvidenceError::InvalidValueUse { .. } => {
+                        SummaryBlocker::IncompleteDefinition
+                    }
+                },
+            )?;
         self.visit_scope(&child_facts, &instance.callee, closure)
     }
 
@@ -171,7 +175,7 @@ impl ProjectAnalysis<'_> {
         closure: &mut Closure,
     ) -> Result<(), SummaryBlocker> {
         let applied = output.applied_port();
-        let local = self.components().local_output_use_result(facts, applied)?;
+        let local = self.analysis.components().local_output_use_result(facts, applied)?;
         let use_state = match local {
             crate::interprocedural::component::LocalOutputUse::Read(sites) => {
                 crate::interprocedural::component::LocalOutputUse::Read(sites)

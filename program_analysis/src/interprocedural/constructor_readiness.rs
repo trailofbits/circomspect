@@ -358,7 +358,7 @@ impl ExecutionQueries<'_, '_> {
         facts: &AnalysisFacts<'_>,
         evidence: &ContextEvidence,
     ) -> Result<(), SummaryBlocker> {
-        self.analysis.check_template_constraint_scope(facts, evidence)?;
+        self.analysis.templates().check_template_constraint_scope(facts, evidence)?;
         let constructors = self.validated_constructor_reads(facts, evidence)?;
         certified(&facts.body_signal_reads_ready_with(&constructors))?;
         certified(&facts.generated_constraints_valid())?;

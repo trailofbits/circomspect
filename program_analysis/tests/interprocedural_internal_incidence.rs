@@ -49,7 +49,11 @@ fn internal_incidence(source: &str, budget: Option<usize>) -> Option<Incidence> 
         component_output: false,
         span: symbol.span,
     };
-    provider.template_internal_signal_incidence(&facts, &evidence, &path).certified().copied()
+    provider
+        .templates()
+        .template_internal_signal_incidence(&facts, &evidence, &path)
+        .certified()
+        .copied()
 }
 
 #[test]
@@ -128,10 +132,11 @@ fn main_and_called_contexts_keep_their_own_scope() {
         component_output: false,
         span: symbol.span,
     };
-    let result = provider.template_internal_signal_incidence(&facts, &root, &path);
+    let result = provider.templates().template_internal_signal_incidence(&facts, &root, &path);
     assert_eq!(result.certified(), Some(&Incidence::Zero));
     let symbolic = provider.contexts().symbolic_root(definition).unwrap();
-    let mismatched = provider.template_internal_signal_incidence(&facts, &symbolic, &path);
+    let mismatched =
+        provider.templates().template_internal_signal_incidence(&facts, &symbolic, &path);
     assert!(mismatched.certified().is_none());
 
     let site = provider.graph().calls_from(CallOwner::Definition(definition))[0];
@@ -144,7 +149,7 @@ fn main_and_called_contexts_keep_their_own_scope() {
     let facts = provider.contexts().analyze_for_evidence(&cfg, &child, None).unwrap();
     let symbol = lifted.hir.symbols().iter().find(|symbol| symbol.name == "s").unwrap();
     let path = AccessPath { root: symbol.id, terminal: symbol.id, span: symbol.span, ..path };
-    let result = provider.template_internal_signal_incidence(&facts, &child, &path);
+    let result = provider.templates().template_internal_signal_incidence(&facts, &child, &path);
     assert!(result.certified().is_none(), "{result:?}");
 }
 
@@ -178,7 +183,7 @@ fn internal_arrays_keep_element_context_and_failure_scope() {
                 Some(target)
             })
             .unwrap();
-        let fact = provider.template_internal_signal_incidence(&facts, &evidence, path);
+        let fact = provider.templates().template_internal_signal_incidence(&facts, &evidence, path);
         assert_eq!(fact.certified().copied(), expected, "{body}: {fact:?}");
     }
 }

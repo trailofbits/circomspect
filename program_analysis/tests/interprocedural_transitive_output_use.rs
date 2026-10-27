@@ -65,7 +65,7 @@ fn nested_uses(
     let definition = project.hir.definition("Parent").unwrap();
     let cfg = build_cfg(&project.hir, definition).unwrap();
     let facts = provider.contexts().analyze_for_evidence(&cfg, &main, None).unwrap();
-    provider.closed_project_output_uses(&facts, &main)
+    provider.project_uses().closed_project_output_uses(&facts, &main)
 }
 
 #[test]
@@ -130,7 +130,7 @@ fn one_loop_call_site_cannot_merge_distinct_array_instances() {
     let definition = project.hir.definition("Parent").unwrap();
     let cfg = build_cfg(&project.hir, definition).unwrap();
     let facts = provider.contexts().analyze_for_evidence(&cfg, &main, None).unwrap();
-    let uses = provider.closed_project_output_uses(&facts, &main);
+    let uses = provider.project_uses().closed_project_output_uses(&facts, &main);
     assert!(uses.certified().is_none());
 }
 
@@ -313,7 +313,7 @@ fn the_combined_instance_and_output_budget_is_all_or_nothing() {
     let definition = complete.hir.definition("Parent").unwrap();
     let cfg = build_cfg(&complete.hir, definition).unwrap();
     let facts = provider.contexts().analyze_for_evidence(&cfg, &main, None).unwrap();
-    let result = provider.closed_project_output_uses(&facts, &main);
+    let result = provider.project_uses().closed_project_output_uses(&facts, &main);
     assert_eq!(result.certified().map(Vec::len), Some(255), "{result:?}");
 
     let over = fixture(&source(256));
@@ -322,7 +322,7 @@ fn the_combined_instance_and_output_budget_is_all_or_nothing() {
     let definition = over.hir.definition("Parent").unwrap();
     let cfg = build_cfg(&over.hir, definition).unwrap();
     let facts = provider.contexts().analyze_for_evidence(&cfg, &main, None).unwrap();
-    let result = provider.closed_project_output_uses(&facts, &main);
+    let result = provider.project_uses().closed_project_output_uses(&facts, &main);
     assert!(result.unavailable().is_some_and(|reasons| {
         reasons
             .contains(&circomspect_program_analysis::interprocedural::SummaryBlocker::ContextBudget)
@@ -373,7 +373,7 @@ fn a_symbolic_library_parent_cannot_claim_nested_unused_output() {
     let evidence = provider.contexts().symbolic_root(definition).unwrap();
     let cfg = build_cfg(&project.hir, definition).unwrap();
     let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
-    let result = provider.closed_project_output_uses(&facts, &evidence);
+    let result = provider.project_uses().closed_project_output_uses(&facts, &evidence);
     assert!(result.certified().is_none());
 }
 
@@ -391,7 +391,7 @@ fn foreign_project_facts_and_evidence_cannot_close_an_equal_source_project() {
     let definition = first.hir.definition("Parent").unwrap();
     let cfg = build_cfg(&first.hir, definition).unwrap();
     let facts = first_provider.contexts().analyze_for_evidence(&cfg, &main, None).unwrap();
-    let result = second_provider.closed_project_output_uses(&facts, &main);
+    let result = second_provider.project_uses().closed_project_output_uses(&facts, &main);
     assert!(result.unavailable().is_some_and(|reasons| {
         reasons
             .contains(&circomspect_program_analysis::interprocedural::SummaryBlocker::WrongContext)
@@ -428,7 +428,7 @@ fn a_nested_known_output_read_survives_an_opaque_sibling() {
     let applied = provider.components().apply_component_output(&facts, &middle, &call, &handle);
     let read = provider.components().caller_output_read(&facts, applied.certified().unwrap());
     assert!(read.certified().is_some());
-    let negative = provider.closed_project_output_uses(&facts, &middle);
+    let negative = provider.project_uses().closed_project_output_uses(&facts, &middle);
     assert!(negative.certified().is_none());
 }
 

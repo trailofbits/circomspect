@@ -97,7 +97,7 @@ impl<'query, 'hir: 'query> ComparatorQuery<'query, 'hir> {
         let facts = self.facts;
         let applied = self.applied;
         self.check_output()?;
-        analysis.check_parent_components_complete(facts)?;
+        analysis.project_uses().check_parent_components_complete(facts)?;
         analysis.components().single_model_call(facts, applied)?;
         analysis.components().with_component_port_facts(applied.callee_evidence(), |comparison| {
             let instance =
@@ -202,7 +202,7 @@ impl<'query, 'hir: 'query> ComparatorQuery<'query, 'hir> {
         )?;
         let completed =
             execution.completed_generated_template(self.facts, &children, stage.main_ready)?;
-        self.analysis.check_completed_model_main(
+        self.analysis.project_uses().check_completed_model_main(
             self.facts,
             self.applied.caller_evidence(),
             &completed,

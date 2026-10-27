@@ -52,7 +52,7 @@ impl TemplateQueries<'_, '_> {
         facts: &AnalysisFacts<'_>,
         evidence: &ContextEvidence,
     ) -> Result<(), SummaryBlocker> {
-        self.analysis.check_template_constraint_scope(facts, evidence)?;
+        self.check_template_constraint_scope(facts, evidence)?;
         if evidence.origin() == ContextOrigin::SymbolicRoot
             && !evidence.context().arguments().is_empty()
         {
@@ -88,7 +88,6 @@ impl TemplateQueries<'_, '_> {
         bits: &[AccessHandle],
     ) -> SummaryFact<Option<BitDecomposition>> {
         let result = self
-            .analysis
             .check_template_constraint_scope(facts, evidence)
             .and_then(|()| Ok(certified(&facts.bit_decomposition_handles(input, bits))?.clone()));
         SummaryFact::from_result(result)
@@ -101,7 +100,7 @@ impl TemplateQueries<'_, '_> {
         input: &AccessPath,
         bits: &[AccessPath],
     ) -> Result<Option<BitDecomposition>, SummaryBlocker> {
-        self.analysis.check_template_constraint_scope(facts, evidence)?;
+        self.check_template_constraint_scope(facts, evidence)?;
         Ok(certified(&facts.bit_decomposition(input, bits))?.clone())
     }
 }

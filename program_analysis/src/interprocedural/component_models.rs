@@ -193,12 +193,12 @@ impl BitAmbiguityQuery<'_, '_> {
                 return Err(SummaryBlocker::WrongInstance);
             }
         }
-        self.analysis.check_model_main_root(facts, applied.caller_evidence())?;
+        self.analysis.project_uses().check_model_main_root(facts, applied.caller_evidence())?;
         self.analysis.sources().validated_definition(facts)?;
         self.analysis
             .execution()
             .check_warning_execution_scope(facts, applied.caller_evidence())?;
-        self.analysis.check_parent_components_complete(facts)?;
+        self.analysis.project_uses().check_parent_components_complete(facts)?;
         self.analysis.components().single_model_call(facts, applied)?;
         Ok(())
     }

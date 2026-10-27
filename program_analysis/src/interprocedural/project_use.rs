@@ -162,12 +162,17 @@ impl ProjectOutputUse {
     }
 }
 
-impl ProjectAnalysis<'_> {
+/// Main-rooted output-use proofs for one borrowed analysis session.
+pub struct ProjectUseQueries<'session, 'hir> {
+    pub(super) analysis: &'session ProjectAnalysis<'hir>,
+}
+
+impl<'session, 'hir: 'session> ProjectUseQueries<'session, 'hir> {
     pub(super) fn check_parent_components_complete(
         &self,
         facts: &AnalysisFacts<'_>,
     ) -> Result<(), SummaryBlocker> {
-        for component in self.hir().components() {
+        for component in self.analysis.hir().components() {
             if !facts.cfg().owns_symbol(component.symbol) {
                 continue;
             }
@@ -236,14 +241,14 @@ impl ProjectAnalysis<'_> {
     ) -> Result<LocalOutputUse, SummaryBlocker> {
         let port = applied.port_summary().port();
         let indices = applied.port_summary().indices();
-        self.templates().with_local_template(
+        self.analysis.templates().with_local_template(
             child,
             applied.callee_evidence().context(),
             |_, _, facts| {
                 let handle = facts
                     .port_handle(port, indices)
                     .map_err(|error| SummaryBlocker::LocalAnalysis(error.to_string()))?;
-                self.components().local_handle_use_result(facts, &handle)
+                self.analysis.components().local_handle_use_result(facts, &handle)
             },
         )
     }
@@ -272,10 +277,10 @@ impl ProjectAnalysis<'_> {
             return Err(SummaryBlocker::WrongContext);
         };
         let indices = Self::local_indices(handle)?;
-        let template = self.hir().template(id).ok_or(SummaryBlocker::ForeignDefinition)?;
+        let template = self.analysis.hir().template(id).ok_or(SummaryBlocker::ForeignDefinition)?;
         let mut exported = false;
         for id in &template.ports {
-            let port = self.hir().port(*id).ok_or(SummaryBlocker::ForeignDefinition)?;
+            let port = self.analysis.hir().port(*id).ok_or(SummaryBlocker::ForeignDefinition)?;
             let checked_schema = match port.schema {
                 PortSchema::Opaque(_) => false,
                 PortSchema::Signal | PortSchema::Bus(_) => true,
@@ -346,23 +351,23 @@ impl ProjectAnalysis<'_> {
         main: &ContextEvidence,
         source: MainSourceScope<'_>,
     ) -> Result<(), SummaryBlocker> {
-        self.contexts().check_facts_for_evidence(facts, main)?;
+        self.analysis.contexts().check_facts_for_evidence(facts, main)?;
         let complete = match source {
-            MainSourceScope::WholeProject => self.sources().source_complete(),
+            MainSourceScope::WholeProject => self.analysis.sources().source_complete(),
             MainSourceScope::ModelDefinitions => {
-                self.sources().model_source_complete(facts.definition(), None)
+                self.analysis.sources().model_source_complete(facts.definition(), None)
             }
             MainSourceScope::CompletedModel(completed) => {
-                self.sources().model_source_complete(facts.definition(), Some(completed))
+                self.analysis.sources().model_source_complete(facts.definition(), Some(completed))
             }
         };
-        if !complete || self.hir().mains().len() != 1 {
+        if !complete || self.analysis.hir().mains().len() != 1 {
             return Err(SummaryBlocker::ExternalSummary);
         }
         let ContextOrigin::Main(id) = main.origin() else {
             return Err(SummaryBlocker::UnsupportedContext);
         };
-        let site = self.graph().site(id).ok_or(SummaryBlocker::ForeignCall)?;
+        let site = self.analysis.graph().site(id).ok_or(SummaryBlocker::ForeignCall)?;
         if site.owner != CallOwner::Main(0) || site.resolved() != Some(facts.definition()) {
             return Err(SummaryBlocker::WrongContext);
         }
@@ -372,3 +377,6 @@ impl ProjectAnalysis<'_> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests;

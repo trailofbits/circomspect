@@ -8,7 +8,7 @@ use crate::interprocedural::cache::SummaryCaches;
 use crate::interprocedural::source_validity::SourceQueries;
 use crate::interprocedural::{
     build_call_graph, CallGraph, CallGraphError, ComponentQueries, ContextQueries,
-    ExecutionQueries, FunctionQueries, TemplateQueries,
+    ExecutionQueries, FunctionQueries, ProjectUseQueries, TemplateQueries,
 };
 
 /// Owns the validated field and graph used to construct summary contexts.
@@ -85,6 +85,12 @@ impl<'hir> ProjectAnalysis<'hir> {
     #[must_use]
     pub fn execution(&self) -> ExecutionQueries<'_, 'hir> {
         ExecutionQueries { analysis: self }
+    }
+
+    /// Borrow main-rooted output-use queries for this session.
+    #[must_use]
+    pub fn project_uses(&self) -> ProjectUseQueries<'_, 'hir> {
+        ProjectUseQueries { analysis: self }
     }
 
     pub(crate) fn sources(&self) -> SourceQueries<'_, 'hir> {

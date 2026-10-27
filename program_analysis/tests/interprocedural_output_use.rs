@@ -135,9 +135,9 @@ fn internal_use_at_option(
     let applied = applied.certified()?;
     let closure = if let Some(limit) = budget {
         let pending = provider.contexts().analyze_for_evidence(&cfg, &root, Some(limit)).unwrap();
-        provider.closed_project_output_uses(&pending, &root)
+        provider.project_uses().closed_project_output_uses(&pending, &root)
     } else {
-        provider.closed_project_output_uses(&facts, &root)
+        provider.project_uses().closed_project_output_uses(&facts, &root)
     };
     if let Some(uses) = closure.certified() {
         let Some(proof) = uses.iter().find(|proof| proof.handle() == applied.handle()) else {
@@ -236,7 +236,7 @@ fn symbolic_facts_cannot_borrow_a_concrete_main_output_use_proof() {
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
     let symbolic = provider.contexts().symbolic_root(parent).unwrap();
     let symbolic_facts = provider.contexts().analyze_for_evidence(&cfg, &symbolic, None).unwrap();
-    let result = provider.closed_project_output_uses(&symbolic_facts, &concrete);
+    let result = provider.project_uses().closed_project_output_uses(&symbolic_facts, &concrete);
     assert!(result
         .unavailable()
         .is_some_and(|reasons| reasons.contains(&SummaryBlocker::WrongContext)));
@@ -591,7 +591,11 @@ fn a_symbolic_indirect_child_cannot_borrow_main_output_use() {
     let cfg = build_cfg(&lifted.hir, parent).unwrap();
     let root = provider.contexts().symbolic_root(parent).unwrap();
     let facts = provider.contexts().analyze_for_evidence(&cfg, &root, None).unwrap();
-    assert!(provider.closed_project_output_uses(&facts, &root).certified().is_none());
+    assert!(provider
+        .project_uses()
+        .closed_project_output_uses(&facts, &root)
+        .certified()
+        .is_none());
 }
 
 #[test]
@@ -709,7 +713,7 @@ fn an_exported_main_output_is_an_environment_read() {
     let facts = provider.contexts().analyze_for_evidence(&cfg, &root, None).unwrap();
     let port = lifted.hir.template(template).unwrap().ports[0];
     let handle = facts.port_handle(port, &[]).unwrap();
-    let result = provider.exported_main_output_use(&facts, &root, &handle);
+    let result = provider.project_uses().exported_main_output_use(&facts, &root, &handle);
     assert_eq!(result.certified().unwrap().status(), ProjectOutputStatus::Read);
 }
 
@@ -730,7 +734,11 @@ fn a_main_input_cannot_be_mislabeled_as_an_exported_output() {
     let facts = provider.contexts().analyze_for_evidence(&cfg, &root, None).unwrap();
     let port = lifted.hir.template(template).unwrap().ports[0];
     let handle = facts.port_handle(port, &[]).unwrap();
-    assert!(provider.exported_main_output_use(&facts, &root, &handle).certified().is_none());
+    assert!(provider
+        .project_uses()
+        .exported_main_output_use(&facts, &root, &handle)
+        .certified()
+        .is_none());
 }
 
 #[test]
@@ -750,6 +758,6 @@ fn an_exact_exported_main_output_array_element_is_environment_read() {
     let facts = provider.contexts().analyze_for_evidence(&cfg, &root, None).unwrap();
     let port = lifted.hir.template(template).unwrap().ports[0];
     let handle = facts.port_handle(port, &[1]).unwrap();
-    let result = provider.exported_main_output_use(&facts, &root, &handle);
+    let result = provider.project_uses().exported_main_output_use(&facts, &root, &handle);
     assert_eq!(result.certified().unwrap().status(), ProjectOutputStatus::Read);
 }

@@ -70,7 +70,9 @@ pub use component::{
 };
 pub use crate::interprocedural::execution_scope::ExecutionQueries;
 
-pub use project_use::{ProjectInstanceStep, ProjectOutputStatus, ProjectOutputUse};
+pub use crate::interprocedural::project_use::{
+    ProjectInstanceStep, ProjectOutputStatus, ProjectOutputUse, ProjectUseQueries,
+};
 pub use output_enumeration::EnumeratedComponentOutput;
 pub use crate::interprocedural::constraint_relation::GeneratedEquationQueries;
 
