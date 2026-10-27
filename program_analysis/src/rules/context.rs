@@ -370,6 +370,8 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
     }
 
     /// Return a summary only for the active function specialization.
+    ///
+    /// This public convenience query is not currently used by built-in rules.
     #[must_use]
     pub fn function_summary(&self) -> Option<SummaryFact<FunctionSummary>> {
         let DefinitionRef::Function(id) = self.call_context().definition() else { return None };
@@ -377,6 +379,8 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
     }
 
     /// Return effects only for the active function specialization.
+    ///
+    /// This public convenience query is not currently used by built-in rules.
     #[must_use]
     pub fn function_effects(&self) -> Option<SummaryFact<FunctionEffects>> {
         let DefinitionRef::Function(id) = self.call_context().definition() else { return None };
@@ -400,6 +404,8 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
     }
 
     /// Return whether the active template reads a declared port.
+    ///
+    /// This public convenience query is not currently used by built-in rules.
     #[must_use]
     pub fn template_port_read(&self, port: PortId) -> Option<SummaryFact<bool>> {
         let DefinitionRef::Template(id) = self.call_context().definition() else { return None };
@@ -407,6 +413,8 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
     }
 
     /// Return witness writes to a declared port in the active template.
+    ///
+    /// This public convenience query is not currently used by built-in rules.
     #[must_use]
     pub fn template_port_witnesses(&self, port: PortId) -> Option<SummaryFact<Vec<WitnessSite>>> {
         let DefinitionRef::Template(id) = self.call_context().definition() else { return None };
