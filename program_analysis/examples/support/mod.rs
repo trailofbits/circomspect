@@ -6,14 +6,10 @@ pub type ExampleResult = Result<(), Box<dyn std::error::Error>>;
 pub fn loaded(source: &str) -> LoadedProject {
     let policy = VersionPolicy::new(Version::new(2, 2, 3));
     let id = SourceId::new(0);
+    let outcome = parse_source(id, source, policy);
     LoadedProject {
         policy,
-        diagnostics: Vec::new(),
-        files: vec![SourceFile {
-            id,
-            path: "reading.circom".into(),
-            text: source.into(),
-            outcome: parse_source(id, source, policy),
-        }],
+        diagnostics: outcome.diagnostics.clone(),
+        files: vec![SourceFile { id, path: "reading.circom".into(), text: source.into(), outcome }],
     }
 }

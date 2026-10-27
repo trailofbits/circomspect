@@ -12,7 +12,7 @@ use circomspect_program_analysis::application::{analyze_files, AnalysisOutput};
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::hir_facts::{FieldContext, Range};
 use circomspect_program_analysis::interprocedural::ProjectAnalysis;
-use parser::frontend::BinaryOperator;
+use parser::frontend::{BinaryOperator, DiagnosticKind, SourceId};
 use parser::hir::{lift_project, ExprKind};
 use program_structure::constants::Curve;
 
@@ -74,6 +74,13 @@ fn check_neighbor(output: &AnalysisOutput) -> ExampleResult {
 fn check_neighbor_facts() -> ExampleResult {
     let loaded = loaded(SOURCE);
     let project = lift_project(&loaded);
+    assert_eq!(project.syntax_diagnostics.len(), 1);
+    let diagnostic = &project.syntax_diagnostics[0];
+    assert_eq!(diagnostic.kind, DiagnosticKind::Syntax);
+    assert_eq!(diagnostic.message, SYNTAX);
+    let span = diagnostic.span().ok_or("syntax diagnostic has no source span")?;
+    assert_eq!(span.source(), SourceId::new(0));
+    assert_eq!(span.start()..span.end(), 18..29);
     let definition = project.hir.definition("Neighbor").ok_or("missing Neighbor")?;
     let analysis = ProjectAnalysis::build(&project, Curve::Goldilocks)
         .map_err(|error| format!("call graph: {error:?}"))?;
