@@ -256,6 +256,10 @@ impl Transfer<ReturnAnalysis, FunctionSummary, SummaryBlocker> for ReturnEdge {
 }
 
 /// Function returns, effects, and scalar refinement borrowed from one session.
+///
+/// Return and effect discovery each permit 64 distinct specialization contexts, including the
+/// entry. Pending duplicates are ignored before charging this bound. Return summaries reject
+/// reachable context cycles; effect summaries solve their strongly connected component fixed point.
 pub struct FunctionQueries<'session, 'hir> {
     pub(super) analysis: &'session ProjectAnalysis<'hir>,
 }
