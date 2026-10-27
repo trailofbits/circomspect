@@ -1,4 +1,4 @@
-//! Provider-owned leaf constructor coverage for local signal-read validation.
+//! Checked constructor coverage for local signal-read validation.
 
 use std::collections::BTreeSet;
 
@@ -20,7 +20,8 @@ use crate::interprocedural::{
 use crate::interprocedural::output_enumeration::EnumeratedComponentInstance;
 use crate::interprocedural::summary::certified;
 
-/// Constructors whose exact leaf children passed source, read, and generated-form checks.
+/// Constructors whose checked children passed source, read, and generated-form checks.
+/// Child completions may carry coverage for separately checked constructors.
 /// This is local readiness coverage, not a successful-termination certificate.
 ///
 /// The readiness issuer binds constructor expressions and exact site/path/port tuples to

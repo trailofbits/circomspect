@@ -8,9 +8,11 @@ use super::field::FieldValue;
 ///
 /// This flat domain has height three: unreachable, one exact value, canonical.
 ///
-/// `Unreachable` is bottom; each field-bound `Exact` value is below `Canonical`.
+/// `Unreachable` is bottom; each `Exact` value is below `Canonical`.
 /// Equal exact values join to themselves; different exact values join to `Canonical`.
-/// Transfers preserve the selected field and leave unknown values canonical.
+/// Exact values store canonical integers interpreted in the selected field. The analysis and
+/// context carry that field's identity; `FieldValue` does not. Transfers use the selected field
+/// and leave unknown values canonical.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum FieldRange {
     Unreachable,

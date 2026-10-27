@@ -487,6 +487,11 @@ impl<'session, 'hir: 'session> ContextQueries<'session, 'hir> {
 
     /// Analyze one definition under a validated source scope and bind the result to it.
     ///
+    /// The supplied CFG is checked against the evidence's definition and bounds the returned
+    /// facts' lifetime. `FunctionQueries::refined_facts` builds a new graph with certified
+    /// scalar-call results; the returned facts own that graph. Use [`AnalysisFacts::cfg`] to
+    /// inspect the graph actually analyzed.
+    ///
     /// # Errors
     /// Returns a blocker for invalid scope or unavailable facts, or a located shape error.
     pub fn analyze_for_evidence<'facts>(

@@ -30,6 +30,10 @@ impl<'session, 'hir: 'session> FunctionQueries<'session, 'hir> {
         work(facts.cfg(), &facts)
     }
 
+    /// Compute facts on an owned graph refined with certified scalar-call results.
+    ///
+    /// Each refinement builds its graph from the current call evidence. The returned facts own
+    /// the final graph, which callers can inspect through `AnalysisFacts::cfg`.
     pub(super) fn refined_facts(
         &self,
         context: &CallContext,

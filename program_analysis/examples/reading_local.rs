@@ -35,6 +35,8 @@ fn check(source: &str, operand: Operand) -> ExampleResult {
         .contexts()
         .symbolic_root(definition)
         .map_err(|error| format!("root: {error:?}"))?;
+    // This graph identifies the definition. The returned facts own a refined graph, available
+    // through facts.cfg(), that incorporates certified scalar-call results.
     let cfg = build_cfg(&project.hir, definition).map_err(|error| format!("CFG: {error:?}"))?;
     let facts = analysis
         .contexts()

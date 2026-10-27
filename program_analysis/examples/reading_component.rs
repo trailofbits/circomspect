@@ -1,4 +1,4 @@
-//! Follow exact main/child evidence through a checked comparator model and a nearby refusal.
+//! Follow exact main/child evidence through a checked comparator model and a rejected candidate.
 // These executable contracts intentionally panic when a characterized result changes.
 // Rust 1.74 requires `allow` because `expect` lint attributes are not yet stable.
 #![allow(clippy::allow_attributes, clippy::panic_in_result_fn)]
@@ -96,7 +96,8 @@ fn check(source: &str, expected: Expected) -> ExampleResult {
             assert_eq!(findings[0].to_report(&sources)?.id(), "CS0014");
         }
         Expected::NoViolation => {
-            // This query certifies an empty result. It does not prove the circuit unique.
+            // This query certifies an empty result. It does not prove safe inputs, uniqueness,
+            // or unsatisfiability.
             assert_eq!(violations.as_slice(), []);
             assert!(findings.is_empty());
         }
