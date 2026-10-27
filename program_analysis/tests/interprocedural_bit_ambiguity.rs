@@ -293,21 +293,24 @@ fn binding_cannot_be_reused_for_another_field_project_or_definition() {
     let input = path(&lifted.hir, "in", None);
     let bits: Vec<_> = (0..64).map(|index| path(&lifted.hir, "bits", Some(index))).collect();
     let other_curve = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
-    let result = other_curve.template_bit_ambiguity(&facts, &evidence, &input, &bits);
+    let result = other_curve.templates().template_bit_ambiguity(&facts, &evidence, &input, &bits);
     assert!(result.unavailable().is_some(), "{result:?}");
     let other_evidence =
         provider.contexts().symbolic_root(lifted.hir.definition("Other").unwrap()).unwrap();
-    let result = provider.template_bit_ambiguity(&facts, &other_evidence, &input, &bits);
+    let result =
+        provider.templates().template_bit_ambiguity(&facts, &other_evidence, &input, &bits);
     assert!(result.unavailable().is_some(), "{result:?}");
     let foreign = fixture(&source);
     let foreign_provider = ProjectAnalysis::build(&foreign, Curve::Goldilocks).unwrap();
-    let result = foreign_provider.template_bit_ambiguity(&facts, &evidence, &input, &bits);
+    let result =
+        foreign_provider.templates().template_bit_ambiguity(&facts, &evidence, &input, &bits);
     assert!(result.unavailable().is_some(), "{result:?}");
     let foreign_input = path(&foreign.hir, "in", None);
-    let result = provider.template_bit_ambiguity(&facts, &evidence, &foreign_input, &bits);
+    let result =
+        provider.templates().template_bit_ambiguity(&facts, &evidence, &foreign_input, &bits);
     assert!(result.unavailable().is_some(), "{result:?}");
     verify_pair(
-        certificate(&provider.template_bit_ambiguity(&facts, &evidence, &input, &bits)),
+        certificate(&provider.templates().template_bit_ambiguity(&facts, &evidence, &input, &bits)),
         64,
         0,
     );
@@ -342,7 +345,7 @@ fn a_called_leaf_does_not_claim_its_callers_constraint_domain_is_closed() {
     let child_facts = provider.contexts().analyze_for_evidence(&child_cfg, &child, None).unwrap();
     let input = path(&lifted.hir, "in", None);
     let bits: Vec<_> = (0..64).map(|index| path(&lifted.hir, "bits", Some(index))).collect();
-    let result = provider.template_bit_ambiguity(&child_facts, &child, &input, &bits);
+    let result = provider.templates().template_bit_ambiguity(&child_facts, &child, &input, &bits);
     assert!(result.unavailable().is_some(), "{result:?}");
 }
 
@@ -374,7 +377,7 @@ fn exact_bounds_and_order_are_part_of_the_requested_relation() {
     let mut duplicate = bits.clone();
     duplicate[1] = duplicate[0].clone();
     for paths in [reordered, duplicate] {
-        let result = provider.template_bit_ambiguity(&facts, &evidence, &input, &paths);
+        let result = provider.templates().template_bit_ambiguity(&facts, &evidence, &input, &paths);
         assert_eq!(
             result.certified(),
             Some(&BitAmbiguityOutcome::NoCertificate(
@@ -385,7 +388,7 @@ fn exact_bounds_and_order_are_part_of_the_requested_relation() {
     let mut outside = bits.clone();
     outside[0] = path(&lifted.hir, "bits", Some(64));
     for paths in [outside, vec![], vec![bits[0].clone(); 513]] {
-        let result = provider.template_bit_ambiguity(&facts, &evidence, &input, &paths);
+        let result = provider.templates().template_bit_ambiguity(&facts, &evidence, &input, &paths);
         assert!(result.unavailable().is_some(), "{result:?}");
     }
 }

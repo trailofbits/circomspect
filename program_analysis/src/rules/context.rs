@@ -267,7 +267,7 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
         input: &AccessPath,
         bits: &[AccessPath],
     ) -> SummaryFact<BitAmbiguityOutcome> {
-        self.summaries.template_bit_ambiguity(self.facts, self.evidence, input, bits)
+        self.summaries.templates().template_bit_ambiguity(self.facts, self.evidence, input, bits)
     }
 
     /// Prove two complete bit models for checked ports in this root template.
@@ -277,7 +277,12 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
         input: &AccessHandle,
         bits: &[AccessHandle],
     ) -> SummaryFact<BitAmbiguityOutcome> {
-        self.summaries.template_bit_ambiguity_handles(self.facts, self.evidence, input, bits)
+        self.summaries.templates().template_bit_ambiguity_handles(
+            self.facts,
+            self.evidence,
+            input,
+            bits,
+        )
     }
 
     /// Prove complete caller/child models for the sole component under this main scope.
@@ -288,7 +293,9 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
         input: &AccessHandle,
         bits: &[AccessHandle],
     ) -> SummaryFact<ComponentBitAmbiguityOutcome> {
-        self.summaries.component_bit_ambiguity_handles(self.facts, applied, input, bits)
+        self.summaries
+            .components()
+            .component_bit_ambiguity_handles(self.facts, applied, input, bits)
     }
 
     /// Prove complete caller and child models for checked child port schemas.
@@ -299,7 +306,7 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
         input: PortId,
         bits: PortId,
     ) -> SummaryFact<ComponentBitAmbiguityOutcome> {
-        self.summaries.component_bit_ambiguity_ports(self.facts, applied, input, bits)
+        self.summaries.components().component_bit_ambiguity_ports(self.facts, applied, input, bits)
     }
 
     /// Prove a comparator range violation through the complete three-scope closure.
@@ -318,7 +325,12 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
         input: &AccessPath,
         bits: &[AccessPath],
     ) -> SummaryFact<Option<BitDecomposition>> {
-        self.summaries.template_bit_decomposition(self.facts, self.evidence, input, bits)
+        self.summaries.templates().template_bit_decomposition(
+            self.facts,
+            self.evidence,
+            input,
+            bits,
+        )
     }
 
     /// Request a validated bit relation for exact ports in this root template.
@@ -328,7 +340,12 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
         input: &AccessHandle,
         bits: &[AccessHandle],
     ) -> SummaryFact<Option<BitDecomposition>> {
-        self.summaries.template_bit_decomposition_handles(self.facts, self.evidence, input, bits)
+        self.summaries.templates().template_bit_decomposition_handles(
+            self.facts,
+            self.evidence,
+            input,
+            bits,
+        )
     }
 
     /// Enumerate every checked direct-child output in this exact source scope.

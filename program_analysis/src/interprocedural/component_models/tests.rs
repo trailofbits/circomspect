@@ -7,7 +7,9 @@ use program_structure::utils::constants::Curve;
 
 use crate::hir_cfg::build_cfg;
 use crate::hir_facts::{analyze_with_scalar_parameters, FieldContext, ProofBudget};
-use crate::interprocedural::component_models::{checked_bit_port_handles, RequestedBits};
+use crate::interprocedural::component_models::{
+    checked_bit_port_handles, BitAmbiguityQuery, RequestedBits,
+};
 use crate::interprocedural::{CallOwner, CallReachability, ProjectAnalysis, SummaryBlocker};
 
 #[test]
@@ -108,21 +110,36 @@ fn closure_collection_charges_shared_site_term_key_and_operation_budgets() {
     for (sites, terms, keys, operations) in
         [(0, 1000, 1000, 1000), (1000, 0, 1000, 1000), (1000, 1000, 0, 1000), (1000, 1000, 1000, 0)]
     {
-        let result = provider.component_ambiguity_result(
-            &facts,
-            applied,
+        let result = BitAmbiguityQuery { analysis: &provider, facts: &facts, applied }.prove(
             RequestedBits::Handles { input: &input, bits: &bits },
             &mut ProofBudget::limited(sites, terms, keys, operations),
         );
         assert!(result.is_err(), "budget {sites}/{terms}/{keys}/{operations}: {result:?}");
     }
-    let result = provider.component_ambiguity_result(
-        &facts,
-        applied,
-        RequestedBits::Handles { input: &input, bits: &bits },
-        &mut ProofBudget::default(),
-    );
+    let result = BitAmbiguityQuery { analysis: &provider, facts: &facts, applied }
+        .prove(RequestedBits::Handles { input: &input, bits: &bits }, &mut ProofBudget::default());
     assert!(result.is_ok(), "{result:?}");
+    let mut records = String::new();
+    for limit in (0..=128).chain([255, 256, 511, 512, 1024, 4096]) {
+        let mut budget = ProofBudget::limited(4096, 262_144, 4096, limit);
+        let result = BitAmbiguityQuery { analysis: &provider, facts: &facts, applied }
+            .prove(RequestedBits::Handles { input: &input, bits: &bits }, &mut budget);
+        let result = match result {
+            Ok(crate::interprocedural::ComponentBitAmbiguityOutcome::Proved(_)) => {
+                panic!("one bit cannot produce two Goldilocks representations")
+            }
+            Ok(crate::interprocedural::ComponentBitAmbiguityOutcome::NoCertificate(reason)) => {
+                format!("NoCertificate({reason:?})")
+            }
+            Err(blocker) => format!("{blocker:?}"),
+        };
+        let mut remaining = 0;
+        while budget.reserve_control_step() {
+            remaining += 1;
+        }
+        records.push_str(&format!("{limit}|{result}|remaining:{remaining}\n"));
+    }
+    assert_eq!(records, include_str!("budget_contract.txt"));
 }
 
 #[test]

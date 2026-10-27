@@ -130,11 +130,17 @@ fn inspect_with(
     let input = path(&project.hir, "in", None);
     let bits: Vec<_> = (0..width).map(|index| path(&project.hir, "bits", Some(index))).collect();
     assert!(
-        provider.template_bit_ambiguity(&child, &callee, &input, &bits).unavailable().is_some(),
+        provider
+            .templates()
+            .template_bit_ambiguity(&child, &callee, &input, &bits)
+            .unavailable()
+            .is_some(),
         "standalone called scope must remain blocked"
     );
     let result = match form {
-        QueryForm::Paths => provider.component_bit_ambiguity(&facts, applied, &input, &bits),
+        QueryForm::Paths => {
+            provider.components().component_bit_ambiguity(&facts, applied, &input, &bits)
+        }
         QueryForm::Handles => {
             let input_port = project.hir.ports().iter().find(|port| port.symbol == input.root)?;
             let input = child.port_handle(input_port.id, &[]).ok()?;
@@ -397,7 +403,7 @@ fn checked_requests_reject_foreign_context_curve_project_and_input_bits() {
     let bit = child.port_handle(output_port, &[0]).unwrap();
     let applied = provider.components().apply_component_local_output(&facts, &caller, &call, &bit);
     let applied = applied.certified().unwrap();
-    let valid = provider.component_bit_ambiguity_handles(
+    let valid = provider.components().component_bit_ambiguity_handles(
         &facts,
         applied,
         &input,
@@ -411,15 +417,18 @@ fn checked_requests_reject_foreign_context_curve_project_and_input_bits() {
     );
     assert_eq!(
         provider
+            .components()
             .component_bit_ambiguity_ports(&facts, applied, input_port, output_port)
             .certified(),
         valid.certified()
     );
     assert!(provider
+        .components()
         .component_bit_ambiguity_ports(&facts, applied, output_port, input_port)
         .unavailable()
         .is_some());
     assert!(provider
+        .components()
         .component_bit_ambiguity_handles(&facts, applied, &bit, std::slice::from_ref(&input))
         .unavailable()
         .is_some());
@@ -427,10 +436,12 @@ fn checked_requests_reject_foreign_context_curve_project_and_input_bits() {
     let cfg = build_cfg(&project.hir, parent).unwrap();
     let wrong = provider.contexts().analyze_for_evidence(&cfg, &symbolic, None).unwrap();
     assert!(provider
+        .components()
         .component_bit_ambiguity_handles(&wrong, applied, &input, std::slice::from_ref(&bit))
         .unavailable()
         .is_some());
     assert!(provider
+        .components()
         .component_bit_ambiguity_ports(&wrong, applied, input_port, output_port)
         .unavailable()
         .is_some());
@@ -442,21 +453,25 @@ fn checked_requests_reject_foreign_context_curve_project_and_input_bits() {
         let cfg = build_cfg(&foreign.hir, definition).unwrap();
         let foreign_facts = other.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
         assert!(provider
+            .components()
             .component_bit_ambiguity_ports(&foreign_facts, applied, input_port, output_port)
             .unavailable()
             .is_some());
         let scalar = foreign_facts.port_handle(foreign.hir.ports()[0].id, &[]).unwrap();
         assert!(provider
+            .components()
             .component_bit_ambiguity_handles(&facts, applied, &scalar, std::slice::from_ref(&bit))
             .unavailable()
             .is_some());
     }
     let other = ProjectAnalysis::build(&project, Curve::Bn254).unwrap();
     assert!(other
+        .components()
         .component_bit_ambiguity_ports(&facts, applied, input_port, output_port)
         .unavailable()
         .is_some());
     assert!(other
+        .components()
         .component_bit_ambiguity_handles(&facts, applied, &input, &[bit])
         .unavailable()
         .is_some());
@@ -599,4 +614,52 @@ fn generated_parent_signal_completion_sets_child_input_before_pair_selection() {
         .assignments()
         .iter()
         .all(|model| { model.caller().values().any(|value| value == &field.canonical(0.into())) }));
+}
+
+#[test]
+fn temporary_component_views_preserve_ambiguity_outcomes() {
+    let text = source_width(1, "component c=Convert(1);c.in<==0;", "in*(in-1)===0;");
+    let project = fixture(&text);
+    let provider = ProjectAnalysis::build(&project, Curve::Goldilocks).unwrap();
+    let main = provider.graph().calls_from(CallOwner::Main(0))[0];
+    let CallReachability::Reachable(main_call) =
+        provider.graph().reachable_main_call(main.id(), &project.hir)
+    else {
+        panic!("main call")
+    };
+    let caller = provider.contexts().main_evidence(&main_call).unwrap();
+    let parent = project.hir.definition("Parent").unwrap();
+    let cfg = build_cfg(&project.hir, parent).unwrap();
+    let facts = provider.contexts().analyze_for_evidence(&cfg, &caller, None).unwrap();
+    let site = provider.graph().calls_from(CallOwner::Definition(parent))[0];
+    let CallReachability::Reachable(call) = provider.graph().reachable_call(site.id(), &facts)
+    else {
+        panic!("child call")
+    };
+    let callee = provider.contexts().call_evidence(&call, &facts, &caller).unwrap();
+    let cfg = build_cfg(&project.hir, call.callee()).unwrap();
+    let child = provider.contexts().analyze_for_evidence(&cfg, &callee, None).unwrap();
+    let input_port = project.hir.ports()[0].id;
+    let output_port = project.hir.ports()[1].id;
+    let input = child.port_handle(input_port, &[]).unwrap();
+    let bit = child.port_handle(output_port, &[0]).unwrap();
+    let applied = provider.components().apply_component_local_output(&facts, &caller, &call, &bit);
+    let applied = applied.certified().unwrap();
+    let first = provider.components().component_bit_ambiguity_handles(
+        &facts,
+        applied,
+        &input,
+        std::slice::from_ref(&bit),
+    );
+    let second = {
+        let queries = provider.components();
+        queries.component_bit_ambiguity_handles(&facts, applied, &input, std::slice::from_ref(&bit))
+    };
+    assert_eq!(first, second);
+    assert_eq!(
+        first.certified(),
+        Some(&ComponentBitAmbiguityOutcome::NoCertificate(
+            NoBitAmbiguityCertificate::WidthBelowFieldModulus
+        ))
+    );
 }

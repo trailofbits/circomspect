@@ -12,11 +12,13 @@ use parser::frontend::PortDirection;
 use crate::hir_cfg::Origin;
 use crate::hir_facts::{
     RankOnePortError, AccessHandle, AccessKey, AnalysisFacts, BitDecomposition, BitRepresentation,
-    FieldValue, NoBitAmbiguityCertificate, ProofBudget,
+    Fact, FieldValue, NoBitAmbiguityCertificate, ProofBudget,
 };
 use crate::interprocedural::component_models::models::{prove_closure_models, ClosureEquations};
 use crate::interprocedural::summary::certified;
-use crate::interprocedural::{AppliedComponentPort, ProjectAnalysis, SummaryBlocker, SummaryFact};
+use crate::interprocedural::{
+    AppliedComponentPort, ComponentQueries, ProjectAnalysis, SummaryBlocker, SummaryFact,
+};
 
 pub(crate) use crate::interprocedural::component_models::ports::ValidatedComponentPorts;
 
@@ -118,7 +120,13 @@ enum RequestedBits<'a> {
     Ports { input: PortId, bits: PortId },
 }
 
-impl ProjectAnalysis<'_> {
+struct BitAmbiguityQuery<'query, 'hir> {
+    analysis: &'query ProjectAnalysis<'hir>,
+    facts: &'query AnalysisFacts<'query>,
+    applied: &'query AppliedComponentPort,
+}
+
+impl ComponentQueries<'_, '_> {
     /// Prove two constraint models for one exact leaf child under an instantiated main.
     ///
     /// `applied` must identify that main's sole child. `input` and the ordered `bits`
@@ -132,12 +140,10 @@ impl ProjectAnalysis<'_> {
         input: &AccessPath,
         bits: &[AccessPath],
     ) -> SummaryFact<ComponentBitAmbiguityOutcome> {
-        SummaryFact::from_result(self.component_ambiguity_result(
-            facts,
-            applied,
-            RequestedBits::Paths { input, bits },
-            &mut ProofBudget::default(),
-        ))
+        let query = BitAmbiguityQuery { analysis: self.analysis, facts, applied };
+        SummaryFact::from_result(
+            query.prove(RequestedBits::Paths { input, bits }, &mut ProofBudget::default()),
+        )
     }
 
     /// Prove the same complete closure using checked child-local port handles.
@@ -151,12 +157,10 @@ impl ProjectAnalysis<'_> {
         input: &AccessHandle,
         bits: &[AccessHandle],
     ) -> SummaryFact<ComponentBitAmbiguityOutcome> {
-        SummaryFact::from_result(self.component_ambiguity_result(
-            facts,
-            applied,
-            RequestedBits::Handles { input, bits },
-            &mut ProofBudget::default(),
-        ))
+        let query = BitAmbiguityQuery { analysis: self.analysis, facts, applied };
+        SummaryFact::from_result(
+            query.prove(RequestedBits::Handles { input, bits }, &mut ProofBudget::default()),
+        )
     }
 
     /// Prove two complete caller and child models using checked child port schemas.
@@ -171,21 +175,17 @@ impl ProjectAnalysis<'_> {
         input: PortId,
         bits: PortId,
     ) -> SummaryFact<ComponentBitAmbiguityOutcome> {
-        SummaryFact::from_result(self.component_ambiguity_result(
-            facts,
-            applied,
-            RequestedBits::Ports { input, bits },
-            &mut ProofBudget::default(),
-        ))
+        let query = BitAmbiguityQuery { analysis: self.analysis, facts, applied };
+        SummaryFact::from_result(
+            query.prove(RequestedBits::Ports { input, bits }, &mut ProofBudget::default()),
+        )
     }
+}
 
-    fn component_ambiguity_result(
-        &self,
-        facts: &AnalysisFacts<'_>,
-        applied: &AppliedComponentPort,
-        requested: RequestedBits<'_>,
-        budget: &mut ProofBudget,
-    ) -> Result<ComponentBitAmbiguityOutcome, SummaryBlocker> {
+impl BitAmbiguityQuery<'_, '_> {
+    fn check_parent(&self, requested: RequestedBits<'_>) -> Result<(), SummaryBlocker> {
+        let facts = self.facts;
+        let applied = self.applied;
         if let RequestedBits::Ports { bits, .. } = &requested {
             let (port, indices) =
                 applied.handle().output_port().ok_or(SummaryBlocker::WrongInstance)?;
@@ -193,38 +193,44 @@ impl ProjectAnalysis<'_> {
                 return Err(SummaryBlocker::WrongInstance);
             }
         }
-        self.check_model_main_root(facts, applied.caller_evidence())?;
-        self.sources().validated_definition(facts)?;
-        self.execution().check_warning_execution_scope(facts, applied.caller_evidence())?;
-        self.check_parent_components_complete(facts)?;
-        self.single_model_call(facts, applied)?;
-        self.components().with_component_port_facts(applied.callee_evidence(), |child| {
-            let instance = self.model_source_instance(facts, child, applied, budget)?;
+        self.analysis.check_model_main_root(facts, applied.caller_evidence())?;
+        self.analysis.sources().validated_definition(facts)?;
+        self.analysis
+            .execution()
+            .check_warning_execution_scope(facts, applied.caller_evidence())?;
+        self.analysis.check_parent_components_complete(facts)?;
+        self.analysis.components().single_model_call(facts, applied)?;
+        Ok(())
+    }
+
+    fn prove(
+        &self,
+        requested: RequestedBits<'_>,
+        budget: &mut ProofBudget,
+    ) -> Result<ComponentBitAmbiguityOutcome, SummaryBlocker> {
+        let analysis = self.analysis;
+        let facts = self.facts;
+        let applied = self.applied;
+        self.check_parent(requested)?;
+        analysis.components().with_component_port_facts(applied.callee_evidence(), |child| {
+            let instance =
+                analysis.components().model_source_instance(facts, child, applied, budget)?;
             let completed =
-                self.execution().completed_project_template(child, &instance.callee, &[])?;
-            let (completed, ready) = self.execution().completed_model_child(
+                analysis.execution().completed_project_template(child, &instance.callee, &[])?;
+            let (completed, ready) = analysis.execution().completed_model_child(
                 facts,
                 applied.caller_evidence(),
                 &instance,
                 completed,
             )?;
-            let constructors = self.execution().completed_constructor_reads(
+            let constructors = analysis.execution().completed_constructor_reads(
                 facts,
                 applied.caller_evidence(),
                 &[completed],
             )?;
             certified(&facts.body_signal_reads_ready_with(&constructors))?;
             certified(&facts.no_possible_repeated_body_writes())?;
-            let relation = match requested {
-                RequestedBits::Paths { input, bits } => child.bit_decomposition(input, bits),
-                RequestedBits::Handles { input, bits } => {
-                    child.bit_decomposition_handles(input, bits)
-                }
-                RequestedBits::Ports { input, bits } => {
-                    let (input, bits) = checked_bit_port_handles(child, input, bits)?;
-                    child.bit_decomposition_handles(&input, &bits)
-                }
-            };
+            let relation = requested_relation(child, requested)?;
             let Some(relation) = certified(&relation)? else {
                 return Ok(ComponentBitAmbiguityOutcome::NoCertificate(
                     NoBitAmbiguityCertificate::NoMatchingDecomposition,
@@ -250,9 +256,24 @@ impl ProjectAnalysis<'_> {
                 relation,
             };
             equations.check(facts, child, &caller_path, &child_path)?;
-            prove_closure_models(self.field_context(), applied, &equations, budget)
+            prove_closure_models(analysis.field_context(), applied, &equations, budget)
         })
     }
+}
+
+fn requested_relation(
+    child: &AnalysisFacts<'_>,
+    requested: RequestedBits<'_>,
+) -> Result<Fact<Option<BitDecomposition>>, SummaryBlocker> {
+    let relation = match requested {
+        RequestedBits::Paths { input, bits } => child.bit_decomposition(input, bits),
+        RequestedBits::Handles { input, bits } => child.bit_decomposition_handles(input, bits),
+        RequestedBits::Ports { input, bits } => {
+            let (input, bits) = checked_bit_port_handles(child, input, bits)?;
+            child.bit_decomposition_handles(&input, &bits)
+        }
+    };
+    Ok(relation)
 }
 
 fn checked_bit_port_handles(

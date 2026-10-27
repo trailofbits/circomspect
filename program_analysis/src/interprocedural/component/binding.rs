@@ -65,7 +65,7 @@ impl<'query, 'project> CheckedCallContext<'query, 'project> {
         facts: &'query AnalysisFacts<'query>,
         applied: &'query AppliedComponentPort,
     ) -> Result<Self, SummaryBlocker> {
-        let call = provider.single_model_call(facts, applied)?;
+        let call = provider.components().single_model_call(facts, applied)?;
         Ok(Self::from_evidence(
             provider,
             facts,

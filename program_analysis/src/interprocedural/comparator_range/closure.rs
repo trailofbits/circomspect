@@ -98,9 +98,10 @@ impl<'query, 'hir: 'query> ComparatorQuery<'query, 'hir> {
         let applied = self.applied;
         self.check_output()?;
         analysis.check_parent_components_complete(facts)?;
-        analysis.single_model_call(facts, applied)?;
+        analysis.components().single_model_call(facts, applied)?;
         analysis.components().with_component_port_facts(applied.callee_evidence(), |comparison| {
-            let instance = analysis.model_source_instance(facts, comparison, applied, budget)?;
+            let instance =
+                analysis.components().model_source_instance(facts, comparison, applied, budget)?;
             let main_ready = analysis
                 .components()
                 .ready_generated_instance(facts, comparison, &instance, budget)?;

@@ -7,10 +7,10 @@ use crate::hir_facts::{
 };
 use crate::interprocedural::summary::certified;
 use crate::interprocedural::{
-    ContextEvidence, ContextOrigin, ProjectAnalysis, SummaryBlocker, SummaryFact,
+    ContextEvidence, ContextOrigin, SummaryBlocker, SummaryFact, TemplateQueries,
 };
 
-impl ProjectAnalysis<'_> {
+impl TemplateQueries<'_, '_> {
     /// Prove two complete models of a validated leaf template's generated equations.
     ///
     /// The bounded candidates share every external input. Unknown control, called
@@ -52,7 +52,7 @@ impl ProjectAnalysis<'_> {
         facts: &AnalysisFacts<'_>,
         evidence: &ContextEvidence,
     ) -> Result<(), SummaryBlocker> {
-        self.check_template_constraint_scope(facts, evidence)?;
+        self.analysis.check_template_constraint_scope(facts, evidence)?;
         if evidence.origin() == ContextOrigin::SymbolicRoot
             && !evidence.context().arguments().is_empty()
         {
@@ -88,6 +88,7 @@ impl ProjectAnalysis<'_> {
         bits: &[AccessHandle],
     ) -> SummaryFact<Option<BitDecomposition>> {
         let result = self
+            .analysis
             .check_template_constraint_scope(facts, evidence)
             .and_then(|()| Ok(certified(&facts.bit_decomposition_handles(input, bits))?.clone()));
         SummaryFact::from_result(result)
@@ -100,7 +101,7 @@ impl ProjectAnalysis<'_> {
         input: &AccessPath,
         bits: &[AccessPath],
     ) -> Result<Option<BitDecomposition>, SummaryBlocker> {
-        self.check_template_constraint_scope(facts, evidence)?;
+        self.analysis.check_template_constraint_scope(facts, evidence)?;
         Ok(certified(&facts.bit_decomposition(input, bits))?.clone())
     }
 }

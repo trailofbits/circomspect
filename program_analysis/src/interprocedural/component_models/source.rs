@@ -12,27 +12,29 @@ use crate::interprocedural::component::binding::CheckedCallContext;
 use crate::interprocedural::output_enumeration::EnumeratedComponentInstance;
 use crate::interprocedural::summary::certified;
 use crate::interprocedural::{
-    AppliedComponentPort, CallReachability, ProjectAnalysis, ReachableCall, SummaryBlocker,
+    AppliedComponentPort, CallReachability, ComponentQueries, ProjectAnalysis, ReachableCall,
+    SummaryBlocker,
 };
 
-impl ProjectAnalysis<'_> {
-    pub(in crate::interprocedural) fn single_model_call<'a>(
-        &'a self,
+impl<'session, 'hir: 'session> ComponentQueries<'session, 'hir> {
+    pub(in crate::interprocedural) fn single_model_call(
+        &self,
         facts: &AnalysisFacts<'_>,
         applied: &AppliedComponentPort,
-    ) -> Result<ReachableCall<'a>, SummaryBlocker> {
+    ) -> Result<ReachableCall<'session>, SummaryBlocker> {
+        let analysis: &'session ProjectAnalysis<'hir> = self.analysis;
         let mut found = None;
-        self.components().visit_component_calls(facts, applied.caller_evidence(), |call| {
+        self.visit_component_calls(facts, applied.caller_evidence(), |call| {
             if found.replace(call.site().id()).is_some() {
                 return Err(SummaryBlocker::UnsupportedContext);
             }
             Ok(())
         })?;
         let site = found.ok_or(SummaryBlocker::WrongInstance)?;
-        let CallReachability::Reachable(call) = self.graph().reachable_call(site, facts) else {
+        let CallReachability::Reachable(call) = analysis.graph().reachable_call(site, facts) else {
             return Err(SummaryBlocker::ForeignCall);
         };
-        if self.contexts().call_evidence(&call, facts, applied.caller_evidence())?
+        if analysis.contexts().call_evidence(&call, facts, applied.caller_evidence())?
             != *applied.callee_evidence()
         {
             return Err(SummaryBlocker::WrongContext);
@@ -47,7 +49,7 @@ impl ProjectAnalysis<'_> {
         applied: &AppliedComponentPort,
         budget: &mut ProofBudget,
     ) -> Result<EnumeratedComponentInstance, SummaryBlocker> {
-        let context = CheckedCallContext::for_model(self, facts, applied)?;
+        let context = CheckedCallContext::for_model(self.analysis, facts, applied)?;
         let checked = context.select_instance(|_component, target, instantiation| {
             if instantiation != applied.instantiation()
                 || facts.instance_relation(applied.handle(), target) != InstanceRelation::Exact
@@ -97,18 +99,19 @@ impl ProjectAnalysis<'_> {
         Ok(keys)
     }
 
-    fn live_model_output<'a>(
-        &'a self,
+    fn live_model_output(
+        &self,
         facts: &AnalysisFacts<'_>,
         applied: &AppliedComponentPort,
         site: NodeId,
-    ) -> Result<Option<&'a AccessPath>, SummaryBlocker> {
+    ) -> Result<Option<&'session AccessPath>, SummaryBlocker> {
+        let analysis: &'session ProjectAnalysis<'hir> = self.analysis;
         let Some(CfgNodeKind::Evaluate(expression)) = facts.cfg().node(site).map(|node| &node.kind)
         else {
             return Ok(None);
         };
         let Some(ExprKind::Access(path)) =
-            self.hir().expression(*expression).map(|expr| &expr.kind)
+            analysis.hir().expression(*expression).map(|expr| &expr.kind)
         else {
             return Ok(None);
         };
@@ -121,3 +124,6 @@ impl ProjectAnalysis<'_> {
         Ok(Some(path))
     }
 }
+
+#[cfg(test)]
+mod tests;

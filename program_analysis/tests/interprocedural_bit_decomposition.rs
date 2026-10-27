@@ -118,7 +118,7 @@ fn custom_template_header_withholds_scoped_relation() {
     let facts = provider.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
     let input = path(&lifted.hir, "in", None);
     let bits = [path(&lifted.hir, "bits", Some(0))];
-    let result = provider.template_bit_decomposition(&facts, &evidence, &input, &bits);
+    let result = provider.templates().template_bit_decomposition(&facts, &evidence, &input, &bits);
     assert!(result.unavailable().is_some(), "{result:?}");
 }
 
@@ -141,12 +141,14 @@ fn foreign_curve_and_project_cannot_rebind_a_scoped_relation() {
     let bits = [path(&lifted.hir, "bits", Some(0))];
 
     let other_curve = ProjectAnalysis::build(&lifted, Curve::Goldilocks).unwrap();
-    let result = other_curve.template_bit_decomposition(&facts, &evidence, &input, &bits);
+    let result =
+        other_curve.templates().template_bit_decomposition(&facts, &evidence, &input, &bits);
     assert!(result.unavailable().is_some(), "{result:?}");
 
     let foreign = fixture(&source);
     let other_project = ProjectAnalysis::build(&foreign, Curve::Bn254).unwrap();
-    let result = other_project.template_bit_decomposition(&facts, &evidence, &input, &bits);
+    let result =
+        other_project.templates().template_bit_decomposition(&facts, &evidence, &input, &bits);
     assert!(result.unavailable().is_some(), "{result:?}");
 }
 
@@ -162,7 +164,7 @@ fn evidence_from_another_definition_cannot_rebind_facts() {
     let other = provider.contexts().symbolic_root(lifted.hir.definition("Other").unwrap()).unwrap();
     let input = path(&lifted.hir, "in", None);
     let bits = [path(&lifted.hir, "bits", Some(0))];
-    let result = provider.template_bit_decomposition(&facts, &other, &input, &bits);
+    let result = provider.templates().template_bit_decomposition(&facts, &other, &input, &bits);
     assert!(result.unavailable().is_some(), "{result:?}");
 }
 
@@ -198,7 +200,8 @@ fn called_scope_abstains_until_incoming_constraints_are_proved() {
         path(&lifted.hir, "bits", Some(1)),
         path(&lifted.hir, "bits", Some(2)),
     ];
-    let result = provider.template_bit_decomposition(&child_facts, &child, &input, &bits);
+    let result =
+        provider.templates().template_bit_decomposition(&child_facts, &child, &input, &bits);
     assert!(result.unavailable().is_some(), "{result:?}");
 }
 

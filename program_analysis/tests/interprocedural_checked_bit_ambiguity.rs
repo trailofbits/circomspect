@@ -261,3 +261,34 @@ fn checked_models_refuse_called_and_symbolic_parameter_scopes() {
     let symbolic_result = context.template_bit_ambiguity_handles(&input, &[bit]);
     assert!(symbolic_result.unavailable().is_some(), "{symbolic_result:?}");
 }
+
+#[test]
+fn temporary_template_views_preserve_bit_relations() {
+    let project = fixture(&source(1, ""));
+    let analysis = ProjectAnalysis::build(&project, Curve::Goldilocks).unwrap();
+    let evidence = main_evidence(&analysis, &project.hir);
+    let cfg = build_cfg(&project.hir, evidence.context().definition()).unwrap();
+    let facts = analysis.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let input = facts.port_handle(port(&project.hir, "in"), &[]).unwrap();
+    let bits = [facts.port_handle(port(&project.hir, "out"), &[0]).unwrap()];
+    let first =
+        analysis.templates().template_bit_ambiguity_handles(&facts, &evidence, &input, &bits);
+    let relation =
+        analysis.templates().template_bit_decomposition_handles(&facts, &evidence, &input, &bits);
+    let (second, repeated_relation) = {
+        let queries = analysis.templates();
+        (
+            queries.template_bit_ambiguity_handles(&facts, &evidence, &input, &bits),
+            queries.template_bit_decomposition_handles(&facts, &evidence, &input, &bits),
+        )
+    };
+    assert_eq!(first, second);
+    assert_eq!(relation, repeated_relation);
+    assert_eq!(relation.certified().unwrap().as_ref().unwrap().bits().len(), 1);
+    assert_eq!(
+        first.certified(),
+        Some(&BitAmbiguityOutcome::NoCertificate(
+            NoBitAmbiguityCertificate::WidthBelowFieldModulus
+        ))
+    );
+}
