@@ -67,6 +67,23 @@ fn parameter_writes_cannot_certify_the_stale_incoming_value() {
 }
 
 #[test]
+fn context_curve_labels_and_order_are_stable() {
+    let lifted = fixture("function F(){return 7;}", Version::new(2, 2, 3));
+    assert!(lifted.diagnostics.is_empty());
+    let definition = lifted.hir.definition("F").unwrap();
+    let [bn, bls, gold] = [Curve::Bn254, Curve::Bls12_381, Curve::Goldilocks].map(|curve| {
+        let analysis = ProjectAnalysis::build(&lifted, curve).unwrap();
+        analysis.contexts().context_for(definition, vec![]).unwrap()
+    });
+    assert!(format!("{bn:?}").contains("curve: Bn254,"));
+    assert!(format!("{bls:?}").contains("curve: Bls12_381,"));
+    assert!(format!("{gold:?}").contains("curve: Goldilocks,"));
+    assert!(bn < bls);
+    assert!(bls < gold);
+    assert!(bn < gold);
+}
+
+#[test]
 fn context_keys_bind_project_curve_version_shape_and_canonical_values() {
     let version = Version::new(2, 2, 3);
     let lifted = fixture("function F(n){return n;} template T(n){}", version);

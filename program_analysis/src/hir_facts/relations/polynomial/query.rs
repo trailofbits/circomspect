@@ -5,10 +5,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use num_traits::Signed;
 use num_bigint::BigInt;
 
-use crate::hir_facts::relations::polynomial::{
-    CurveTag, Monomial, NormalizedEquation, QuadraticPolynomial,
-};
-use crate::hir_facts::{AccessKey, FieldContext, FieldValue};
+use crate::hir_facts::relations::polynomial::{Monomial, NormalizedEquation, QuadraticPolynomial};
+use crate::hir_facts::{AccessKey, CurveKey, FieldContext, FieldValue};
 
 /// Why an equation cannot be evaluated against a supplied field assignment.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
@@ -181,7 +179,7 @@ impl NormalizedEquation {
     }
 
     fn check_field(&self, field: &FieldContext) -> Result<(), EquationEvaluationError> {
-        if self.0.curve != CurveTag::from(field.curve()) {
+        if self.0.curve != CurveKey::from(field.curve()) {
             return Err(EquationEvaluationError::WrongCurve);
         }
         Ok(())

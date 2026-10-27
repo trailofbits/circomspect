@@ -3,10 +3,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use parser::hir::{DefinitionRef, ExprId, ExprKind, ProjectIdentity, SemanticDiagnostic, SymbolId};
 use parser::frontend::{Span, Version};
-use program_structure::utils::constants::Curve;
 
 use crate::hir_cfg::DefinitionCfg;
-use crate::hir_facts::{exact_compile_time, AnalysisFacts, FactBlocker, FieldValue, Range};
+use crate::hir_facts::{exact_compile_time, AnalysisFacts, CurveKey, FactBlocker, FieldValue, Range};
 
 use crate::interprocedural::{CallOwner, CallSite, CallSiteId, ProjectAnalysis, ReachableCall};
 
@@ -29,23 +28,6 @@ pub enum ArgumentValue {
     Array(Vec<Self>),
     Bus(BTreeMap<String, Self>),
     Symbolic(ArgumentShape),
-}
-
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-enum CurveKey {
-    Bn254,
-    Bls12_381,
-    Goldilocks,
-}
-
-impl From<&Curve> for CurveKey {
-    fn from(curve: &Curve) -> Self {
-        match curve {
-            Curve::Bn254 => Self::Bn254,
-            Curve::Bls12_381 => Self::Bls12_381,
-            Curve::Goldilocks => Self::Goldilocks,
-        }
-    }
 }
 
 /// A validated specialization key, bound to one HIR, field, version, and definition.

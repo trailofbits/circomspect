@@ -4,6 +4,23 @@ use num_bigint::BigInt;
 use num_traits::{Signed, ToPrimitive, Zero};
 use program_structure::utils::constants::{Curve, UsefulConstants};
 
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) enum CurveKey {
+    Bn254,
+    Bls12_381,
+    Goldilocks,
+}
+
+impl From<&Curve> for CurveKey {
+    fn from(curve: &Curve) -> Self {
+        match curve {
+            Curve::Bn254 => Self::Bn254,
+            Curve::Bls12_381 => Self::Bls12_381,
+            Curve::Goldilocks => Self::Goldilocks,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct FieldValue(BigInt);
 

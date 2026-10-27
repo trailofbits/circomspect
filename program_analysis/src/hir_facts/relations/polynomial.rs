@@ -7,31 +7,13 @@ use std::collections::BTreeMap;
 use abstract_interpretation::lattice::Lattice;
 use parser::hir::{AccessPath, ExprId, ExprKind, HirProject, SymbolId, SymbolKind};
 use parser::frontend::{BinaryOperator, UnaryOperator};
-use program_structure::utils::constants::Curve;
 
 use crate::hir_cfg::{CfgNodeKind, Constraint};
 use crate::hir_facts::access::{key_for_path, AccessKey};
-use crate::hir_facts::field::{FieldContext, FieldValue};
+use crate::hir_facts::field::{CurveKey, FieldContext, FieldValue};
 use crate::hir_facts::forward::eval_expression_with_calls;
 use crate::hir_facts::VisitAccesses;
 use crate::scalar_evidence::ScalarExpressionEvidence;
-
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-enum CurveTag {
-    Bn254,
-    Bls12_381,
-    Goldilocks,
-}
-
-impl From<&Curve> for CurveTag {
-    fn from(curve: &Curve) -> Self {
-        match curve {
-            Curve::Bn254 => Self::Bn254,
-            Curve::Bls12_381 => Self::Bls12_381,
-            Curve::Goldilocks => Self::Goldilocks,
-        }
-    }
-}
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum Monomial {
@@ -60,13 +42,13 @@ impl Monomial {
 /// Its coefficients and curve cannot be supplied by warning consumers.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct QuadraticPolynomial {
-    curve: CurveTag,
+    curve: CurveKey,
     terms: BTreeMap<Monomial, FieldValue>,
 }
 
 impl QuadraticPolynomial {
     pub(super) fn zero(field: &FieldContext) -> Self {
-        Self { curve: CurveTag::from(field.curve()), terms: BTreeMap::new() }
+        Self { curve: CurveKey::from(field.curve()), terms: BTreeMap::new() }
     }
 
     pub(super) fn constant(field: &FieldContext, value: FieldValue) -> Self {
@@ -593,6 +575,18 @@ mod tests {
     };
     use crate::scalar_evidence::ScalarExpressionEvidence;
     use abstract_interpretation::lattice::Lattice;
+
+    #[test]
+    fn polynomial_curve_labels_and_order_are_stable() {
+        let [bn, bls, gold] = [Curve::Bn254, Curve::Bls12_381, Curve::Goldilocks]
+            .map(|curve| QuadraticPolynomial::zero(&FieldContext::for_curve(curve)));
+        assert_eq!(format!("{bn:?}"), "QuadraticPolynomial { curve: Bn254, terms: {} }");
+        assert_eq!(format!("{bls:?}"), "QuadraticPolynomial { curve: Bls12_381, terms: {} }");
+        assert_eq!(format!("{gold:?}"), "QuadraticPolynomial { curve: Goldilocks, terms: {} }");
+        assert!(bn < bls);
+        assert!(bls < gold);
+        assert!(bn < gold);
+    }
 
     #[test]
     fn generated_assignment_polynomials_can_match_without_an_execution_certificate() {

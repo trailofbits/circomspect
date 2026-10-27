@@ -29,6 +29,7 @@ mod write_validity;
 #[cfg(test)]
 mod range_tests;
 
+pub(crate) use crate::hir_facts::field::CurveKey;
 pub(crate) use crate::hir_facts::relations::GeneratedInputEquation;
 pub(crate) use crate::hir_facts::source_assignment::{DescribeSignalAssignment, SourceSignalAssignment};
 
