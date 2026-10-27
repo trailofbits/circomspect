@@ -32,6 +32,8 @@ jobs:
         run: cargo clippy --all-targets --all-features -- -D warnings
       - name: Run tests
         run: cargo test --workspace --locked
+      - name: Test reading examples
+        run: cargo test -p circomspect-program-analysis --examples --locked
 
   msrv:
     name: Rust 1.74 compatibility
@@ -45,6 +47,8 @@ jobs:
         run: rustup toolchain install 1.74.0 --profile minimal
       - name: Build and test at MSRV
         run: cargo +1.74.0 test --workspace --locked
+      - name: Test reading examples at MSRV
+        run: cargo +1.74.0 test -p circomspect-program-analysis --examples --locked
 
   compiler-conformance:
     name: Circom 2.2.3 grammar corpus
