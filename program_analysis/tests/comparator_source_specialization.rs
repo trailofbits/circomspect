@@ -171,7 +171,8 @@ fn checked_child_bit_zero(argument: &str) -> bool {
     };
     let bits =
         lifted.hir.templates().iter().find(|template| template.name == "Child").unwrap().ports[1];
-    let applied = provider.apply_component_first_output(&facts, &evidence, &child, bits);
+    let applied =
+        provider.components().apply_component_first_output(&facts, &evidence, &child, bits);
     applied.certified().is_some()
 }
 

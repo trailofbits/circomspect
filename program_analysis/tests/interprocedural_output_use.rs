@@ -131,7 +131,7 @@ fn internal_use_at_option(
     else {
         panic!("child must be reachable")
     };
-    let applied = provider.apply_component_output(&facts, &root, &call, &handle);
+    let applied = provider.components().apply_component_output(&facts, &root, &call, &handle);
     let applied = applied.certified()?;
     let closure = if let Some(limit) = budget {
         let pending = provider.contexts().analyze_for_evidence(&cfg, &root, Some(limit)).unwrap();

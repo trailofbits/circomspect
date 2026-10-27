@@ -80,11 +80,11 @@ impl ProjectAnalysis<'_> {
         self.check_comparator_output(facts, applied)?;
         self.check_parent_components_complete(facts)?;
         self.single_model_call(facts, applied)?;
-        self.with_component_port_facts(applied.callee_evidence(), |comparison| {
+        self.components().with_component_port_facts(applied.callee_evidence(), |comparison| {
             let instance = self.model_source_instance(facts, comparison, applied, budget)?;
             let main_ready = self.ready_generated_instance(facts, comparison, &instance, budget)?;
             let nested = self.comparator_child(comparison, &instance.callee)?;
-            self.with_component_port_facts(&nested.callee, |decomposition| {
+            self.components().with_component_port_facts(&nested.callee, |decomposition| {
                 let ready =
                     self.ready_generated_instance(comparison, decomposition, &nested, budget)?;
                 let completed =

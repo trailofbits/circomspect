@@ -198,7 +198,7 @@ impl ProjectAnalysis<'_> {
         self.check_warning_execution_scope(facts, applied.caller_evidence())?;
         self.check_parent_components_complete(facts)?;
         self.single_model_call(facts, applied)?;
-        self.with_component_port_facts(applied.callee_evidence(), |child| {
+        self.components().with_component_port_facts(applied.callee_evidence(), |child| {
             let instance = self.model_source_instance(facts, child, applied, budget)?;
             let completed = self.completed_project_template(child, &instance.callee, &[])?;
             let (completed, ready) =

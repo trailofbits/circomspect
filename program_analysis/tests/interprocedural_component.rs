@@ -51,8 +51,8 @@ fn output_read(source: &str, instance: usize) -> SummaryFact<CallerOutputRead> {
     else {
         panic!("component call must be reachable")
     };
-    let applied = provider.apply_component_output(&facts, &scope, &call, &handle);
-    provider.caller_output_read(&facts, applied.certified().unwrap())
+    let applied = provider.components().apply_component_output(&facts, &scope, &call, &handle);
+    provider.components().caller_output_read(&facts, applied.certified().unwrap())
 }
 
 #[test]
@@ -159,7 +159,7 @@ fn exact_array_instances_keep_distinct_parameterized_output_values() {
         else {
             panic!("exact call must be reachable")
         };
-        let applied = provider.apply_component_output(&facts, &scope, &call, &handle);
+        let applied = provider.components().apply_component_output(&facts, &scope, &call, &handle);
         let applied = applied.certified().unwrap_or_else(|| panic!("{:?}", applied.unavailable()));
         assert_eq!(applied.port_summary().fixed_value(), Some(&field.canonical(expected.into())));
         assert_eq!(
@@ -192,6 +192,7 @@ fn a_reachable_call_cannot_borrow_another_instance_output() {
         panic!("first call must be reachable")
     };
     assert!(provider
+        .components()
         .apply_component_output(&facts, &scope, &first, &handle)
         .unavailable()
         .unwrap()
@@ -202,6 +203,7 @@ fn a_reachable_call_cannot_borrow_another_instance_output() {
     let unbound_handle =
         unbound.component_output_handle(lifted.hir.components()[0].id, &[0], output, &[]).unwrap();
     assert!(provider
+        .components()
         .apply_component_output(&facts, &scope, &first, &unbound_handle)
         .unavailable()
         .unwrap()
@@ -232,6 +234,7 @@ fn duplicate_instantiation_cannot_double_apply_one_child_summary() {
         panic!("first call must be reachable")
     };
     assert!(provider
+        .components()
         .apply_component_output(&facts, &scope, &first, &handle)
         .unavailable()
         .unwrap()
@@ -261,6 +264,7 @@ fn symbolic_instance_index_cannot_borrow_an_exact_output_handle() {
         panic!("symbolic target still has a reachable call")
     };
     assert!(provider
+        .components()
         .apply_component_output(&facts, &scope, &call, &handle)
         .unavailable()
         .unwrap()
@@ -290,6 +294,7 @@ fn unknown_template_argument_keeps_output_application_unavailable() {
         panic!("source call remains reachable")
     };
     assert!(provider
+        .components()
         .apply_component_output(&facts, &scope, &call, &handle)
         .unavailable()
         .is_some());
@@ -321,11 +326,11 @@ fn checked_input_relation_agrees_with_direct_inline_output() {
     else {
         panic!("child call must be reachable")
     };
-    let applied = provider.apply_component_output(&facts, &scope, &call, &handle);
+    let applied = provider.components().apply_component_output(&facts, &scope, &call, &handle);
     let applied = applied.certified().unwrap();
     assert_eq!(applied.port_summary().fixed_value(), None);
 
-    let composed = provider.composed_constraint_fixed_output(&facts, applied);
+    let composed = provider.components().composed_constraint_fixed_output(&facts, applied);
     let inline_context =
         provider.contexts().symbolic_context_for(DefinitionRef::Template(inline)).unwrap();
     let inline_output = lifted.hir.template(inline).unwrap().ports[0];
@@ -366,8 +371,9 @@ fn witness_only_input_does_not_fix_child_output() {
     else {
         panic!("child call must be reachable")
     };
-    let applied = provider.apply_component_output(&facts, &scope, &call, &handle);
+    let applied = provider.components().apply_component_output(&facts, &scope, &call, &handle);
     assert!(provider
+        .components()
         .composed_constraint_fixed_output(&facts, applied.certified().unwrap())
         .unavailable()
         .is_some());
@@ -401,8 +407,10 @@ fn repeated_instances_compose_only_their_own_checked_inputs() {
         else {
             panic!("component call must be reachable")
         };
-        let applied = provider.apply_component_output(&facts, &scope, &call, &handle);
-        let value = provider.composed_constraint_fixed_output(&facts, applied.certified().unwrap());
+        let applied = provider.components().apply_component_output(&facts, &scope, &call, &handle);
+        let value = provider
+            .components()
+            .composed_constraint_fixed_output(&facts, applied.certified().unwrap());
         assert_eq!(
             value.certified().map(
                 circomspect_program_analysis::interprocedural::ComposedConstraintFixedOutput::value
@@ -445,9 +453,9 @@ fn duplicate_and_missing_input_bindings_cannot_fix_an_output() {
         else {
             panic!("component call must be reachable")
         };
-        let applied = provider.apply_component_output(&facts, &scope, &call, &handle);
+        let applied = provider.components().apply_component_output(&facts, &scope, &call, &handle);
         let result = if let Some(applied) = applied.certified() {
-            provider.composed_constraint_fixed_output(&facts, applied)
+            provider.components().composed_constraint_fixed_output(&facts, applied)
         } else {
             assert!(applied.unavailable().unwrap().contains(&expected));
             continue;
@@ -478,8 +486,9 @@ fn a_may_reachable_branch_instantiation_does_not_fix_an_output() {
     else {
         panic!("branch call may be reachable")
     };
-    let applied = provider.apply_component_output(&facts, &scope, &call, &handle);
+    let applied = provider.components().apply_component_output(&facts, &scope, &call, &handle);
     assert!(provider
+        .components()
         .composed_constraint_fixed_output(&facts, applied.certified().unwrap())
         .unavailable()
         .is_some());
@@ -508,8 +517,9 @@ fn disagreeing_branch_input_bindings_cannot_fix_an_output() {
     else {
         panic!("instantiation must be reachable")
     };
-    let applied = provider.apply_component_output(&facts, &scope, &call, &handle);
+    let applied = provider.components().apply_component_output(&facts, &scope, &call, &handle);
     assert!(provider
+        .components()
         .composed_constraint_fixed_output(&facts, applied.certified().unwrap())
         .certified()
         .is_none());
@@ -538,8 +548,10 @@ fn unrelated_branch_preserves_the_later_checked_input_value() {
     else {
         panic!("instantiation must be reachable")
     };
-    let applied = provider.apply_component_output(&facts, &scope, &call, &handle);
-    let result = provider.composed_constraint_fixed_output(&facts, applied.certified().unwrap());
+    let applied = provider.components().apply_component_output(&facts, &scope, &call, &handle);
+    let result = provider
+        .components()
+        .composed_constraint_fixed_output(&facts, applied.certified().unwrap());
     let expected = FieldContext::for_curve(Curve::Bn254).canonical(7.into());
     assert_eq!(
         result.certified().map(
@@ -578,8 +590,9 @@ fn equality_without_output_witness_is_not_promoted_as_a_value_write() {
     else {
         panic!("component call must be reachable")
     };
-    let applied = provider.apply_component_output(&facts, &scope, &call, &handle);
+    let applied = provider.components().apply_component_output(&facts, &scope, &call, &handle);
     assert!(provider
+        .components()
         .composed_constraint_fixed_output(&facts, applied.certified().unwrap())
         .unavailable()
         .is_some());
@@ -608,8 +621,9 @@ fn nested_output_read_before_input_binding_blocks_composition() {
     else {
         panic!("component call must be reachable")
     };
-    let applied = provider.apply_component_output(&facts, &scope, &call, &handle);
+    let applied = provider.components().apply_component_output(&facts, &scope, &call, &handle);
     assert!(provider
+        .components()
         .composed_constraint_fixed_output(&facts, applied.certified().unwrap())
         .unavailable()
         .is_some());
@@ -638,8 +652,9 @@ fn every_required_child_input_must_precede_the_output_read() {
     else {
         panic!("component call must be reachable")
     };
-    let applied = provider.apply_component_output(&facts, &scope, &call, &handle);
+    let applied = provider.components().apply_component_output(&facts, &scope, &call, &handle);
     assert!(provider
+        .components()
         .composed_constraint_fixed_output(&facts, applied.certified().unwrap())
         .unavailable()
         .is_some());
@@ -667,9 +682,10 @@ fn opaque_competing_input_write_blocks_a_fixed_output() {
     else {
         panic!("component call must be reachable")
     };
-    let applied = provider.apply_component_output(&facts, &scope, &call, &handle);
+    let applied = provider.components().apply_component_output(&facts, &scope, &call, &handle);
     assert!(applied.certified().is_some(), "{:?}", applied.unavailable());
     assert!(provider
+        .components()
         .composed_constraint_fixed_output(&facts, applied.certified().unwrap())
         .unavailable()
         .is_some());
@@ -698,9 +714,10 @@ fn symbolic_component_index_may_alias_a_checked_input_binding() {
     else {
         panic!("component call must be reachable")
     };
-    let applied = provider.apply_component_output(&facts, &scope, &call, &handle);
+    let applied = provider.components().apply_component_output(&facts, &scope, &call, &handle);
     assert!(applied.certified().is_some());
     assert!(provider
+        .components()
         .composed_constraint_fixed_output(&facts, applied.certified().unwrap())
         .unavailable()
         .is_some());
@@ -730,10 +747,11 @@ fn competing_child_output_writes_cannot_borrow_the_first_equality() {
         else {
             panic!("component call must be reachable")
         };
-        let applied = provider.apply_component_output(&facts, &scope, &call, &handle);
+        let applied = provider.components().apply_component_output(&facts, &scope, &call, &handle);
         if extra == "out===2;" {
             let applied = applied.certified().expect("equality alone is not a witness write");
             assert!(provider
+                .components()
                 .composed_constraint_fixed_output(&facts, applied)
                 .unavailable()
                 .is_some());
@@ -769,7 +787,7 @@ fn repeated_loop_output_effects_cannot_be_counted_as_one_write() {
     else {
         panic!("component call must be reachable")
     };
-    let applied = provider.apply_component_output(&facts, &scope, &call, &handle);
+    let applied = provider.components().apply_component_output(&facts, &scope, &call, &handle);
     assert!(
         applied.unavailable().unwrap().contains(&SummaryBlocker::UnsupportedContext),
         "repeated loop output write"
@@ -799,7 +817,7 @@ fn dynamic_child_loop_has_a_typed_write_blocker() {
     else {
         panic!("component call must be reachable")
     };
-    let applied = provider.apply_component_output(&facts, &scope, &call, &handle);
+    let applied = provider.components().apply_component_output(&facts, &scope, &call, &handle);
     assert!(applied.unavailable().unwrap().iter().any(|blocker| match blocker {
         SummaryBlocker::LocalFacts(reasons) => reasons.iter().any(|reason| {
             let FactBlocker::WitnessWrite(_, WitnessWriteIssue::PossibleRepeat) = reason else {

@@ -129,7 +129,12 @@ impl AppliedComponentPort {
     }
 }
 
-impl ProjectAnalysis<'_> {
+/// Component instance binding, output use, and composition queries for one session.
+pub struct ComponentQueries<'session, 'hir> {
+    pub(super) analysis: &'session ProjectAnalysis<'hir>,
+}
+
+impl ComponentQueries<'_, '_> {
     /// Certify an exact source read of this output in the bound caller context.
     ///
     /// Absence of a local read cannot certify a project-wide unused output.
@@ -152,7 +157,7 @@ impl ProjectAnalysis<'_> {
         facts: &AnalysisFacts<'_>,
         applied: &AppliedComponentPort,
     ) -> Result<LocalOutputUse, SummaryBlocker> {
-        self.contexts().check_facts_for_evidence(facts, &applied.caller)?;
+        self.analysis.contexts().check_facts_for_evidence(facts, &applied.caller)?;
         if !applied.handle.matches_context(applied.caller.context()) {
             return Err(SummaryBlocker::WrongContext);
         }
@@ -178,7 +183,7 @@ impl ProjectAnalysis<'_> {
             let Some(node) = facts.cfg().node(*id) else { continue };
             let CfgNodeKind::Evaluate(expression) = &node.kind else { continue };
             let Some(ExprKind::Access(path)) =
-                self.hir().expression(*expression).map(|expr| &expr.kind)
+                self.analysis.hir().expression(*expression).map(|expr| &expr.kind)
             else {
                 continue;
             };
@@ -213,6 +218,7 @@ impl ProjectAnalysis<'_> {
             match &node.kind {
                 CfgNodeKind::Evaluate(expression) => {
                     let expr = self
+                        .analysis
                         .hir()
                         .expression(*expression)
                         .ok_or(SummaryBlocker::ExternalSummary)?;
@@ -258,7 +264,7 @@ impl ProjectAnalysis<'_> {
         facts: &AnalysisFacts<'_>,
         applied: &AppliedComponentPort,
     ) -> Result<ComposedConstraintFixedOutput, SummaryBlocker> {
-        self.contexts().check_facts_for_evidence(facts, &applied.caller)?;
+        self.analysis.contexts().check_facts_for_evidence(facts, &applied.caller)?;
         if !applied.handle.matches_context(applied.caller.context()) {
             return Err(SummaryBlocker::WrongContext);
         }
@@ -323,21 +329,25 @@ impl ProjectAnalysis<'_> {
         child: parser::hir::TemplateId,
         applied: &AppliedComponentPort,
     ) -> Result<GeneratedPortEquality, SummaryBlocker> {
-        self.contexts().check_evidence(&applied.callee)?;
+        self.analysis.contexts().check_evidence(&applied.callee)?;
         if !applied.port.indices().is_empty() {
             return Err(SummaryBlocker::UnsupportedContext);
         }
-        self.templates().with_local_template(
+        self.analysis.templates().with_local_template(
             child,
             applied.callee.context(),
             |template, cfg, facts| {
                 Self::reject_reachable_child_loop(cfg, facts)?;
                 let output = self
+                    .analysis
                     .hir()
                     .port(applied.port.port())
                     .ok_or(SummaryBlocker::ForeignDefinition)?;
-                let symbol =
-                    self.hir().symbol(output.symbol).ok_or(SummaryBlocker::ForeignDefinition)?;
+                let symbol = self
+                    .analysis
+                    .hir()
+                    .symbol(output.symbol)
+                    .ok_or(SummaryBlocker::ForeignDefinition)?;
                 if symbol.rank != 0 || output.schema != PortSchema::Signal {
                     return Err(SummaryBlocker::UnsupportedContext);
                 }
@@ -353,7 +363,7 @@ impl ProjectAnalysis<'_> {
                         continue;
                     }
                     let Some(ExprKind::Access(source)) =
-                        self.hir().expression(*value).map(|expr| &expr.kind)
+                        self.analysis.hir().expression(*value).map(|expr| &expr.kind)
                     else {
                         continue;
                     };
@@ -471,7 +481,9 @@ impl ProjectAnalysis<'_> {
         output: SymbolId,
     ) -> Result<bool, SummaryBlocker> {
         let mut touches = false;
-        if expression.visit_accesses(self.hir(), &mut |path| touches |= path.root == output) {
+        if expression
+            .visit_accesses(self.analysis.hir(), &mut |path| touches |= path.root == output)
+        {
             Ok(touches)
         } else {
             Err(SummaryBlocker::ExternalSummary)
@@ -487,14 +499,14 @@ impl ProjectAnalysis<'_> {
             return None;
         }
         template.ports.iter().copied().find(|id| {
-            self.hir().port(*id).is_some_and(|port| {
+            self.analysis.hir().port(*id).is_some_and(|port| {
                 port.symbol == source.root && port.direction == Some(PortDirection::Input)
             })
         })
     }
 
     fn direct_call_expression(&self, expression: ExprId) -> Option<ExprId> {
-        let expression_node = self.hir().expression(expression)?;
+        let expression_node = self.analysis.hir().expression(expression)?;
         match expression_node.kind {
             ExprKind::Parallel(inner) => self.direct_call_expression(inner),
             ExprKind::Call { .. } => Some(expression),
@@ -518,7 +530,9 @@ mod tests {
     use program_structure::utils::constants::Curve;
 
     use crate::hir_cfg::build_cfg;
-    use crate::interprocedural::{CallOwner, CallReachability, ProjectAnalysis, SummaryBlocker};
+    use crate::interprocedural::{
+        CallOwner, CallReachability, ComponentQueries, ProjectAnalysis, SummaryBlocker,
+    };
 
     use super::LocalOutputUse;
 
@@ -549,7 +563,7 @@ mod tests {
         else {
             panic!("second instance must be reachable")
         };
-        let applied = provider.apply_component_output(&facts, &scope, &call, &handle);
+        let applied = provider.components().apply_component_output(&facts, &scope, &call, &handle);
         let Some(applied) = applied.certified() else {
             return Err(applied
                 .unavailable()
@@ -557,7 +571,7 @@ mod tests {
                 .cloned()
                 .unwrap_or(SummaryBlocker::ExternalSummary));
         };
-        provider.local_output_use_result(&facts, applied)
+        provider.components().local_output_use_result(&facts, applied)
     }
 
     #[test]
@@ -585,7 +599,7 @@ mod tests {
             let field = crate::hir_facts::FieldContext::for_curve(Curve::Bn254);
             let facts = crate::hir_facts::analyze(&lifted.hir, &cfg, &field, None).unwrap();
             assert_eq!(
-                ProjectAnalysis::require_linear_caller_path(facts.cfg(), cfg.entry(), cfg.exit()),
+                ComponentQueries::require_linear_caller_path(facts.cfg(), cfg.entry(), cfg.exit()),
                 expected
             );
         }

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use abstract_interpretation::graph::{EdgeId, EdgeRef, FlowGraph, IndexedGraph, NodeId};
 
-use crate::interprocedural::{ProjectAnalysis, SummaryBlocker};
+use crate::interprocedural::{ComponentQueries, SummaryBlocker};
 
 fn check_path(edges: &[(usize, usize)], entry: usize, exit: usize) -> Result<(), SummaryBlocker> {
     let mut graph_edges = Vec::new();
@@ -12,7 +12,7 @@ fn check_path(edges: &[(usize, usize)], entry: usize, exit: usize) -> Result<(),
     let entry = NodeId::new(entry);
     let exit = NodeId::new(exit);
     let graph = IndexedGraph::new(vec![(); 4], graph_edges, vec![entry], vec![exit]).unwrap();
-    ProjectAnalysis::require_linear_caller_path(&graph, entry, exit)
+    ComponentQueries::require_linear_caller_path(&graph, entry, exit)
 }
 
 #[test]
@@ -90,8 +90,8 @@ fn malformed_edge_refusals_follow_list_order_and_stop_at_exit() {
         (vec![], Err(SummaryBlocker::ExternalSummary)),
     ] {
         let graph = ListedEdges::ordered(&order);
-        assert_eq!(ProjectAnalysis::require_linear_caller_path(&graph, entry, exit), expected);
+        assert_eq!(ComponentQueries::require_linear_caller_path(&graph, entry, exit), expected);
     }
     let graph = ListedEdges::ordered(&[2, 0, 1]);
-    assert_eq!(ProjectAnalysis::require_linear_caller_path(&graph, entry, entry), Ok(()));
+    assert_eq!(ComponentQueries::require_linear_caller_path(&graph, entry, entry), Ok(()));
 }

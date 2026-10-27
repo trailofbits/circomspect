@@ -1006,7 +1006,7 @@ mod tests {
         else {
             panic!("Child must be reachable")
         };
-        let applied = provider.apply_component_output(&facts, &caller, &call, &handle);
+        let applied = provider.components().apply_component_output(&facts, &caller, &call, &handle);
         let applied = applied.certified().unwrap();
         let crate::hir_cfg::CfgNodeKind::Instantiate { target, .. } =
             &facts.cfg().node(applied.instantiation()).unwrap().kind

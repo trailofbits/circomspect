@@ -162,12 +162,14 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
         handle: &AccessHandle,
     ) -> Result<Option<SummaryFact<AppliedComponentPort>>, CallBlocker> {
         match self.summaries.graph().reachable_call(site, self.facts) {
-            CallReachability::Reachable(call) => Ok(Some(self.summaries.apply_component_output(
-                self.facts,
-                self.evidence,
-                &call,
-                handle,
-            ))),
+            CallReachability::Reachable(call) => {
+                Ok(Some(self.summaries.components().apply_component_output(
+                    self.facts,
+                    self.evidence,
+                    &call,
+                    handle,
+                )))
+            }
             CallReachability::Unreachable => Ok(None),
             CallReachability::Unavailable(blocker) => Err(blocker),
         }
@@ -188,7 +190,7 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
     ) -> Result<Option<SummaryFact<AppliedComponentPort>>, CallBlocker> {
         match self.summaries.graph().reachable_call(site, self.facts) {
             CallReachability::Reachable(call) => {
-                Ok(Some(self.summaries.apply_component_first_output(
+                Ok(Some(self.summaries.components().apply_component_first_output(
                     self.facts,
                     self.evidence,
                     &call,
@@ -214,7 +216,7 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
         if applied.caller_evidence() != self.evidence {
             return Err(SummaryBlocker::WrongContext);
         }
-        Ok(self.summaries.composed_constraint_fixed_output(self.facts, applied))
+        Ok(self.summaries.components().composed_constraint_fixed_output(self.facts, applied))
     }
 
     /// Prove an exact output read in this caller's reachable body.
@@ -231,7 +233,7 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
         if applied.caller_evidence() != self.evidence {
             return Err(SummaryBlocker::WrongContext);
         }
-        Ok(self.summaries.caller_output_read(self.facts, applied))
+        Ok(self.summaries.components().caller_output_read(self.facts, applied))
     }
 
     /// Certify output use across every exact instance path below the active main.

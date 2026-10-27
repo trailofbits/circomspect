@@ -124,7 +124,8 @@ fn inspect_with(
         .find(|port| project.hir.symbol(port.symbol).unwrap().name == "bits")
         .unwrap();
     let local = child.port_handle(port.id, &[0]).ok()?;
-    let applied = provider.apply_component_local_output(&facts, &caller, &call, &local);
+    let applied =
+        provider.components().apply_component_local_output(&facts, &caller, &call, &local);
     let applied = applied.certified()?;
     let input = path(&project.hir, "in", None);
     let bits: Vec<_> = (0..width).map(|index| path(&project.hir, "bits", Some(index))).collect();
@@ -394,7 +395,7 @@ fn checked_requests_reject_foreign_context_curve_project_and_input_bits() {
     let output_port = project.hir.ports()[1].id;
     let input = child.port_handle(input_port, &[]).unwrap();
     let bit = child.port_handle(output_port, &[0]).unwrap();
-    let applied = provider.apply_component_local_output(&facts, &caller, &call, &bit);
+    let applied = provider.components().apply_component_local_output(&facts, &caller, &call, &bit);
     let applied = applied.certified().unwrap();
     let valid = provider.component_bit_ambiguity_handles(
         &facts,

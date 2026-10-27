@@ -425,8 +425,8 @@ fn a_nested_known_output_read_survives_an_opaque_sibling() {
         .find(|item| project.hir.symbol(item.symbol).is_some_and(|symbol| symbol.name == "c"))
         .unwrap();
     let handle = facts.component_output_handle(component.id, &[], output, &[]).unwrap();
-    let applied = provider.apply_component_output(&facts, &middle, &call, &handle);
-    let read = provider.caller_output_read(&facts, applied.certified().unwrap());
+    let applied = provider.components().apply_component_output(&facts, &middle, &call, &handle);
+    let read = provider.components().caller_output_read(&facts, applied.certified().unwrap());
     assert!(read.certified().is_some());
     let negative = provider.closed_project_output_uses(&facts, &middle);
     assert!(negative.certified().is_none());

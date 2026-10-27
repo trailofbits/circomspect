@@ -41,6 +41,7 @@ fn with_instance(
     };
     let instance = provider.enumerate_call(&facts, &caller, &call, 4).unwrap();
     provider
+        .components()
         .with_component_port_facts(&instance.callee.clone(), |child| {
             work(&provider, &facts, child, instance);
             Ok(())
@@ -93,6 +94,7 @@ fn generated_source_identity_precedes_unproved_component_bounds() {
             instance.instantiation = instantiation;
             instance.indices = vec![0];
             provider
+                .components()
                 .with_component_port_facts(&callee, |child| {
                     assert_ne!(instance.target, target);
                     assert_eq!(

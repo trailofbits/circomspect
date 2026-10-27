@@ -138,7 +138,7 @@ fn provider_binds_a_parameter_checked_local_output_to_its_exact_call() {
         .find(|port| project.hir.symbol(port.symbol).unwrap().name == "bits")
         .unwrap();
     let local = child_facts.port_handle(output.id, &[1]).unwrap();
-    let result = provider.apply_component_local_output(&facts, &caller, &call, &local);
+    let result = provider.components().apply_component_local_output(&facts, &caller, &call, &local);
     let applied = result.certified().unwrap_or_else(|| panic!("{result:?}"));
     assert_eq!(applied.caller_evidence(), &caller);
     assert_eq!(applied.callee_evidence(), &child);
@@ -160,7 +160,8 @@ fn differing_parameter_instances_keep_contexts_and_port_bounds_separate() {
                 else {
                     panic!("child must be reachable")
                 };
-                let applied = provider.apply_component_local_output(facts, caller, &call, local);
+                let applied =
+                    provider.components().apply_component_local_output(facts, caller, &call, local);
                 assert_eq!(applied.certified().is_some(), index == site_index, "{applied:?}");
             }
         }
@@ -193,7 +194,8 @@ fn foreign_curve_project_and_input_handles_cannot_be_applied() {
             panic!("child must be reachable")
         };
         for handle in handles {
-            let result = provider.apply_component_local_output(facts, caller, &call, &handle);
+            let result =
+                provider.components().apply_component_local_output(facts, caller, &call, &handle);
             assert!(result.unavailable().is_some(), "{result:?}");
         }
     });
@@ -210,28 +212,41 @@ fn wrong_caller_and_incomplete_caller_cannot_borrow_a_valid_local_handle() {
             panic!("child must be reachable")
         };
         let wrong = provider.contexts().symbolic_root(facts.definition()).unwrap();
-        let result = provider.apply_component_local_output(facts, &wrong, &call, &local);
+        let result =
+            provider.components().apply_component_local_output(facts, &wrong, &call, &local);
         assert_blocked(&result, SummaryBlocker::WrongContext);
-        let warm = provider.apply_component_local_output(facts, caller, &call, &local);
+        let warm = provider.components().apply_component_local_output(facts, caller, &call, &local);
         let applied = warm.certified().unwrap_or_else(|| panic!("{warm:?}"));
         let port = applied.port_summary().port();
-        assert_eq!(provider.apply_component_output(facts, caller, &call, applied.handle()), warm,);
-        assert_eq!(provider.apply_component_first_output(facts, caller, &call, port), warm);
+        assert_eq!(
+            provider.components().apply_component_output(facts, caller, &call, applied.handle()),
+            warm,
+        );
+        assert_eq!(
+            provider.components().apply_component_first_output(facts, caller, &call, port),
+            warm
+        );
         let cfg = build_cfg(&project.hir, facts.definition()).unwrap();
         for (limit, pending_node) in [(0, 0), (1, 0), (4, 2)] {
             let pending =
                 provider.contexts().analyze_for_evidence(&cfg, caller, Some(limit)).unwrap();
-            let result = provider.apply_component_local_output(&pending, caller, &call, &local);
+            let result =
+                provider.components().apply_component_local_output(&pending, caller, &call, &local);
             let blocker = SummaryBlocker::LocalFacts(std::collections::BTreeSet::from([
                 FactBlocker::Budget(NodeId::new(pending_node)),
             ]));
             assert_blocked(&result, blocker.clone());
             assert_blocked(
-                &provider.apply_component_first_output(&pending, caller, &call, port),
+                &provider.components().apply_component_first_output(&pending, caller, &call, port),
                 blocker,
             );
             assert_blocked(
-                &provider.apply_component_output(&pending, caller, &call, applied.handle()),
+                &provider.components().apply_component_output(
+                    &pending,
+                    caller,
+                    &call,
+                    applied.handle(),
+                ),
                 SummaryBlocker::ExternalSummary,
             );
         }
@@ -298,7 +313,8 @@ fn a_function_call_cannot_apply_a_template_output_handle() {
             else {
                 panic!("call must be reachable")
             };
-            let result = provider.apply_component_local_output(facts, caller, &call, &local);
+            let result =
+                provider.components().apply_component_local_output(facts, caller, &call, &local);
             assert_eq!(result.certified().is_some(), index == 0, "{result:?}");
         }
     });
@@ -378,9 +394,9 @@ fn competing_assignments_keep_selected_instance_refusals_on_every_entry() {
                 .component_output_handle(project.hir.components()[0].id, &[0], output, &[0])
                 .unwrap();
             for result in [
-                provider.apply_component_output(facts, caller, &call, &handle),
-                provider.apply_component_local_output(facts, caller, &call, &local),
-                provider.apply_component_first_output(facts, caller, &call, output),
+                provider.components().apply_component_output(facts, caller, &call, &handle),
+                provider.components().apply_component_local_output(facts, caller, &call, &local),
+                provider.components().apply_component_first_output(facts, caller, &call, output),
             ] {
                 assert_blocked(&result, blocker.clone());
             }
@@ -414,17 +430,22 @@ fn local_context_checks_precede_competing_selected_assignments() {
             SummaryBlocker::DuplicateInstance,
         ]) {
             assert_blocked(
-                &provider.apply_component_local_output(facts, caller, &call, handle),
+                &provider.components().apply_component_local_output(facts, caller, &call, handle),
                 blocker,
             );
             assert_blocked(
-                &provider.apply_component_output(facts, caller, &call, handle),
+                &provider.components().apply_component_output(facts, caller, &call, handle),
                 SummaryBlocker::WrongContext,
             );
         }
         let wrong = provider.contexts().symbolic_root(facts.definition()).unwrap();
         assert_blocked(
-            &provider.apply_component_first_output(facts, &wrong, &call, project.hir.ports()[0].id),
+            &provider.components().apply_component_first_output(
+                facts,
+                &wrong,
+                &call,
+                project.hir.ports()[0].id,
+            ),
             SummaryBlocker::WrongContext,
         );
     });

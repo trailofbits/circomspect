@@ -64,7 +64,7 @@ fn check_binding(
         };
         let callee = provider.contexts().call_evidence(&call, facts, caller).unwrap();
         let handle = facts.component_output_handle(component, &[index], output, &[0]).unwrap();
-        let direct = provider.apply_component_output(facts, caller, &call, &handle);
+        let direct = provider.components().apply_component_output(facts, caller, &call, &handle);
         let direct = direct.certified().unwrap_or_else(|| panic!("{direct:?}"));
         assert_eq!(direct.instantiation(), instantiation);
         assert_eq!(direct.handle(), &handle);
@@ -73,11 +73,16 @@ fn check_binding(
         assert_eq!(direct.port_summary().port(), output);
         assert_eq!(direct.port_summary().indices(), [0]);
         provider
+            .components()
             .with_component_port_facts(&callee, |child| {
                 let local = child.port_handle(output, &[0]).unwrap();
                 for applied in [
-                    provider.apply_component_local_output(facts, caller, &call, &local),
-                    provider.apply_component_first_output(facts, caller, &call, output),
+                    provider
+                        .components()
+                        .apply_component_local_output(facts, caller, &call, &local),
+                    provider
+                        .components()
+                        .apply_component_first_output(facts, caller, &call, output),
                 ] {
                     if repeated {
                         assert_eq!(
@@ -123,4 +128,60 @@ fn repeated_source_and_selected_instance_uniqueness_are_distinct() {
     let mut facts = analyze(&project.hir, &cfg, &field, None).unwrap();
     facts.bind_evidence(caller.clone());
     check_binding(&provider, &facts, &caller, true);
+}
+
+#[test]
+fn temporary_component_views_preserve_owned_ports_and_checked_contexts() {
+    use crate::interprocedural::component::binding::CheckedCallContext;
+
+    let project = project();
+    let analysis = ProjectAnalysis::build(&project, Curve::Bn254).unwrap();
+    let main = analysis.graph().calls_from(CallOwner::Main(0))[0];
+    let CallReachability::Reachable(main) =
+        analysis.graph().reachable_main_call(main.id(), &project.hir)
+    else {
+        panic!("main call")
+    };
+    let caller = analysis.contexts().main_evidence(&main).unwrap();
+    let cfg = build_cfg(&project.hir, caller.context().definition()).unwrap();
+    let facts = analysis.contexts().analyze_for_evidence(&cfg, &caller, None).unwrap();
+    let site = analysis.graph().calls_from(CallOwner::Definition(facts.definition()))[0];
+    let CallReachability::Reachable(call) = analysis.graph().reachable_call(site.id(), &facts)
+    else {
+        panic!("child call")
+    };
+    let callee = analysis.contexts().call_evidence(&call, &facts, &caller).unwrap();
+    let output = project.hir.ports()[0].id;
+    let component = project.hir.components()[0].id;
+    let handle = facts.component_output_handle(component, &[0], output, &[0]).unwrap();
+    let direct = analysis.components().apply_component_output(&facts, &caller, &call, &handle);
+    let checked =
+        CheckedCallContext::new(analysis.components().analysis, &facts, &caller, &call).unwrap();
+    let checked_inner = {
+        let queries = analysis.components();
+        CheckedCallContext::new(queries.analysis, &facts, &caller, &call).unwrap()
+    };
+    let local =
+        checked.with_port_facts(|child| Ok(child.port_handle(output, &[0]).unwrap())).unwrap();
+    let inner_local = checked_inner
+        .with_port_facts(|child| Ok(child.port_handle(output, &[0]).unwrap()))
+        .unwrap();
+    let port = analysis
+        .components()
+        .with_component_port_facts(&callee, |child| Ok(child.port_handle(output, &[0]).unwrap()))
+        .unwrap();
+    let applied = {
+        let queries = analysis.components();
+        queries.apply_component_local_output(&facts, &caller, &call, &local)
+    };
+    let direct = direct.certified().unwrap();
+    let applied = applied.certified().unwrap();
+    assert_eq!(applied, direct);
+    assert_eq!(applied.handle(), &handle);
+    assert_eq!(applied.caller_evidence(), &caller);
+    assert_eq!(applied.callee_evidence(), &callee);
+    assert_eq!(checked.callee(), &callee);
+    assert_eq!(checked_inner.callee(), &callee);
+    assert_eq!(inner_local, local);
+    assert_eq!(port, local);
 }

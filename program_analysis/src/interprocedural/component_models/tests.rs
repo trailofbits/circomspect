@@ -102,7 +102,7 @@ fn closure_collection_charges_shared_site_term_key_and_operation_budgets() {
     let ports = &project.hir.template(id).unwrap().ports;
     let input = child.port_handle(ports[0], &[]).unwrap();
     let bit = child.port_handle(ports[1], &[]).unwrap();
-    let applied = provider.apply_component_local_output(&facts, &caller, &call, &bit);
+    let applied = provider.components().apply_component_local_output(&facts, &caller, &call, &bit);
     let applied = applied.certified().unwrap();
     let bits = [bit];
     for (sites, terms, keys, operations) in

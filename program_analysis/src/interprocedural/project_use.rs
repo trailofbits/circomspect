@@ -243,7 +243,7 @@ impl ProjectAnalysis<'_> {
                 let handle = facts
                     .port_handle(port, indices)
                     .map_err(|error| SummaryBlocker::LocalAnalysis(error.to_string()))?;
-                self.local_handle_use_result(facts, &handle)
+                self.components().local_handle_use_result(facts, &handle)
             },
         )
     }

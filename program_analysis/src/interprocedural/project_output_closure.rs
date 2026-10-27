@@ -170,7 +170,7 @@ impl ProjectAnalysis<'_> {
         closure: &mut Closure,
     ) -> Result<(), SummaryBlocker> {
         let applied = output.applied_port();
-        let local = self.local_output_use_result(facts, applied)?;
+        let local = self.components().local_output_use_result(facts, applied)?;
         let use_state = match local {
             crate::interprocedural::component::LocalOutputUse::Read(sites) => {
                 crate::interprocedural::component::LocalOutputUse::Read(sites)

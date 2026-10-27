@@ -6,7 +6,7 @@ use parser::frontend::Span;
 
 use crate::hir_cfg::CfgNodeKind;
 use crate::hir_facts::{AccessHandle, AnalysisFacts, InstanceRelation};
-use crate::interprocedural::component::AppliedComponentPort;
+use crate::interprocedural::component::{AppliedComponentPort, ComponentQueries};
 use crate::interprocedural::component_port::LocalOutputPort;
 use crate::interprocedural::output_enumeration::{
     exact_instance_indices, EnumeratedComponentInstance, EnumeratedComponentOutput,
@@ -104,7 +104,7 @@ impl<'query, 'project> CheckedCallContext<'query, 'project> {
         &self,
         work: impl FnOnce(&AnalysisFacts<'_>) -> Result<T, SummaryBlocker>,
     ) -> Result<T, SummaryBlocker> {
-        self.provider.with_component_port_facts(&self.callee, work)
+        self.provider.components().with_component_port_facts(&self.callee, work)
     }
 
     pub(in crate::interprocedural) fn apply_local_port(
@@ -121,7 +121,7 @@ impl<'query, 'project> CheckedCallContext<'query, 'project> {
         if !local.handle.matches_context(self.callee.context()) {
             return Err(SummaryBlocker::WrongContext);
         }
-        let (port, indices) = self.provider.local_output_key(local.handle)?;
+        let (port, indices) = self.provider.components().local_output_key(local.handle)?;
         port_summary(local.facts, self.callee.context(), port, &indices)
     }
 
@@ -224,8 +224,11 @@ impl<'query, 'project> CheckedComponentCall<'query, 'project> {
             .component_output_from_local(self.component, &self.indices, local.handle)
             .map_err(|_| SummaryBlocker::UnsupportedContext)?;
         context.check_output(&handle, &summary)?;
-        let instantiation =
-            context.provider.bind_instantiation(context.facts, context.expression, &handle)?;
+        let instantiation = context.provider.components().bind_instantiation(
+            context.facts,
+            context.expression,
+            &handle,
+        )?;
         Ok(context.issue_output(handle, summary, instantiation))
     }
 
@@ -260,7 +263,7 @@ impl<'query, 'project> CheckedComponentCall<'query, 'project> {
     }
 }
 
-impl ProjectAnalysis<'_> {
+impl ComponentQueries<'_, '_> {
     pub(in crate::interprocedural::component) fn component_output_result(
         &self,
         facts: &AnalysisFacts<'_>,
@@ -268,7 +271,7 @@ impl ProjectAnalysis<'_> {
         call: &ReachableCall<'_>,
         handle: &AccessHandle,
     ) -> Result<AppliedComponentPort, SummaryBlocker> {
-        self.contexts().check_facts_for_evidence(facts, caller)?;
+        self.analysis.contexts().check_facts_for_evidence(facts, caller)?;
         let DefinitionRef::Template(template) = call.callee() else {
             return Err(SummaryBlocker::WrongInstance);
         };
@@ -281,10 +284,14 @@ impl ProjectAnalysis<'_> {
             return Err(SummaryBlocker::WrongInstance);
         }
         let instantiation = self.bind_instantiation(facts, call.site().expression, handle)?;
-        let context = CheckedCallContext::new(self, facts, caller, call)?;
+        let context = CheckedCallContext::new(self.analysis, facts, caller, call)?;
         let (port, indices) = handle.output_port().ok_or(SummaryBlocker::WrongInstance)?;
-        let summary =
-            self.templates().template_port_at(template, context.callee.context(), port, &indices);
+        let summary = self.analysis.templates().template_port_at(
+            template,
+            context.callee.context(),
+            port,
+            &indices,
+        );
         let port = summary.certified().cloned().ok_or_else(|| {
             summary
                 .unavailable()

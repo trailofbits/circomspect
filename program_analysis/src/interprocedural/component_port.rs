@@ -6,7 +6,7 @@ use crate::hir_cfg::build_cfg;
 use crate::hir_facts::{AccessHandle, AnalysisFacts};
 use crate::interprocedural::component::binding::CheckedCallContext;
 use crate::interprocedural::{
-    AnalyzeEvidenceError, AppliedComponentPort, ContextEvidence, ProjectAnalysis, ReachableCall,
+    AnalyzeEvidenceError, AppliedComponentPort, ContextEvidence, ComponentQueries, ReachableCall,
     SummaryBlocker, SummaryFact,
 };
 
@@ -16,7 +16,7 @@ pub(super) struct LocalOutputPort<'a, 'hir> {
     pub handle: &'a AccessHandle,
 }
 
-impl ProjectAnalysis<'_> {
+impl ComponentQueries<'_, '_> {
     /// Bind a callee-local output handle to its exact source component call.
     ///
     /// Caller instance indices and callee port indices are checked in their own
@@ -29,11 +29,12 @@ impl ProjectAnalysis<'_> {
         call: &ReachableCall<'_>,
         local: &AccessHandle,
     ) -> SummaryFact<AppliedComponentPort> {
-        let result = CheckedCallContext::new(self, facts, caller, call).and_then(|context| {
-            context.with_port_facts(|child| {
-                context.apply_local_port(LocalOutputPort { facts: child, handle: local })
-            })
-        });
+        let result =
+            CheckedCallContext::new(self.analysis, facts, caller, call).and_then(|context| {
+                context.with_port_facts(|child| {
+                    context.apply_local_port(LocalOutputPort { facts: child, handle: local })
+                })
+            });
         SummaryFact::from_result(result)
     }
 
@@ -48,14 +49,15 @@ impl ProjectAnalysis<'_> {
         call: &ReachableCall<'_>,
         output: PortId,
     ) -> SummaryFact<AppliedComponentPort> {
-        let result = CheckedCallContext::new(self, facts, caller, call).and_then(|context| {
-            context.with_port_facts(|child| {
-                let handle = child
-                    .port_handle(output, &[0])
-                    .map_err(|_| SummaryBlocker::UnsupportedContext)?;
-                context.apply_local_port(LocalOutputPort { facts: child, handle: &handle })
-            })
-        });
+        let result =
+            CheckedCallContext::new(self.analysis, facts, caller, call).and_then(|context| {
+                context.with_port_facts(|child| {
+                    let handle = child
+                        .port_handle(output, &[0])
+                        .map_err(|_| SummaryBlocker::UnsupportedContext)?;
+                    context.apply_local_port(LocalOutputPort { facts: child, handle: &handle })
+                })
+            });
         SummaryFact::from_result(result)
     }
 
@@ -67,19 +69,19 @@ impl ProjectAnalysis<'_> {
         let DefinitionRef::Template(_) = callee.context().definition() else {
             return Err(SummaryBlocker::WrongInstance);
         };
-        let cfg = build_cfg(self.hir(), callee.context().definition())
+        let cfg = build_cfg(self.analysis.hir(), callee.context().definition())
             .map_err(|_| SummaryBlocker::IncompleteDefinition)?;
         let facts =
-            self.contexts().analyze_for_evidence(&cfg, callee, None).map_err(
-                |error| match error {
+            self.analysis.contexts().analyze_for_evidence(&cfg, callee, None).map_err(|error| {
+                match error {
                     AnalyzeEvidenceError::Blocked(blocker) => blocker,
                     AnalyzeEvidenceError::InvalidAssignment { .. }
                     | AnalyzeEvidenceError::InvalidValueUse { .. } => {
                         SummaryBlocker::IncompleteDefinition
                     }
-                },
-            )?;
-        self.check_call_execution_scope(&facts, callee)?;
+                }
+            })?;
+        self.analysis.check_call_execution_scope(&facts, callee)?;
         work(&facts)
     }
 
@@ -91,6 +93,7 @@ impl ProjectAnalysis<'_> {
             return Err(SummaryBlocker::WrongInstance);
         }
         let port = self
+            .analysis
             .hir()
             .ports()
             .iter()

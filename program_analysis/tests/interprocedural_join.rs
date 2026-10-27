@@ -63,13 +63,13 @@ fn composed(
     else {
         panic!("Child must be reachable")
     };
-    let applied = provider.apply_component_output(&full, &caller, &call, &handle);
+    let applied = provider.components().apply_component_output(&full, &caller, &call, &handle);
     let applied = applied.certified().ok_or_else(|| applied.unavailable().unwrap().clone())?;
     let pending =
         budget.map(|limit| provider.contexts().analyze_for_evidence(&cfg, &caller, Some(limit)));
     let pending = pending.map(Result::unwrap);
     let facts = pending.as_ref().unwrap_or(&full);
-    let result = provider.composed_constraint_fixed_output(facts, applied);
+    let result = provider.components().composed_constraint_fixed_output(facts, applied);
     result.certified().cloned().ok_or_else(|| result.unavailable().unwrap().clone())
 }
 
