@@ -147,7 +147,7 @@ impl TemplateQueries<'_, '_> {
     ) -> SummaryFact<PortSummary> {
         if let crate::interprocedural::ContextOrigin::Call(_) = evidence.origin() {
             return SummaryFact::from_result(
-                self.analysis.called_input_port(facts, evidence, port, indices),
+                self.analysis.components().called_input_port(facts, evidence, port, indices),
             );
         }
         let result = self

@@ -222,3 +222,23 @@ fn unrelated_incomplete_function_preserves_the_closed_division_scope() {
     let result = inspect_loaded(&loaded, None).unwrap();
     assert_eq!(division_count(&result), 1, "{:?}", result.abstentions());
 }
+
+#[test]
+fn parent_equation_on_constant_bound_input_prevents_zero_incidence() {
+    let source = source("child.divisor<--7;", "child.divisor===7;", "");
+    let result = inspect(&source, None).unwrap();
+    assert_eq!(division_count(&result), 0);
+    let abstentions: Vec<_> = result
+        .abstentions()
+        .iter()
+        .filter(|item| item.kind == RuleKind::UnconstrainedDivision)
+        .collect();
+    assert_eq!(abstentions.len(), 1);
+    assert_eq!(
+        abstentions[0].reason,
+        circomspect_program_analysis::rules::AbstentionReason::Summary(
+            [SummaryBlocker::ExternalSummary].into_iter().collect()
+        )
+    );
+    assert_eq!(&source[abstentions[0].span.start()..abstentions[0].span.end()], "1/divisor");
+}
