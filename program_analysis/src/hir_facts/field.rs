@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 
 use num_bigint::BigInt;
 use num_traits::{Signed, ToPrimitive, Zero};
-use program_structure::utils::constants::Curve;
+use program_structure::utils::constants::{Curve, UsefulConstants};
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct FieldValue(BigInt);
@@ -39,18 +39,7 @@ impl FieldContext {
     /// Select the same field as the compiler configuration.
     #[must_use]
     pub fn for_curve(curve: Curve) -> Self {
-        let digits: &[u8] = match curve {
-            Curve::Bn254 => {
-                b"21888242871839275222246405745257275088548364400416034343698204186575808495617"
-            }
-            Curve::Bls12_381 => {
-                b"52435875175126190479447740508185965837690552500527637822603658699938581184513"
-            }
-            Curve::Goldilocks => b"18446744069414584321",
-        };
-        let modulus = digits
-            .iter()
-            .fold(BigInt::zero(), |value, digit| value * 10 + BigInt::from(digit - b'0'));
+        let modulus = UsefulConstants::new(&curve).prime().clone();
         Self { curve, modulus }
     }
 
@@ -171,9 +160,40 @@ impl FieldContext {
 
 #[cfg(test)]
 mod tests {
+    use num_bigint::BigInt;
     use program_structure::utils::constants::Curve;
 
     use crate::hir_facts::field::FieldContext;
+
+    #[test]
+    fn canonical_values_match_each_fixed_field_modulus() -> Result<(), &'static str> {
+        let cases = [
+            (
+                Curve::Bn254,
+                "21888242871839275222246405745257275088548364400416034343698204186575808495617",
+            ),
+            (
+                Curve::Bls12_381,
+                "52435875175126190479447740508185965837690552500527637822603658699938581184513",
+            ),
+            (Curve::Goldilocks, "18446744069414584321"),
+        ];
+        for (curve, digits) in cases {
+            let modulus = BigInt::parse_bytes(digits.as_bytes(), 10)
+                .ok_or("invalid fixed field modulus in test")?;
+            let field = FieldContext::for_curve(curve);
+            let zero = BigInt::from(0);
+            let one = BigInt::from(1);
+            let maximum = &modulus - &one;
+            assert_eq!(field.modulus(), &modulus);
+            assert_eq!(field.canonical(zero.clone()).as_bigint(), &zero);
+            assert_eq!(field.canonical(-&one).as_bigint(), &maximum);
+            assert_eq!(field.canonical(maximum.clone()).as_bigint(), &maximum);
+            assert_eq!(field.canonical(modulus.clone()).as_bigint(), &zero);
+            assert_eq!(field.canonical(modulus + &one).as_bigint(), &one);
+        }
+        Ok(())
+    }
 
     #[test]
     fn nonzero_values_have_multiplicative_inverses_on_each_curve() {
