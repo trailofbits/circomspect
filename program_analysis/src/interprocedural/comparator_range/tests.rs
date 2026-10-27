@@ -6,16 +6,17 @@ use program_structure::utils::constants::Curve;
 
 use crate::hir_cfg::{build_cfg, Origin};
 use crate::hir_facts::{AnalysisFacts, ProofBudget};
+use crate::interprocedural::comparator_range::ComparatorQuery;
 use crate::interprocedural::{AppliedComponentPort, CallOwner, CallReachability, ProjectAnalysis};
 
-const SOURCE: &str = "template Encoding(){signal input x;signal output y[3];var sum=0;\
+pub(super) const SOURCE: &str = "template Encoding(){signal input x;signal output y[3];var sum=0;\
     for(var i=0;i<3;i++){y[i]<--(x>>i)&1;y[i]*(y[i]-1)===0;sum+=y[i]*(2**i);}x===sum;}\
     template Comparison(){signal input x[2];signal output y;component e=Encoding();\
     e.x<==x[0]+4-x[1];y<==1-e.y[2];}\
     template Main(){signal output y;component c=Comparison();c.x[0]<==4;c.x[1]<==1;y<==c.y;}\
     component main=Main();";
 
-fn with_query<T>(
+pub(super) fn with_query<T>(
     source: &str,
     work: impl FnOnce(
         &ProjectAnalysis<'_>,
@@ -55,9 +56,26 @@ fn with_query<T>(
 }
 
 #[test]
+fn temporary_component_views_preserve_comparator_violations() {
+    with_query(SOURCE, |provider, _, facts, applied| {
+        let first = provider.components().component_comparator_range(facts, applied);
+        let second = {
+            let queries = provider.components();
+            queries.component_comparator_range(facts, applied)
+        };
+        let first = first.certified().unwrap();
+        assert_eq!(first, second.certified().unwrap());
+        assert_eq!(first.len(), 1);
+        assert_eq!(first[0].applied_port(), applied);
+        assert_eq!(first[0].value().as_bigint().to_string(), "4");
+        assert_eq!(first[0].upper_bound().to_string(), "4");
+    });
+}
+
+#[test]
 fn comparator_models_keep_scope_curve_project_and_budget_identity() {
     with_query(SOURCE, |provider, other, facts, applied| {
-        let result = provider.component_comparator_range(facts, applied);
+        let result = provider.components().component_comparator_range(facts, applied);
         let result = result.certified().unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].value().as_bigint().to_string(), "4");
@@ -67,12 +85,20 @@ fn comparator_models_keep_scope_curve_project_and_budget_identity() {
         let symbolic = provider.contexts().symbolic_root(facts.definition()).unwrap();
         let symbolic =
             provider.contexts().analyze_for_evidence(facts.cfg(), &symbolic, None).unwrap();
-        assert!(provider.component_comparator_range(&symbolic, applied).certified().is_none());
-        assert!(other.component_comparator_range(facts, applied).certified().is_none());
+        assert!(provider
+            .components()
+            .component_comparator_range(&symbolic, applied)
+            .certified()
+            .is_none());
+        assert!(other
+            .components()
+            .component_comparator_range(facts, applied)
+            .certified()
+            .is_none());
         for limit in 0..64 {
             let mut budget = ProofBudget::limited(4096, 4096, 4096, limit);
             assert!(
-                provider.comparator_range_result(facts, applied, &mut budget).is_err(),
+                ComparatorQuery { analysis: provider, facts, applied }.prove(&mut budget).is_err(),
                 "budget {limit}"
             );
         }
@@ -81,10 +107,16 @@ fn comparator_models_keep_scope_curve_project_and_budget_identity() {
             ProofBudget::limited(4096, 0, 4096, 4096),
             ProofBudget::limited(4096, 4096, 0, 4096),
         ] {
-            assert!(provider.comparator_range_result(facts, applied, &mut budget).is_err());
+            assert!(ComparatorQuery { analysis: provider, facts, applied }
+                .prove(&mut budget)
+                .is_err());
         }
         with_query(SOURCE, |foreign, _, _, _| {
-            assert!(foreign.component_comparator_range(facts, applied).certified().is_none());
+            assert!(foreign
+                .components()
+                .component_comparator_range(facts, applied)
+                .certified()
+                .is_none());
         });
     });
 }
@@ -124,7 +156,7 @@ fn additional_free_inputs_never_turn_defaults_into_fixed_range_evidence() {
         (SOURCE.replace("y<==c.y;", "y<==c.y;signal input z;z===7;z*y===1;"), 0),
     ] {
         with_query(&source, |provider, _, facts, applied| {
-            let result = provider.component_comparator_range(facts, applied);
+            let result = provider.components().component_comparator_range(facts, applied);
             let values = result
                 .certified()
                 .unwrap_or_else(|| panic!("{source}: {:?}", result.unavailable()));
@@ -140,7 +172,7 @@ fn unreachable_library_body_errors_do_not_hide_a_complete_comparator() {
         "template Incomplete(){var x=Missing();}component main=Main();",
     );
     with_query(&source, |provider, _, facts, applied| {
-        let result = provider.component_comparator_range(facts, applied);
+        let result = provider.components().component_comparator_range(facts, applied);
         assert_eq!(
             result.certified().unwrap_or_else(|| panic!("{:?}", result.unavailable())).len(),
             1
@@ -157,24 +189,24 @@ fn array_outputs_are_refused_before_any_comparator_proof_work() {
     with_query(&source, |provider, other, facts, applied| {
         let mut budget = ProofBudget::limited(0, 0, 0, 0);
         assert_eq!(
-            provider.comparator_range_result(facts, applied, &mut budget),
+            ComparatorQuery { analysis: provider, facts, applied }.prove(&mut budget),
             Err(crate::interprocedural::SummaryBlocker::UnsupportedContext)
         );
         let symbolic = provider.contexts().symbolic_root(facts.definition()).unwrap();
         let symbolic =
             provider.contexts().analyze_for_evidence(facts.cfg(), &symbolic, None).unwrap();
-        let result = provider.component_comparator_range(&symbolic, applied);
+        let result = provider.components().component_comparator_range(&symbolic, applied);
         assert!(result
             .unavailable()
             .unwrap()
             .contains(&crate::interprocedural::SummaryBlocker::WrongContext));
-        let result = other.component_comparator_range(facts, applied);
+        let result = other.components().component_comparator_range(facts, applied);
         assert!(!result
             .unavailable()
             .unwrap()
             .contains(&crate::interprocedural::SummaryBlocker::UnsupportedContext));
         with_query(&source, |foreign, _, _, _| {
-            let result = foreign.component_comparator_range(facts, applied);
+            let result = foreign.components().component_comparator_range(facts, applied);
             assert!(!result
                 .unavailable()
                 .unwrap()
@@ -186,7 +218,7 @@ fn array_outputs_are_refused_before_any_comparator_proof_work() {
 #[test]
 fn comparator_constraint_origins_keep_every_scope_in_order() {
     with_query(SOURCE, |provider, _, facts, applied| {
-        let result = provider.component_comparator_range(facts, applied);
+        let result = provider.components().component_comparator_range(facts, applied);
         let violations = result.certified().unwrap();
         assert_eq!(violations.len(), 1);
         let mut expected = Vec::new();
@@ -255,7 +287,8 @@ fn comparator_closure_preserves_budget_outcomes_and_remaining_allowance() {
                 [0, 1, 63, 64, 127, 128, 255, 256, 443, 444, 445, 511, 512, 1023, 1024, 4096, 8192]
             {
                 let mut budget = ProofBudget::limited(4096, 262_144, 4096, limit);
-                let result = provider.comparator_range_result(facts, applied, &mut budget);
+                let result =
+                    ComparatorQuery { analysis: provider, facts, applied }.prove(&mut budget);
                 let result = match result {
                     Ok(violations) => violation_contract(&violations),
                     Err(blocker) => format!("{blocker:?}"),
@@ -270,6 +303,30 @@ fn comparator_closure_preserves_budget_outcomes_and_remaining_allowance() {
     }
     let records = records.join("\n") + "\n";
     assert_eq!(records, include_str!("closure_contract.txt"));
+}
+
+#[test]
+fn comparator_site_refusal_still_charges_later_scope_observations() {
+    use std::collections::BTreeSet;
+
+    use abstract_interpretation::graph::NodeId;
+
+    use crate::hir_facts::FactBlocker;
+    use crate::interprocedural::SummaryBlocker;
+
+    with_query(SOURCE, |provider, _, facts, applied| {
+        let mut budget = ProofBudget::limited(0, 262_144, 4096, 4096);
+        let blocker = FactBlocker::Budget(NodeId::new(8));
+        assert_eq!(
+            ComparatorQuery { analysis: provider, facts, applied }.prove(&mut budget),
+            Err(SummaryBlocker::LocalFacts(BTreeSet::from([blocker])))
+        );
+        let mut remaining = 0;
+        while budget.reserve_control_step() {
+            remaining += 1;
+        }
+        assert_eq!(remaining, 3850);
+    });
 }
 
 fn violation_contract(

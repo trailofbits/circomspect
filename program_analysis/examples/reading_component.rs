@@ -52,7 +52,7 @@ fn check(source: &str, expected: Expected) -> ExampleResult {
     let outputs = outputs.certified().ok_or("component outputs unavailable")?;
     assert_eq!(outputs.len(), 1);
     let applied = outputs[0].applied_port();
-    let proof = analysis.component_comparator_range(&facts, applied);
+    let proof = analysis.components().component_comparator_range(&facts, applied);
     let violations = proof.certified().ok_or("comparator query unavailable")?;
     let context = RuleContext::new(&facts, &analysis, &evidence)?;
     let result = run_registered(&context)?;

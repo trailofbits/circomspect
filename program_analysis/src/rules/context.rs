@@ -308,7 +308,7 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
         &self,
         applied: &AppliedComponentPort,
     ) -> SummaryFact<Vec<crate::interprocedural::ComparatorRangeViolation>> {
-        self.summaries.component_comparator_range(self.facts, applied)
+        self.summaries.components().component_comparator_range(self.facts, applied)
     }
 
     /// Request a source-valid bit relation in this validated root template scope.

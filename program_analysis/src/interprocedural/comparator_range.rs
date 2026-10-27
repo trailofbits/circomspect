@@ -9,7 +9,9 @@ use parser::frontend::Span;
 
 use crate::hir_cfg::Origin;
 use crate::hir_facts::{AccessKey, AnalysisFacts, BitDecomposition, FieldValue, ProofBudget};
-use crate::interprocedural::{AppliedComponentPort, ProjectAnalysis, SummaryBlocker, SummaryFact};
+use crate::interprocedural::{
+    AppliedComponentPort, ComponentQueries, ProjectAnalysis, SummaryBlocker, SummaryFact,
+};
 
 /// A generated-fixed comparator input outside the proved integer comparison range.
 ///
@@ -57,7 +59,13 @@ impl ComparatorRangeViolation {
     }
 }
 
-impl ProjectAnalysis<'_> {
+struct ComparatorQuery<'query, 'hir> {
+    analysis: &'query ProjectAnalysis<'hir>,
+    facts: &'query AnalysisFacts<'query>,
+    applied: &'query AppliedComponentPort,
+}
+
+impl ComponentQueries<'_, '_> {
     /// Prove generated-fixed inputs outside a generated comparator's safe range.
     ///
     /// The applied output must belong to the sole comparator under this exact
@@ -69,21 +77,18 @@ impl ProjectAnalysis<'_> {
         facts: &AnalysisFacts<'_>,
         applied: &AppliedComponentPort,
     ) -> SummaryFact<Vec<ComparatorRangeViolation>> {
-        SummaryFact::from_result(self.comparator_range_result(
-            facts,
-            applied,
-            &mut ProofBudget::default(),
-        ))
+        let query = ComparatorQuery { analysis: self.analysis, facts, applied };
+        SummaryFact::from_result(query.prove(&mut ProofBudget::default()))
     }
+}
 
-    fn comparator_range_result(
+impl ComparatorQuery<'_, '_> {
+    fn prove(
         &self,
-        facts: &AnalysisFacts<'_>,
-        applied: &AppliedComponentPort,
         budget: &mut ProofBudget,
     ) -> Result<Vec<ComparatorRangeViolation>, SummaryBlocker> {
-        let result =
-            self.with_checked_comparator_closure(facts, applied, budget, |closure, budget| {
+        let result = self
+            .with_checked_closure(budget, |closure, budget| -> Result<_, SummaryBlocker> {
                 closure.validate_candidate(budget)
             })?;
         Ok(result.unwrap_or_default())

@@ -4,28 +4,28 @@ use parser::hir::{DefinitionRef, PortId, PortSchema};
 use parser::frontend::PortDirection;
 
 use crate::hir_facts::{AccessHandle, AnalysisFacts};
+use crate::interprocedural::comparator_range::ComparatorQuery;
 use crate::interprocedural::output_enumeration::EnumeratedComponentInstance;
-use crate::interprocedural::{AppliedComponentPort, ContextEvidence, ProjectAnalysis, SummaryBlocker};
+use crate::interprocedural::{ContextEvidence, SummaryBlocker};
 
-impl ProjectAnalysis<'_> {
-    pub(super) fn check_comparator_output(
-        &self,
-        facts: &AnalysisFacts<'_>,
-        applied: &AppliedComponentPort,
-    ) -> Result<(), SummaryBlocker> {
-        self.contexts().check_facts_for_evidence(facts, applied.caller_evidence())?;
-        self.contexts().check_evidence(applied.callee_evidence())?;
+impl ComparatorQuery<'_, '_> {
+    pub(super) fn check_output(&self) -> Result<(), SummaryBlocker> {
+        let facts = self.facts;
+        let applied = self.applied;
+        self.analysis.contexts().check_facts_for_evidence(facts, applied.caller_evidence())?;
+        self.analysis.contexts().check_evidence(applied.callee_evidence())?;
         let DefinitionRef::Template(id) = applied.callee_evidence().context().definition() else {
             return Err(SummaryBlocker::WrongInstance);
         };
         let (port, indices) =
             applied.handle().output_port().ok_or(SummaryBlocker::WrongInstance)?;
-        let template = self.hir().template(id).ok_or(SummaryBlocker::ForeignDefinition)?;
+        let template = self.analysis.hir().template(id).ok_or(SummaryBlocker::ForeignDefinition)?;
         if !template.ports.contains(&port) {
             return Err(SummaryBlocker::WrongInstance);
         }
-        let port = self.hir().port(port).ok_or(SummaryBlocker::ForeignDefinition)?;
-        let symbol = self.hir().symbol(port.symbol).ok_or(SummaryBlocker::ForeignDefinition)?;
+        let port = self.analysis.hir().port(port).ok_or(SummaryBlocker::ForeignDefinition)?;
+        let symbol =
+            self.analysis.hir().symbol(port.symbol).ok_or(SummaryBlocker::ForeignDefinition)?;
         if port.direction != Some(PortDirection::Output)
             || port.schema != PortSchema::Signal
             || symbol.rank != 0
@@ -41,13 +41,13 @@ impl ProjectAnalysis<'_> {
         facts: &AnalysisFacts<'_>,
         evidence: &ContextEvidence,
     ) -> Result<EnumeratedComponentInstance, SummaryBlocker> {
-        self.check_parent_components_complete(facts)?;
+        self.analysis.check_parent_components_complete(facts)?;
         let mut child = None;
-        self.components().visit_component_calls(facts, evidence, |call| {
+        self.analysis.components().visit_component_calls(facts, evidence, |call| {
             if child.is_some() {
                 return Err(SummaryBlocker::UnsupportedContext);
             }
-            child = Some(self.components().enumerate_call(facts, evidence, call, 512)?);
+            child = Some(self.analysis.components().enumerate_call(facts, evidence, call, 512)?);
             Ok(())
         })?;
         child.ok_or(SummaryBlocker::UnsupportedContext)
