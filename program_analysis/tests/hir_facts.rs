@@ -8,6 +8,9 @@
     clippy::panic_in_result_fn,
     clippy::unwrap_used
 )]
+#[path = "support/projects.rs"]
+mod projects;
+
 use abstract_interpretation::graph::FlowGraph;
 use circomspect_program_analysis::hir_cfg::{build_cfg, CfgNodeKind};
 use circomspect_program_analysis::hir_facts::{
@@ -23,16 +26,7 @@ use std::fs;
 use program_structure::utils::constants::Curve;
 
 fn lift_fixture(source: &str) -> LiftedProject {
-    let directory = std::env::temp_dir().join(format!(
-        "circomspect-phase4-facts-{}-{:?}",
-        std::process::id(),
-        std::thread::current().id()
-    ));
-    fs::create_dir_all(&directory).unwrap();
-    let path = directory.join("case.circom");
-    fs::write(&path, source).unwrap();
-    let loaded = load_sources(&[path], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
-    lift_project(&loaded)
+    projects::lift_source(source, "circomspect-phase4-facts")
 }
 
 fn fixture(source: &str) -> (HirProject, DefinitionRef) {

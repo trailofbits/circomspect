@@ -7,6 +7,9 @@
     clippy::panic_in_result_fn,
     clippy::unwrap_used
 )]
+#[path = "support/projects.rs"]
+mod projects;
+
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::hir_facts::{
     analyze, FactBlocker, FieldContext, Incidence, WitnessWriteIssue,
@@ -14,22 +17,11 @@ use circomspect_program_analysis::hir_facts::{
 use circomspect_program_analysis::interprocedural::{
     CallOwner, CallReachability, CallerOutputRead, ProjectAnalysis, SummaryBlocker, SummaryFact,
 };
-use parser::hir::{lift_project, DefinitionRef, LiftedProject};
-use parser::frontend::{load_sources, Version, VersionPolicy};
+use parser::hir::{DefinitionRef, LiftedProject};
 use program_structure::utils::constants::Curve;
-use std::fs;
 
 fn fixture(source: &str) -> LiftedProject {
-    let directory = std::env::temp_dir().join(format!(
-        "circomspect-component-summary-{}-{:?}",
-        std::process::id(),
-        std::thread::current().id()
-    ));
-    fs::create_dir_all(&directory).unwrap();
-    let path = directory.join("case.circom");
-    fs::write(&path, source).unwrap();
-    let loaded = load_sources(&[path], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
-    lift_project(&loaded)
+    projects::lift_source(source, "circomspect-component-summary")
 }
 
 fn output_read(source: &str, instance: usize) -> SummaryFact<CallerOutputRead> {

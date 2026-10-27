@@ -7,15 +7,16 @@
     clippy::panic_in_result_fn,
     clippy::unwrap_used
 )]
+#[path = "support/projects.rs"]
+mod projects;
+
 use abstract_interpretation::graph::FlowGraph;
 use circomspect_program_analysis::hir_cfg::{Constraint, build_cfg, CfgNodeKind};
 use circomspect_program_analysis::interprocedural::{
     AnalyzeEvidenceError, CallOwner, CallReachability, ProjectAnalysis, SummaryBlocker,
 };
-use parser::hir::{lift_project, LiftedProject};
-use parser::frontend::{load_sources, Version, VersionPolicy};
+use parser::hir::{LiftedProject};
 use program_structure::utils::constants::Curve;
-use std::fs;
 
 fn source(argument: &str) -> String {
     format!(
@@ -27,16 +28,7 @@ fn source(argument: &str) -> String {
 }
 
 fn lift(source: &str) -> LiftedProject {
-    let directory = std::env::temp_dir().join(format!(
-        "circomspect-comparator-shape-{}-{:?}",
-        std::process::id(),
-        std::thread::current().id()
-    ));
-    fs::create_dir_all(&directory).unwrap();
-    let path = directory.join("case.circom");
-    fs::write(&path, source).unwrap();
-    let loaded = load_sources(&[path], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
-    lift_project(&loaded)
+    projects::lift_source(source, "circomspect-comparator-shape")
 }
 
 fn specialized_nodes(source: &str) -> Option<Vec<CfgNodeKind>> {

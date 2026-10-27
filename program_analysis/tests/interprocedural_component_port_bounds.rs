@@ -7,7 +7,9 @@
     clippy::panic_in_result_fn,
     clippy::unwrap_used
 )]
-use std::fs;
+#[path = "support/projects.rs"]
+mod projects;
+
 use abstract_interpretation::graph::NodeId;
 
 use circomspect_program_analysis::hir_cfg::build_cfg;
@@ -15,21 +17,11 @@ use circomspect_program_analysis::hir_facts::{AccessHandle, AnalysisFacts, FactB
 use circomspect_program_analysis::interprocedural::{
     CallOwner, CallReachability, ContextEvidence, ProjectAnalysis, SummaryBlocker, SummaryFact,
 };
-use parser::hir::{lift_project, LiftedProject};
-use parser::frontend::{load_sources, Version, VersionPolicy};
+use parser::hir::{LiftedProject};
 use program_structure::utils::constants::Curve;
 
 fn fixture(source: &str) -> LiftedProject {
-    let directory = std::env::temp_dir().join(format!(
-        "circomspect-component-port-bounds-{}-{:?}",
-        std::process::id(),
-        std::thread::current().id()
-    ));
-    fs::create_dir_all(&directory).unwrap();
-    let file = directory.join("case.circom");
-    fs::write(&file, source).unwrap();
-    let loaded = load_sources(&[file], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
-    lift_project(&loaded)
+    projects::lift_source(source, "circomspect-component-port-bounds")
 }
 
 fn main_evidence(provider: &ProjectAnalysis<'_>, project: &LiftedProject) -> ContextEvidence {

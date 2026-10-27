@@ -8,28 +8,19 @@
     clippy::panic_in_result_fn,
     clippy::unwrap_used
 )]
-use std::fs;
+
+#[path = "support/projects.rs"]
+mod projects;
 
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::interprocedural::{
     CallOwner, CallReachability, ProjectAnalysis, SummaryBlocker,
 };
 use circomspect_program_analysis::rules::{RuleContext, RuleContextError};
-use parser::hir::lift_project;
-use parser::frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
 
 fn fixture(source: &str) -> parser::hir::LiftedProject {
-    let directory = std::env::temp_dir().join(format!(
-        "circomspect-provenance-{}-{:?}",
-        std::process::id(),
-        std::thread::current().id()
-    ));
-    fs::create_dir_all(&directory).unwrap();
-    let path = directory.join("case.circom");
-    fs::write(&path, source).unwrap();
-    let loaded = load_sources(&[path], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
-    lift_project(&loaded)
+    projects::lift_source(source, "circomspect-provenance")
 }
 
 #[test]

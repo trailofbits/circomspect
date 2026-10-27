@@ -8,6 +8,9 @@
     clippy::panic_in_result_fn,
     clippy::unwrap_used
 )]
+#[path = "support/projects.rs"]
+mod projects;
+
 use circomspect_program_analysis::hir_facts::{FieldContext, Incidence, Range};
 use circomspect_program_analysis::interprocedural::{
     ArgumentValue, FunctionEffect, ProjectAnalysis, ReturnEvidence, SummaryBlocker,
@@ -19,16 +22,7 @@ use program_structure::utils::constants::Curve;
 use std::fs;
 
 fn fixture(source: &str) -> LiftedProject {
-    let directory = std::env::temp_dir().join(format!(
-        "circomspect-phase5-summary-{}-{:?}",
-        std::process::id(),
-        std::thread::current().id()
-    ));
-    fs::create_dir_all(&directory).unwrap();
-    let path = directory.join("case.circom");
-    fs::write(&path, source).unwrap();
-    let loaded = load_sources(&[path], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
-    lift_project(&loaded)
+    projects::lift_source(source, "circomspect-phase5-summary")
 }
 
 fn included_fixture(library: &str, root: &str) -> LiftedProject {

@@ -11,8 +11,10 @@
 #[path = "support/access_paths.rs"]
 mod access_paths;
 
+#[path = "support/projects.rs"]
+mod projects;
+
 use crate::access_paths::path;
-use std::fs;
 
 use circomspect_program_analysis::hir_cfg::build_cfg;
 use circomspect_program_analysis::hir_facts::{FieldContext, NoBitAmbiguityCertificate};
@@ -21,21 +23,11 @@ use circomspect_program_analysis::interprocedural::{
     ProjectAnalysis,
 };
 use num_bigint_dig::BigInt;
-use parser::hir::{lift_project, LiftedProject};
-use parser::frontend::{load_sources, Version, VersionPolicy};
+use parser::hir::{LiftedProject};
 use program_structure::utils::constants::Curve;
 
 fn fixture(source: &str) -> LiftedProject {
-    let directory = std::env::temp_dir().join(format!(
-        "circomspect-component-models-{}-{:?}",
-        std::process::id(),
-        std::thread::current().id()
-    ));
-    fs::create_dir_all(&directory).unwrap();
-    let path = directory.join("case.circom");
-    fs::write(&path, source).unwrap();
-    let loaded = load_sources(&[path], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
-    lift_project(&loaded)
+    projects::lift_source(source, "circomspect-component-models")
 }
 
 fn source(parent: &str, child: &str) -> String {

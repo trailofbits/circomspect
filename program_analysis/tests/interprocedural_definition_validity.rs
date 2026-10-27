@@ -8,6 +8,9 @@
     clippy::panic_in_result_fn,
     clippy::unwrap_used
 )]
+#[path = "support/projects.rs"]
+mod projects;
+
 use std::fs;
 
 use circomspect_program_analysis::hir_cfg::build_cfg;
@@ -18,16 +21,7 @@ use parser::frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
 
 fn fixture(source: &str) -> LiftedProject {
-    let directory = std::env::temp_dir().join(format!(
-        "circomspect-definition-validity-{}-{:?}",
-        std::process::id(),
-        std::thread::current().id()
-    ));
-    fs::create_dir_all(&directory).unwrap();
-    let path = directory.join("case.circom");
-    fs::write(&path, source).unwrap();
-    let loaded = load_sources(&[path], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
-    lift_project(&loaded)
+    projects::lift_source(source, "circomspect-definition-validity")
 }
 
 fn with_scope(source: &str, test: impl FnOnce(&RuleContext<'_, '_, '_>)) {
