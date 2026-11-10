@@ -8,7 +8,8 @@ use abstract_interpretation::solver::{
 use crate::hir_cfg::{CfgEdge, CfgNode, CfgNodeKind, DefinitionCfg, EdgeKind};
 use crate::hir_facts::write_validity::tests::with_fixture;
 use crate::hir_facts::write_validity::{WriteAnalysis, WriteState};
-use crate::hir_facts::AccessKey;
+use crate::hir_facts::write_validity::{BodyWriteResult, BodyWriteSolve};
+use crate::hir_facts::{AccessKey, AnalysisFacts, FactBlocker, forward_pruned_edges};
 use crate::interprocedural::ProjectAnalysis;
 
 type ActualState = <WriteAnalysis as DataflowAnalysis<DefinitionCfg>>::State;
@@ -177,4 +178,85 @@ fn unrolled_signal_arrays_keep_exact_write_and_read_results() {
             assert_eq!(facts.body_signal_reads_ready().certified(), Some(&()));
         });
     }
+}
+
+fn reference_body_writes(facts: &AnalysisFacts<'_>) -> BodyWriteResult {
+    let mut exact_writes = BTreeMap::new();
+    let mut uncertain = Vec::new();
+    for site in facts.cfg().nodes() {
+        if facts.reachable_node(*site).certified() == Some(&false) {
+            continue;
+        }
+        let node = facts.cfg().node(*site).unwrap();
+        facts.classify_write(*site, &node.kind, &mut exact_writes, &mut uncertain);
+    }
+    facts.check_forward_write_budget(&uncertain)?;
+    let analysis = WriteAnalysis {
+        exact_writes,
+        pruned: forward_pruned_edges(
+            facts.hir,
+            facts.cfg(),
+            facts.field,
+            &facts.forward,
+            facts.calls.as_deref(),
+        ),
+    };
+    match solve::<_, _, Forward>(facts.cfg(), &analysis, Some(100_000)).unwrap() {
+        SolveResult::Complete(facts) => Ok(BodyWriteSolve { facts, uncertain }),
+        SolveResult::Incomplete { blockers, .. } => {
+            Err(blockers.iter().map(FactBlocker::from).collect())
+        }
+    }
+}
+
+#[test]
+fn write_filter_preserves_incomplete_reached_and_dead_nodes() {
+    let mut reached_blocked = 0;
+    let mut dead = 0;
+    let mut pending = 0;
+    let sources = [
+        "template T(){signal output x;if(0){x<--1;}x<--2;}",
+        "template T(){signal input i;signal output x[2];x[0]<--1;x[i]<--2;}",
+        "template T(n){signal output x;if(n){x<--1;}x<--2;}",
+    ];
+    for source in sources {
+        with_fixture(source, |lifted, cfg, field| {
+            for budget in [Some(0), Some(20), None] {
+                let facts = crate::hir_facts::analyze(&lifted.hir, cfg, field, budget).unwrap();
+                for site in facts.cfg().nodes() {
+                    let reachable = facts.reachable_node(*site);
+                    if reachable.certified() == Some(&false) {
+                        dead += 1;
+                    } else if reachable.unavailable().is_some() {
+                        if facts.site_state(*site).is_some_and(|state| state.variables().is_some())
+                        {
+                            reached_blocked += 1;
+                        } else {
+                            pending += 1;
+                        }
+                    }
+                }
+                match (facts.compute_body_writes(), reference_body_writes(&facts)) {
+                    (Ok(actual), Ok(expected)) => {
+                        assert!(!actual.facts.is_empty());
+                        assert_eq!(actual.facts, expected.facts);
+                        assert_eq!(actual.uncertain.len(), expected.uncertain.len());
+                        for (actual, expected) in actual.uncertain.iter().zip(&expected.uncertain) {
+                            assert_eq!(actual.site, expected.site);
+                            assert_eq!(actual.may_target, expected.may_target);
+                            assert_eq!(actual.blockers, expected.blockers);
+                        }
+                    }
+                    (Err(actual), Err(expected)) => {
+                        assert!(!actual.is_empty());
+                        assert_eq!(actual, expected);
+                    }
+                    (Ok(_), Err(_)) | (Err(_), Ok(_)) => panic!("completion changed"),
+                }
+            }
+        });
+    }
+    assert!(reached_blocked > 0);
+    assert!(dead > 0);
+    assert!(pending > 0);
 }

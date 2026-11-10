@@ -182,6 +182,11 @@ impl DefinitionCfg {
         self.topology.reaches(start, targets, excluded, pruned)
     }
 
+    /// Nodes with a path to any target, including the targets themselves.
+    pub(crate) fn nodes_reaching(&self, targets: &BTreeSet<NodeId>) -> BTreeSet<NodeId> {
+        self.topology.nodes_reaching(targets)
+    }
+
     pub(crate) fn owns_symbol(&self, symbol: SymbolId) -> bool {
         self.local_symbols.contains(&symbol)
     }

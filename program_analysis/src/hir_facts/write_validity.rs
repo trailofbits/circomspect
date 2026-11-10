@@ -604,7 +604,9 @@ impl AnalysisFacts<'_> {
         let mut exact_writes = BTreeMap::new();
         let mut uncertain = Vec::new();
         for site in self.cfg.nodes() {
-            if self.reachable_node(*site).certified() == Some(&false) {
+            // A reached provisional input can be blocked, but cannot be certified dead.
+            let reached = self.site_state(*site).is_some_and(|state| state.variables().is_some());
+            if !reached && self.reachable_node(*site).certified() == Some(&false) {
                 continue;
             }
             let Some(node) = self.cfg.node(*site) else { continue };

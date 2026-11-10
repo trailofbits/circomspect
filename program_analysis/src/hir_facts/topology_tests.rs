@@ -2,12 +2,13 @@ use std::collections::BTreeSet;
 use std::fs;
 
 use abstract_interpretation::graph::{EdgeId, FlowGraph, NodeId};
+use abstract_interpretation::solver::{Blocker, SolveResult};
 use parser::hir::{lift_project, HirProject};
 use parser::frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
 
 use crate::hir_cfg::DefinitionCfg;
-use crate::hir_facts::{analyze, AnalysisFacts, FieldContext};
+use crate::hir_facts::{analyze, AnalysisFacts, FactBlocker, FieldContext};
 
 fn fixture(source: &str) -> HirProject {
     let directory = std::env::temp_dir().join(format!(
@@ -103,5 +104,73 @@ fn fact_walk_policies_match_full_edge_reachability() {
         let facts = analyze(&hir, &cfg, &field, None).unwrap();
         compare_raw_queries(&facts);
         compare_bypass_queries(&facts);
+    }
+}
+
+fn reference_reachability_blockers(
+    facts: &AnalysisFacts<'_>,
+    sites: &BTreeSet<NodeId>,
+) -> BTreeSet<FactBlocker> {
+    let mut result = facts.deferred_control_blockers(sites);
+    let SolveResult::Incomplete { blockers, .. } = &facts.forward else { return result };
+    let reaches = |node| reference_reaches(facts.cfg(), node, sites, None, &BTreeSet::new());
+    for blocker in blockers {
+        let relevant = match blocker {
+            Blocker::PendingNode(node) => reaches(*node),
+            Blocker::OpaqueNode { node, .. } => !sites.contains(node) && reaches(*node),
+            Blocker::OpaqueEdge { edge, .. } => {
+                facts.cfg().edge(*edge).is_some_and(|item| reaches(item.target))
+            }
+        };
+        if relevant {
+            result.insert(FactBlocker::from(blocker));
+        }
+    }
+    result
+}
+
+fn include_mixed_solver_blockers(facts: &mut AnalysisFacts<'_>) {
+    let mut nodes = facts.cfg().nodes().to_vec();
+    let mut edges = facts.cfg().edges().to_vec();
+    nodes.push(NodeId::new(usize::MAX));
+    edges.push(EdgeId::new(usize::MAX));
+    let SolveResult::Incomplete { blockers, .. } = &mut facts.forward else { return };
+    for node in nodes {
+        blockers.insert(Blocker::PendingNode(node));
+        blockers.insert(Blocker::OpaqueNode { node, reason: format!("opaque node {node:?}") });
+    }
+    for edge in edges {
+        blockers.insert(Blocker::OpaqueEdge { edge, reason: format!("opaque edge {edge:?}") });
+    }
+}
+
+#[test]
+fn reachability_blockers_match_forward_paths_at_every_query_site_and_budget() {
+    for source in [
+        "function Check(n){while(n){n--;if(n){return Missing(n);}}return 1;}",
+        "template Check(n){if(n){var x=Missing();}var y=1;}",
+        "template Check(){if(0){var hidden=Missing();}var live=3;}",
+    ] {
+        let hir = fixture(source);
+        let cfg = crate::hir_cfg::build_cfg(&hir, hir.definition("Check").unwrap()).unwrap();
+        let field = FieldContext::for_curve(Curve::Bn254);
+        for budget in [Some(0), Some(1), Some(8), None] {
+            let mut facts = analyze(&hir, &cfg, &field, budget).unwrap();
+            include_mixed_solver_blockers(&mut facts);
+            let cfg = facts.cfg();
+            let mut queries = vec![BTreeSet::new(), cfg.nodes().iter().copied().collect()];
+            for node in cfg.nodes() {
+                queries.push(BTreeSet::from([*node]));
+            }
+            queries.push(BTreeSet::from([NodeId::new(usize::MAX)]));
+            queries.push(BTreeSet::from([cfg.entry(), cfg.exit()]));
+            for sites in queries {
+                assert_eq!(
+                    facts.reachability_blockers(&sites),
+                    reference_reachability_blockers(&facts, &sites),
+                    "{source}, budget {budget:?}, sites {sites:?}",
+                );
+            }
+        }
     }
 }

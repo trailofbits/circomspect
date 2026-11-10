@@ -619,21 +619,19 @@ impl AnalysisFacts<'_> {
         let SolveResult::Incomplete { blockers: solver, .. } = &self.forward else {
             return blockers;
         };
+        let reaching = self.cfg.nodes_reaching(sites);
         for blocker in solver {
             match blocker {
-                Blocker::PendingNode(node) if self.can_reach_any(*node, sites) => {
+                Blocker::PendingNode(node) if reaching.contains(node) => {
                     blockers.insert(FactBlocker::Budget(*node));
                 }
                 Blocker::OpaqueNode { node, reason }
-                    if !sites.contains(node) && self.can_reach_any(*node, sites) =>
+                    if !sites.contains(node) && reaching.contains(node) =>
                 {
                     blockers.insert(FactBlocker::OpaqueNode(*node, reason.clone()));
                 }
                 Blocker::OpaqueEdge { edge, reason }
-                    if self
-                        .cfg
-                        .edge(*edge)
-                        .is_some_and(|item| self.can_reach_any(item.target, sites)) =>
+                    if self.cfg.edge(*edge).is_some_and(|item| reaching.contains(&item.target)) =>
                 {
                     blockers.insert(FactBlocker::OpaqueEdge(*edge, reason.clone()));
                 }

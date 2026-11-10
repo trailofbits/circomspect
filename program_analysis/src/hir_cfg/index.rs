@@ -1,4 +1,4 @@
-//! Immutable topology for the owning CFG's boolean reachability queries.
+//! Immutable topology for the owning CFG's reachability queries.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -7,17 +7,34 @@ use abstract_interpretation::graph::{EdgeId, FlowGraph, NodeId};
 #[derive(Clone)]
 pub(super) struct TopologyIndex {
     outgoing: BTreeMap<NodeId, Vec<(EdgeId, NodeId)>>,
+    incoming: BTreeMap<NodeId, Vec<NodeId>>,
 }
 
 impl TopologyIndex {
     pub(super) fn new<G: FlowGraph<NodeId = NodeId, EdgeId = EdgeId>>(graph: &G) -> Self {
         let mut outgoing: BTreeMap<NodeId, Vec<(EdgeId, NodeId)>> = BTreeMap::new();
+        let mut incoming: BTreeMap<NodeId, Vec<NodeId>> = BTreeMap::new();
         for id in graph.edges() {
             if let Some(edge) = graph.edge(*id) {
                 outgoing.entry(edge.source).or_default().push((*id, edge.target));
+                incoming.entry(edge.target).or_default().push(edge.source);
             }
         }
-        Self { outgoing }
+        Self { outgoing, incoming }
+    }
+
+    pub(super) fn nodes_reaching(&self, targets: &BTreeSet<NodeId>) -> BTreeSet<NodeId> {
+        let mut reached = targets.clone();
+        let mut pending: Vec<_> = targets.iter().copied().collect();
+        while let Some(node) = pending.pop() {
+            let Some(sources) = self.incoming.get(&node) else { continue };
+            for source in sources {
+                if reached.insert(*source) {
+                    pending.push(*source);
+                }
+            }
+        }
+        reached
     }
 
     pub(super) fn reaches(

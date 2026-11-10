@@ -96,4 +96,54 @@ fn target_start_is_reachable_without_metadata_unless_excluded() {
     assert!(index.reaches(start, &targets, None, &BTreeSet::new()));
     assert!(!index.reaches(start, &targets, Some(start), &BTreeSet::new()));
     assert!(!index.reaches(start, &BTreeSet::new(), None, &BTreeSet::new()));
+    assert_eq!(index.nodes_reaching(&targets), targets);
+    assert!(index.nodes_reaching(&BTreeSet::new()).is_empty());
+}
+
+#[test]
+fn reverse_walk_matches_forward_reference_for_every_three_node_graph() {
+    let foreign = NodeId::new(7);
+    for mask in 0..1 << 9 {
+        let mut edges = Vec::new();
+        for source in 0..3 {
+            for target in 0..3 {
+                if mask & (1 << (source * 3 + target)) != 0 {
+                    edges.push((NodeId::new(source), NodeId::new(target), ()));
+                }
+            }
+        }
+        let graph = IndexedGraph::new(vec![(); 3], edges, vec![], vec![]).unwrap();
+        let index = TopologyIndex::new(&graph);
+        let mut nodes = graph.nodes().to_vec();
+        nodes.push(foreign);
+        for targets in target_sets(&nodes) {
+            let reached = index.nodes_reaching(&targets);
+            for start in &nodes {
+                assert_eq!(
+                    reached.contains(start),
+                    reference_reaches(&graph, *start, &targets, None, &BTreeSet::new()),
+                    "edges {mask}, {start:?} -> {targets:?}",
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn reverse_walk_handles_parallel_edges_and_cycles() {
+    let mut edges = Vec::new();
+    for (source, target) in [(0, 1), (0, 1), (1, 2), (2, 1), (3, 4)] {
+        edges.push((NodeId::new(source), NodeId::new(target), ()));
+    }
+    let graph = IndexedGraph::new(vec![(); 6], edges, vec![], vec![]).unwrap();
+    let index = TopologyIndex::new(&graph);
+    for targets in target_sets(graph.nodes()) {
+        let reached = index.nodes_reaching(&targets);
+        for start in graph.nodes() {
+            assert_eq!(
+                reached.contains(start),
+                reference_reaches(&graph, *start, &targets, None, &BTreeSet::new()),
+            );
+        }
+    }
 }
