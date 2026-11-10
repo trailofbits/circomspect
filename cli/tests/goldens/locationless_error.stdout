@@ -1,3 +1,6 @@
+circomspect: loading input files
+circomspect: resolving source definitions
+circomspect: preparing analysis
 error: cannot read <fixture>: No such file or directory (os error 2)
 
 circomspect: Result written to `<sarif>`.

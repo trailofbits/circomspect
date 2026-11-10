@@ -1,2 +1,5 @@
+circomspect: loading input files
+circomspect: resolving source definitions
+circomspect: preparing analysis
 circomspect: analyzing template 'LibraryItem'
 circomspect: No issues found.

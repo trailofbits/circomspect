@@ -119,7 +119,8 @@ impl LogWriter for StdoutWriter {
             writer.set_color(&spec)?;
             write!(&mut writer, "circomspect")?;
             writer.reset()?;
-            writeln!(&mut writer, ": {message}")
+            writeln!(&mut writer, ": {message}")?;
+            writer.flush()
         };
         for message in messages {
             write_impl(message)?;

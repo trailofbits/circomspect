@@ -5,7 +5,7 @@ use parser::frontend::Span;
 use program_structure::report::Report;
 
 use crate::application::diagnostics::{Diagnostics, IncompleteCause, IncompleteDetail};
-use crate::application::ApplicationError;
+use crate::application::{AnalysisProgress, ApplicationError};
 use crate::hir_cfg::build_cfg;
 use crate::hir_facts::AnalysisFacts;
 use crate::interprocedural::{
@@ -41,7 +41,10 @@ impl<'a, 'b, 'c, 'd> ScopeRunner<'a, 'b, 'c, 'd> {
         }
     }
 
-    pub(super) fn analyze(&mut self) -> Result<(), ApplicationError> {
+    pub(super) fn analyze(
+        &mut self,
+        progress: &mut dyn FnMut(AnalysisProgress<'_>) -> std::io::Result<()>,
+    ) -> Result<(), ApplicationError> {
         for site in self.summaries.graph().sites() {
             let CallOwner::Main(_) = site.owner else { continue };
             match self.summaries.graph().reachable_main_call(site.id(), self.summaries.hir()) {
@@ -57,7 +60,7 @@ impl<'a, 'b, 'c, 'd> ScopeRunner<'a, 'b, 'c, 'd> {
                 CallReachability::Unreachable => {}
             }
         }
-        self.drain()?;
+        self.drain(progress)?;
         let mut definitions = Vec::new();
         for function in self.summaries.hir().functions() {
             definitions.push(DefinitionRef::Function(function.id));
@@ -77,10 +80,13 @@ impl<'a, 'b, 'c, 'd> ScopeRunner<'a, 'b, 'c, 'd> {
                 Err(reason) => self.source_blocked(self.span(definition)?, &reason),
             }
         }
-        self.drain()
+        self.drain(progress)
     }
 
-    fn drain(&mut self) -> Result<(), ApplicationError> {
+    fn drain(
+        &mut self,
+        progress: &mut dyn FnMut(AnalysisProgress<'_>) -> std::io::Result<()>,
+    ) -> Result<(), ApplicationError> {
         while let Some(evidence) = self.pending.pop_front() {
             if self.seen.contains(&evidence) {
                 continue;
@@ -94,9 +100,30 @@ impl<'a, 'b, 'c, 'd> ScopeRunner<'a, 'b, 'c, 'd> {
                 continue;
             }
             self.seen.insert(evidence.clone());
+            let definition = evidence.context().definition();
+            progress(self.scope_progress(definition)?)?;
             self.analyze_scope(&evidence)?;
         }
         Ok(())
+    }
+
+    fn scope_progress(
+        &self,
+        definition: DefinitionRef,
+    ) -> Result<AnalysisProgress<'_>, ApplicationError> {
+        let hir = self.summaries.hir();
+        let progress = match definition {
+            DefinitionRef::Function(id) => {
+                hir.function(id).map(|item| AnalysisProgress::AnalyzingFunction(&item.name))
+            }
+            DefinitionRef::Template(id) => {
+                hir.template(id).map(|item| AnalysisProgress::AnalyzingTemplate(&item.name))
+            }
+            DefinitionRef::Bus(id) => {
+                hir.bus(id).map(|item| AnalysisProgress::AnalyzingBus(&item.name))
+            }
+        };
+        progress.ok_or_else(|| ApplicationError::Invariant("missing source definition".into()))
     }
 
     fn analyze_scope(&mut self, evidence: &ContextEvidence) -> Result<(), ApplicationError> {

@@ -3,7 +3,7 @@ use std::process::ExitCode;
 use clap::{CommandFactory, Parser};
 
 use program_analysis::config;
-use program_analysis::application::analyze_files;
+use program_analysis::application::{analyze_files_with_progress, AnalysisProgress, ApplicationError};
 use program_structure::file_definition::FileLibrary;
 use program_structure::report_code::ReportCode;
 
@@ -63,7 +63,6 @@ fn cli_styles() -> clap::builder::Styles {
 }
 
 fn main() -> Result<ExitCode, String> {
-    // Initialize logger and options.
     pretty_env_logger::init();
     let options = Cli::parse();
     if options.input_files.is_empty() {
@@ -77,8 +76,15 @@ fn main() -> Result<ExitCode, String> {
 }
 
 fn run(options: Cli) -> Result<ExitCode, ReportWriteError> {
-    let output = match analyze_files(&options.input_files, &options.libraries, options.curve) {
+    let mut stdout_writer = CachedStdoutWriter::new(options.verbose);
+    let output = match analyze_files_with_progress(
+        &options.input_files,
+        &options.libraries,
+        options.curve,
+        |progress| stdout_writer.write_message(progress_message(progress)),
+    ) {
         Ok(output) => output,
+        Err(ApplicationError::Progress(error)) => return Err(ReportWriteError::Status(error)),
         Err(error) => {
             let report =
                 Report::error(format!("Analysis failed: {error}"), ReportCode::RuntimeError);
@@ -88,22 +94,19 @@ fn run(options: Cli) -> Result<ExitCode, ReportWriteError> {
         }
     };
 
-    // Set up writer and write reports to `stdout`.
     let policy = OutputPolicy::new(
         options.output_level,
         output.files.user_inputs().clone(),
         options.allow_list.into_iter().collect(),
     );
-    let mut stdout_writer = CachedStdoutWriter::new(options.verbose).add_filter(policy.clone());
+    let mut stdout_writer = stdout_writer.add_filter(policy.clone());
     stdout_writer.write_reports(&output.diagnostics, &output.files)?;
 
     // Render completed function and template analyses in input order.
     for scope in &output.scopes {
-        stdout_writer.write_message(format!("analyzing {}", scope.description))?;
         stdout_writer.write_reports(&scope.reports, &output.files)?;
     }
 
-    // If a Sarif file is passed to the program we write the reports to it.
     if let Some(sarif_file) = options.sarif_file {
         let mut sarif_writer = SarifWriter::new(&sarif_file).add_filter(policy);
         match sarif_writer.write_reports(stdout_writer.reports(), &output.files) {
@@ -121,7 +124,6 @@ fn run(options: Cli) -> Result<ExitCode, ReportWriteError> {
         }
     }
 
-    // Use the exit code to indicate if any issues were found.
     Ok(match stdout_writer.reports_written() {
         0 => {
             stdout_writer.write_message("No issues found.")?;
@@ -136,4 +138,15 @@ fn run(options: Cli) -> Result<ExitCode, ReportWriteError> {
             ExitCode::FAILURE
         }
     })
+}
+
+fn progress_message(progress: AnalysisProgress<'_>) -> String {
+    match progress {
+        AnalysisProgress::LoadingSources => "loading input files".into(),
+        AnalysisProgress::LiftingSources => "resolving source definitions".into(),
+        AnalysisProgress::IndexingProject => "preparing analysis".into(),
+        AnalysisProgress::AnalyzingFunction(name) => format!("analyzing function '{name}'"),
+        AnalysisProgress::AnalyzingTemplate(name) => format!("analyzing template '{name}'"),
+        AnalysisProgress::AnalyzingBus(name) => format!("analyzing bus '{name}'"),
+    }
 }

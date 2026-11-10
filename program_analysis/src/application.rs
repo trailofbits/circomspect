@@ -5,6 +5,7 @@ mod inputs;
 mod scopes;
 
 use std::collections::BTreeSet;
+use std::io;
 use std::path::PathBuf;
 
 use parser::hir::{lift_project, DefinitionRef};
@@ -31,6 +32,17 @@ pub struct AnalyzedScope {
     pub reports: Vec<Report>,
 }
 
+/// Work about to begin. Definition events include each distinct call context.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AnalysisProgress<'a> {
+    LoadingSources,
+    LiftingSources,
+    IndexingProject,
+    AnalyzingFunction(&'a str),
+    AnalyzingTemplate(&'a str),
+    AnalyzingBus(&'a str),
+}
+
 /// Analyze entry files and their includes using Circom 2.2.3 syntax.
 ///
 /// Syntax and semantic failures become reports and preserve independent definitions.
@@ -42,12 +54,30 @@ pub fn analyze_files(
     libraries: &[PathBuf],
     curve: Curve,
 ) -> Result<AnalysisOutput, ApplicationError> {
+    analyze_files_with_progress(paths, libraries, curve, |_| Ok(()))
+}
+
+/// Analyze entry files, reporting each stage before starting its work.
+///
+/// Reports retain the same order as [`analyze_files`]. A failed progress write stops
+/// analysis immediately; it does not become a source diagnostic.
+///
+/// # Errors
+/// Returns an error for a failed progress write or an analysis invariant violation.
+pub fn analyze_files_with_progress(
+    paths: &[PathBuf],
+    libraries: &[PathBuf],
+    curve: Curve,
+    mut progress: impl FnMut(AnalysisProgress<'_>) -> io::Result<()>,
+) -> Result<AnalysisOutput, ApplicationError> {
+    progress(AnalysisProgress::LoadingSources)?;
     let (paths, input_reports) = inputs::expand(paths);
     let loaded = load_sources(&paths, libraries, VersionPolicy::new(Version::new(2, 2, 3)));
     let paths: BTreeSet<_> = paths.iter().filter_map(|path| path.canonicalize().ok()).collect();
     let roots: Vec<SourceId> =
         loaded.files.iter().filter(|file| paths.contains(&file.path)).map(|file| file.id).collect();
     let sources = SourceMap::from_loaded(&loaded, &roots)?;
+    progress(AnalysisProgress::LiftingSources)?;
     let lifted = lift_project(&loaded);
     let mut diagnostics = Diagnostics::new(&sources);
     for report in input_reports {
@@ -62,10 +92,11 @@ pub fn analyze_files(
         }
     }
     diagnostics.frontend(&loaded, &lifted)?;
+    progress(AnalysisProgress::IndexingProject)?;
     let summaries = ProjectAnalysis::build(&lifted, curve)
         .map_err(|error| ApplicationError::Invariant(format!("invalid call graph: {error:?}")))?;
     let mut runner = ScopeRunner::new(&summaries, &sources, &mut diagnostics);
-    runner.analyze()?;
+    runner.analyze(&mut progress)?;
     let reports = runner.finish();
     let mut scopes = Vec::new();
     for function in lifted.hir.functions() {
@@ -99,6 +130,8 @@ pub fn analyze_files(
 
 #[derive(Debug, thiserror::Error)]
 pub enum ApplicationError {
+    #[error("cannot report analysis progress: {0}")]
+    Progress(#[from] io::Error),
     #[error(transparent)]
     Render(#[from] RenderError),
     #[error("{0}")]

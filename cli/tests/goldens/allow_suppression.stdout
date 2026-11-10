@@ -1,3 +1,6 @@
+circomspect: loading input files
+circomspect: resolving source definitions
+circomspect: preparing analysis
 circomspect: analyzing function 'UsesMissingFunction'
 circomspect: analyzing template 'UsesMissingTemplate'
 circomspect: No issues found.
