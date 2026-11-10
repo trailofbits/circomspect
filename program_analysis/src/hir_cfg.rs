@@ -187,6 +187,15 @@ impl DefinitionCfg {
         self.topology.nodes_reaching(targets)
     }
 
+    /// Unpruned reachable nodes, including `start`, or `None` when capacity is exceeded.
+    pub(crate) fn reachable_nodes(
+        &self,
+        start: NodeId,
+        capacity: usize,
+    ) -> Option<BTreeSet<NodeId>> {
+        self.topology.reachable_nodes(start, capacity)
+    }
+
     pub(crate) fn owns_symbol(&self, symbol: SymbolId) -> bool {
         self.local_symbols.contains(&symbol)
     }

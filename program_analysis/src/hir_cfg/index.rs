@@ -37,6 +37,29 @@ impl TopologyIndex {
         reached
     }
 
+    pub(super) fn reachable_nodes(
+        &self,
+        start: NodeId,
+        capacity: usize,
+    ) -> Option<BTreeSet<NodeId>> {
+        let mut reached = BTreeSet::new();
+        let mut pending = vec![start];
+        while let Some(node) = pending.pop() {
+            if !reached.insert(node) {
+                continue;
+            }
+            if reached.len() > capacity {
+                return None;
+            }
+            if let Some(edges) = self.outgoing.get(&node) {
+                for (_, target) in edges {
+                    pending.push(*target);
+                }
+            }
+        }
+        Some(reached)
+    }
+
     pub(super) fn reaches(
         &self,
         start: NodeId,

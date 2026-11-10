@@ -222,6 +222,20 @@ pub(crate) struct OwnedAnalysisOptions {
     pub(crate) budget: Option<usize>,
 }
 
+struct DeferredBranch {
+    node: NodeId,
+    cached_reachable: Option<BTreeSet<NodeId>>,
+}
+
+impl DeferredBranch {
+    fn reaches(&self, cfg: &DefinitionCfg, target: NodeId) -> bool {
+        match &self.cached_reachable {
+            Some(nodes) => nodes.contains(&target),
+            None => cfg.path_exists(self.node, &BTreeSet::from([target]), None, &BTreeSet::new()),
+        }
+    }
+}
+
 /// Local facts retain the solver result privately so reporting queries cannot
 /// accidentally consume provisional states without a closure check.
 pub struct AnalysisFacts<'a> {
@@ -238,7 +252,7 @@ pub struct AnalysisFacts<'a> {
     evidence_binding: Option<ContextEvidence>,
     ranges: Mutex<BTreeMap<ExprId, Fact<FieldRange>>>,
     body_writes: OnceLock<write_validity::BodyWriteResult>,
-    deferred_branches: OnceLock<Vec<NodeId>>,
+    deferred_branches: OnceLock<Vec<DeferredBranch>>,
 }
 
 /// Compute local facts without external call evidence.
@@ -1336,35 +1350,44 @@ impl AnalysisFacts<'_> {
                 }
             }
             for branch in self.deferred_branches() {
-                if self.certified_dead_node(*branch) {
+                if blockers.contains(&FactBlocker::DeferredControl(branch.node))
+                    || self.certified_dead_node(branch.node)
+                {
                     continue;
                 }
-                let target = BTreeSet::from([*site]);
-                if self.can_reach_any(*branch, &target)
-                    && self.can_reach_exit_avoiding(*branch, *site)
-                    && !self.specialized_guard(*branch)
+                if branch.reaches(self.cfg.as_ref(), *site)
+                    && self.can_reach_exit_avoiding(branch.node, *site)
+                    && !self.specialized_guard(branch.node)
                 {
-                    blockers.insert(FactBlocker::DeferredControl(*branch));
+                    blockers.insert(FactBlocker::DeferredControl(branch.node));
                 }
             }
         }
         blockers
     }
 
-    fn deferred_branches(&self) -> &[NodeId] {
-        self.deferred_branches.get_or_init(|| {
-            let mut branches = Vec::new();
-            for site in self.cfg.nodes() {
-                if let Some(CfgNodeKind::Branch {
-                    guard: parser::hir::ControlGuard::DeferredScalar,
-                    ..
-                }) = self.cfg.node(*site).map(|node| &node.kind)
-                {
-                    branches.push(*site);
-                }
+    fn deferred_branches(&self) -> &[DeferredBranch] {
+        const MAX_CACHED_BRANCH_NODES: usize = 262_144;
+        self.deferred_branches
+            .get_or_init(|| self.collect_deferred_branches(MAX_CACHED_BRANCH_NODES))
+    }
+
+    fn collect_deferred_branches(&self, mut capacity: usize) -> Vec<DeferredBranch> {
+        let mut branches = Vec::new();
+        for site in self.cfg.nodes() {
+            let Some(CfgNodeKind::Branch {
+                guard: parser::hir::ControlGuard::DeferredScalar, ..
+            }) = self.cfg.node(*site).map(|node| &node.kind)
+            else {
+                continue;
+            };
+            let cached_reachable = self.cfg.reachable_nodes(*site, capacity);
+            if let Some(nodes) = &cached_reachable {
+                capacity -= nodes.len();
             }
-            branches
-        })
+            branches.push(DeferredBranch { node: *site, cached_reachable });
+        }
+        branches
     }
 
     fn specialized_guard(&self, branch: NodeId) -> bool {

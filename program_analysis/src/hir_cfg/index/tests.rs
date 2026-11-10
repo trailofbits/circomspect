@@ -147,3 +147,44 @@ fn reverse_walk_handles_parallel_edges_and_cycles() {
         }
     }
 }
+
+#[test]
+fn bounded_forward_sets_preserve_reachability_or_require_fallback() {
+    for mask in 0..1 << 9 {
+        let mut edges = Vec::new();
+        for source in 0..3 {
+            for target in 0..3 {
+                if mask & (1 << (source * 3 + target)) != 0 {
+                    let edge = (NodeId::new(source), NodeId::new(target), ());
+                    edges.extend([edge, edge]);
+                }
+            }
+        }
+        let graph = IndexedGraph::new(vec![(); 3], edges, vec![], vec![]).unwrap();
+        let index = TopologyIndex::new(&graph);
+        let mut nodes = graph.nodes().to_vec();
+        nodes.push(NodeId::new(7));
+        for start in &nodes {
+            let mut expected = BTreeSet::new();
+            for target in &nodes {
+                if reference_reaches(
+                    &graph,
+                    *start,
+                    &BTreeSet::from([*target]),
+                    None,
+                    &BTreeSet::new(),
+                ) {
+                    expected.insert(*target);
+                }
+            }
+            for capacity in 0..=nodes.len() {
+                let actual = index.reachable_nodes(*start, capacity);
+                if expected.len() <= capacity {
+                    assert_eq!(actual.as_ref(), Some(&expected));
+                } else {
+                    assert!(actual.is_none());
+                }
+            }
+        }
+    }
+}
