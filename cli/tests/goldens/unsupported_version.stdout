@@ -1,12 +1,12 @@
 circomspect: loading input files
 circomspect: resolving source definitions
-circomspect: preparing analysis
-circomspect: analyzing template 'LibraryItem'
 error: source requires Circom 2.3.0, but the supported target is 2.2.3
   ┌─ <fixture>:1:1
   │
 1 │ pragma circom 2.3.0;
   │ ^^^^^^^^^^^^^^^^^^^^ source requires Circom 2.3.0, but the supported target is 2.2.3
 
+circomspect: preparing analysis
+circomspect: analyzing template 'LibraryItem'
 circomspect: Result written to `<sarif>`.
 circomspect: 1 source error reported.

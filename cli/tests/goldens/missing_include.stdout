@@ -1,12 +1,12 @@
 circomspect: loading input files
 circomspect: resolving source definitions
-circomspect: preparing analysis
-circomspect: analyzing template 'StillAvailable'
 error: cannot find included file not_found.circom
   ┌─ <fixture>:2:1
   │
 2 │ include "not_found.circom";
   │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^ cannot find included file not_found.circom
 
+circomspect: preparing analysis
+circomspect: analyzing template 'StillAvailable'
 circomspect: Result written to `<sarif>`.
 circomspect: 1 source error reported.

@@ -7,7 +7,7 @@ use program_structure::report::Report;
 use crate::application::coverage::CoverageContext;
 use crate::application::diagnostics::Diagnostics;
 use crate::application::grouping::ReportGroups;
-use crate::application::{AnalysisProgress, ApplicationError};
+use crate::application::{AnalysisObserver, AnalysisProgress, ApplicationError};
 use crate::hir_cfg::build_cfg;
 use crate::hir_facts::AnalysisFacts;
 use crate::interprocedural::{
@@ -45,7 +45,7 @@ impl<'a, 'b, 'c, 'd> ScopeRunner<'a, 'b, 'c, 'd> {
 
     pub(super) fn analyze(
         &mut self,
-        progress: &mut dyn FnMut(AnalysisProgress<'_>) -> std::io::Result<()>,
+        observer: &mut dyn AnalysisObserver,
     ) -> Result<(), ApplicationError> {
         for site in self.summaries.graph().sites() {
             let CallOwner::Main(_) = site.owner else { continue };
@@ -73,7 +73,7 @@ impl<'a, 'b, 'c, 'd> ScopeRunner<'a, 'b, 'c, 'd> {
                 CallReachability::Unreachable => {}
             }
         }
-        self.drain(progress)?;
+        self.drain(observer)?;
         let mut definitions = Vec::new();
         for function in self.summaries.hir().functions() {
             definitions.push(DefinitionRef::Function(function.id));
@@ -93,13 +93,10 @@ impl<'a, 'b, 'c, 'd> ScopeRunner<'a, 'b, 'c, 'd> {
                 Err(reason) => self.source_blocked(self.span(definition)?, &reason),
             }
         }
-        self.drain(progress)
+        self.drain(observer)
     }
 
-    fn drain(
-        &mut self,
-        progress: &mut dyn FnMut(AnalysisProgress<'_>) -> std::io::Result<()>,
-    ) -> Result<(), ApplicationError> {
+    fn drain(&mut self, observer: &mut dyn AnalysisObserver) -> Result<(), ApplicationError> {
         while let Some(evidence) = self.pending.pop_front() {
             if self.seen.contains(&evidence) {
                 continue;
@@ -114,8 +111,14 @@ impl<'a, 'b, 'c, 'd> ScopeRunner<'a, 'b, 'c, 'd> {
             }
             self.seen.insert(evidence.clone());
             let definition = evidence.context().definition();
-            progress(self.scope_progress(definition)?)?;
+            observer.progress(self.scope_progress(definition)?)?;
             self.analyze_scope(&evidence)?;
+            self.diagnostics.emit_new(observer)?;
+            if self.is_input_scope(definition)? {
+                if let Some(reports) = self.reports.get_mut(&definition) {
+                    reports.emit_new(self.sources, observer)?;
+                }
+            }
         }
         Ok(())
     }
@@ -279,10 +282,27 @@ impl<'a, 'b, 'c, 'd> ScopeRunner<'a, 'b, 'c, 'd> {
         span.ok_or_else(|| ApplicationError::Invariant("missing source definition".to_string()))
     }
 
-    pub(super) fn finish(self) -> Result<BTreeMap<DefinitionRef, Vec<Report>>, ApplicationError> {
+    fn is_input_scope(&self, definition: DefinitionRef) -> Result<bool, ApplicationError> {
+        if let DefinitionRef::Bus(_) = definition {
+            return Ok(false);
+        }
+        let (file, _) = self.sources.location(self.span(definition)?)?;
+        Ok(self.sources.files().user_inputs().contains(&file))
+    }
+
+    pub(super) fn finish(
+        mut self,
+        observer: &mut dyn AnalysisObserver,
+    ) -> Result<BTreeMap<DefinitionRef, Vec<Report>>, ApplicationError> {
         let mut reports = BTreeMap::new();
-        for (definition, groups) in self.reports {
-            reports.insert(definition, groups.finish(self.sources)?);
+        let mut quiet = |_: AnalysisProgress<'_>| Ok(());
+        for (definition, groups) in std::mem::take(&mut self.reports) {
+            let observer = if self.is_input_scope(definition)? {
+                &mut *observer
+            } else {
+                &mut quiet as &mut dyn AnalysisObserver
+            };
+            reports.insert(definition, groups.finish(self.sources, observer)?);
         }
         Ok(reports)
     }

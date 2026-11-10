@@ -1,11 +1,5 @@
 circomspect: loading input files
 circomspect: resolving source definitions
-circomspect: preparing analysis
-circomspect: analyzing template 'BeforeError'
-circomspect: analyzing template 'BrokenFirst'
-circomspect: analyzing template 'BetweenErrors'
-circomspect: analyzing template 'BrokenSecond'
-circomspect: analyzing template 'AfterError'
 error: invalid statement; parsing continued at the next statement or block boundary
    ┌─ <fixture>:10:5
    │
@@ -18,5 +12,11 @@ error: invalid statement; parsing continued at the next statement or block bound
 20 │     var value = ;
    │     ^^^^^^^^^^^^^ invalid statement; parsing continued at the next statement or block boundary
 
+circomspect: preparing analysis
+circomspect: analyzing template 'BeforeError'
+circomspect: analyzing template 'BrokenFirst'
+circomspect: analyzing template 'BetweenErrors'
+circomspect: analyzing template 'BrokenSecond'
+circomspect: analyzing template 'AfterError'
 circomspect: Result written to `<sarif>`.
 circomspect: 2 source errors reported.

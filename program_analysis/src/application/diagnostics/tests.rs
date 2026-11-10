@@ -9,6 +9,7 @@ use program_structure::writers::{OutputPolicy, ReportFilter};
 
 use crate::application::coverage::{CoverageExplanation, CoverageKind};
 use crate::application::diagnostics::Diagnostics;
+use crate::application::AnalysisProgress;
 use crate::hir_cfg::build_cfg;
 use crate::interprocedural::{CallOwner, CallReachability, ProjectAnalysis};
 use crate::rules::{RuleKind, SourceMap};
@@ -47,7 +48,7 @@ fn a_warning_never_promotes_missing_context_from_the_same_scope() {
         },
     ];
     diagnostics.scope_incomplete(&evidence, span, explanations, Some(RuleKind::FieldArithmetic));
-    let reports = diagnostics.finish().unwrap();
+    let reports = diagnostics.finish(&mut |_: AnalysisProgress<'_>| Ok(())).unwrap();
     assert_eq!(reports.len(), 2);
     let policy = OutputPolicy::new(MessageCategory::Warning, HashSet::from([0]), HashSet::new());
     let visible: Vec<_> = reports.iter().filter(|report| policy.filter(report)).collect();
@@ -110,7 +111,7 @@ fn a_source_notice_retains_both_contributing_call_paths() {
         calls += 1;
     }
     assert_eq!(calls, 2);
-    let reports = diagnostics.finish().unwrap();
+    let reports = diagnostics.finish(&mut |_: AnalysisProgress<'_>| Ok(())).unwrap();
     assert_eq!(reports.len(), 1);
     let paths: Vec<_> =
         reports[0].secondary().iter().filter(|label| label.message.contains("context")).collect();

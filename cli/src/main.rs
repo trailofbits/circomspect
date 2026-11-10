@@ -3,7 +3,7 @@ use std::process::ExitCode;
 use clap::{CommandFactory, Parser};
 
 use program_analysis::config;
-use program_analysis::application::{analyze_files_with_progress, ApplicationError};
+use program_analysis::application::{analyze_files_with_observer, ApplicationError};
 use program_structure::file_definition::FileLibrary;
 use program_structure::report_code::ReportCode;
 
@@ -11,9 +11,10 @@ use program_structure::constants::Curve;
 use program_structure::report::Report;
 use program_structure::report::MessageCategory;
 use program_structure::writers::{
-    LogWriter, OutputPolicy, ReportWriter, ReportWriteError, SarifWriter, CachedStdoutWriter,
+    LogWriter, OutputPolicy, ReportWriter, ReportWriteError, SarifWriter, StdoutWriter,
 };
 
+mod live_output;
 mod progress;
 mod summary;
 
@@ -79,41 +80,43 @@ fn main() -> Result<ExitCode, String> {
 }
 
 fn run(options: Cli) -> Result<ExitCode, ReportWriteError> {
+    let ignored = options.allow_list.into_iter().collect();
+    let mut stdout_writer = StdoutWriter::new(options.verbose);
     let output = match progress::report(options.verbose, |reporter| {
-        analyze_files_with_progress(
+        let mut observer = live_output::LiveOutput::new(
+            reporter,
+            &mut stdout_writer,
+            options.output_level,
+            &ignored,
+        );
+        analyze_files_with_observer(
             &options.input_files,
             &options.libraries,
             options.curve,
-            |progress| reporter.stage(progress),
+            &mut observer,
         )
     }) {
         Ok(output) => output,
         Err(ApplicationError::Progress(error)) => return Err(ReportWriteError::Status(error)),
+        Err(ApplicationError::Output(error)) => return Err(error),
         Err(error) => {
             let report =
                 Report::error(format!("Analysis failed: {error}"), ReportCode::RuntimeError);
-            CachedStdoutWriter::new(options.verbose)
-                .write_reports(&[report], &FileLibrary::new())?;
+            stdout_writer.write_reports(&[report], &FileLibrary::new())?;
             return Ok(ExitCode::FAILURE);
         }
     };
 
-    let policy = OutputPolicy::new(
-        options.output_level,
-        output.files.user_inputs().clone(),
-        options.allow_list.into_iter().collect(),
-    );
-    let mut stdout_writer = CachedStdoutWriter::new(options.verbose).add_filter(policy.clone());
-    stdout_writer.write_reports(&output.diagnostics, &output.files)?;
-
-    // Render completed function and template analyses in input order.
-    for scope in &output.scopes {
-        stdout_writer.write_reports(&scope.reports, &output.files)?;
+    let policy =
+        OutputPolicy::new(options.output_level, output.files.user_inputs().clone(), ignored);
+    let mut reports = output.diagnostics;
+    for scope in output.scopes {
+        reports.extend(scope.reports);
     }
 
     if let Some(sarif_file) = options.sarif_file {
         let mut sarif_writer = SarifWriter::new(&sarif_file).add_filter(policy.clone());
-        match sarif_writer.write_reports(stdout_writer.reports(), &output.files) {
+        match sarif_writer.write_reports(&reports, &output.files) {
             Ok(count) if count > 0 => stdout_writer
                 .write_message(format!("Result written to `{}`.", sarif_file.display()))?,
             Ok(_) => {}
@@ -122,12 +125,12 @@ fn run(options: Cli) -> Result<ExitCode, ReportWriteError> {
                     format!("Cannot write SARIF to {}: {error:#}", sarif_file.display()),
                     ReportCode::RuntimeError,
                 );
-                CachedStdoutWriter::new(options.verbose).write_reports(&[report], &output.files)?;
+                stdout_writer.write_reports(&[report], &output.files)?;
                 return Ok(ExitCode::FAILURE);
             }
         }
     }
 
-    stdout_writer.write_message(summary::describe(stdout_writer.reports(), &policy))?;
+    stdout_writer.write_message(summary::describe(&reports, &policy))?;
     Ok(if stdout_writer.reports_written() == 0 { ExitCode::SUCCESS } else { ExitCode::FAILURE })
 }

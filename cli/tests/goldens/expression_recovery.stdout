@@ -1,8 +1,5 @@
 circomspect: loading input files
 circomspect: resolving source definitions
-circomspect: preparing analysis
-circomspect: analyzing function 'F'
-circomspect: analyzing function 'Neighbor'
 error: only an anonymous component call may be used as an expression statement
   ┌─ <fixture>:3:5
   │
@@ -15,5 +12,8 @@ error: unresolved Function call `Missing`
 4 │     return Missing();
   │            ^^^^^^^ unresolved Function call `Missing`
 
+circomspect: preparing analysis
+circomspect: analyzing function 'F'
+circomspect: analyzing function 'Neighbor'
 circomspect: Result written to `<sarif>`.
 circomspect: 2 source errors reported.

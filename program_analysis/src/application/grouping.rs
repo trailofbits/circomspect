@@ -4,6 +4,7 @@ use program_structure::file_definition::FileID;
 use program_structure::report::{MessageCategory, Report, ReportLabel};
 
 use crate::interprocedural::ContextEvidence;
+use crate::application::{AnalysisObserver, ApplicationError};
 use crate::rules::{RenderError, SourceMap};
 
 /// Identical source findings share a report while retaining each affected call path.
@@ -16,6 +17,12 @@ struct ReportGroup {
     first_seen: usize,
     report: Report,
     contexts: BTreeSet<ContextEvidence>,
+    publication: Publication,
+}
+
+enum Publication {
+    Pending,
+    Published { contexts: usize },
 }
 
 #[derive(Eq, Ord, PartialEq, PartialOrd)]
@@ -84,29 +91,71 @@ impl ReportGroups {
             first_seen,
             report,
             contexts: BTreeSet::new(),
+            publication: Publication::Pending,
         })
     }
 
-    pub(super) fn finish(self, sources: &SourceMap<'_>) -> Result<Vec<Report>, RenderError> {
+    pub(super) fn emit_new(
+        &mut self,
+        sources: &SourceMap<'_>,
+        observer: &mut dyn AnalysisObserver,
+    ) -> Result<(), ApplicationError> {
+        let mut groups: Vec<_> = self.groups.values_mut().collect();
+        groups.sort_by_key(|group| group.first_seen);
+        for group in groups {
+            if let Publication::Pending = group.publication {
+                group.publish(sources, observer)?;
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn finish(
+        self,
+        sources: &SourceMap<'_>,
+        observer: &mut dyn AnalysisObserver,
+    ) -> Result<Vec<Report>, ApplicationError> {
         let mut groups: Vec<_> = self.groups.into_values().collect();
         groups.sort_by_key(|group| group.first_seen);
         let mut reports = Vec::with_capacity(groups.len());
         for mut group in groups {
-            if group.contexts.len() > 1 {
-                add_grouped_paths(&mut group.report, &group.contexts, sources)?;
-            } else if let Some(context) = group.contexts.first() {
-                for site in context.call_path() {
-                    let (file, range) = sources.location(site.span())?;
-                    group.report.add_secondary(
-                        range,
-                        file,
-                        Some("Reached through this call.".into()),
-                    );
-                }
-            }
-            reports.push(group.report);
+            reports.push(group.publish(sources, observer)?);
         }
         Ok(reports)
+    }
+}
+
+impl ReportGroup {
+    fn publish(
+        &mut self,
+        sources: &SourceMap<'_>,
+        observer: &mut dyn AnalysisObserver,
+    ) -> Result<Report, ApplicationError> {
+        let report = self.render(sources)?;
+        match self.publication {
+            Publication::Pending => observer.report(&report, sources.files())?,
+            Publication::Published { contexts } => {
+                let paths = &report.secondary()[self.report.secondary().len()..];
+                if self.contexts.len() > contexts && !paths.is_empty() {
+                    observer.additional_call_paths(&report, paths, sources.files())?;
+                }
+            }
+        }
+        self.publication = Publication::Published { contexts: self.contexts.len() };
+        Ok(report)
+    }
+
+    fn render(&self, sources: &SourceMap<'_>) -> Result<Report, RenderError> {
+        let mut report = self.report.clone();
+        if self.contexts.len() > 1 {
+            add_grouped_paths(&mut report, &self.contexts, sources)?;
+        } else if let Some(context) = self.contexts.first() {
+            for site in context.call_path() {
+                let (file, range) = sources.location(site.span())?;
+                report.add_secondary(range, file, Some("Reached through this call.".into()));
+            }
+        }
+        Ok(report)
     }
 }
 

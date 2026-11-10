@@ -7,6 +7,7 @@ use program_structure::report_code::ReportCode;
 
 use crate::application::coverage::{check_name, CoverageContext, CoverageExplanation, CoverageKind};
 use crate::application::grouping::ReportGroups;
+use crate::application::{AnalysisObserver, ApplicationError};
 use crate::interprocedural::ContextEvidence;
 use crate::rules::{RenderError, RuleKind, SourceMap};
 
@@ -144,7 +145,17 @@ impl<'a, 'b> Diagnostics<'a, 'b> {
         Ok(())
     }
 
-    pub(super) fn finish(mut self) -> Result<Vec<Report>, RenderError> {
+    pub(super) fn emit_new(
+        &mut self,
+        observer: &mut dyn AnalysisObserver,
+    ) -> Result<(), ApplicationError> {
+        self.reports.emit_new(self.sources, observer)
+    }
+
+    pub(super) fn finish(
+        mut self,
+        observer: &mut dyn AnalysisObserver,
+    ) -> Result<Vec<Report>, ApplicationError> {
         for (key, scope) in &self.incomplete {
             let mut report = coverage_report(key.kind());
             self.locate(
@@ -180,7 +191,7 @@ impl<'a, 'b> Diagnostics<'a, 'b> {
                 }
             }
         }
-        self.reports.finish(self.sources)
+        self.reports.finish(self.sources, observer)
     }
 }
 

@@ -38,5 +38,10 @@ informational reports contribute neither a count nor an exit failure.
 The snapshots test presentation, not warning truth. Frozen truth labels and
 historical observations remain in `tests/warnings`.
 
+Terminal snapshots place frontend diagnostics before definition analysis. Findings
+arrive after each completed context; final call-path continuations do not repeat
+or count the warning. SARIF retains deterministic source order and complete
+evidence. `live_output::tests` blocks a later scope to verify actual pipe delivery.
+
 Update a golden only after reviewing the before/after CLI and SARIF behavior
 and explaining the reason in the change review.

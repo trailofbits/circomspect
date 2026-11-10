@@ -1,11 +1,15 @@
 use parser::frontend::{parse_source, LoadedProject, SourceFile, SourceId, Version, VersionPolicy};
 use parser::hir::lift_project;
 use program_structure::report::Report;
+use program_structure::file_definition::FileLibrary;
+use program_structure::report::ReportLabel;
+use program_structure::writers::ReportWriteError;
 use program_structure::report_code::ReportCode;
 use program_structure::utils::constants::Curve;
 use program_structure::utils::sarif_conversion::ToSarif;
 
 use crate::application::grouping::ReportGroups;
+use crate::application::{AnalysisObserver, AnalysisProgress, ApplicationError};
 use crate::hir_cfg::build_cfg;
 use crate::interprocedural::{
     CallBlocker, CallOwner, CallReachability, ContextEvidence, ProjectAnalysis,
@@ -84,7 +88,7 @@ fn sixteen_call_findings_become_one_terminal_and_sarif_result() {
     for context in &contexts {
         groups.insert(report("Unused e2"), context);
     }
-    let reports = groups.finish(&sources).unwrap();
+    let reports = groups.finish(&sources, &mut |_: AnalysisProgress<'_>| Ok(())).unwrap();
     assert_eq!(reports.len(), 1);
     assert_eq!(reports[0].message(), "Unused e2");
     assert_eq!(reports[0].primary()[0].range, 0..1);
@@ -115,7 +119,7 @@ fn single_context_and_source_reports_preserve_existing_rendering() {
             groups.insert_source(original.clone());
             groups.insert_source(original.clone());
         }
-        let reports = groups.finish(&sources).unwrap();
+        let reports = groups.finish(&sources, &mut |_: AnalysisProgress<'_>| Ok(())).unwrap();
         assert_eq!(reports.len(), 1);
         assert_eq!(reports[0].message(), original.message());
         assert_eq!(reports[0].primary(), original.primary());
@@ -159,7 +163,7 @@ fn distinct_messages_primary_labels_evidence_notes_and_severity_stay_separate() 
         groups.insert_source(report.clone());
         groups.insert_source(report.clone());
     }
-    let reports = groups.finish(&sources).unwrap();
+    let reports = groups.finish(&sources, &mut |_: AnalysisProgress<'_>| Ok(())).unwrap();
     assert_eq!(reports.len(), originals.len());
     for (actual, expected) in reports.iter().zip(&originals) {
         assert_eq!(actual.to_diagnostic(true), expected.to_diagnostic(true));
@@ -185,7 +189,7 @@ fn shared_and_crossing_paths_keep_context_steps_without_unaffected_calls() {
     for context in &contexts[..3] {
         groups.insert(report("Unused value"), context);
     }
-    let reports = groups.finish(&sources).unwrap();
+    let reports = groups.finish(&sources, &mut |_: AnalysisProgress<'_>| Ok(())).unwrap();
     let labels = reports[0].secondary();
     assert_eq!(labels.len(), 5);
     let left_call = contexts[0].call_path()[1].span().start();
@@ -197,7 +201,7 @@ fn shared_and_crossing_paths_keep_context_steps_without_unaffected_calls() {
     for context in contexts[..3].iter().rev() {
         reversed.insert(report("Unused value"), context);
     }
-    let reversed = reversed.finish(&sources).unwrap();
+    let reversed = reversed.finish(&sources, &mut |_: AnalysisProgress<'_>| Ok(())).unwrap();
     assert_eq!(reports[0].to_diagnostic(true), reversed[0].to_diagnostic(true));
 }
 
@@ -218,7 +222,7 @@ fn repeated_recursive_call_span_keeps_each_step_in_each_context() {
     }
     assert_eq!(parent.call_path().len(), 3);
     assert_eq!(parent.call_path()[1], parent.call_path()[2]);
-    let reports = groups.finish(&sources).unwrap();
+    let reports = groups.finish(&sources, &mut |_: AnalysisProgress<'_>| Ok(())).unwrap();
     let labels = reports[0].secondary();
     assert_eq!(labels.len(), 2);
     let recursive = parent.call_path()[1].span().start();
@@ -245,7 +249,7 @@ fn same_source_call_path_retains_distinct_argument_contexts() {
     for context in &contexts {
         groups.insert(report("Unused value"), context);
     }
-    let reports = groups.finish(&sources).unwrap();
+    let reports = groups.finish(&sources, &mut |_: AnalysisProgress<'_>| Ok(())).unwrap();
     assert_eq!(reports.len(), 1);
     assert_eq!(reports[0].secondary().len(), 1);
     assert_eq!(
@@ -268,7 +272,11 @@ fn unknown_or_invalid_call_path_sources_are_errors() {
         let sources = SourceMap::from_loaded(invalid, &[]).unwrap();
         let mut groups = ReportGroups::default();
         groups.insert(report("Unused value"), &context);
-        let error = groups.finish(&sources).err().unwrap();
+        let ApplicationError::Render(error) =
+            groups.finish(&sources, &mut |_: AnalysisProgress<'_>| Ok(())).err().unwrap()
+        else {
+            panic!("source errors must remain rendering errors")
+        };
         if invalid.files.is_empty() {
             assert_eq!(error, RenderError::UnknownSource(SourceId::new(0)));
         } else {
@@ -281,5 +289,189 @@ fn unknown_or_invalid_call_path_sources_are_errors() {
 fn no_reports_produce_no_findings() {
     let loaded = loaded("");
     let sources = SourceMap::from_loaded(&loaded, &[]).unwrap();
-    assert!(ReportGroups::default().finish(&sources).unwrap().is_empty());
+    assert!(ReportGroups::default()
+        .finish(&sources, &mut |_: AnalysisProgress<'_>| Ok(()))
+        .unwrap()
+        .is_empty());
+}
+
+#[derive(Default)]
+struct RecordedReports {
+    reports: Vec<Report>,
+    continuations: Vec<(Report, Vec<ReportLabel>)>,
+}
+
+impl AnalysisObserver for RecordedReports {
+    fn report(&mut self, report: &Report, _files: &FileLibrary) -> Result<(), ReportWriteError> {
+        self.reports.push(report.clone());
+        Ok(())
+    }
+
+    fn additional_call_paths(
+        &mut self,
+        report: &Report,
+        paths: &[ReportLabel],
+        _files: &FileLibrary,
+    ) -> Result<(), ReportWriteError> {
+        self.continuations.push((report.clone(), paths.to_vec()));
+        Ok(())
+    }
+}
+
+#[test]
+fn reports_are_published_early_once_in_first_seen_order() {
+    let loaded = loaded("template Root(){}");
+    let sources = SourceMap::from_loaded(&loaded, &[]).unwrap();
+    let mut groups = ReportGroups::default();
+    let mut observed = RecordedReports::default();
+    groups.insert_source(report("zeta"));
+    groups.insert_source(report("alpha"));
+    groups.emit_new(&sources, &mut observed).unwrap();
+    assert_eq!(observed.reports.len(), 2);
+    assert_eq!(observed.reports[0].message(), "zeta");
+    assert_eq!(observed.reports[1].message(), "alpha");
+    groups.insert_source(report("zeta"));
+    groups.insert_source(report("beta"));
+    groups.emit_new(&sources, &mut observed).unwrap();
+    assert_eq!(observed.reports.len(), 3);
+    assert_eq!(observed.reports[2].message(), "beta");
+    let final_reports = groups.finish(&sources, &mut observed).unwrap();
+    assert_eq!(observed.reports.len(), 3);
+    assert!(observed.continuations.is_empty());
+    for (final_report, emitted) in final_reports.iter().zip(&observed.reports) {
+        assert_eq!(final_report.to_diagnostic(true), emitted.to_diagnostic(true));
+    }
+}
+
+#[test]
+fn later_contexts_add_one_complete_continuation_without_repeating_the_finding() {
+    let loaded = loaded(NESTED);
+    let project = lift_project(&loaded);
+    let provider = ProjectAnalysis::build(&project, Curve::Bn254).unwrap();
+    let sources = SourceMap::from_loaded(&loaded, &[]).unwrap();
+    let mut contexts = Vec::new();
+    for parent in child_contexts(&provider, &root_context(&provider)) {
+        contexts.extend(child_contexts(&provider, &parent));
+    }
+    let mut finding = report("Unused value");
+    finding.add_secondary(2..3, 0, Some("Substantive proof evidence".into()));
+    let mut groups = ReportGroups::default();
+    let mut observed = RecordedReports::default();
+    for context in &contexts {
+        groups.insert(finding.clone(), context);
+        groups.emit_new(&sources, &mut observed).unwrap();
+        assert_eq!(observed.reports.len(), 1);
+        assert!(observed.continuations.is_empty());
+    }
+    let final_reports = groups.finish(&sources, &mut observed).unwrap();
+    assert_eq!(observed.reports.len(), 1);
+    assert_eq!(observed.continuations.len(), 1);
+    let (complete, paths) = &observed.continuations[0];
+    assert_eq!(complete.to_diagnostic(true), final_reports[0].to_diagnostic(true));
+    assert_eq!(paths, &complete.secondary()[1..]);
+    assert_eq!(paths.len(), 6);
+    assert_eq!(observed.reports[0].secondary().len(), 3);
+    let mut quiet = ReportGroups::default();
+    for context in &contexts {
+        quiet.insert(finding.clone(), context);
+    }
+    let quiet = quiet.finish(&sources, &mut |_: AnalysisProgress<'_>| Ok(())).unwrap();
+    let final_sarif = final_reports[0].to_sarif(sources.files()).unwrap();
+    let quiet_sarif = quiet[0].to_sarif(sources.files()).unwrap();
+    assert_eq!(
+        serde_json::to_value(final_sarif).unwrap(),
+        serde_json::to_value(quiet_sarif).unwrap()
+    );
+}
+
+#[test]
+fn late_coverage_is_published_once_when_finalized() {
+    let loaded = loaded("template Root(){}");
+    let sources = SourceMap::from_loaded(&loaded, &[]).unwrap();
+    let mut groups = ReportGroups::default();
+    let mut observed = RecordedReports::default();
+    groups.insert_source(report("Unused value"));
+    groups.emit_new(&sources, &mut observed).unwrap();
+    let mut coverage = Report::info("Missing context".into(), ReportCode::IncompleteCoverage);
+    coverage.add_note("Supply concrete parameters.".into());
+    groups.insert_source(coverage.clone());
+    groups.insert_source(coverage);
+    assert_eq!(observed.reports.len(), 1);
+    let reports = groups.finish(&sources, &mut observed).unwrap();
+    assert_eq!(reports.len(), 2);
+    assert_eq!(observed.reports.len(), 2);
+    assert_eq!(observed.reports[1].message(), "Missing context");
+    assert!(observed.continuations.is_empty());
+}
+
+struct RejectedOutput;
+
+impl AnalysisObserver for RejectedOutput {
+    fn report(&mut self, _report: &Report, _files: &FileLibrary) -> Result<(), ReportWriteError> {
+        Err(ReportWriteError::Status(std::io::Error::from_raw_os_error(28)))
+    }
+
+    fn additional_call_paths(
+        &mut self,
+        _report: &Report,
+        _paths: &[ReportLabel],
+        _files: &FileLibrary,
+    ) -> Result<(), ReportWriteError> {
+        Err(ReportWriteError::Status(std::io::Error::from_raw_os_error(32)))
+    }
+}
+
+#[test]
+fn failed_publication_preserves_the_output_error_and_does_not_mark_a_report_published() {
+    let loaded = loaded("template Root(){}");
+    let sources = SourceMap::from_loaded(&loaded, &[]).unwrap();
+    let mut groups = ReportGroups::default();
+    groups.insert_source(report("Unused value"));
+    let error = groups.emit_new(&sources, &mut RejectedOutput).unwrap_err();
+    let ApplicationError::Output(ReportWriteError::Status(error)) = error else {
+        panic!("output failure must retain its type")
+    };
+    assert_eq!(error.raw_os_error(), Some(28));
+    let mut observed = RecordedReports::default();
+    groups.emit_new(&sources, &mut observed).unwrap();
+    assert_eq!(observed.reports.len(), 1);
+    groups.finish(&sources, &mut observed).unwrap();
+    assert_eq!(observed.reports.len(), 1);
+}
+
+#[test]
+fn final_continuation_propagates_output_failure() {
+    let loaded =
+        loaded("function Issue(n){return n;}template Root(){var a=Issue(1);var b=Issue(2);}");
+    let project = lift_project(&loaded);
+    let provider = ProjectAnalysis::build(&project, Curve::Bn254).unwrap();
+    let sources = SourceMap::from_loaded(&loaded, &[]).unwrap();
+    let contexts = child_contexts(&provider, &root_context(&provider));
+    let mut groups = ReportGroups::default();
+    groups.insert(report("Unused value"), &contexts[0]);
+    groups.emit_new(&sources, &mut RecordedReports::default()).unwrap();
+    groups.insert(report("Unused value"), &contexts[1]);
+    let error = groups.finish(&sources, &mut RejectedOutput).err().unwrap();
+    let ApplicationError::Output(ReportWriteError::Status(error)) = error else {
+        panic!("continuation failure must retain its type")
+    };
+    assert_eq!(error.raw_os_error(), Some(32));
+}
+
+#[test]
+fn additional_empty_context_does_not_emit_an_empty_continuation() {
+    let loaded = loaded("template Root(){}");
+    let project = lift_project(&loaded);
+    let provider = ProjectAnalysis::build(&project, Curve::Bn254).unwrap();
+    let sources = SourceMap::from_loaded(&loaded, &[]).unwrap();
+    let context = root_context(&provider);
+    assert!(context.call_path().is_empty());
+    let mut groups = ReportGroups::default();
+    let mut observed = RecordedReports::default();
+    groups.insert_source(report("Unused value"));
+    groups.emit_new(&sources, &mut observed).unwrap();
+    groups.insert(report("Unused value"), &context);
+    groups.finish(&sources, &mut observed).unwrap();
+    assert_eq!(observed.reports.len(), 1);
+    assert!(observed.continuations.is_empty());
 }

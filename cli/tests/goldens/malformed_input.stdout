@@ -1,7 +1,5 @@
 circomspect: loading input files
 circomspect: resolving source definitions
-circomspect: preparing analysis
-circomspect: analyzing template 'AfterInvalidToken'
 error: invalid Circom token
   ┌─ <fixture>:4:17
   │
@@ -14,5 +12,7 @@ error: unexpected token in Circom source
 4 │     var value = @;
   │                 ^ unexpected token in Circom source
 
+circomspect: preparing analysis
+circomspect: analyzing template 'AfterInvalidToken'
 circomspect: Result written to `<sarif>`.
 circomspect: 2 source errors reported.

@@ -6,6 +6,7 @@ use std::sync::mpsc::{self, RecvTimeoutError};
 use std::time::Duration;
 
 use program_analysis::application::{AnalysisProgress, ApplicationError};
+use program_structure::writers::ReportWriteError;
 
 use crate::progress::report_with;
 
@@ -77,6 +78,35 @@ fn heartbeat_failure_wins_over_a_later_disconnected_callback() {
         },
     );
     let Err(ApplicationError::Progress(error)) = result else { panic!("expected I/O error") };
+    assert_eq!(error.raw_os_error(), Some(28));
+}
+
+#[test]
+fn diagnostic_failure_is_preserved_when_the_heartbeat_also_fails() {
+    let (failed, failure) = mpsc::sync_channel(0);
+    let result = report_with(
+        INTERVAL,
+        move || {
+            move |message: &str| {
+                if message.starts_with("still ") {
+                    failed.send(()).unwrap();
+                    Err(io::Error::from_raw_os_error(32))
+                } else {
+                    Ok(())
+                }
+            }
+        },
+        |reporter| {
+            reporter.stage(AnalysisProgress::LoadingSources)?;
+            failure.recv_timeout(DEADLINE).map_err(io::Error::other)?;
+            Err::<(), _>(ApplicationError::Output(ReportWriteError::Status(
+                io::Error::from_raw_os_error(28),
+            )))
+        },
+    );
+    let Err(ApplicationError::Output(ReportWriteError::Status(error))) = result else {
+        panic!("expected the original diagnostic error");
+    };
     assert_eq!(error.raw_os_error(), Some(28));
 }
 

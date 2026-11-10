@@ -4,6 +4,7 @@ mod coverage;
 mod diagnostics;
 mod grouping;
 mod inputs;
+mod observer;
 mod scopes;
 
 use std::collections::BTreeSet;
@@ -15,6 +16,9 @@ use parser::frontend::{load_sources, SourceId, Version, VersionPolicy};
 use program_structure::constants::Curve;
 use program_structure::file_definition::FileLibrary;
 use program_structure::report::Report;
+use program_structure::writers::ReportWriteError;
+
+pub use crate::application::observer::AnalysisObserver;
 
 use crate::application::diagnostics::Diagnostics;
 use crate::application::scopes::ScopeRunner;
@@ -72,14 +76,30 @@ pub fn analyze_files_with_progress(
     curve: Curve,
     mut progress: impl FnMut(AnalysisProgress<'_>) -> io::Result<()>,
 ) -> Result<AnalysisOutput, ApplicationError> {
-    progress(AnalysisProgress::LoadingSources)?;
+    analyze_files_with_observer(paths, libraries, curve, &mut progress)
+}
+
+/// Analyze files and publish diagnostics as independent scopes complete.
+///
+/// Final reports retain source order and include every affected call path.
+/// Coverage notices wait until their causes and affected checks are aggregated.
+///
+/// # Errors
+/// Returns an observer output failure or an analysis invariant violation.
+pub fn analyze_files_with_observer(
+    paths: &[PathBuf],
+    libraries: &[PathBuf],
+    curve: Curve,
+    observer: &mut dyn AnalysisObserver,
+) -> Result<AnalysisOutput, ApplicationError> {
+    observer.progress(AnalysisProgress::LoadingSources)?;
     let (paths, input_reports) = inputs::expand(paths);
     let loaded = load_sources(&paths, libraries, VersionPolicy::new(Version::new(2, 2, 3)));
     let paths: BTreeSet<_> = paths.iter().filter_map(|path| path.canonicalize().ok()).collect();
     let roots: Vec<SourceId> =
         loaded.files.iter().filter(|file| paths.contains(&file.path)).map(|file| file.id).collect();
     let sources = SourceMap::from_loaded(&loaded, &roots)?;
-    progress(AnalysisProgress::LiftingSources)?;
+    observer.progress(AnalysisProgress::LiftingSources)?;
     let lifted = lift_project(&loaded);
     let mut diagnostics = Diagnostics::new(&sources);
     for report in input_reports {
@@ -94,12 +114,13 @@ pub fn analyze_files_with_progress(
         }
     }
     diagnostics.frontend(&loaded, &lifted)?;
-    progress(AnalysisProgress::IndexingProject)?;
+    diagnostics.emit_new(observer)?;
+    observer.progress(AnalysisProgress::IndexingProject)?;
     let summaries = ProjectAnalysis::build(&lifted, curve)
         .map_err(|error| ApplicationError::Invariant(format!("invalid call graph: {error:?}")))?;
     let mut runner = ScopeRunner::new(&summaries, &sources, &mut diagnostics);
-    runner.analyze(&mut progress)?;
-    let reports = runner.finish()?;
+    runner.analyze(observer)?;
+    let reports = runner.finish(observer)?;
     let mut scopes = Vec::new();
     for function in lifted.hir.functions() {
         if roots.contains(&function.span.source()) {
@@ -125,7 +146,7 @@ pub fn analyze_files_with_progress(
     }
     Ok(AnalysisOutput {
         files: sources.files().clone(),
-        diagnostics: diagnostics.finish()?,
+        diagnostics: diagnostics.finish(observer)?,
         scopes,
     })
 }
@@ -134,6 +155,8 @@ pub fn analyze_files_with_progress(
 pub enum ApplicationError {
     #[error("cannot report analysis progress: {0}")]
     Progress(#[from] io::Error),
+    #[error(transparent)]
+    Output(#[from] ReportWriteError),
     #[error(transparent)]
     Render(#[from] RenderError),
     #[error("{0}")]

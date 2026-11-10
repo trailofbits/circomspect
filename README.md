@@ -58,6 +58,11 @@ Repeated findings at the same source location are grouped while retaining their
 affected call paths. No visible reports means exit status 0; any
 visible warning, informational result, or error means exit status 1.
 
+Source errors and findings appear as analysis progresses. Each finding is printed
+once; any call paths discovered later appear in an additional note. Coverage
+notices wait until their affected checks have been collected. The final summary
+and SARIF file contain the complete grouped results.
+
 Bus declarations are parsed and resolved, but their analysis contexts remain
 unsupported and produce `CS0020`. Custom templates and other unsupported
 dependencies also retain scoped incomplete-analysis diagnostics.

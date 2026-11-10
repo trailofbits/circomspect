@@ -1,8 +1,5 @@
 circomspect: loading input files
 circomspect: resolving source definitions
-circomspect: preparing analysis
-circomspect: analyzing function 'UsesMissingFunction'
-circomspect: analyzing template 'UsesMissingTemplate'
 error: unresolved Function call `MissingFunction`
   ┌─ <fixture>:4:12
   │
@@ -21,5 +18,8 @@ error: unresolved Template call `MissingTemplate`
 8 │     component child = MissingTemplate();
   │                       ^^^^^^^^^^^^^^^ unresolved Template call `MissingTemplate`
 
+circomspect: preparing analysis
+circomspect: analyzing function 'UsesMissingFunction'
+circomspect: analyzing template 'UsesMissingTemplate'
 circomspect: Result written to `<sarif>`.
 circomspect: 3 source errors reported.

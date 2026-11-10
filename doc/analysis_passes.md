@@ -162,6 +162,14 @@ the affected call paths; numbered contexts and call steps distinguish multiple
 paths without repeating the warning. A finding in one instance does not imply
 that every instance has the same issue.
 
+Source errors and certified findings appear during analysis, before later scopes
+are analyzed. If later callers add evidence to an existing finding, a final
+`Additional call paths` note links the complete paths to that finding's code and
+source location. This note is not counted as another finding and follows the
+original finding's filters. Coverage notices are emitted after their causes and
+affected checks have been aggregated. SARIF retains complete grouped reports in
+source order, independently of terminal arrival order.
+
 The final summary separates source errors, findings, analysis notes and analysis
 limitations. It counts only visible reports. `--allow CS0020` hides coverage
 notices, and `--level error` hides warnings and informational results. Hidden

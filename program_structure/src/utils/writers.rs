@@ -4,12 +4,13 @@ use std::io::{self, IsTerminal, Write};
 use thiserror::Error;
 use std::path::{PathBuf, Path};
 use codespan_reporting::term;
+use codespan_reporting::diagnostic::Diagnostic;
 use termcolor::{StandardStream, ColorChoice, WriteColor, ColorSpec, Color};
 
 use crate::sarif_conversion::{SarifError, ToSarif};
 use crate::{
-    program_library::report::{Report, ReportCollection},
-    file_definition::FileLibrary,
+    program_library::report::{Report, ReportCollection, ReportLabel},
+    file_definition::{FileID, FileLibrary},
 };
 
 mod policy;
@@ -107,6 +108,44 @@ impl StdoutWriter {
         self.filters.push(Box::new(filter));
         self
     }
+
+    /// Show final call paths for an earlier diagnostic without counting it again.
+    ///
+    /// Filtering uses the original report, including its severity and primary source.
+    ///
+    /// # Errors
+    /// Returns a rendering or output failure without discarding it.
+    pub fn write_additional_call_paths(
+        &mut self,
+        report: &Report,
+        locations: &[ReportLabel],
+        files: &FileLibrary,
+    ) -> Result<(), ReportWriteError> {
+        if locations.is_empty() || !self.filters.iter().all(|filter| filter.filter(report)) {
+            return Ok(());
+        }
+        let mut labels = report.primary().clone();
+        labels.extend_from_slice(locations);
+        let diagnostic = Diagnostic::note()
+            .with_message(format!("Additional call paths for {}", report.id()))
+            .with_labels(labels);
+        self.write_diagnostic(&diagnostic, files)
+    }
+
+    fn write_diagnostic(
+        &mut self,
+        diagnostic: &Diagnostic<FileID>,
+        files: &FileLibrary,
+    ) -> Result<(), ReportWriteError> {
+        let mut config = term::Config::default();
+        config.styles.header_help.set_intense(false);
+        config.styles.header_error.set_intense(false);
+        config.styles.header_warning.set_intense(false);
+        let mut writer = self.writer.lock();
+        term::emit(&mut writer, &config, files.to_storage(), diagnostic)?;
+        writer.flush().map_err(codespan_reporting::files::Error::Io)?;
+        Ok(())
+    }
 }
 
 impl LogWriter for StdoutWriter {
@@ -137,17 +176,8 @@ impl ReportWriter for StdoutWriter {
     ) -> Result<usize, ReportWriteError> {
         let reports = select_reports(&self.filters, reports);
 
-        let mut config = term::Config::default();
-        let mut diagnostics = Vec::new();
-        let files = file_library.to_storage();
         for report in &reports {
-            diagnostics.push(report.to_diagnostic(self.verbose));
-        }
-        config.styles.header_help.set_intense(false);
-        config.styles.header_error.set_intense(false);
-        config.styles.header_warning.set_intense(false);
-        for diagnostic in &diagnostics {
-            term::emit(&mut self.writer.lock(), &config, files, diagnostic)?;
+            self.write_diagnostic(&report.to_diagnostic(self.verbose), file_library)?;
             self.written += 1;
         }
 

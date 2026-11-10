@@ -58,13 +58,17 @@ where
         let worker = scope.spawn(move || report_stages(&receiver, interval, make_writer()));
         let result = work(&reporter);
         drop(reporter);
-        match worker.join() {
-            Ok(Ok(())) => result,
+        let completed = match worker.join() {
+            Ok(Ok(())) => Ok(()),
             Ok(Err(error)) => Err(ApplicationError::Progress(error)),
             Err(_) => Err(ApplicationError::Progress(io::Error::other(
                 "analysis progress reporter panicked",
             ))),
+        };
+        if let Err(ApplicationError::Output(_)) = &result {
+            return result;
         }
+        completed.and(result)
     })
 }
 

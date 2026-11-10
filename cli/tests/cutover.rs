@@ -289,6 +289,45 @@ fn diagnostic_contracts_preserve_filtering_levels_and_exit_status() {
 }
 
 #[test]
+fn diagnostics_are_interleaved_with_analysis_progress() {
+    let input = fixture(
+        "streamed-reports",
+        "pragma circom 2.2.3;\n\
+        template Broken(){component c=Missing();}\n\
+        template Early(){var dead=1;signal output out;out<==0;}\n\
+        template Later(){signal output out;out<==1;}",
+    );
+    let result = run(&input.path(), &[], "streamed-reports");
+    let position = |text: &str| result.stdout.find(text).unwrap();
+    assert!(position("error: unresolved Template") < position("preparing analysis"));
+    assert!(position("warning: Assigned value of `dead`") < position("analyzing template 'Later'"));
+    assert_eq!(result.stdout.matches("warning: Assigned value of `dead`").count(), 1);
+}
+
+#[test]
+fn call_path_continuations_follow_the_original_finding_filter_and_count() {
+    let input = fixture(
+        "streamed-contexts",
+        "pragma circom 2.2.3;\n\
+        template Child(n){var dead=1;signal output out;out<==n;}\n\
+        template Main(){component a=Child(1);component b=Child(2);}\n\
+        component main=Main();",
+    );
+    let result = run(&input.path(), &["--allow", "CS0008"], "streamed-contexts");
+    assert_eq!(result.stdout.matches("warning: Assigned value of `dead`").count(), 1);
+    assert_eq!(result.stdout.matches("Additional call paths for CS0006").count(), 1);
+    assert!(result.stdout.contains("1 finding reported."), "{}", result.stdout);
+    let reports = result.sarif["runs"][0]["results"].as_array().unwrap();
+    assert_eq!(reports.iter().filter(|report| report["ruleId"] == "CS0006").count(), 1);
+    for args in [&["--level", "ERROR"][..], &["--allow", "CS0006", "--allow", "CS0008"][..]] {
+        let result = run(&input.path(), args, "filtered-contexts");
+        assert!(!result.stdout.contains("Assigned value of `dead`"));
+        assert!(!result.stdout.contains("Additional call paths"));
+        assert_eq!(result.status.code(), Some(0), "{}", result.stdout);
+    }
+}
+
+#[test]
 fn missing_context_is_actionable_info_and_hidden_by_default() {
     let input = fixture(
         "context-info",
