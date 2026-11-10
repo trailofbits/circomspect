@@ -9,7 +9,7 @@ pub(super) fn unused_outputs(context: &RuleContext<'_, '_, '_>, result: &mut Rul
     let DefinitionRef::Template(_) = context.call_context().definition() else { return };
     match context.origin() {
         ContextOrigin::Main(_) => closed_outputs(context, result),
-        ContextOrigin::SymbolicRoot => symbolic_outputs(context, result),
+        ContextOrigin::SymbolicRoot => abstain_without_main(context, result),
         ContextOrigin::Call(_) => {}
     }
 }
@@ -42,25 +42,13 @@ fn closed_outputs(context: &RuleContext<'_, '_, '_>, result: &mut RuleResult) {
     }
 }
 
-fn symbolic_outputs(context: &RuleContext<'_, '_, '_>, result: &mut RuleResult) {
-    let kind = RuleKind::UnusedOutputSignal;
-    let outputs = context.exact_component_outputs();
-    let outputs = match outputs.as_result() {
-        Ok(outputs) => outputs,
-        Err(blockers) => {
-            if let Some(span) = definition_span(context) {
-                summary_abstain(context, kind, span, blockers, result);
-            }
-            return;
-        }
-    };
-    for output in outputs {
-        result.add_abstention(context.abstention(
-            kind,
-            output.source_span(),
-            summary_reason(SummaryBlocker::UnsupportedContext),
-        ));
-    }
+fn abstain_without_main(context: &RuleContext<'_, '_, '_>, result: &mut RuleResult) {
+    let Some(span) = definition_span(context) else { return };
+    result.add_abstention(context.abstention(
+        RuleKind::UnusedOutputSignal,
+        span,
+        summary_reason(SummaryBlocker::UnsupportedContext),
+    ));
 }
 
 fn report_output(

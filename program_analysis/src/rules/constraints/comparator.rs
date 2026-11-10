@@ -2,7 +2,7 @@
 
 use std::collections::BTreeSet;
 
-use crate::interprocedural::ComparatorRangeViolation;
+use crate::interprocedural::{ComparatorRangeViolation, ContextOrigin, SummaryBlocker};
 use crate::rules::{AbstentionReason, Rule, RuleContext, RuleKind, RuleResult};
 
 pub(super) struct Comparator;
@@ -14,6 +14,9 @@ impl Rule for Comparator {
 
     fn run(&self, context: &RuleContext<'_, '_, '_>) -> RuleResult {
         let mut result = RuleResult::default();
+        if !require_main_context(context, &mut result) {
+            return result;
+        }
         let outputs = context.exact_component_outputs();
         let outputs = match outputs.as_result() {
             Ok(outputs) => outputs,
@@ -50,6 +53,20 @@ impl Rule for Comparator {
         }
         result
     }
+}
+
+fn require_main_context(context: &RuleContext<'_, '_, '_>, result: &mut RuleResult) -> bool {
+    let ContextOrigin::Main(_) = context.origin() else {
+        if let Ok(header) = context.validated_header() {
+            result.add_abstention(context.abstention(
+                RuleKind::UnconstrainedLessThan,
+                header.name_span(),
+                AbstentionReason::Summary(BTreeSet::from([SummaryBlocker::UnsupportedContext])),
+            ));
+        }
+        return false;
+    };
+    true
 }
 
 fn report(

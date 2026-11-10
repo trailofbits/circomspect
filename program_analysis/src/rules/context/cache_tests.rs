@@ -9,7 +9,7 @@ use crate::hir_cfg::build_cfg;
 use crate::interprocedural::{
     CallOwner, CallReachability, ContextEvidence, ProjectAnalysis, SummaryBlocker,
 };
-use crate::rules::{RuleContext, RuleContextError};
+use crate::rules::{registered_rules, RuleContext, RuleContextError, RuleKind};
 
 fn fixture(source: &str) -> LiftedProject {
     let directory = std::env::temp_dir().join(format!(
@@ -78,6 +78,21 @@ fn caches_preserve_complete_results_and_all_blockers() {
         with_context(source, None, assert_direct_results);
     }
     with_context("template T(){signal output out;out<==1;}", Some(0), assert_direct_results);
+}
+
+#[test]
+fn inapplicable_library_rules_do_not_request_output_enumeration() {
+    with_context(
+        "template Child(){signal output out[257];}template T(){component child=Child();}",
+        None,
+        |context| {
+            for kind in [RuleKind::UnconstrainedLessThan, RuleKind::UnusedOutputSignal] {
+                let rule = registered_rules().find(|rule| rule.kind() == kind).unwrap();
+                rule.run(context);
+                assert!(context.component_outputs.get().is_none(), "{kind:?}");
+            }
+        },
+    );
 }
 
 #[test]
