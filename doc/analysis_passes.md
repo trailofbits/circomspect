@@ -139,15 +139,32 @@ than half the prime to negative integers for comparisons.
 
 ## Incomplete analysis
 
-`CS0020` is a warning that required facts could not be certified. It is grouped
-per definition and exact call context, with related locations identifying the
-affected rules and reasons. Different call paths remain separate. Parser and
-semantic errors are also reported at their source locations, and independent
-valid definitions continue to be analyzed.
+`CS0020` explains a check the analyzer could not complete. Each displayed notice
+identifies the affected source location, names the affected checks when known,
+and gives a reason and a next action. It does not identify a circuit defect.
 
-Missing definitions, symbolic values, unsupported relations or aggregate
-shapes, bus analysis contexts, custom templates, recursion, and exhausted
-analysis budgets can produce this warning.
-Absence of a security finding does not mean an incomplete scope was proven
-safe. `--allow CS0020` hides these warnings; `--level error` hides all warnings.
-Both affect exit status in the same way as other output filters.
+Missing-context notices are informational. For example, when a check depends on
+an unknown library parameter, the notice names that parameter and suggests
+analyzing a caller that supplies it. This may improve analysis of that instance;
+it does not prove the library correct for every parameter value. Libraries do
+not need a `main` component. Use `-l INFO` to see these notices; the default
+`WARNING` threshold hides them.
+
+Concrete unsupported constructs and analysis limits remain warnings when the
+analyzer can provide a useful explanation and action. An explanation that would
+only say that information is unavailable is omitted, even at `INFO`. Syntax and
+semantic errors remain errors; they do not generate redundant generic coverage
+notices. Internal analyzer failures are reported separately as analyzer errors.
+
+Repeated reports of the same source issue are grouped. Distinct messages,
+locations and supporting evidence remain separate. Related locations retain
+the affected call paths; numbered contexts and call steps distinguish multiple
+paths without repeating the warning. A finding in one instance does not imply
+that every instance has the same issue.
+
+The final summary separates source errors, findings, analysis notes and analysis
+limitations. It counts only visible reports. `--allow CS0020` hides coverage
+notices, and `--level error` hides warnings and informational results. Hidden
+notices do not affect exit status; as with other report types, a visible notice
+causes a failure exit status. No findings reported does not mean that the code
+has been proved safe or that every check completed.

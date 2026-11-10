@@ -280,12 +280,6 @@ fn bn254_literal_only_warns_on_incompatible_selected_curve() {
     );
     let (loaded, called) = inspect_call(&source, Curve::Bls12_381, "Parent", "Child");
     assert_eq!(kinds(&called), [RuleKind::Bn254SpecificCircuit]);
-    let sources = SourceMap::from_loaded(&loaded, &[loaded.files[0].id]).unwrap();
-    let report = numeric_findings(&called)[0].to_report(&sources).unwrap();
-    assert_eq!(report.secondary().len(), 1);
-    let call_start = source.rfind("Child()").unwrap();
-    assert_eq!(report.secondary()[0].range, call_start..call_start + "Child()".len());
-    assert_eq!(report.secondary()[0].message, "Validated call path step 1");
     assert_rendered(&loaded, &called, RuleKind::Bn254SpecificCircuit);
 }
 

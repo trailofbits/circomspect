@@ -8,16 +8,5 @@ error: cannot find included file not_found.circom
 2 │ include "not_found.circom";
   │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^ cannot find included file not_found.circom
 
-warning: Analysis is incomplete for this source scope.
-  ┌─ <fixture>:2:1
-  │
-2 │ include "not_found.circom";
-  │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  │ │
-  │ Some properties could not be certified.
-  │ an included source is unavailable
-  │
-  = For more details, see https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md#incomplete-analysis.
-
 circomspect: Result written to `<sarif>`.
-circomspect: 2 issues found.
+circomspect: 1 source error reported.

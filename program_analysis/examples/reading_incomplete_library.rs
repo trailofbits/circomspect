@@ -24,7 +24,6 @@ const SOURCE: &str = concat!(
     "template Neighbor(){signal output out;out <== 0-1;}"
 );
 const SYNTAX: &str = "invalid statement; parsing continued at the next statement or block boundary";
-const INCOMPLETE: &str = "Analysis is incomplete for this source scope.";
 
 fn analyze(source: &str) -> Result<AnalysisOutput, Box<dyn std::error::Error>> {
     let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_nanos();
@@ -115,12 +114,7 @@ fn main() -> ExampleResult {
     let output = analyze(SOURCE)?;
     check_diagnostics(
         &output,
-        &[
-            ("P1000", SYNTAX, 18..29),
-            ("CS0019", "unresolved Function call `Missing`", 62..69),
-            ("CS0020", INCOMPLETE, 39..52),
-            ("CS0020", INCOMPLETE, 9..15),
-        ],
+        &[("P1000", SYNTAX, 18..29), ("CS0019", "unresolved Function call `Missing`", 62..69)],
     );
     check_neighbor(&output)?;
     check_neighbor_facts()?;
@@ -143,9 +137,6 @@ fn main() -> ExampleResult {
             ("P1000", SYNTAX, 18..29),
             ("P1000", SYNTAX, 111..122),
             ("CS0019", "unresolved Function call `Missing`", 62..69),
-            ("CS0020", INCOMPLETE, 39..52),
-            ("CS0020", INCOMPLETE, 9..15),
-            ("CS0020", INCOMPLETE, 82..90),
         ],
     );
     assert!(output.scopes.iter().all(|scope| scope.reports.is_empty()));

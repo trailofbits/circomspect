@@ -289,13 +289,99 @@ fn diagnostic_contracts_preserve_filtering_levels_and_exit_status() {
 }
 
 #[test]
+fn missing_context_is_actionable_info_and_hidden_by_default() {
+    let input = fixture(
+        "context-info",
+        "pragma circom 2.2.3;\n\
+        function Count(n){var x;for(var i=0;i<n;i++){x=n>>i;if(x){log(x);}}return 0;}",
+    );
+    let default = run(&input.path(), &[], "context-default");
+    assert_eq!(default.status.code(), Some(0), "{}", default.stdout);
+    assert!(!ids(&default.sarif).contains("CS0020"), "{}", default.stdout);
+    let detailed = run(&input.path(), &["-l", "INFO"], "context-info");
+    let results = detailed.sarif["runs"][0]["results"].as_array().unwrap();
+    let notices: Vec<_> = results.iter().filter(|result| result["ruleId"] == "CS0020").collect();
+    assert!(!notices.is_empty(), "{}", detailed.stdout);
+    assert!(notices.iter().all(|result| result["level"] == "note"));
+    assert!(detailed.stdout.contains("parameter `n`"), "{}", detailed.stdout);
+    assert!(detailed.stdout.contains("caller"), "{}", detailed.stdout);
+    assert!(detailed.stdout.contains("analysis note"), "{}", detailed.stdout);
+    assert!(!detailed.stdout.contains("could not be certified"));
+}
+
+#[test]
+fn nonactionable_coverage_is_suppressed_even_at_info() {
+    for source in [
+        "pragma circom 2.2.3;\n\
+        template Main(){signal input value;signal output out;out<==value+2;}\n\
+        component main=Main();",
+        "pragma circom 2.2.3;\n\
+        template Library(unrelated){signal input value;signal output out;out<==value+2;}",
+    ] {
+        let input = fixture("nonactionable-coverage", source);
+        let result = run(&input.path(), &["-l", "INFO"], "nonactionable-coverage");
+        assert!(!ids(&result.sarif).contains("CS0020"), "{}", result.stdout);
+        assert!(!result.stdout.contains("could not be certified"));
+    }
+}
+
+#[test]
+fn repeated_unused_value_is_reported_once_across_callers() {
+    let input = fixture(
+        "grouped-unused",
+        "pragma circom 2.2.3;\n\
+        template Child(n){var dead=1;signal output out;out<==n;}\n\
+        template Main(){component a=Child(1);component b=Child(2);}\n\
+        component main=Main();",
+    );
+    let result = run(&input.path(), &[], "grouped-unused");
+    let results = result.sarif["runs"][0]["results"].as_array().unwrap();
+    let unused: Vec<_> = results.iter().filter(|result| result["ruleId"] == "CS0006").collect();
+    assert_eq!(unused.len(), 1, "{}", result.stdout);
+    assert_eq!(result.stdout.matches("warning: Assigned value of `dead`").count(), 1);
+    let related = unused[0]["relatedLocations"].as_array().unwrap();
+    let mut call_columns = BTreeSet::new();
+    for location in related {
+        let region = &location["physicalLocation"]["region"];
+        if region["startLine"] == 3 {
+            call_columns.insert(region["startColumn"].as_u64().unwrap());
+        }
+    }
+    assert_eq!(call_columns.len(), 2, "{related:?}");
+}
+
+#[test]
+fn grouped_curve_finding_keeps_both_call_paths() {
+    let modulus = "21888242871839275222246405745257275088548364400416034343698204186575808495617";
+    let input = fixture(
+        "grouped-curve",
+        &format!(
+            "pragma circom 2.2.3;\n\
+            template Child(n){{signal output out;out<==n+{modulus};}}\n\
+            template Main(){{component a=Child(1);component b=Child(2);}}\n\
+            component main=Main();"
+        ),
+    );
+    let result = run(&input.path(), &["--curve", "BLS12_381"], "grouped-curve");
+    let results = result.sarif["runs"][0]["results"].as_array().unwrap();
+    let curve: Vec<_> = results.iter().filter(|result| result["ruleId"] == "CS0016").collect();
+    assert_eq!(curve.len(), 1, "{}", result.stdout);
+    let related = curve[0]["relatedLocations"].as_array().unwrap();
+    let calls: Vec<_> = related
+        .iter()
+        .filter(|location| location["physicalLocation"]["region"]["startLine"] == 3)
+        .collect();
+    assert_eq!(calls.len(), 2, "{related:?}");
+}
+
+#[test]
 fn deferred_loop_guard_reports_incomplete_without_recursive_proof() {
     let input = fixture(
         "deferred-loop-guard",
         "pragma circom 2.2.3;\n\
         function F(n){var x;for(var i=0;i<n;i++){x=n>>i;if(x){log(x);}}return 0;}",
     );
-    let result = run(&input.path(), &[], "deferred-loop-guard");
+    let result = run(&input.path(), &["-l", "INFO"], "deferred-loop-guard");
     assert_eq!(result.status.code(), Some(1), "{}", result.stdout);
     assert_eq!(ids(&result.sarif), BTreeSet::from(["CS0020"]), "{}", result.stdout);
 }
@@ -363,14 +449,9 @@ fn invalid_expression_statement_keeps_later_library_diagnostics() {
             missing[0]["locations"][0]["physicalLocation"]["region"],
             serde_json::json!({"startLine": 4, "startColumn": 12, "endLine": 4, "endColumn": 19})
         );
-        if args.is_empty() {
-            let order: Vec<_> = results.iter().map(|result| &result["ruleId"]).collect();
-            assert_eq!(order, ["P1000", "CS0019", "CS0020"]);
-            assert!(stdout.contains("3 issues found."), "{stdout}");
-        } else {
-            assert_eq!(results.len(), 2, "{stdout}");
-            assert!(stdout.contains("2 issues found."), "{stdout}");
-        }
+        let order: Vec<_> = results.iter().map(|result| &result["ruleId"]).collect();
+        assert_eq!(order, ["P1000", "CS0019"]);
+        assert!(stdout.contains("2 source errors reported."), "{stdout}");
     }
 }
 
@@ -391,7 +472,7 @@ fn unsupported_library_definitions_have_scoped_incomplete_diagnostics() {
         let path = input.path();
         let CliRun { status, stdout, sarif, .. } = run(&path, &[], name);
         assert_eq!(status.code(), Some(1), "{stdout}");
-        assert!(!stdout.contains("No issues found"), "{stdout}");
+        assert!(stdout.contains("analysis limitation"), "{stdout}");
         assert!(stdout.contains("analyzing template 'Good'"), "{stdout}");
         let results = sarif["runs"][0]["results"].as_array().unwrap();
         let incomplete: Vec<_> =
@@ -439,6 +520,36 @@ fn concrete_main_arguments_reach_numeric_rules() {
     let path = input.path();
     let CliRun { stdout, sarif, .. } = run(&path, &[], "main-argument");
     assert!(ids(&sarif).contains("CS0009"), "{stdout}");
+}
+
+#[test]
+fn resolved_main_argument_does_not_create_an_internal_error() {
+    let input = fixture(
+        "resolved-main-argument",
+        "pragma circom 2.2.3;\n\
+        function Seed(){return 1;}\n\
+        template Main(n){signal output out; if(1){out<==n;}else{out<==0;}}\n\
+        component main=Main(Seed());\n",
+    );
+    let CliRun { stdout, sarif, .. } = run(&input.path(), &[], "resolved-main-argument");
+    assert!(ids(&sarif).contains("CS0009"), "{stdout}");
+    assert!(!ids(&sarif).contains("T3001"), "{stdout}");
+}
+
+#[test]
+fn unresolved_main_argument_is_a_source_error_without_an_internal_error() {
+    let input = fixture(
+        "unresolved-main-argument",
+        "pragma circom 2.2.3;\n\
+        template Main(n){signal output out; out<==n;}\n\
+        component main=Main(MissingParameter());\n",
+    );
+    let CliRun { status, stdout, sarif, .. } =
+        run(&input.path(), &["--level", "error"], "unresolved-main-argument");
+    assert_eq!(status.code(), Some(1), "{stdout}");
+    assert_eq!(ids(&sarif), BTreeSet::from(["CS0019"]), "{stdout}");
+    assert_eq!(sarif["runs"][0]["results"].as_array().unwrap().len(), 1);
+    assert!(stdout.contains("MissingParameter"), "{stdout}");
 }
 
 #[test]
@@ -501,7 +612,7 @@ fn selected_curve_changes_certified_arithmetic_results() {
 }
 
 #[test]
-fn incomplete_scopes_keep_distinct_call_paths_and_group_rule_reasons() {
+fn unactionable_notices_from_multiple_callers_are_suppressed() {
     let input = fixture(
         "contexts",
         "pragma circom 2.2.3;\n\
@@ -510,51 +621,19 @@ fn incomplete_scopes_keep_distinct_call_paths_and_group_rule_reasons() {
         component main=Main();\n",
     );
     let path = input.path();
-    let CliRun { stdout, sarif, .. } = run(&path, &[], "contexts");
-    let results = sarif["runs"][0]["results"].as_array().unwrap();
-    let child: Vec<_> = results
-        .iter()
-        .filter(|result| {
-            result["ruleId"] == "CS0020"
-                && result["locations"][0]["physicalLocation"]["region"]["startLine"] == 2
-        })
-        .collect();
-    assert_eq!(child.len(), 2, "{stdout}");
-    for result in &child {
-        let related = result["relatedLocations"].as_array().unwrap();
-        assert!(related
-            .iter()
-            .any(|label| label["message"]["text"].as_str().unwrap().contains("CS0004")));
-        assert!(related.iter().any(|label| label["message"]["text"]
-            .as_str()
-            .unwrap()
-            .contains("Reached through this call")));
-    }
-    assert_ne!(child[0]["relatedLocations"], child[1]["relatedLocations"]);
+    let CliRun { stdout, sarif, .. } = run(&path, &["-l", "INFO"], "contexts");
+    assert!(!ids(&sarif).contains("CS0020"), "{stdout}");
+    assert!(!stdout.contains("could not be certified"));
 }
 
 #[test]
-fn incomplete_source_scope_coalesces_identical_locations_and_reasons() {
+fn source_errors_do_not_create_redundant_coverage_notices() {
     let input =
         fixture("incomplete-labels", "pragma circom 2.2.3;\ntemplate Broken(){\nvar value=;\n}\n");
-    let path = input.path();
-    let CliRun { stdout, sarif, .. } = run(&path, &[], "incomplete-labels");
-    let results = sarif["runs"][0]["results"].as_array().unwrap();
-    let incomplete: Vec<_> = results.iter().filter(|result| result["ruleId"] == "CS0020").collect();
-    assert_eq!(incomplete.len(), 1, "{stdout}");
-    let related = incomplete[0]["relatedLocations"].as_array().unwrap();
-    let bodies: Vec<_> = related
-        .iter()
-        .filter(|label| {
-            let region = &label["physicalLocation"]["region"];
-            region["startLine"] == 2 && region["endLine"] == 4
-        })
-        .collect();
-    assert_eq!(bodies.len(), 1, "{stdout}");
-    let message = bodies[0]["message"]["text"].as_str().unwrap();
-    for id in ["CS0003", "CS0004", "CS0009", "CS0010", "CS0015", "CS0016"] {
-        assert!(message.contains(id), "{message}");
-    }
+    let result = run(&input.path(), &["-l", "INFO"], "incomplete-labels");
+    assert_eq!(ids(&result.sarif), BTreeSet::from(["P1000"]), "{}", result.stdout);
+    assert_eq!(result.status.code(), Some(1));
+    assert!(result.stdout.contains("source error"));
 }
 
 #[test]
@@ -567,7 +646,7 @@ fn library_roots_are_independent_of_declaration_order() {
     ] {
         let input = fixture(name, &format!("pragma circom 2.2.3;\n{declarations}\n"));
         let path = input.path();
-        let CliRun { stdout, sarif, .. } = run(&path, &[], name);
+        let CliRun { stdout, sarif, .. } = run(&path, &["-l", "INFO"], name);
         let results = sarif["runs"][0]["results"].as_array().unwrap();
         assert!(results.iter().any(|result| result["ruleId"] == "CS0009"), "{stdout}");
         let symbolic_child = results.iter().any(|result| {
@@ -597,7 +676,7 @@ fn failed_sarif_write_returns_a_visible_error_and_failure_exit() {
     assert_eq!(output.status.code(), Some(1));
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains("Cannot write SARIF"), "{stdout}");
-    assert!(!stdout.contains("No issues found"));
+    assert!(!stdout.contains("No findings reported"));
 }
 
 #[test]
@@ -607,7 +686,7 @@ fn empty_sarif_is_written_without_a_result_written_status() {
     let CliRun { status, stdout, sarif, .. } = run(&path, &[], "empty-sarif");
     assert_eq!(status.code(), Some(0), "{stdout}");
     assert_eq!(sarif["runs"][0]["results"].as_array().unwrap().len(), 0);
-    assert!(stdout.contains("No issues found"), "{stdout}");
+    assert!(stdout.contains("No findings reported"), "{stdout}");
     assert!(!stdout.contains("Result written"), "{stdout}");
 }
 

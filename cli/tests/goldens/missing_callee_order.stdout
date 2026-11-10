@@ -22,4 +22,4 @@ error: unresolved Template call `MissingTemplate`
   │                       ^^^^^^^^^^^^^^^ unresolved Template call `MissingTemplate`
 
 circomspect: Result written to `<sarif>`.
-circomspect: 3 issues found.
+circomspect: 3 source errors reported.

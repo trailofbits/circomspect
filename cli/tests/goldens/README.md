@@ -13,11 +13,13 @@ The cases in `cli_golden.rs::CASES` exercise these contracts:
 
 - Syntax and missing-call messages use typed frontend diagnostics. Missing-call
   labels select the target name; recovered statements retain their source span.
-- Incomplete source and analysis scopes emit `CS0020`, with exact call-path
-  locations and all affected rule IDs. Identical typed reasons at an identical
-  span share one label. Independent valid definitions continue to be analyzed.
+- Actionable analysis limitations emit `CS0020`, with affected check names,
+  rule IDs, source locations and help. Missing context is informational and hidden
+  by default. Vague causes and redundant notices for source errors are omitted.
+  Independent valid definitions continue to be analyzed.
 - Generated incidence alone does not certify a redundant quadratic equation.
-  The secondary-location fixture checks scoped incomplete analysis in this case.
+  The secondary-location fixture checks the resulting output without treating
+  a missing proof as a circuit defect.
 - An uninstantiated output without a local constraint occurrence is not enough
   to establish an unconstrained-output warning.
 - Unsupported-version diagnostics have pragma locations. An absent-input fixture
@@ -28,6 +30,10 @@ The cases in `cli_golden.rs::CASES` exercise these contracts:
 `cutover.rs` separately checks that unused bus and custom-template declarations
 cannot silently produce a complete result. Bus definitions retain syntax and
 semantic diagnostics and emit scoped `CS0020` for unsupported analysis contexts.
+It also checks default/INFO filtering, suppression of nonactionable notices,
+grouped unused-value and curve findings, and retained call-path locations.
+The summary separates findings, source errors and analysis notices; hidden
+informational reports contribute neither a count nor an exit failure.
 
 The snapshots test presentation, not warning truth. Frozen truth labels and
 historical observations remain in `tests/warnings`.

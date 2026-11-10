@@ -32,54 +32,6 @@
             "id": "P1000"
           },
           "ruleId": "P1000"
-        },
-        {
-          "level": "warning",
-          "locations": [
-            {
-              "id": 0,
-              "message": {
-                "text": "Some properties could not be certified."
-              },
-              "physicalLocation": {
-                "artifactLocation": {
-                  "uri": "file:///fixtures/missing_include.circom"
-                },
-                "region": {
-                  "endColumn": 28,
-                  "endLine": 2,
-                  "startColumn": 1,
-                  "startLine": 2
-                }
-              }
-            }
-          ],
-          "message": {
-            "text": "Analysis is incomplete for this source scope."
-          },
-          "relatedLocations": [
-            {
-              "id": 1,
-              "message": {
-                "text": "an included source is unavailable"
-              },
-              "physicalLocation": {
-                "artifactLocation": {
-                  "uri": "file:///fixtures/missing_include.circom"
-                },
-                "region": {
-                  "endColumn": 28,
-                  "endLine": 2,
-                  "startColumn": 1,
-                  "startLine": 2
-                }
-              }
-            }
-          ],
-          "rule": {
-            "id": "CS0020"
-          },
-          "ruleId": "CS0020"
         }
       ],
       "tool": {
@@ -88,10 +40,6 @@
           "name": "Circomspect",
           "organization": "Trail of Bits",
           "rules": [
-            {
-              "id": "CS0020",
-              "name": "incomplete-analysis"
-            },
             {
               "id": "P1000",
               "name": "parse-fail"

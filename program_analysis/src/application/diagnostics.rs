@@ -1,30 +1,27 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use parser::hir::{IncompleteReason, LiftedProject};
+use parser::hir::LiftedProject;
 use parser::frontend::{DiagnosticKind, Item, LoadedProject, Span};
 use program_structure::report::Report;
 use program_structure::report_code::ReportCode;
 
-use crate::interprocedural::{ContextEvidence, SummaryBlocker};
-use crate::rules::{AbstentionReason, RenderError, RuleKind, SourceMap};
+use crate::application::coverage::{check_name, CoverageContext, CoverageExplanation, CoverageKind};
+use crate::application::grouping::ReportGroups;
+use crate::interprocedural::ContextEvidence;
+use crate::rules::{RenderError, RuleKind, SourceMap};
+
+#[cfg(test)]
+mod tests;
 
 pub(super) struct Diagnostics<'a, 'b> {
     sources: &'a SourceMap<'b>,
-    reports: Vec<Report>,
+    reports: ReportGroups,
     incomplete: BTreeMap<ScopeKey, IncompleteScope>,
-    source_regions: Vec<(Span, String)>,
-    attached_regions: BTreeSet<usize>,
 }
 
 impl<'a, 'b> Diagnostics<'a, 'b> {
     pub(super) fn new(sources: &'a SourceMap<'b>) -> Self {
-        Self {
-            sources,
-            reports: Vec::new(),
-            incomplete: BTreeMap::new(),
-            source_regions: Vec::new(),
-            attached_regions: BTreeSet::new(),
-        }
+        Self { sources, reports: ReportGroups::default(), incomplete: BTreeMap::new() }
     }
 
     pub(super) fn frontend(
@@ -50,15 +47,17 @@ impl<'a, 'b> Diagnostics<'a, 'b> {
             if let Some(span) = diagnostic.span() {
                 self.locate(&mut report, span, diagnostic.message.clone())?;
             }
-            self.reports.push(report);
+            self.reports.insert_source(report);
         }
         self.main_diagnostics(lifted)?;
         for diagnostic in &lifted.diagnostics {
-            self.reports.push(self.sources.semantic_report(diagnostic)?);
+            self.reports.insert_source(self.sources.semantic_report(diagnostic)?);
         }
         for region in &lifted.incomplete {
-            if let Some(span) = region.span() {
-                self.source_regions.push((span, incomplete_reason(&region.reason).to_owned()));
+            let Some(span) = region.span() else { continue };
+            let coverage = CoverageContext { hir: &lifted.hir, facts: None, evidence: None, span };
+            for explanation in coverage.source(&region.reason) {
+                self.source_incomplete(explanation);
             }
         }
         for source in &loaded.files {
@@ -79,7 +78,7 @@ impl<'a, 'b> Diagnostics<'a, 'b> {
                 if let Some(file) = self.sources.file_id(source.id) {
                     report.add_primary(0..0, file, "Add `pragma circom 2.2.3;`.".to_string());
                 }
-                self.reports.push(report);
+                self.reports.insert_source(report);
             }
         }
         Ok(())
@@ -95,49 +94,48 @@ impl<'a, 'b> Diagnostics<'a, 'b> {
             self.locate(&mut report, main.span, "Additional main component.".into())?;
             let (file, range) = self.sources.location(first.span)?;
             report.add_secondary(range, file, Some("First main component.".into()));
-            self.reports.push(report);
+            self.reports.insert_source(report);
         }
         Ok(())
     }
 
     pub(super) fn push(&mut self, report: Report) {
-        self.reports.push(report);
+        self.reports.insert_source(report);
     }
 
-    pub(super) fn source_incomplete(&mut self, span: Span, reason: &str) {
-        let key = ScopeKey::Source(span.source().index(), span.start(), span.end());
-        self.incomplete.entry(key).or_insert_with(|| IncompleteScope::new(span)).add(
-            span,
-            IncompleteCause::Source(reason.into()),
-            None,
-        );
-    }
-
-    pub(super) fn begin_scope(&mut self, evidence: &ContextEvidence, name: Span, body: Span) {
-        for (index, (span, reason)) in self.source_regions.iter().enumerate() {
-            if span.source() == body.source()
-                && span.start() >= body.start()
-                && span.end() <= body.end()
-            {
-                self.attached_regions.insert(index);
-                self.incomplete
-                    .entry(ScopeKey::Context(evidence.clone()))
-                    .or_insert_with(|| IncompleteScope::new(name))
-                    .add(*span, IncompleteCause::Source(reason.clone()), None);
-            }
-        }
+    pub(super) fn source_incomplete(&mut self, explanation: CoverageExplanation) {
+        let span = explanation.span;
+        let key =
+            ScopeKey::Source(span.source().index(), span.start(), span.end(), explanation.kind);
+        self.incomplete
+            .entry(key)
+            .or_insert_with(|| IncompleteScope::new(span))
+            .add(explanation, None);
     }
 
     pub(super) fn scope_incomplete(
         &mut self,
         evidence: &ContextEvidence,
         name: Span,
-        detail: IncompleteDetail,
+        explanations: Vec<CoverageExplanation>,
+        rule: Option<RuleKind>,
     ) {
-        self.incomplete
-            .entry(ScopeKey::Context(evidence.clone()))
-            .or_insert_with(|| IncompleteScope::new(name))
-            .add(detail.span, detail.reason, detail.rule);
+        for explanation in explanations {
+            let span = explanation.span;
+            let source_key =
+                ScopeKey::Source(span.source().index(), span.start(), span.end(), explanation.kind);
+            if let Some(source) = self.incomplete.get_mut(&source_key) {
+                if source.has_cause(&explanation) {
+                    source.add(explanation, rule);
+                    source.contexts.insert(evidence.clone());
+                    continue;
+                }
+            }
+            self.incomplete
+                .entry(ScopeKey::Context(evidence.clone(), explanation.kind))
+                .or_insert_with(|| IncompleteScope::new(name))
+                .add(explanation, rule);
+        }
     }
 
     fn locate(&self, report: &mut Report, span: Span, label: String) -> Result<(), RenderError> {
@@ -147,70 +145,76 @@ impl<'a, 'b> Diagnostics<'a, 'b> {
     }
 
     pub(super) fn finish(mut self) -> Result<Vec<Report>, RenderError> {
-        let regions = std::mem::take(&mut self.source_regions);
-        for (index, (span, reason)) in regions.into_iter().enumerate() {
-            if !self.attached_regions.contains(&index) {
-                self.source_incomplete(span, &reason);
-            }
-        }
         for (key, scope) in &self.incomplete {
-            let mut report = Report::warning(
-                "Analysis is incomplete for this source scope.".to_string(),
-                ReportCode::IncompleteCoverage,
-            );
+            let mut report = coverage_report(key.kind());
             self.locate(
                 &mut report,
                 scope.primary,
-                "Some properties could not be certified.".into(),
+                "Some checks could not be completed here.".into(),
             )?;
+            let mut help = BTreeSet::new();
             for (key, label) in &scope.details {
                 let (file, range) = self.sources.location(label.span)?;
-                let rules: BTreeSet<_> = label.rules.iter().map(|kind| kind.code().id()).collect();
-                let message = if rules.is_empty() {
-                    key.reason.message().to_owned()
+                let mut checks = Vec::new();
+                for kind in &label.rules {
+                    checks.push(format!("{} ({})", check_name(*kind), kind.code().id()));
+                }
+                let message = if checks.is_empty() {
+                    key.message.clone()
                 } else {
-                    let rules = rules.into_iter().collect::<Vec<_>>().join(", ");
-                    format!("{rules}: {}", key.reason.message())
+                    format!("{}: {}", checks.join(", "), key.message)
                 };
                 report.add_secondary(range, file, Some(message));
+                help.insert(&key.help);
             }
-            if let ScopeKey::Context(evidence) = key {
-                for site in evidence.call_path() {
-                    let (file, range) = self.sources.location(site.span())?;
-                    report.add_secondary(range, file, Some("Reached through this call.".into()));
+            for action in help {
+                report.add_note(format!("Help: {action}"));
+            }
+            match key {
+                ScopeKey::Context(evidence, _) => self.reports.insert(report, evidence),
+                ScopeKey::Source(_, _, _, _) => {
+                    self.reports.insert_source(report.clone());
+                    for evidence in &scope.contexts {
+                        self.reports.insert(report.clone(), evidence);
+                    }
                 }
             }
-            self.reports.push(report);
         }
-        Ok(self.reports)
+        self.reports.finish(self.sources)
+    }
+}
+
+fn coverage_report(kind: CoverageKind) -> Report {
+    match kind {
+        CoverageKind::MissingContext => Report::info(
+            "Some checks need additional context.".into(),
+            ReportCode::IncompleteCoverage,
+        ),
+        CoverageKind::Unsupported => Report::warning(
+            "Some checks are not supported for this code.".into(),
+            ReportCode::IncompleteCoverage,
+        ),
+        CoverageKind::ResourceLimit => Report::warning(
+            "Some checks reached an analysis limit.".into(),
+            ReportCode::IncompleteCoverage,
+        ),
+        CoverageKind::InternalError => Report::error(
+            "Analysis could not complete due to an internal error.".into(),
+            ReportCode::RuntimeError,
+        ),
     }
 }
 
 #[derive(Eq, Ord, PartialEq, PartialOrd)]
 enum ScopeKey {
-    Source(usize, usize, usize),
-    Context(ContextEvidence),
+    Source(usize, usize, usize, CoverageKind),
+    Context(ContextEvidence, CoverageKind),
 }
 
-pub(super) struct IncompleteDetail {
-    pub span: Span,
-    pub reason: IncompleteCause,
-    pub rule: Option<RuleKind>,
-}
-
-#[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
-pub(super) enum IncompleteCause {
-    Source(String),
-    Rule(AbstentionReason),
-    Summary(SummaryBlocker),
-}
-
-impl IncompleteCause {
-    pub(super) fn message(&self) -> &str {
+impl ScopeKey {
+    fn kind(&self) -> CoverageKind {
         match self {
-            Self::Source(reason) => reason,
-            Self::Rule(reason) => abstention_reason(reason),
-            Self::Summary(reason) => summary_reason(reason),
+            Self::Source(_, _, _, kind) | Self::Context(_, kind) => *kind,
         }
     }
 }
@@ -220,7 +224,8 @@ struct DetailKey {
     source: usize,
     start: usize,
     end: usize,
-    reason: IncompleteCause,
+    message: String,
+    help: String,
 }
 
 struct IncompleteLabel {
@@ -231,19 +236,28 @@ struct IncompleteLabel {
 struct IncompleteScope {
     primary: Span,
     details: BTreeMap<DetailKey, IncompleteLabel>,
+    contexts: BTreeSet<ContextEvidence>,
 }
 
 impl IncompleteScope {
     fn new(primary: Span) -> Self {
-        Self { primary, details: BTreeMap::new() }
+        Self { primary, details: BTreeMap::new(), contexts: BTreeSet::new() }
     }
 
-    fn add(&mut self, span: Span, reason: IncompleteCause, rule: Option<RuleKind>) {
+    fn has_cause(&self, explanation: &CoverageExplanation) -> bool {
+        self.details
+            .keys()
+            .any(|key| key.message == explanation.message && key.help == explanation.help)
+    }
+
+    fn add(&mut self, explanation: CoverageExplanation, rule: Option<RuleKind>) {
+        let span = explanation.span;
         let key = DetailKey {
             source: span.source().index(),
             start: span.start(),
             end: span.end(),
-            reason,
+            message: explanation.message,
+            help: explanation.help,
         };
         let label = self
             .details
@@ -252,72 +266,5 @@ impl IncompleteScope {
         if let Some(rule) = rule {
             label.rules.insert(rule);
         }
-    }
-}
-
-fn incomplete_reason(reason: &IncompleteReason) -> &str {
-    match reason {
-        IncompleteReason::Syntax => "source contains invalid syntax",
-        IncompleteReason::Include => "an included source is unavailable",
-        IncompleteReason::MissingReference(_) => "a referenced definition is missing",
-        IncompleteReason::AmbiguousReference(_) => "a reference has multiple definitions",
-        IncompleteReason::WrongKind(_) => "a referenced definition has the wrong kind",
-        IncompleteReason::UnknownType => "a value type is unknown",
-        IncompleteReason::UnknownSymbol(_) => "a referenced symbol is missing",
-        IncompleteReason::NonCompileTime => "a compile-time value could not be determined",
-        IncompleteReason::InvalidAssignment => "an assignment is invalid",
-        IncompleteReason::Unsupported(reason) => reason,
-    }
-}
-
-fn abstention_reason(reason: &AbstentionReason) -> &'static str {
-    match reason {
-        AbstentionReason::LocalFacts(_) => "the required local facts could not be certified",
-        AbstentionReason::Call(_) => "the required call could not be resolved or certified",
-        AbstentionReason::Summary(reasons) => {
-            if reasons.len() == 1 {
-                if let Some(reason) = reasons.first() {
-                    return summary_reason(reason);
-                }
-            }
-            "the required call or constraint closure is incomplete"
-        }
-        AbstentionReason::SymbolicParameters => "the result depends on unknown parameter values",
-        AbstentionReason::IncompleteDefinition => {
-            "the definition contains unresolved source errors"
-        }
-        AbstentionReason::UnsupportedConstruct => {
-            "the required property is outside supported analysis"
-        }
-    }
-}
-
-fn summary_reason(reason: &SummaryBlocker) -> &'static str {
-    match reason {
-        SummaryBlocker::IncompleteDefinition => "the definition contains unresolved source errors",
-        SummaryBlocker::UnprovenArgument(_) => "a call argument could not be determined",
-        SummaryBlocker::UnsupportedCallForm | SummaryBlocker::UnsupportedContext => {
-            "the required property is outside supported analysis"
-        }
-        SummaryBlocker::LocalFacts(_) | SummaryBlocker::LocalAnalysis(_) => {
-            "the required local facts could not be certified"
-        }
-        SummaryBlocker::InvalidAssignment(_) | SummaryBlocker::InvalidValueUse(_) => {
-            "an assignment or value use is invalid"
-        }
-        SummaryBlocker::WrongInstance
-        | SummaryBlocker::DuplicateInstance
-        | SummaryBlocker::SymbolicInstance => "the exact component instance could not be certified",
-        SummaryBlocker::MissingInputBinding
-        | SummaryBlocker::DuplicateInputBinding
-        | SummaryBlocker::WitnessOnlyInput => "component input constraints could not be certified",
-        SummaryBlocker::ExternalSummary => "an external dependency has no certified summary",
-        SummaryBlocker::MissingReturn => "a function return could not be certified",
-        SummaryBlocker::RecursiveCycle => "a recursive call could not be certified",
-        SummaryBlocker::ContextBudget => "the context analysis budget was exhausted",
-        SummaryBlocker::ForeignDefinition
-        | SummaryBlocker::ForeignCall
-        | SummaryBlocker::WrongContext
-        | SummaryBlocker::WrongArity { .. } => "the analysis context could not be validated",
     }
 }

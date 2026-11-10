@@ -69,6 +69,7 @@ struct ObservedEvidence {
     incomplete: bool,
     incomplete_scopes: Vec<Value>,
     target_code_incomplete_scopes: usize,
+    target_rule_abstentions: usize,
     seconds: f64,
     exit_code: Option<i32>,
 }
@@ -157,6 +158,13 @@ fn observed_evidence(case: &Value) -> ObservedEvidence {
         incomplete,
         incomplete_scopes,
         target_code_incomplete_scopes,
+        target_rule_abstentions: if scope_kind == ScopeKind::Definition
+            && field(case, "expected") == "abstain"
+        {
+            raw_rule_abstentions(case)
+        } else {
+            0
+        },
         seconds,
         exit_code: output.status.code(),
     }
@@ -165,10 +173,49 @@ fn observed_evidence(case: &Value) -> ObservedEvidence {
 fn incomplete_names_code(result: &Value, code: &str) -> bool {
     let Some(locations) = result["relatedLocations"].as_array() else { return false };
     locations.iter().any(|location| {
-        let Some(message) = location["message"]["text"].as_str() else { return false };
-        let Some((codes, _)) = message.split_once(':') else { return false };
-        codes.split(',').any(|item| item.trim() == code)
+        location["message"]["text"]
+            .as_str()
+            .is_some_and(|message| message.contains(&format!("({code})")))
     })
+}
+
+fn raw_rule_abstentions(case: &Value) -> usize {
+    use parser::frontend::{load_sources, Version, VersionPolicy};
+    use parser::hir::lift_project;
+    use program_analysis::hir_cfg::build_cfg;
+    use program_analysis::interprocedural::{CallOwner, CallReachability, ProjectAnalysis};
+    use program_analysis::rules::{run_registered, RuleContext};
+    use program_structure::constants::Curve;
+
+    let loaded = load_sources(&[source(case)], &[], VersionPolicy::new(Version::new(2, 2, 3)));
+    let lifted = lift_project(&loaded);
+    let definition = lifted.hir.definition(field(case, "scope")).unwrap();
+    let curve = if field(case, "curve") == "bls12381" { Curve::Bls12_381 } else { Curve::Bn254 };
+    let project = ProjectAnalysis::build(&lifted, curve).unwrap();
+    let mut evidence = None;
+    for site in project.graph().sites() {
+        let CallOwner::Main(_) = site.owner else { continue };
+        let CallReachability::Reachable(call) =
+            project.graph().reachable_main_call(site.id(), project.hir())
+        else {
+            continue;
+        };
+        if call.callee() == definition {
+            evidence = Some(project.contexts().main_evidence(&call).unwrap());
+            break;
+        }
+    }
+    let evidence =
+        evidence.unwrap_or_else(|| project.contexts().symbolic_root(definition).unwrap());
+    let cfg = build_cfg(&lifted.hir, definition).unwrap();
+    let facts = project.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
+    let context = RuleContext::new(&facts, &project, &evidence).unwrap();
+    run_registered(&context)
+        .unwrap()
+        .abstentions()
+        .iter()
+        .filter(|abstention| abstention.kind.code().id() == field(case, "rule_id"))
+        .count()
 }
 
 fn scope_lines(case: &Value, path: &Path) -> (u64, u64, ScopeKind) {
@@ -344,11 +391,12 @@ fn run_corpus(cases: Vec<Value>) {
         {
             failures.push(format!(
                 "{}: {label}, scope analyzed={analyzed}, incomplete={incomplete}, \
-                 target incomplete scopes={target_incomplete}",
+                 target incomplete scopes={target_incomplete}, raw target abstentions={raw_target}",
                 field(&case, "id"),
                 analyzed = observed.analyzed,
                 incomplete = observed.incomplete,
                 target_incomplete = observed.target_code_incomplete_scopes,
+                raw_target = observed.target_rule_abstentions,
             ));
         }
         observations.push(json!({
@@ -359,6 +407,7 @@ fn run_corpus(cases: Vec<Value>) {
             "incomplete": observed.incomplete, "exit_code": observed.exit_code,
             "incomplete_scope_count": observed.incomplete_scopes.len(),
             "target_code_incomplete_scope_count": observed.target_code_incomplete_scopes,
+            "target_rule_abstentions": observed.target_rule_abstentions,
             "incomplete_scopes": observed.incomplete_scopes,
             "seconds": observed.seconds, "findings": observed.findings,
         }));
@@ -369,11 +418,10 @@ fn run_corpus(cases: Vec<Value>) {
 }
 
 fn has_expected_abstention(observed: &ObservedEvidence) -> bool {
-    observed.incomplete
-        && match observed.scope_kind {
-            ScopeKind::Definition => observed.target_code_incomplete_scopes > 0,
-            ScopeKind::SourceRecovery => observed.syntax_error,
-        }
+    match observed.scope_kind {
+        ScopeKind::Definition => observed.target_rule_abstentions > 0,
+        ScopeKind::SourceRecovery => observed.syntax_error,
+    }
 }
 
 #[test]
@@ -384,8 +432,9 @@ fn unrelated_incompleteness_does_not_satisfy_an_abstention_case() {
         .expect("the arithmetic abstention fixture exists");
     case["rule_id"] = json!("CS0012");
     let observed = observed_evidence(&case);
-    assert!(observed.incomplete, "the fixture exercises an unrelated incomplete rule");
-    assert_eq!(observed.target_code_incomplete_scopes, 0);
+    assert_eq!(observed.target_rule_abstentions, 0);
+    case["rule_id"] = json!("CS0004");
+    assert!(raw_rule_abstentions(&case) > 0, "the original rule must abstain");
     assert!(!has_expected_abstention(&observed));
 }
 
@@ -453,7 +502,7 @@ fn diagnostic_contracts_are_active() {
 }
 
 #[test]
-fn malformed_corpus_scopes_preserve_source_error_and_incomplete_reports() {
+fn malformed_corpus_scopes_preserve_source_errors_without_redundant_notices() {
     for case in manifest() {
         if field(&case, "compiler_class") != "syntax_error" {
             continue;
@@ -462,7 +511,7 @@ fn malformed_corpus_scopes_preserve_source_error_and_incomplete_reports() {
         assert!(!observed.analyzed);
         assert_eq!(observed.scope_kind, ScopeKind::SourceRecovery);
         assert!(observed.syntax_error);
-        assert!(observed.incomplete);
+        assert!(!observed.incomplete);
         assert!(observed.findings.is_empty());
     }
 }

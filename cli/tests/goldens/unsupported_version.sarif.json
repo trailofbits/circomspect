@@ -32,54 +32,6 @@
             "id": "P1003"
           },
           "ruleId": "P1003"
-        },
-        {
-          "level": "warning",
-          "locations": [
-            {
-              "id": 0,
-              "message": {
-                "text": "Some properties could not be certified."
-              },
-              "physicalLocation": {
-                "artifactLocation": {
-                  "uri": "file:///fixtures/unsupported_version.circom"
-                },
-                "region": {
-                  "endColumn": 21,
-                  "endLine": 1,
-                  "startColumn": 1,
-                  "startLine": 1
-                }
-              }
-            }
-          ],
-          "message": {
-            "text": "Analysis is incomplete for this source scope."
-          },
-          "relatedLocations": [
-            {
-              "id": 1,
-              "message": {
-                "text": "source contains invalid syntax"
-              },
-              "physicalLocation": {
-                "artifactLocation": {
-                  "uri": "file:///fixtures/unsupported_version.circom"
-                },
-                "region": {
-                  "endColumn": 21,
-                  "endLine": 1,
-                  "startColumn": 1,
-                  "startLine": 1
-                }
-              }
-            }
-          ],
-          "rule": {
-            "id": "CS0020"
-          },
-          "ruleId": "CS0020"
         }
       ],
       "tool": {
@@ -91,10 +43,6 @@
             {
               "id": "P1003",
               "name": "compiler-version-error"
-            },
-            {
-              "id": "CS0020",
-              "name": "incomplete-analysis"
             }
           ]
         }

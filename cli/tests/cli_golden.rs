@@ -38,7 +38,7 @@ const CASES: &[GoldenCase] = &[
         name: "secondary_location",
         source: "secondary_location.circom",
         args: &[],
-        status: 1,
+        status: 0,
     },
     GoldenCase {
         name: "missing_callee_order",

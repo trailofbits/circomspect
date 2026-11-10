@@ -29,7 +29,7 @@ fn library_without_main_is_analyzed() {
 
     assert!(output.status.success(), "{stdout}");
     assert!(stdout.contains("analyzing template 'LibraryItem'"), "{stdout}");
-    assert!(stdout.contains("No issues found."), "{stdout}");
+    assert!(stdout.contains("No findings reported."), "{stdout}");
 }
 
 #[test]
@@ -58,7 +58,8 @@ fn syntax_errors_do_not_hide_valid_definitions_in_the_same_library() {
     assert!(stdout.contains("analyzing template 'BeforeError'"), "{stdout}");
     assert!(stdout.contains("analyzing template 'BetweenErrors'"), "{stdout}");
     assert!(stdout.contains("analyzing template 'AfterError'"), "{stdout}");
-    assert!(stdout.contains("Analysis is incomplete"), "{stdout}");
+    assert!(!stdout.contains("Some checks"), "{stdout}");
+    assert!(stdout.contains("2 source errors reported."), "{stdout}");
     assert!(stdout.contains("parsing continued"), "{stdout}");
     assert_eq!(stdout.matches("error:").count(), 2, "{stdout}");
 }
@@ -160,7 +161,7 @@ fn comment_markers_inside_include_path_are_not_comments() {
 
     assert!(output.status.success(), "{stdout}");
     assert!(stdout.contains("analyzing template 'UsesIncluded'"), "{stdout}");
-    assert!(stdout.contains("No issues found."), "{stdout}");
+    assert!(stdout.contains("No findings reported."), "{stdout}");
 }
 
 #[test]
@@ -216,7 +217,7 @@ fn missing_input_file_is_visible() {
 
     assert!(!output.status.success(), "{stdout}");
     assert!(stdout.contains("cannot read"), "{stdout}");
-    assert!(!stdout.contains("No issues found."), "{stdout}");
+    assert!(!stdout.contains("No findings reported."), "{stdout}");
 }
 
 #[test]
@@ -357,7 +358,7 @@ fn valid_main_template_has_no_target_error() {
     let stdout = String::from_utf8(output.stdout).expect("CLI output is not UTF-8");
 
     assert!(output.status.success(), "{stdout}");
-    assert!(stdout.contains("No issues found."), "{stdout}");
+    assert!(stdout.contains("No findings reported."), "{stdout}");
 }
 
 #[test]

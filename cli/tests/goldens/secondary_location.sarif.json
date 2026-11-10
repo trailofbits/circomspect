@@ -2,118 +2,13 @@
   "runs": [
     {
       "columnKind": "unicodeCodePoints",
-      "results": [
-        {
-          "level": "warning",
-          "locations": [
-            {
-              "id": 0,
-              "message": {
-                "text": "Some properties could not be certified."
-              },
-              "physicalLocation": {
-                "artifactLocation": {
-                  "uri": "file:///fixtures/secondary_location.circom"
-                },
-                "region": {
-                  "endColumn": 14,
-                  "endLine": 3,
-                  "startColumn": 10,
-                  "startLine": 3
-                }
-              }
-            }
-          ],
-          "message": {
-            "text": "Analysis is incomplete for this source scope."
-          },
-          "relatedLocations": [
-            {
-              "id": 1,
-              "message": {
-                "text": "CS0021: the required local facts could not be certified"
-              },
-              "physicalLocation": {
-                "artifactLocation": {
-                  "uri": "file:///fixtures/secondary_location.circom"
-                },
-                "region": {
-                  "endColumn": 25,
-                  "endLine": 6,
-                  "startColumn": 5,
-                  "startLine": 6
-                }
-              }
-            },
-            {
-              "id": 2,
-              "message": {
-                "text": "CS0004: the required property is outside supported analysis"
-              },
-              "physicalLocation": {
-                "artifactLocation": {
-                  "uri": "file:///fixtures/secondary_location.circom"
-                },
-                "region": {
-                  "endColumn": 20,
-                  "endLine": 6,
-                  "startColumn": 13,
-                  "startLine": 6
-                }
-              }
-            },
-            {
-              "id": 3,
-              "message": {
-                "text": "CS0004: the required property is outside supported analysis"
-              },
-              "physicalLocation": {
-                "artifactLocation": {
-                  "uri": "file:///fixtures/secondary_location.circom"
-                },
-                "region": {
-                  "endColumn": 25,
-                  "endLine": 6,
-                  "startColumn": 13,
-                  "startLine": 6
-                }
-              }
-            },
-            {
-              "id": 4,
-              "message": {
-                "text": "Reached through this call."
-              },
-              "physicalLocation": {
-                "artifactLocation": {
-                  "uri": "file:///fixtures/secondary_location.circom"
-                },
-                "region": {
-                  "endColumn": 25,
-                  "endLine": 10,
-                  "startColumn": 1,
-                  "startLine": 10
-                }
-              }
-            }
-          ],
-          "rule": {
-            "id": "CS0020"
-          },
-          "ruleId": "CS0020"
-        }
-      ],
+      "results": [],
       "tool": {
         "driver": {
           "downloadUri": "https://github.com/trailofbits/circomspect",
           "name": "Circomspect",
           "organization": "Trail of Bits",
-          "rules": [
-            {
-              "id": "CS0020",
-              "name": "incomplete-analysis"
-            }
-          ]
+          "rules": []
         }
       }
     }

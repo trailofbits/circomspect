@@ -15,6 +15,7 @@ use program_structure::writers::{
 };
 
 mod progress;
+mod summary;
 
 #[cfg(test)]
 mod tests;
@@ -111,7 +112,7 @@ fn run(options: Cli) -> Result<ExitCode, ReportWriteError> {
     }
 
     if let Some(sarif_file) = options.sarif_file {
-        let mut sarif_writer = SarifWriter::new(&sarif_file).add_filter(policy);
+        let mut sarif_writer = SarifWriter::new(&sarif_file).add_filter(policy.clone());
         match sarif_writer.write_reports(stdout_writer.reports(), &output.files) {
             Ok(count) if count > 0 => stdout_writer
                 .write_message(format!("Result written to `{}`.", sarif_file.display()))?,
@@ -127,18 +128,6 @@ fn run(options: Cli) -> Result<ExitCode, ReportWriteError> {
         }
     }
 
-    Ok(match stdout_writer.reports_written() {
-        0 => {
-            stdout_writer.write_message("No issues found.")?;
-            ExitCode::SUCCESS
-        }
-        1 => {
-            stdout_writer.write_message("1 issue found.")?;
-            ExitCode::FAILURE
-        }
-        n => {
-            stdout_writer.write_message(format!("{n} issues found."))?;
-            ExitCode::FAILURE
-        }
-    })
+    stdout_writer.write_message(summary::describe(stdout_writer.reports(), &policy))?;
+    Ok(if stdout_writer.reports_written() == 0 { ExitCode::SUCCESS } else { ExitCode::FAILURE })
 }

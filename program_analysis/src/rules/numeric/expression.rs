@@ -56,7 +56,7 @@ pub(super) fn bn254_constant(context: &RuleContext<'_, '_, '_>) -> RuleResult {
         if !reachable(context, &mut result, RuleKind::Bn254SpecificCircuit, expression) {
             continue;
         }
-        let mut finding = context.finding(
+        let finding = context.finding(
             RuleKind::Bn254SpecificCircuit,
             format!(
                 "This reachable literal is the BN254 field prime, but the selected curve is {}.",
@@ -65,10 +65,6 @@ pub(super) fn bn254_constant(context: &RuleContext<'_, '_, '_>) -> RuleResult {
             expression.span,
             "Hard-coded BN254 modulus".into(),
         );
-        for (index, site) in context.call_path().iter().enumerate() {
-            finding = finding
-                .with_secondary(site.span(), format!("Validated call path step {}", index + 1));
-        }
         result.add_finding(finding);
     }
     result

@@ -8,12 +8,10 @@
       "source_scope": "Partial",
       "expected_exit_code": 1,
       "expected_rule_ids": [
-        "CS0019",
-        "CS0020"
+        "CS0019"
       ],
       "expected_sarif_levels": {
-        "CS0019": "error",
-        "CS0020": "warning"
+        "CS0019": "error"
       }
     },
     {
@@ -55,12 +53,10 @@
       "source_scope": "Main",
       "expected_exit_code": 1,
       "expected_rule_ids": [
-        "CS0020",
         "CS0021"
       ],
       "expected_sarif_levels": {
-        "CS0021": "warning",
-        "CS0020": "warning"
+        "CS0021": "warning"
       }
     },
     {
@@ -83,13 +79,9 @@
         "CS0021"
       ],
       "source_scope": "Main",
-      "expected_exit_code": 1,
-      "expected_rule_ids": [
-        "CS0020"
-      ],
-      "expected_sarif_levels": {
-        "CS0020": "warning"
-      }
+      "expected_exit_code": 0,
+      "expected_rule_ids": [],
+      "expected_sarif_levels": {}
     },
     {
       "id": "redundant_witness_allow_all",

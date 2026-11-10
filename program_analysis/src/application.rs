@@ -1,6 +1,8 @@
 //! Application orchestration for the owned Circom frontend and certified rules.
 
+mod coverage;
 mod diagnostics;
+mod grouping;
 mod inputs;
 mod scopes;
 
@@ -97,7 +99,7 @@ pub fn analyze_files_with_progress(
         .map_err(|error| ApplicationError::Invariant(format!("invalid call graph: {error:?}")))?;
     let mut runner = ScopeRunner::new(&summaries, &sources, &mut diagnostics);
     runner.analyze(&mut progress)?;
-    let reports = runner.finish();
+    let reports = runner.finish()?;
     let mut scopes = Vec::new();
     for function in lifted.hir.functions() {
         if roots.contains(&function.span.source()) {

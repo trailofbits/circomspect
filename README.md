@@ -51,8 +51,11 @@ included files are hidden unless the file is also an input; errors remain
 visible.
 
 The analyzer recovers from source errors where possible and continues through
-independent definitions. `CS0020` identifies incomplete analysis and includes
-the affected source scope. No visible findings means exit status 0; any
+independent definitions. Actionable `CS0020` notices name the affected checks,
+explain the limitation, and suggest a next step. Missing-context notices are
+informational (`-l INFO`) and hidden by default; nonactionable notices are omitted.
+Repeated findings at the same source location are grouped while retaining their
+affected call paths. No visible reports means exit status 0; any
 visible warning, informational result, or error means exit status 1.
 
 Bus declarations are parsed and resolved, but their analysis contexts remain

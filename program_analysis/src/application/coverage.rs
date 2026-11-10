@@ -1,0 +1,409 @@
+use std::collections::{BTreeMap, BTreeSet};
+
+use abstract_interpretation::graph::{FlowGraph, NodeId};
+use parser::hir::{DefinitionRef, ExprId, ExprKind, HirProject};
+use parser::hir::{IncompleteReason, SymbolId, SymbolKind};
+use parser::frontend::Span;
+
+use crate::hir_cfg::CfgNodeKind;
+use crate::hir_facts::{AnalysisFacts, FactBlocker, VisitAccesses};
+use crate::interprocedural::{ArgumentValue, CallBlocker, ContextEvidence, SummaryBlocker};
+use crate::rules::{AbstentionReason, RuleKind};
+
+#[cfg(test)]
+mod tests;
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(super) enum CoverageKind {
+    MissingContext,
+    Unsupported,
+    ResourceLimit,
+    InternalError,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct CoverageExplanation {
+    pub kind: CoverageKind,
+    pub span: Span,
+    pub message: String,
+    pub help: String,
+}
+
+pub(super) struct CoverageContext<'a, 'facts> {
+    pub hir: &'a HirProject,
+    pub facts: Option<&'a AnalysisFacts<'facts>>,
+    pub evidence: Option<&'a ContextEvidence>,
+    pub span: Span,
+}
+
+impl CoverageContext<'_, '_> {
+    pub(super) fn rule(&self, reason: &AbstentionReason) -> Vec<CoverageExplanation> {
+        match reason {
+            AbstentionReason::LocalFacts(reasons) => self.facts(reasons),
+            AbstentionReason::Summary(reasons) => {
+                reasons.iter().flat_map(|reason| self.summary(reason)).collect()
+            }
+            AbstentionReason::Call(reasons) => {
+                reasons.iter().flat_map(|reason| self.call(reason)).collect()
+            }
+            AbstentionReason::SymbolicParameters => self.symbolic_expression(),
+            AbstentionReason::UnsupportedConstruct => {
+                self.unsupported_definition().into_iter().collect()
+            }
+            AbstentionReason::IncompleteDefinition => Vec::new(),
+        }
+    }
+
+    pub(super) fn summary(&self, reason: &SummaryBlocker) -> Vec<CoverageExplanation> {
+        match reason {
+            SummaryBlocker::LocalFacts(reasons) => {
+                // Summary blockers can contain node indices from a callee's CFG.
+                Self { facts: None, ..*self }.facts(reasons)
+            }
+            SummaryBlocker::UnprovenArgument(expression) => {
+                self.parameters(*expression).into_iter().collect()
+            }
+            SummaryBlocker::UnsupportedContext
+            | SummaryBlocker::UnsupportedCallForm
+            | SummaryBlocker::ExternalSummary => {
+                self.unsupported_definition().into_iter().collect()
+            }
+            SummaryBlocker::ContextBudget => vec![resource(self.span, "Call analysis")],
+            SummaryBlocker::RecursiveCycle => vec![explanation(
+                CoverageKind::Unsupported,
+                self.span,
+                "Call analysis encountered a recursive cycle.",
+                "Review the recursive call chain and the affected checks manually.",
+            )],
+            SummaryBlocker::ForeignDefinition
+            | SummaryBlocker::WrongContext
+            | SummaryBlocker::LocalAnalysis(_) => vec![self.internal()],
+            SummaryBlocker::IncompleteDefinition
+            | SummaryBlocker::ForeignCall
+            | SummaryBlocker::WrongArity { .. }
+            | SummaryBlocker::InvalidAssignment(_)
+            | SummaryBlocker::InvalidValueUse(_)
+            | SummaryBlocker::WrongInstance
+            | SummaryBlocker::DuplicateInstance
+            | SummaryBlocker::SymbolicInstance
+            | SummaryBlocker::MissingInputBinding
+            | SummaryBlocker::DuplicateInputBinding
+            | SummaryBlocker::WitnessOnlyInput
+            | SummaryBlocker::MissingReturn => Vec::new(),
+        }
+    }
+
+    pub(super) fn source(&self, reason: &IncompleteReason) -> Vec<CoverageExplanation> {
+        let IncompleteReason::Unsupported(feature) = reason else { return Vec::new() };
+        let (message, help) = match feature.as_str() {
+            "nonliteral tuple initializer" => (
+                "This check does not analyze tuple initialization from a nonliteral value.",
+                "Review the tuple initializer and its uses manually.",
+            ),
+            "parallel value" => (
+                "This check does not resolve parallel expression values.",
+                "Review the parallel expression and its uses manually.",
+            ),
+            _ => return Vec::new(),
+        };
+        vec![explanation(CoverageKind::Unsupported, self.span, message, help)]
+    }
+
+    fn facts(&self, reasons: &BTreeSet<FactBlocker>) -> Vec<CoverageExplanation> {
+        reasons.iter().flat_map(|reason| self.fact(reason)).collect()
+    }
+
+    fn fact(&self, reason: &FactBlocker) -> Vec<CoverageExplanation> {
+        let result = match reason {
+            FactBlocker::Budget(node) => {
+                Some(resource(self.node_span(*node), "Local dataflow analysis"))
+            }
+            FactBlocker::DeferredShape(expression) => self.parameters(*expression),
+            FactBlocker::DeferredControl(node) => self.control(*node),
+            FactBlocker::OpaqueNode(node, _)
+            | FactBlocker::AggregateConstraint(node)
+            | FactBlocker::UnsupportedRelation(node) => return self.node(*node, reason),
+            FactBlocker::OpaqueExpression(expression) => return self.expression(*expression),
+            FactBlocker::ForeignQuery | FactBlocker::ForeignDefinition => Some(self.internal()),
+            FactBlocker::OpaqueEdge(_, _)
+            | FactBlocker::ExternalSummary
+            | FactBlocker::AggregateAccess
+            | FactBlocker::WitnessWrite(_, _)
+            | FactBlocker::SignalRead(_, _)
+            | FactBlocker::MissingExit => None,
+        };
+        result.into_iter().collect()
+    }
+
+    pub(super) fn call(&self, reason: &CallBlocker) -> Vec<CoverageExplanation> {
+        match reason {
+            CallBlocker::LocalFacts(reasons) => self.facts(reasons),
+            CallBlocker::ForeignSite | CallBlocker::ForeignDefinition => vec![self.internal()],
+            CallBlocker::UnresolvedTarget
+            | CallBlocker::ProvisionalSite
+            | CallBlocker::MissingExpression => Vec::new(),
+        }
+    }
+
+    fn control(&self, id: NodeId) -> Option<CoverageExplanation> {
+        let CfgNodeKind::Branch { condition, .. } = &self.facts?.cfg().node(id)?.kind else {
+            return None;
+        };
+        let mut result = self.parameters(*condition)?;
+        result.span = self.node_span(id);
+        Some(result)
+    }
+
+    fn node(&self, id: NodeId, reason: &FactBlocker) -> Vec<CoverageExplanation> {
+        let Some(node) = self.facts.and_then(|facts| facts.cfg().node(id)) else {
+            return Vec::new();
+        };
+        let context = self.at(self.node_span(id));
+        if let FactBlocker::AggregateConstraint(_) = reason {
+            if let CfgNodeKind::Constraint(_) = &node.kind {
+                return vec![explanation(
+                    CoverageKind::Unsupported,
+                    context.span,
+                    "This check does not expand array or bus constraints.",
+                    "Review the constraints for each array element or bus field manually.",
+                )];
+            }
+        }
+        if let CfgNodeKind::Opaque(reason)
+        | CfgNodeKind::OpaqueAssignment { reason, .. }
+        | CfgNodeKind::OpaqueEquality { reason, .. } = &node.kind
+        {
+            return context.source(reason);
+        }
+        Vec::new()
+    }
+
+    fn expression(&self, id: ExprId) -> Vec<CoverageExplanation> {
+        let Some(expression) = self.hir.expression(id) else { return Vec::new() };
+        if let ExprKind::Opaque(reason) = &expression.kind {
+            return self.at(expression.span).source(reason);
+        }
+        self.parameters(id).into_iter().collect()
+    }
+
+    fn symbolic_expression(&self) -> Vec<CoverageExplanation> {
+        let Some(facts) = self.facts else { return Vec::new() };
+        let expression = facts
+            .cfg()
+            .evaluated_expressions()
+            .find(|id| self.hir.expression(*id).is_some_and(|item| item.span == self.span));
+        expression.and_then(|id| self.parameters(id)).into_iter().collect()
+    }
+
+    fn parameters(&self, expression: ExprId) -> Option<CoverageExplanation> {
+        let mut parameters = self.missing_parameters();
+        if parameters.is_empty() {
+            return None;
+        }
+        let dependencies = self.dependencies(expression);
+        parameters.retain(|(symbol, _)| dependencies.contains(symbol));
+        if parameters.is_empty() {
+            return None;
+        }
+        let names: Vec<_> = parameters.iter().map(|(_, name)| format!("`{name}`")).collect();
+        let names = names.join(", ");
+        let plural = if parameters.len() == 1 { "parameter" } else { "parameters" };
+        let message = format!("This check depends on unknown {plural} {names}.");
+        let span = self.hir.expression(expression).map_or(self.span, |item| item.span);
+        Some(explanation(
+            CoverageKind::MissingContext,
+            span,
+            &message,
+            &format!(
+                "Analyze a caller with concrete values for {names} to check that instantiation."
+            ),
+        ))
+    }
+
+    fn missing_parameters(&self) -> Vec<(SymbolId, &str)> {
+        let Some(evidence) = self.evidence else { return Vec::new() };
+        let parameters = match evidence.context().definition() {
+            DefinitionRef::Function(id) => {
+                self.hir.function(id).map(|item| item.parameters.as_slice())
+            }
+            DefinitionRef::Template(id) => {
+                self.hir.template(id).map(|item| item.parameters.as_slice())
+            }
+            DefinitionRef::Bus(id) => self.hir.bus(id).map(|item| item.parameters.as_slice()),
+        };
+        let Some(parameters) = parameters else { return Vec::new() };
+        let mut missing = Vec::new();
+        for (parameter, argument) in parameters.iter().zip(evidence.context().arguments()) {
+            if unknown_argument(argument) {
+                if let Some(symbol) = self.hir.symbol(*parameter) {
+                    missing.push((*parameter, symbol.name.as_str()));
+                }
+            }
+        }
+        missing
+    }
+
+    fn dependencies(&self, expression: ExprId) -> BTreeSet<SymbolId> {
+        let mut reached = BTreeSet::new();
+        expression.visit_accesses(self.hir, &mut |path| {
+            reached.insert(path.root);
+        });
+        if !reached.iter().any(|id| {
+            self.hir.symbol(*id).is_some_and(|symbol| symbol.kind == SymbolKind::Variable)
+        }) {
+            return reached;
+        }
+        let Some(facts) = self.facts else { return reached };
+        let assignments = self.assignments(facts);
+        let mut pending: Vec<_> = reached.iter().copied().collect();
+        while let Some(symbol) = pending.pop() {
+            let Some(values) = assignments.get(&symbol) else { continue };
+            if values.len() != 1 {
+                continue;
+            }
+            let Some(value) = values.first() else { continue };
+            value.visit_accesses(self.hir, &mut |path| {
+                if reached.insert(path.root) {
+                    pending.push(path.root);
+                }
+            });
+        }
+        reached
+    }
+
+    fn assignments(&self, facts: &AnalysisFacts<'_>) -> BTreeMap<SymbolId, BTreeSet<ExprId>> {
+        let mut assignments = BTreeMap::<SymbolId, BTreeSet<ExprId>>::new();
+        for id in facts.cfg().nodes() {
+            if facts.certified_dead_node(*id) {
+                continue;
+            }
+            let Some(
+                CfgNodeKind::Assignment { target, value, .. }
+                | CfgNodeKind::DeferredAssignment { target, value, .. }
+                | CfgNodeKind::OpaqueAssignment { target, value, .. },
+            ) = facts.cfg().node(*id).map(|node| &node.kind)
+            else {
+                continue;
+            };
+            if self.hir.symbol(target.root).is_some_and(|item| item.kind == SymbolKind::Variable) {
+                assignments.entry(target.root).or_default().insert(*value);
+            }
+        }
+        assignments
+    }
+
+    fn unsupported_definition(&self) -> Option<CoverageExplanation> {
+        let definition = self.definition()?;
+        let (kind, name) = match definition {
+            DefinitionRef::Bus(id) => {
+                let bus = self.hir.bus(id)?;
+                if self.span != bus.name_span && self.span != bus.span {
+                    return None;
+                }
+                ("bus", bus.name.as_str())
+            }
+            DefinitionRef::Template(id) => {
+                let template = self.hir.template(id)?;
+                if (!template.custom && !template.external)
+                    || (self.span != template.name_span && self.span != template.span)
+                {
+                    return None;
+                }
+                ("custom or external template", template.name.as_str())
+            }
+            DefinitionRef::Function(_) => return None,
+        };
+        Some(explanation(
+            CoverageKind::Unsupported,
+            self.span,
+            &format!("This check does not analyze the {kind} `{name}`."),
+            "Review this definition and the affected checks manually.",
+        ))
+    }
+
+    fn definition(&self) -> Option<DefinitionRef> {
+        if let Some(evidence) = self.evidence {
+            return Some(evidence.context().definition());
+        }
+        if let Some(facts) = self.facts {
+            return Some(facts.definition());
+        }
+        for bus in self.hir.buses() {
+            if bus.name_span == self.span || bus.span == self.span {
+                return Some(DefinitionRef::Bus(bus.id));
+            }
+        }
+        for template in self.hir.templates() {
+            if template.name_span == self.span || template.span == self.span {
+                return Some(DefinitionRef::Template(template.id));
+            }
+        }
+        None
+    }
+
+    fn node_span(&self, id: NodeId) -> Span {
+        self.facts
+            .and_then(|facts| facts.cfg().node(id))
+            .and_then(|node| node.origin)
+            .map_or(self.span, |origin| origin.span)
+    }
+
+    fn at(&self, span: Span) -> CoverageContext<'_, '_> {
+        CoverageContext { hir: self.hir, facts: self.facts, evidence: self.evidence, span }
+    }
+
+    fn internal(&self) -> CoverageExplanation {
+        explanation(
+            CoverageKind::InternalError,
+            self.span,
+            "The analyzer encountered an inconsistent internal analysis context.",
+            "Report this analyzer failure with a minimal reproducible Circom input.",
+        )
+    }
+}
+
+fn resource(span: Span, analysis: &str) -> CoverageExplanation {
+    explanation(
+        CoverageKind::ResourceLimit,
+        span,
+        &format!("{analysis} reached its work limit."),
+        "Analyze a smaller concrete calling circuit when possible, \
+         or review the affected checks manually.",
+    )
+}
+
+fn unknown_argument(argument: &ArgumentValue) -> bool {
+    match argument {
+        ArgumentValue::Symbolic(_) => true,
+        ArgumentValue::Array(values) => values.iter().any(unknown_argument),
+        ArgumentValue::Bus(fields) => fields.values().any(unknown_argument),
+        ArgumentValue::Scalar(_) => false,
+    }
+}
+
+fn explanation(kind: CoverageKind, span: Span, message: &str, help: &str) -> CoverageExplanation {
+    CoverageExplanation { kind, span, message: message.into(), help: help.into() }
+}
+
+pub(super) fn check_name(kind: RuleKind) -> &'static str {
+    match kind {
+        RuleKind::BitwiseComplement => "bitwise complement",
+        RuleKind::Bn254SpecificCircuit => "field-specific constants",
+        RuleKind::ConstantConditional => "constant branch conditions",
+        RuleKind::FieldArithmetic => "field arithmetic",
+        RuleKind::FieldComparison => "field comparisons",
+        RuleKind::NonstrictBinaryConversion => "binary conversion bounds",
+        RuleKind::UnconstrainedDivision => "division constraints",
+        RuleKind::SignalAssignment => "signal assignments",
+        RuleKind::RedundantWitnessAssignment => "redundant witness assignments",
+        RuleKind::UnconstrainedSignal => "signal constraints",
+        RuleKind::UnconstrainedLessThan => "comparator input ranges",
+        RuleKind::UnusedVariableValue => "unused variable values",
+        RuleKind::UnusedParameterValue => "unused parameter values",
+        RuleKind::SideEffectFreeAssignment => "assignments without side effects",
+        RuleKind::UnusedOutputSignal => "unused component outputs",
+        RuleKind::Complexity => "cyclomatic complexity",
+        RuleKind::TooManyArguments => "argument counts",
+        RuleKind::IncompleteCoverage => "analysis coverage",
+    }
+}

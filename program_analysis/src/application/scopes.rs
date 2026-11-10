@@ -4,7 +4,9 @@ use parser::hir::DefinitionRef;
 use parser::frontend::Span;
 use program_structure::report::Report;
 
-use crate::application::diagnostics::{Diagnostics, IncompleteCause, IncompleteDetail};
+use crate::application::coverage::CoverageContext;
+use crate::application::diagnostics::Diagnostics;
+use crate::application::grouping::ReportGroups;
 use crate::application::{AnalysisProgress, ApplicationError};
 use crate::hir_cfg::build_cfg;
 use crate::hir_facts::AnalysisFacts;
@@ -22,7 +24,7 @@ pub(super) struct ScopeRunner<'a, 'b, 'c, 'd> {
     diagnostics: &'d mut Diagnostics<'a, 'c>,
     pending: VecDeque<ContextEvidence>,
     seen: BTreeSet<ContextEvidence>,
-    reports: BTreeMap<DefinitionRef, Vec<Report>>,
+    reports: BTreeMap<DefinitionRef, ReportGroups>,
 }
 
 impl<'a, 'b, 'c, 'd> ScopeRunner<'a, 'b, 'c, 'd> {
@@ -47,6 +49,9 @@ impl<'a, 'b, 'c, 'd> ScopeRunner<'a, 'b, 'c, 'd> {
     ) -> Result<(), ApplicationError> {
         for site in self.summaries.graph().sites() {
             let CallOwner::Main(_) = site.owner else { continue };
+            if site.expression.is_some() {
+                continue;
+            }
             match self.summaries.graph().reachable_main_call(site.id(), self.summaries.hir()) {
                 CallReachability::Reachable(call) => {
                     match self.summaries.contexts().main_evidence(&call) {
@@ -54,9 +59,17 @@ impl<'a, 'b, 'c, 'd> ScopeRunner<'a, 'b, 'c, 'd> {
                         Err(reason) => self.source_blocked(site.span, &reason),
                     }
                 }
-                CallReachability::Unavailable(_) => self
-                    .diagnostics
-                    .source_incomplete(site.span, "the main component could not be resolved"),
+                CallReachability::Unavailable(reason) => {
+                    let coverage = CoverageContext {
+                        hir: self.summaries.hir(),
+                        facts: None,
+                        evidence: None,
+                        span: site.span,
+                    };
+                    for explanation in coverage.call(&reason) {
+                        self.diagnostics.source_incomplete(explanation);
+                    }
+                }
                 CallReachability::Unreachable => {}
             }
         }
@@ -128,7 +141,6 @@ impl<'a, 'b, 'c, 'd> ScopeRunner<'a, 'b, 'c, 'd> {
 
     fn analyze_scope(&mut self, evidence: &ContextEvidence) -> Result<(), ApplicationError> {
         let definition = evidence.context().definition();
-        self.diagnostics.begin_scope(evidence, self.span(definition)?, self.body_span(definition)?);
         let cfg = build_cfg(self.summaries.hir(), definition).map_err(|error| {
             ApplicationError::Invariant(format!("invalid control flow: {error:?}"))
         })?;
@@ -147,22 +159,20 @@ impl<'a, 'b, 'c, 'd> ScopeRunner<'a, 'b, 'c, 'd> {
             .map_err(|error| ApplicationError::Invariant(error.to_string()))?;
         let reports = self.reports.entry(definition).or_default();
         for finding in result.findings() {
-            let mut report = finding.to_report(self.sources)?;
-            for site in evidence.call_path() {
-                let (file, range) = self.sources.location(site.span())?;
-                report.add_secondary(range, file, Some("Reached through this call.".to_string()));
-            }
-            reports.push(report);
+            reports.insert(finding.to_report(self.sources)?, evidence);
         }
         for abstention in result.abstentions() {
+            let coverage = CoverageContext {
+                hir: self.summaries.hir(),
+                facts: Some(&facts),
+                evidence: Some(evidence),
+                span: abstention.span,
+            };
             self.diagnostics.scope_incomplete(
                 evidence,
                 self.span(abstention.definition())?,
-                IncompleteDetail {
-                    span: abstention.span,
-                    reason: IncompleteCause::Rule(abstention.reason.clone()),
-                    rule: Some(abstention.kind),
-                },
+                coverage.rule(&abstention.reason),
+                Some(abstention.kind),
             );
         }
         self.enqueue_calls(&facts, evidence)?;
@@ -188,8 +198,19 @@ impl<'a, 'b, 'c, 'd> ScopeRunner<'a, 'b, 'c, 'd> {
                     .summaries
                     .contexts()
                     .refined_function_call_evidence(site.id(), facts, evidence),
-                CallReachability::Unavailable(_) => {
-                    self.context_blocked(evidence, site.span, &SummaryBlocker::ExternalSummary)?;
+                CallReachability::Unavailable(reason) => {
+                    let coverage = CoverageContext {
+                        hir: self.summaries.hir(),
+                        facts: Some(facts),
+                        evidence: Some(evidence),
+                        span: site.span,
+                    };
+                    self.diagnostics.scope_incomplete(
+                        evidence,
+                        self.span(evidence.context().definition())?,
+                        coverage.call(&reason),
+                        None,
+                    );
                     continue;
                 }
             };
@@ -214,25 +235,17 @@ impl<'a, 'b, 'c, 'd> ScopeRunner<'a, 'b, 'c, 'd> {
             AnalyzeEvidenceError::InvalidAssignment { diagnostic, .. }
             | AnalyzeEvidenceError::InvalidValueUse { diagnostic, .. } => {
                 self.diagnostics.push(self.sources.semantic_report(&diagnostic)?);
-                self.diagnostics.scope_incomplete(
-                    evidence,
-                    self.span(evidence.context().definition())?,
-                    IncompleteDetail {
-                        span,
-                        reason: IncompleteCause::Source(
-                            "an assignment or value use is invalid".into(),
-                        ),
-                        rule: None,
-                    },
-                );
             }
         }
         Ok(())
     }
 
     fn source_blocked(&mut self, span: Span, reason: &SummaryBlocker) {
-        self.diagnostics
-            .source_incomplete(span, IncompleteCause::Summary(reason.clone()).message());
+        let coverage =
+            CoverageContext { hir: self.summaries.hir(), facts: None, evidence: None, span };
+        for explanation in coverage.summary(reason) {
+            self.diagnostics.source_incomplete(explanation);
+        }
     }
 
     fn context_blocked(
@@ -241,22 +254,19 @@ impl<'a, 'b, 'c, 'd> ScopeRunner<'a, 'b, 'c, 'd> {
         span: Span,
         reason: &SummaryBlocker,
     ) -> Result<(), ApplicationError> {
+        let coverage = CoverageContext {
+            hir: self.summaries.hir(),
+            facts: None,
+            evidence: Some(evidence),
+            span,
+        };
         self.diagnostics.scope_incomplete(
             evidence,
             self.span(evidence.context().definition())?,
-            IncompleteDetail { span, reason: IncompleteCause::Summary(reason.clone()), rule: None },
+            coverage.summary(reason),
+            None,
         );
         Ok(())
-    }
-
-    fn body_span(&self, definition: DefinitionRef) -> Result<Span, ApplicationError> {
-        let hir = self.summaries.hir();
-        let span = match definition {
-            DefinitionRef::Function(id) => hir.function(id).map(|item| item.span),
-            DefinitionRef::Template(id) => hir.template(id).map(|item| item.span),
-            DefinitionRef::Bus(id) => hir.bus(id).map(|item| item.span),
-        };
-        span.ok_or_else(|| ApplicationError::Invariant("missing source definition".into()))
     }
 
     fn span(&self, definition: DefinitionRef) -> Result<Span, ApplicationError> {
@@ -269,7 +279,11 @@ impl<'a, 'b, 'c, 'd> ScopeRunner<'a, 'b, 'c, 'd> {
         span.ok_or_else(|| ApplicationError::Invariant("missing source definition".to_string()))
     }
 
-    pub(super) fn finish(self) -> BTreeMap<DefinitionRef, Vec<Report>> {
-        self.reports
+    pub(super) fn finish(self) -> Result<BTreeMap<DefinitionRef, Vec<Report>>, ApplicationError> {
+        let mut reports = BTreeMap::new();
+        for (definition, groups) in self.reports {
+            reports.insert(definition, groups.finish(self.sources)?);
+        }
+        Ok(reports)
     }
 }
