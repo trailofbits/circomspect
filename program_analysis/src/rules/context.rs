@@ -1,3 +1,8 @@
+use std::sync::OnceLock;
+
+#[cfg(test)]
+mod cache_tests;
+
 use parser::hir::{AccessPath, DefinitionRef, HirProject, PortId};
 use parser::frontend::Span;
 
@@ -40,6 +45,8 @@ pub struct RuleContext<'a, 'facts, 'project> {
     facts: &'a AnalysisFacts<'facts>,
     summaries: &'a ProjectAnalysis<'project>,
     evidence: &'a ContextEvidence,
+    warning_execution: OnceLock<Result<(), SummaryBlocker>>,
+    component_outputs: OnceLock<SummaryFact<Vec<EnumeratedComponentOutput>>>,
 }
 
 impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
@@ -66,7 +73,13 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
             .contexts()
             .check_facts_for_evidence(facts, evidence)
             .map_err(RuleContextError::MismatchedFacts)?;
-        Ok(Self { facts, summaries, evidence })
+        Ok(Self {
+            facts,
+            summaries,
+            evidence,
+            warning_execution: OnceLock::new(),
+            component_outputs: OnceLock::new(),
+        })
     }
 
     #[must_use]
@@ -107,7 +120,11 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
     /// # Errors
     /// Returns a blocker for an invalid source scope or a proved execution failure.
     pub fn check_warning_execution_scope(&self) -> Result<(), SummaryBlocker> {
-        self.summaries.execution().check_warning_execution_scope(self.facts, self.evidence)
+        self.warning_execution
+            .get_or_init(|| {
+                self.summaries.execution().check_warning_execution_scope(self.facts, self.evidence)
+            })
+            .clone()
     }
 
     /// Prove observable demand for a source-matched scalar assignment.
@@ -358,7 +375,11 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
     /// unavailable, so a rule cannot treat a partial list as complete.
     #[must_use]
     pub fn exact_component_outputs(&self) -> SummaryFact<Vec<EnumeratedComponentOutput>> {
-        self.summaries.components().exact_component_outputs(self.facts, self.evidence)
+        self.component_outputs
+            .get_or_init(|| {
+                self.summaries.components().exact_component_outputs(self.facts, self.evidence)
+            })
+            .clone()
     }
 
     /// Prove that an exact exported output of the active main is read by its environment.
