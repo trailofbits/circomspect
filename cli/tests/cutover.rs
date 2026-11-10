@@ -305,7 +305,7 @@ fn diagnostics_are_interleaved_with_analysis_progress() {
 }
 
 #[test]
-fn call_path_continuations_follow_the_original_finding_filter_and_count() {
+fn call_path_continuations_require_info_and_preserve_finding_filters_and_sarif() {
     let input = fixture(
         "streamed-contexts",
         "pragma circom 2.2.3;\n\
@@ -313,17 +313,37 @@ fn call_path_continuations_follow_the_original_finding_filter_and_count() {
         template Main(){component a=Child(1);component b=Child(2);}\n\
         component main=Main();",
     );
-    let result = run(&input.path(), &["--allow", "CS0008"], "streamed-contexts");
-    assert_eq!(result.stdout.matches("warning: Assigned value of `dead`").count(), 1);
-    assert_eq!(result.stdout.matches("Additional call paths for CS0006").count(), 1);
-    assert!(result.stdout.contains("1 finding reported."), "{}", result.stdout);
-    let reports = result.sarif["runs"][0]["results"].as_array().unwrap();
-    assert_eq!(reports.iter().filter(|report| report["ruleId"] == "CS0006").count(), 1);
-    for args in [&["--level", "ERROR"][..], &["--allow", "CS0006", "--allow", "CS0008"][..]] {
+    let default = run(&input.path(), &["--allow", "CS0008"], "streamed-contexts");
+    let detailed =
+        run(&input.path(), &["--level", "INFO", "--allow", "CS0008"], "streamed-contexts-info");
+    let mut findings = Vec::new();
+    for (result, continuations) in [(&default, 0), (&detailed, 1)] {
+        assert_eq!(result.stdout.matches("warning: Assigned value of `dead`").count(), 1);
+        assert_eq!(
+            result.stdout.matches("Additional call paths for CS0006").count(),
+            continuations
+        );
+        assert!(result.stdout.contains("1 finding reported."), "{}", result.stdout);
+        assert_eq!(result.status.code(), Some(1), "{}", result.stdout);
+        let reports = result.sarif["runs"][0]["results"].as_array().unwrap();
+        let unused: Vec<_> = reports.iter().filter(|report| report["ruleId"] == "CS0006").collect();
+        assert_eq!(unused.len(), 1);
+        assert_eq!(unused[0]["relatedLocations"].as_array().unwrap().len(), 3);
+        findings.push(unused[0]);
+    }
+    assert_eq!(findings[0], findings[1]);
+    for (args, expected_status) in [
+        (&["--level", "ERROR"][..], Some(0)),
+        (&["--allow", "CS0006", "--allow", "CS0008"][..], Some(0)),
+        (&["--level", "INFO", "--allow", "CS0006", "--allow", "CS0008"][..], None),
+    ] {
         let result = run(&input.path(), args, "filtered-contexts");
         assert!(!result.stdout.contains("Assigned value of `dead`"));
         assert!(!result.stdout.contains("Additional call paths"));
-        assert_eq!(result.status.code(), Some(0), "{}", result.stdout);
+        assert!(!ids(&result.sarif).contains("CS0006"));
+        if let Some(expected) = expected_status {
+            assert_eq!(result.status.code(), Some(expected), "{}", result.stdout);
+        }
     }
 }
 

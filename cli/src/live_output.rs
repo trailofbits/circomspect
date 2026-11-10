@@ -59,7 +59,7 @@ impl AnalysisObserver for LiveOutput<'_> {
         locations: &[ReportLabel],
         files: &FileLibrary,
     ) -> Result<(), ReportWriteError> {
-        if self.visible(report, files) {
+        if self.minimum == MessageCategory::Info && self.visible(report, files) {
             self.writer.write_additional_call_paths(report, locations, files)?;
         }
         Ok(())
