@@ -3,7 +3,7 @@ use std::process::ExitCode;
 use clap::{CommandFactory, Parser};
 
 use program_analysis::config;
-use program_analysis::application::{analyze_files_with_progress, AnalysisProgress, ApplicationError};
+use program_analysis::application::{analyze_files_with_progress, ApplicationError};
 use program_structure::file_definition::FileLibrary;
 use program_structure::report_code::ReportCode;
 
@@ -13,6 +13,8 @@ use program_structure::report::MessageCategory;
 use program_structure::writers::{
     LogWriter, OutputPolicy, ReportWriter, ReportWriteError, SarifWriter, CachedStdoutWriter,
 };
+
+mod progress;
 
 #[cfg(test)]
 mod tests;
@@ -76,13 +78,14 @@ fn main() -> Result<ExitCode, String> {
 }
 
 fn run(options: Cli) -> Result<ExitCode, ReportWriteError> {
-    let mut stdout_writer = CachedStdoutWriter::new(options.verbose);
-    let output = match analyze_files_with_progress(
-        &options.input_files,
-        &options.libraries,
-        options.curve,
-        |progress| stdout_writer.write_message(progress_message(progress)),
-    ) {
+    let output = match progress::report(options.verbose, |reporter| {
+        analyze_files_with_progress(
+            &options.input_files,
+            &options.libraries,
+            options.curve,
+            |progress| reporter.stage(progress),
+        )
+    }) {
         Ok(output) => output,
         Err(ApplicationError::Progress(error)) => return Err(ReportWriteError::Status(error)),
         Err(error) => {
@@ -99,7 +102,7 @@ fn run(options: Cli) -> Result<ExitCode, ReportWriteError> {
         output.files.user_inputs().clone(),
         options.allow_list.into_iter().collect(),
     );
-    let mut stdout_writer = stdout_writer.add_filter(policy.clone());
+    let mut stdout_writer = CachedStdoutWriter::new(options.verbose).add_filter(policy.clone());
     stdout_writer.write_reports(&output.diagnostics, &output.files)?;
 
     // Render completed function and template analyses in input order.
@@ -138,15 +141,4 @@ fn run(options: Cli) -> Result<ExitCode, ReportWriteError> {
             ExitCode::FAILURE
         }
     })
-}
-
-fn progress_message(progress: AnalysisProgress<'_>) -> String {
-    match progress {
-        AnalysisProgress::LoadingSources => "loading input files".into(),
-        AnalysisProgress::LiftingSources => "resolving source definitions".into(),
-        AnalysisProgress::IndexingProject => "preparing analysis".into(),
-        AnalysisProgress::AnalyzingFunction(name) => format!("analyzing function '{name}'"),
-        AnalysisProgress::AnalyzingTemplate(name) => format!("analyzing template '{name}'"),
-        AnalysisProgress::AnalyzingBus(name) => format!("analyzing bus '{name}'"),
-    }
 }
