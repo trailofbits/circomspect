@@ -97,6 +97,62 @@ fn assert_opaque(
 }
 
 #[test]
+fn unchanged_constraint_snapshots_are_shared_across_node_and_edge_transfers() {
+    let (hir, cfg, field) = fixture(SOURCE);
+    let input = seeded_state(&hir, &cfg, &field);
+    let analysis = ForwardAnalysis::new(&hir, &field);
+    for id in cfg.nodes() {
+        let node = cfg.node(*id).unwrap();
+        if let CfgNodeKind::Constraint(_) = &node.kind {
+            continue;
+        }
+        let output = match node.apply(&analysis, &input) {
+            TransferOutcome::Known(output)
+            | TransferOutcome::Opaque { provisional: output, .. } => output,
+        };
+        assert!(std::ptr::eq(input.constraints().unwrap().0, output.constraints().unwrap().0));
+        assert_eq!(input.constraints(), output.constraints());
+        assert_eq!(input.must_equations(), output.must_equations());
+    }
+    for id in cfg.edges() {
+        let edge = cfg.edge(*id).unwrap().payload;
+        let TransferOutcome::Known(output) = edge.apply(&analysis, &input) else {
+            panic!("known edge transfer")
+        };
+        assert!(std::ptr::eq(input.constraints().unwrap().0, output.constraints().unwrap().0));
+        assert_eq!(input, output);
+    }
+}
+
+#[test]
+fn constraint_transfers_preserve_shared_input_and_sibling_snapshots() {
+    let (hir, cfg, field) = fixture(SOURCE);
+    let analysis = ForwardAnalysis::new(&hir, &field);
+    let input = ForwardState::boundary();
+    let sibling = input.clone();
+    let snapshot = input.clone();
+    for id in cfg.nodes() {
+        let node = cfg.node(*id).unwrap();
+        let CfgNodeKind::Constraint(_) = &node.kind else { continue };
+        let TransferOutcome::Known(output) = node.apply(&analysis, &input) else {
+            panic!("known constraint transfer")
+        };
+        let expected_sites = BTreeSet::from([*id]);
+        assert_eq!(output.constraints(), Some((&expected_sites, &expected_sites)));
+        let MustEquations::Reached { equations, blockers } = output.must_equations() else {
+            panic!("reached equations")
+        };
+        let mut sites = blockers.clone();
+        for origins in equations.values() {
+            sites.extend(origins);
+        }
+        assert_eq!(sites, expected_sites);
+        assert_eq!(input, snapshot);
+        assert_eq!(sibling, snapshot);
+    }
+}
+
+#[test]
 fn failed_deferred_shape_preserves_every_fact_except_target_symbolic_value() {
     let (hir, cfg, field) = fixture(SOURCE);
     let node = cfg
@@ -381,20 +437,23 @@ fn constraint_join_reports_each_set_and_provenance_change() {
     let additional_constraint_site = NodeId::new(999);
     let right_states = [
         altered(&left, |facts| {
-            facts.constraints.may_constraints.insert(additional_constraint_site);
+            Arc::make_mut(&mut facts.constraints)
+                .may_constraints
+                .insert(additional_constraint_site);
         }),
         altered(&left, |facts| {
-            facts.constraints.must_constraints.clear();
+            Arc::make_mut(&mut facts.constraints).must_constraints.clear();
         }),
         altered(&left, |facts| {
-            facts.constraints.must_touches.clear();
+            Arc::make_mut(&mut facts.constraints).must_touches.clear();
         }),
         altered(&left, |facts| {
-            facts.constraints.must_fixed.clear();
+            Arc::make_mut(&mut facts.constraints).must_fixed.clear();
         }),
         altered(&left, |facts| {
+            let constraints = Arc::make_mut(&mut facts.constraints);
             let MustEquations::Reached { equations, .. } =
-                Arc::make_mut(&mut facts.constraints.must_equations)
+                Arc::make_mut(&mut constraints.must_equations)
             else {
                 panic!("reached")
             };
@@ -404,11 +463,13 @@ fn constraint_join_reports_each_set_and_provenance_change() {
             }
         }),
         altered(&left, |facts| {
-            Arc::make_mut(&mut facts.constraints.must_equations).block(additional_constraint_site);
+            let constraints = Arc::make_mut(&mut facts.constraints);
+            Arc::make_mut(&mut constraints.must_equations).block(additional_constraint_site);
         }),
         altered(&left, |facts| {
+            let constraints = Arc::make_mut(&mut facts.constraints);
             let MustEquations::Reached { equations, .. } =
-                Arc::make_mut(&mut facts.constraints.must_equations)
+                Arc::make_mut(&mut constraints.must_equations)
             else {
                 panic!("reached")
             };
@@ -422,6 +483,55 @@ fn constraint_join_reports_each_set_and_provenance_change() {
 }
 
 #[test]
+fn shared_constraint_joins_match_the_unshared_product() {
+    let (hir, cfg, field) = fixture(SOURCE);
+    let initial = seeded_state(&hir, &cfg, &field);
+    let mut states = vec![initial.clone()];
+    states.push(altered(&initial, |facts| {
+        facts.constraints = Arc::new(facts.constraints.as_ref().clone());
+    }));
+    for site in [NodeId::new(998), NodeId::new(999)] {
+        states.push(altered(&initial, |facts| {
+            let constraints = Arc::make_mut(&mut facts.constraints);
+            constraints.may_constraints.insert(site);
+            constraints.must_constraints.clear();
+            constraints.must_touches.clear();
+            constraints.must_fixed.clear();
+        }));
+        states.push(altered(&initial, |facts| {
+            let constraints = Arc::make_mut(&mut facts.constraints);
+            let MustEquations::Reached { equations, blockers } =
+                Arc::make_mut(&mut constraints.must_equations)
+            else {
+                panic!("reached equations")
+            };
+            for origins in equations.values_mut() {
+                origins.insert(site);
+            }
+            blockers.insert(site);
+        }));
+    }
+    let snapshots = states.clone();
+    for left in &states {
+        let ForwardState::Reached(left) = left else { panic!("reached fixture") };
+        for right in &states {
+            let ForwardState::Reached(right) = right else { panic!("reached fixture") };
+            let mut expected = left.constraints.as_ref().clone();
+            let expected_changed = expected.join_assign(&right.constraints);
+            let mut actual = left.clone();
+            assert_eq!(actual.join_constraints(right), expected_changed);
+            assert_eq!(*actual.constraints, expected);
+            if right.constraints.leq(&left.constraints) {
+                assert!(Arc::ptr_eq(&actual.constraints, &left.constraints));
+            } else if left.constraints.leq(&right.constraints) {
+                assert!(Arc::ptr_eq(&actual.constraints, &right.constraints));
+            }
+        }
+    }
+    assert_eq!(states, snapshots);
+}
+
+#[test]
 fn join_keeps_later_changes_and_distinguishes_bottom_from_reached_empty() {
     let (hir, cfg, field) = fixture(SOURCE);
     let left = seeded_state(&hir, &cfg, &field);
@@ -430,18 +540,20 @@ fn join_keeps_later_changes_and_distinguishes_bottom_from_reached_empty() {
         facts.locals.symbolic = Arc::new(MustSymbolicVariables::reachable_empty());
         facts.locals.dependencies.clear();
         facts.locals.degrees.clear();
-        facts.constraints.may_constraints.insert(NodeId::new(999));
-        facts.constraints.must_constraints.clear();
-        facts.constraints.must_touches.clear();
-        facts.constraints.must_fixed.clear();
-        facts.constraints.must_equations = Arc::new(MustEquations::reachable_empty());
+        let constraints = Arc::make_mut(&mut facts.constraints);
+        constraints.may_constraints.insert(NodeId::new(999));
+        constraints.must_constraints.clear();
+        constraints.must_touches.clear();
+        constraints.must_fixed.clear();
+        constraints.must_equations = Arc::new(MustEquations::reachable_empty());
     });
     let expected = altered(&right, |facts| {
         let MustEquations::Reached { blockers, .. } = left.must_equations() else {
             panic!("reached equations")
         };
+        let constraints = Arc::make_mut(&mut facts.constraints);
         for blocker in blockers {
-            Arc::make_mut(&mut facts.constraints.must_equations).block(*blocker);
+            Arc::make_mut(&mut constraints.must_equations).block(*blocker);
         }
     });
     assert_join(&left, &right, &expected);

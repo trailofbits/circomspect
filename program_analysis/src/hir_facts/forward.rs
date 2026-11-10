@@ -34,7 +34,7 @@ pub enum ForwardState {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReachedFacts {
     locals: LocalValueFacts,
-    constraints: ConstraintFacts,
+    constraints: Arc<ConstraintFacts>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -61,17 +61,35 @@ struct ConstraintFacts {
 
 impl ReachedFacts {
     fn boundary() -> Self {
-        Self { locals: LocalValueFacts::boundary(), constraints: ConstraintFacts::boundary() }
+        Self {
+            locals: LocalValueFacts::boundary(),
+            constraints: Arc::new(ConstraintFacts::boundary()),
+        }
     }
 
     fn leq(&self, other: &Self) -> bool {
-        self.locals.leq(&other.locals) && self.constraints.leq(&other.constraints)
+        self.locals.leq(&other.locals)
+            && (Arc::ptr_eq(&self.constraints, &other.constraints)
+                || self.constraints.leq(&other.constraints))
     }
 
     fn join_assign(&mut self, other: &Self) -> bool {
         let locals_changed = self.locals.join_assign(&other.locals);
-        let constraints_changed = self.constraints.join_assign(&other.constraints);
+        let constraints_changed = self.join_constraints(other);
         locals_changed || constraints_changed
+    }
+
+    fn join_constraints(&mut self, other: &Self) -> bool {
+        if Arc::ptr_eq(&self.constraints, &other.constraints)
+            || other.constraints.leq(&self.constraints)
+        {
+            return false;
+        }
+        if self.constraints.leq(&other.constraints) {
+            self.constraints = other.constraints.clone();
+            return true;
+        }
+        Arc::make_mut(&mut self.constraints).join_assign(&other.constraints)
     }
 }
 
@@ -1039,7 +1057,9 @@ impl ForwardState {
             CfgNodeKind::Update { target, operator } => {
                 facts.locals.apply_update(analysis, target, *operator)
             }
-            CfgNodeKind::Constraint(_) => facts.constraints.apply(analysis, node, &facts.locals),
+            CfgNodeKind::Constraint(_) => {
+                Arc::make_mut(&mut facts.constraints).apply(analysis, node, &facts.locals)
+            }
             CfgNodeKind::Opaque(reason) | CfgNodeKind::OpaqueEquality { reason, .. } => {
                 Err(format!("{reason:?}"))
             }
@@ -1611,14 +1631,8 @@ mod tests {
         let mut states = vec![ForwardState::Unreachable, ForwardState::boundary()];
         for equations in fixed {
             let mut state = ForwardState::boundary();
-            let ForwardState::Reached(ReachedFacts {
-                constraints: ConstraintFacts { must_fixed, .. },
-                ..
-            }) = &mut state
-            else {
-                panic!("reached")
-            };
-            *must_fixed = equations;
+            let ForwardState::Reached(facts) = &mut state else { panic!("reached") };
+            Arc::make_mut(&mut facts.constraints).must_fixed = equations;
             states.push(state);
         }
         for a in &states {
@@ -1687,13 +1701,13 @@ mod tests {
                         dependencies: BTreeMap::new(),
                         degrees: BTreeMap::new(),
                     },
-                    constraints: ConstraintFacts {
+                    constraints: Arc::new(ConstraintFacts {
                         may_constraints,
                         must_constraints,
                         must_touches: BTreeSet::new(),
                         must_fixed: BTreeSet::new(),
                         must_equations: Arc::new(MustEquations::reachable_empty()),
-                    },
+                    }),
                 }));
             }
         }

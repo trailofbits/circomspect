@@ -8,6 +8,7 @@
     clippy::unwrap_used
 )]
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use circomspect_abstract_interpretation::graph::{IndexedGraph, NodeId};
@@ -74,6 +75,43 @@ fn shared_lattices_preserve_join_laws_and_prior_snapshots() {
     Arc::make_mut(&mut branch).insert(3);
     assert_eq!(*original, set(1));
     assert_eq!(*branch, set(11));
+}
+
+#[test]
+fn shared_lattice_order_does_not_traverse_an_identical_snapshot() {
+    static COMPARISONS: AtomicUsize = AtomicUsize::new(0);
+
+    #[derive(Clone, Eq, PartialEq)]
+    struct CountedSet(Set<u8>);
+
+    impl Lattice for CountedSet {
+        fn bottom() -> Self {
+            Self(Set::bottom())
+        }
+
+        fn leq(&self, other: &Self) -> bool {
+            COMPARISONS.fetch_add(1, Ordering::Relaxed);
+            self.0.leq(&other.0)
+        }
+
+        fn join_assign(&mut self, other: &Self) -> bool {
+            self.0.join_assign(&other.0)
+        }
+    }
+
+    let original = Arc::new(CountedSet(set(1)));
+    let mut branch = original.clone();
+    assert!(branch.leq(&original));
+    assert!(!branch.join_assign(&original));
+    assert_eq!(COMPARISONS.load(Ordering::Relaxed), 0);
+
+    let distinct = Arc::new(CountedSet(set(2)));
+    assert!(!branch.leq(&distinct));
+    assert_eq!(COMPARISONS.load(Ordering::Relaxed), 1);
+    assert!(branch.join_assign(&distinct));
+    assert_eq!(branch.0, set(3));
+    assert_eq!(original.0, set(1));
+    assert_eq!(distinct.0, set(2));
 }
 
 #[derive(Clone)]

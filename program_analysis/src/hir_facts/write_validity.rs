@@ -1,6 +1,10 @@
 //! Body witness-write multiplicity over the checked, specialized CFG.
 
+#[cfg(test)]
+mod snapshot_tests;
+
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use abstract_interpretation::graph::{EdgeId, FlowGraph, NodeId};
 use abstract_interpretation::lattice::Lattice;
@@ -169,36 +173,36 @@ struct WriteAnalysis {
 }
 
 impl DataflowAnalysis<DefinitionCfg> for WriteAnalysis {
-    type State = WriteState;
+    type State = Arc<WriteState>;
     type Reason = String;
 
     fn boundary(&self, _: NodeId) -> Self::State {
-        WriteState::empty()
+        Arc::new(WriteState::empty())
     }
 }
 
-impl Transfer<WriteAnalysis, WriteState, String> for CfgNode {
+impl Transfer<WriteAnalysis, Arc<WriteState>, String> for CfgNode {
     fn apply(
         &self,
         analysis: &WriteAnalysis,
-        input: &WriteState,
-    ) -> TransferOutcome<WriteState, String> {
+        input: &Arc<WriteState>,
+    ) -> TransferOutcome<Arc<WriteState>, String> {
         let mut state = input.clone();
         if let Some(key) = analysis.exact_writes.get(&self.id) {
-            state.write(key);
+            Arc::make_mut(&mut state).write(key);
         }
         TransferOutcome::Known(state)
     }
 }
 
-impl Transfer<WriteAnalysis, WriteState, String> for CfgEdge {
+impl Transfer<WriteAnalysis, Arc<WriteState>, String> for CfgEdge {
     fn apply(
         &self,
         analysis: &WriteAnalysis,
-        input: &WriteState,
-    ) -> TransferOutcome<WriteState, String> {
+        input: &Arc<WriteState>,
+    ) -> TransferOutcome<Arc<WriteState>, String> {
         if analysis.pruned.contains(&self.id) {
-            TransferOutcome::Known(WriteState::Unreachable)
+            TransferOutcome::Known(Arc::new(WriteState::Unreachable))
         } else {
             TransferOutcome::Known(input.clone())
         }
@@ -220,7 +224,7 @@ impl UncertainWrite {
     }
 }
 
-type WriteFacts = CertifiedFacts<NodeId, WriteState>;
+type WriteFacts = CertifiedFacts<NodeId, Arc<WriteState>>;
 
 pub(super) struct BodyWriteSolve {
     facts: WriteFacts,
@@ -271,7 +275,7 @@ impl AnalysisFacts<'_> {
         let mut blockers = BTreeSet::new();
         for site in self.cfg.nodes() {
             let Some(WriteState::Reached { may_written, must_written, .. }) =
-                solved.facts.get(site).and_then(|item| item.input.as_ref())
+                solved.facts.get(site).and_then(|item| item.input.as_deref())
             else {
                 continue;
             };
@@ -433,7 +437,7 @@ impl AnalysisFacts<'_> {
         uncertain: &[UncertainWrite],
     ) -> Fact<BodyWriteStatus> {
         let Some(WriteState::Reached { may_repeat, must_repeat, .. }) =
-            facts.get(&self.cfg.exit()).and_then(|item| item.output.as_ref())
+            facts.get(&self.cfg.exit()).and_then(|item| item.output.as_deref())
         else {
             return Fact::blocked(BTreeSet::from([FactBlocker::MissingExit]));
         };
@@ -528,7 +532,7 @@ impl AnalysisFacts<'_> {
 
     fn no_repeated_writes_in(&self, solved: &BodyWriteSolve) -> Fact<()> {
         let Some(WriteState::Reached { may_repeat, must_repeat_any, .. }) =
-            solved.facts.get(&self.cfg.exit()).and_then(|item| item.output.as_ref())
+            solved.facts.get(&self.cfg.exit()).and_then(|item| item.output.as_deref())
         else {
             return Fact::blocked(BTreeSet::from([FactBlocker::MissingExit]));
         };
@@ -562,7 +566,7 @@ impl AnalysisFacts<'_> {
                 continue;
             }
             let Some(WriteState::Reached { may_written, .. }) =
-                facts.get(site).and_then(|item| item.input.as_ref())
+                facts.get(site).and_then(|item| item.input.as_deref())
             else {
                 continue;
             };
@@ -580,7 +584,7 @@ impl AnalysisFacts<'_> {
             Err(blockers) => return Fact::blocked(blockers.clone()),
         };
         let Some(WriteState::Reached { must_repeat_any, .. }) =
-            solved.facts.get(&self.cfg.exit()).and_then(|item| item.output.as_ref())
+            solved.facts.get(&self.cfg.exit()).and_then(|item| item.output.as_deref())
         else {
             return Fact::blocked(BTreeSet::from([FactBlocker::MissingExit]));
         };
@@ -770,7 +774,7 @@ mod tests {
     use crate::hir_facts::{analyze_with_scalar_parameters, AccessKey, BodyWriteStatus, FieldContext};
     use crate::interprocedural::ProjectAnalysis;
 
-    fn with_fixture(
+    pub(super) fn with_fixture(
         source: &str,
         work: impl FnOnce(&LiftedProject, &DefinitionCfg, &FieldContext),
     ) {

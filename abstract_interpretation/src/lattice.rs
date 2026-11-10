@@ -25,7 +25,7 @@ impl<T: Lattice> Lattice for Arc<T> {
     }
 
     fn leq(&self, other: &Self) -> bool {
-        self.as_ref().leq(other.as_ref())
+        Self::ptr_eq(self, other) || self.as_ref().leq(other.as_ref())
     }
 
     fn join_assign(&mut self, other: &Self) -> bool {
