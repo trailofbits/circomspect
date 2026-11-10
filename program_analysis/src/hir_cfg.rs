@@ -266,6 +266,16 @@ struct LoopPlan {
     origin: Origin,
 }
 
+#[derive(Clone, Copy)]
+enum AssignmentKind<'a> {
+    Variable(AssignmentOperator),
+    Deferred(AssignmentOperator),
+    Component,
+    Witness,
+    Constraint,
+    Opaque { operator: AssignmentOperator, reason: &'a IncompleteReason },
+}
+
 enum SpecializedAssignment {
     Variable,
     Witness,
@@ -515,53 +525,44 @@ impl Builder<'_> {
         origin: Origin,
     ) -> Result<Tails, BuildError> {
         match effect {
-            Effect::Declaration { symbol, .. } => {
-                let declared =
-                    self.hir.symbol(*symbol).ok_or(BuildError::MissingSymbol(*symbol))?;
-                self.local_symbols.insert(*symbol);
-                let mut tails = tails;
-                for &dimension in &declared.dimensions {
-                    tails = self.evaluate(tails, dimension, origin)?;
-                }
-                Ok(self.append(tails, CfgNodeKind::Declaration { symbol: *symbol }, origin))
-            }
-            Effect::VariableAssignment { .. }
-            | Effect::DeferredVariableAssignment { .. }
-            | Effect::ComponentInstantiation { .. }
-            | Effect::WitnessAssignment { .. }
-            | Effect::ConstraintAssignment { .. }
-            | Effect::OpaqueAssignment { .. } => self.assignment_effect(tails, effect, origin),
-            Effect::EqualityConstraint { left, right, .. } => {
-                let tails = self.evaluate(tails, *left, origin)?;
-                let tails = self.evaluate(tails, *right, origin)?;
-                Ok(self.append(
+            Effect::Declaration { symbol, .. } => self.declaration_effect(tails, *symbol, origin),
+            Effect::VariableAssignment { target, value, operator, .. } => self.assignment_effect(
+                tails,
+                target,
+                *value,
+                AssignmentKind::Variable(*operator),
+                origin,
+            ),
+            Effect::DeferredVariableAssignment { target, value, operator, .. } => self
+                .assignment_effect(
                     tails,
-                    CfgNodeKind::Constraint(Constraint::Equality { left: *left, right: *right }),
-                    Origin { expression: Some(*left), ..origin },
-                ))
+                    target,
+                    *value,
+                    AssignmentKind::Deferred(*operator),
+                    origin,
+                ),
+            Effect::ComponentInstantiation { target, value, .. } => {
+                self.assignment_effect(tails, target, *value, AssignmentKind::Component, origin)
+            }
+            Effect::WitnessAssignment { target, value, .. } => {
+                self.assignment_effect(tails, target, *value, AssignmentKind::Witness, origin)
+            }
+            Effect::ConstraintAssignment { target, value, .. } => {
+                self.assignment_effect(tails, target, *value, AssignmentKind::Constraint, origin)
+            }
+            Effect::OpaqueAssignment { target, value, operator, reason, .. } => self
+                .assignment_effect(
+                    tails,
+                    target,
+                    *value,
+                    AssignmentKind::Opaque { operator: *operator, reason },
+                    origin,
+                ),
+            Effect::EqualityConstraint { left, right, .. } => {
+                self.equality_effect(tails, *left, *right, None, origin)
             }
             Effect::OpaqueEquality { left, right, reason, .. } => {
-                let tails = self.evaluate(tails, *left, origin)?;
-                let tails = self.evaluate(tails, *right, origin)?;
-                if self.specialized_equality(*left, *right, reason) {
-                    return Ok(self.append(
-                        tails,
-                        CfgNodeKind::Constraint(Constraint::Equality {
-                            left: *left,
-                            right: *right,
-                        }),
-                        Origin { expression: Some(*left), ..origin },
-                    ));
-                }
-                Ok(self.append(
-                    tails,
-                    CfgNodeKind::OpaqueEquality {
-                        left: *left,
-                        right: *right,
-                        reason: reason.clone(),
-                    },
-                    Origin { expression: Some(*left), ..origin },
-                ))
+                self.equality_effect(tails, *left, *right, Some(reason), origin)
             }
             Effect::Update { target, operator, .. } => {
                 let tails = self.evaluate_target(tails, target, origin)?;
@@ -615,88 +616,93 @@ impl Builder<'_> {
         }
     }
 
+    fn declaration_effect(
+        &mut self,
+        tails: Tails,
+        symbol: SymbolId,
+        origin: Origin,
+    ) -> Result<Tails, BuildError> {
+        let declared = self.hir.symbol(symbol).ok_or(BuildError::MissingSymbol(symbol))?;
+        self.local_symbols.insert(symbol);
+        let mut tails = tails;
+        for &dimension in &declared.dimensions {
+            tails = self.evaluate(tails, dimension, origin)?;
+        }
+        Ok(self.append(tails, CfgNodeKind::Declaration { symbol }, origin))
+    }
+
     fn assignment_effect(
         &mut self,
         tails: Tails,
-        effect: &Effect,
+        target: &AccessPath,
+        value: ExprId,
+        kind: AssignmentKind<'_>,
         origin: Origin,
     ) -> Result<Tails, BuildError> {
-        let (target, value) = match effect {
-            Effect::VariableAssignment { target, value, .. }
-            | Effect::DeferredVariableAssignment { target, value, .. }
-            | Effect::ComponentInstantiation { target, value, .. }
-            | Effect::WitnessAssignment { target, value, .. }
-            | Effect::ConstraintAssignment { target, value, .. }
-            | Effect::OpaqueAssignment { target, value, .. } => (target, *value),
-            _ => return Err(BuildError::UnexpectedEffect),
-        };
         let tails = self.evaluate_target(tails, target, origin)?;
         let tails = self.evaluate(tails, value, origin)?;
         let effect_origin = Origin { expression: Some(value), ..origin };
-        match effect {
-            Effect::VariableAssignment { operator, .. } => Ok(self.append(
-                tails,
-                CfgNodeKind::Assignment { target: target.clone(), value, operator: *operator },
-                effect_origin,
-            )),
-            Effect::ComponentInstantiation { .. } => Ok(self.append(
-                tails,
-                CfgNodeKind::Instantiate { target: target.clone(), value },
-                effect_origin,
-            )),
-            Effect::WitnessAssignment { .. } => Ok(self.append(
-                tails,
-                CfgNodeKind::Witness { target: target.clone(), value },
-                effect_origin,
-            )),
-            Effect::ConstraintAssignment { .. } => {
-                Ok(self.append_constraint_assignment(tails, target, value, effect_origin))
+        let node = match kind {
+            AssignmentKind::Variable(operator) => {
+                CfgNodeKind::Assignment { target: target.clone(), value, operator }
             }
-            Effect::DeferredVariableAssignment { operator, .. } => Ok(self.append(
-                tails,
-                CfgNodeKind::DeferredAssignment {
-                    target: target.clone(),
-                    value,
-                    operator: *operator,
-                },
-                origin,
-            )),
-            Effect::OpaqueAssignment { .. } => {
-                self.opaque_assignment_effect(tails, effect, effect_origin)
+            AssignmentKind::Deferred(operator) => {
+                return Ok(self.append(
+                    tails,
+                    CfgNodeKind::DeferredAssignment { target: target.clone(), value, operator },
+                    origin,
+                ));
             }
-            _ => Err(BuildError::UnexpectedEffect),
-        }
+            AssignmentKind::Component => CfgNodeKind::Instantiate { target: target.clone(), value },
+            AssignmentKind::Witness => CfgNodeKind::Witness { target: target.clone(), value },
+            AssignmentKind::Constraint => {
+                return Ok(self.append_constraint_assignment(tails, target, value, effect_origin));
+            }
+            AssignmentKind::Opaque { operator, reason } => {
+                match self.specialized_assignment(target, value, operator, reason) {
+                    Some(SpecializedAssignment::Variable) => {
+                        CfgNodeKind::Assignment { target: target.clone(), value, operator }
+                    }
+                    Some(SpecializedAssignment::Witness) => {
+                        CfgNodeKind::Witness { target: target.clone(), value }
+                    }
+                    Some(SpecializedAssignment::Constraint) => {
+                        return Ok(self.append_constraint_assignment(
+                            tails,
+                            target,
+                            value,
+                            effect_origin,
+                        ));
+                    }
+                    None => CfgNodeKind::OpaqueAssignment {
+                        target: target.clone(),
+                        value,
+                        operator,
+                        reason: reason.clone(),
+                    },
+                }
+            }
+        };
+        Ok(self.append(tails, node, effect_origin))
     }
 
-    fn opaque_assignment_effect(
+    fn equality_effect(
         &mut self,
         tails: Tails,
-        effect: &Effect,
+        left: ExprId,
+        right: ExprId,
+        reason: Option<&IncompleteReason>,
         origin: Origin,
     ) -> Result<Tails, BuildError> {
-        let Effect::OpaqueAssignment { target, value, operator, reason, .. } = effect else {
-            return Err(BuildError::UnexpectedEffect);
-        };
-        let kind = match self.specialized_assignment(effect) {
-            Some(SpecializedAssignment::Variable) => CfgNodeKind::Assignment {
-                target: target.clone(),
-                value: *value,
-                operator: *operator,
-            },
-            Some(SpecializedAssignment::Witness) => {
-                CfgNodeKind::Witness { target: target.clone(), value: *value }
+        let tails = self.evaluate(tails, left, origin)?;
+        let tails = self.evaluate(tails, right, origin)?;
+        let kind = match reason {
+            Some(reason) if !self.specialized_equality(left, right, reason) => {
+                CfgNodeKind::OpaqueEquality { left, right, reason: reason.clone() }
             }
-            Some(SpecializedAssignment::Constraint) => {
-                return Ok(self.append_constraint_assignment(tails, target, *value, origin));
-            }
-            None => CfgNodeKind::OpaqueAssignment {
-                target: target.clone(),
-                value: *value,
-                operator: *operator,
-                reason: reason.clone(),
-            },
+            Some(_) | None => CfgNodeKind::Constraint(Constraint::Equality { left, right }),
         };
-        Ok(self.append(tails, kind, origin))
+        Ok(self.append(tails, kind, Origin { expression: Some(left), ..origin }))
     }
 
     fn append_constraint_assignment(
@@ -715,17 +721,20 @@ impl Builder<'_> {
         )
     }
 
-    fn specialized_assignment(&self, effect: &Effect) -> Option<SpecializedAssignment> {
-        let Effect::OpaqueAssignment { target, value, operator, reason, .. } = effect else {
-            return None;
-        };
+    fn specialized_assignment(
+        &self,
+        target: &AccessPath,
+        value: ExprId,
+        operator: AssignmentOperator,
+        reason: &IncompleteReason,
+    ) -> Option<SpecializedAssignment> {
         if *reason != IncompleteReason::UnknownType {
             return None;
         }
         let exact_call =
-            target.steps.is_empty() && self.calls.and_then(|calls| calls.value(*value)).is_some();
+            target.steps.is_empty() && self.calls.and_then(|calls| calls.value(value)).is_some();
         let target_shape = self.scalar_access_proof(target);
-        let value_shape = self.scalar_source_shape(*value);
+        let value_shape = self.scalar_source_shape(value);
         let seeded_scalar = match (target_shape, value_shape) {
             (Some(ScalarShapeProof::Seeded), Some(_))
             | (Some(_), Some(ScalarShapeProof::Seeded)) => true,
@@ -740,7 +749,7 @@ impl Builder<'_> {
         if symbol.rank != 0 || !symbol.shape_checked {
             return None;
         }
-        Self::specialized_kind(symbol.kind, *operator)
+        Self::specialized_kind(symbol.kind, operator)
     }
 
     fn scalar_source_shape(&self, expression: ExprId) -> Option<ScalarShapeProof> {

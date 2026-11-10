@@ -222,6 +222,24 @@ fn deferred_variable_write_remains_targeted_and_cannot_generate_a_constraint() {
         CfgNodeKind::Branch { guard: ControlGuard::DeferredScalar, .. }
     )));
     assert!(kinds.iter().all(|kind| !matches!(kind, CfgNodeKind::Constraint(_))));
+    for id in cfg.nodes() {
+        let node = cfg.node(*id).unwrap();
+        let CfgNodeKind::DeferredAssignment { target, value, operator } = &node.kind else {
+            continue;
+        };
+        let origin = node.origin.unwrap();
+        assert_eq!(origin.expression, None);
+        let block = project.hir.block(origin.block).unwrap();
+        assert_eq!(
+            block.effects[origin.effect_index],
+            Effect::DeferredVariableAssignment {
+                target: target.clone(),
+                value: *value,
+                operator: *operator,
+                span: origin.span,
+            }
+        );
+    }
 }
 
 #[test]
