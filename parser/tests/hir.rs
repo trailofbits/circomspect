@@ -812,6 +812,57 @@ fn mixed_component_target_preserves_independent_deferred_variable_write() {
 }
 
 #[test]
+fn component_retarget_preserves_invalidated_assignment_operators_and_spans() {
+    let prefix = concat!(
+        "template A(){signal output out;} template B(){signal output out;}",
+        "template Check(n){component c[2];c[0]=A();var t;t=n;t+=n;t-=c[0].out;",
+        "signal w;w<--c[0].out;signal q;q<==c[0].out;var independent=1;"
+    );
+    let source = format!("{prefix}}}");
+    let before = lift(&[("before_retarget.circom", &source)], Version::new(2, 2, 3));
+    let deferred: Vec<_> = effect_for(&before, "Check")
+        .iter()
+        .filter_map(|effect| {
+            let Effect::DeferredVariableAssignment { operator, span, .. } = effect else {
+                return None;
+            };
+            Some((*operator, &source[span.start()..span.end()]))
+        })
+        .collect();
+    assert_eq!(deferred, [(AssignmentOperator::Assign, "t=n"), (AssignmentOperator::Add, "t+=n")]);
+
+    let source = format!("{prefix}c[1]=B();}}");
+    let after = lift(&[("after_retarget.circom", &source)], Version::new(2, 2, 3));
+    assert!(after.diagnostics.iter().any(|item| item.code == SemanticCode::InvalidAssignment));
+    let mut invalidated = Vec::new();
+    let mut independent = false;
+    for effect in effect_for(&after, "Check") {
+        if let Effect::VariableAssignment { target, .. } = effect {
+            independent |= after.hir.symbol(target.root).unwrap().name == "independent";
+        }
+        let Effect::OpaqueAssignment { target, operator, reason, span, .. } = effect else {
+            continue;
+        };
+        let name = &after.hir.symbol(target.root).unwrap().name;
+        if name == "t" || name == "w" || name == "q" {
+            assert_eq!(*reason, IncompleteReason::InvalidAssignment);
+            invalidated.push((*operator, &source[span.start()..span.end()]));
+        }
+    }
+    assert_eq!(
+        invalidated,
+        [
+            (AssignmentOperator::Assign, "t=n"),
+            (AssignmentOperator::Add, "t+=n"),
+            (AssignmentOperator::Subtract, "t-=c[0].out"),
+            (AssignmentOperator::Witness, "w<--c[0].out"),
+            (AssignmentOperator::Constraint, "q<==c[0].out"),
+        ]
+    );
+    assert!(independent);
+}
+
+#[test]
 fn component_array_keeps_one_template_with_distinct_parameters() {
     let source = concat!(
         "template Child(n){signal output out; out <== n;} ",

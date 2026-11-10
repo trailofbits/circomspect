@@ -127,92 +127,64 @@ impl Lifter<'_> {
         expressions: &BTreeSet<ExprId>,
     ) -> Option<Effect> {
         let reason = IncompleteReason::InvalidAssignment;
-        match effect {
-            Effect::DeferredVariableAssignment { target, value, operator, span } => {
-                if !Self::path_depends_on_invalid(target, symbols, expressions)
-                    && !expressions.contains(value)
-                {
-                    return None;
-                }
-                Some(Effect::OpaqueAssignment {
-                    target: target.clone(),
-                    value: *value,
-                    operator: *operator,
-                    reason,
-                    span: *span,
-                })
+        let (target, value, operator, span) = match effect {
+            Effect::VariableAssignment { target, value, operator, span }
+            | Effect::DeferredVariableAssignment { target, value, operator, span } => {
+                (target, *value, *operator, *span)
             }
-            Effect::VariableAssignment { target, value, span, .. }
-            | Effect::ComponentInstantiation { target, value, span }
-            | Effect::WitnessAssignment { target, value, span }
-            | Effect::ConstraintAssignment { target, value, span } => {
-                if !Self::path_depends_on_invalid(target, symbols, expressions)
-                    && !expressions.contains(value)
-                {
-                    return None;
-                }
-                let operator = match effect {
-                    Effect::WitnessAssignment { .. } => AssignmentOperator::Witness,
-                    Effect::ConstraintAssignment { .. } => AssignmentOperator::Constraint,
-                    Effect::VariableAssignment { operator, .. } => *operator,
-                    Effect::ComponentInstantiation { .. } => AssignmentOperator::Assign,
-                    Effect::Declaration { .. }
-                    | Effect::DeferredVariableAssignment { .. }
-                    | Effect::OpaqueAssignment { .. }
-                    | Effect::EqualityConstraint { .. }
-                    | Effect::OpaqueEquality { .. }
-                    | Effect::Update { .. }
-                    | Effect::If { .. }
-                    | Effect::While { .. }
-                    | Effect::For { .. }
-                    | Effect::Return { .. }
-                    | Effect::Assert { .. }
-                    | Effect::DeferredAssert { .. }
-                    | Effect::Log { .. }
-                    | Effect::AnonymousComponent { .. }
-                    | Effect::Block(_)
-                    | Effect::Opaque { .. } => return None,
-                };
-                Some(Effect::OpaqueAssignment {
-                    target: target.clone(),
-                    value: *value,
-                    operator,
-                    reason,
-                    span: *span,
-                })
+            Effect::ComponentInstantiation { target, value, span } => {
+                (target, *value, AssignmentOperator::Assign, *span)
+            }
+            Effect::WitnessAssignment { target, value, span } => {
+                (target, *value, AssignmentOperator::Witness, *span)
+            }
+            Effect::ConstraintAssignment { target, value, span } => {
+                (target, *value, AssignmentOperator::Constraint, *span)
             }
             Effect::EqualityConstraint { left, right, span } => {
-                if expressions.contains(left) || expressions.contains(right) {
+                return if expressions.contains(left) || expressions.contains(right) {
                     Some(Effect::OpaqueEquality { left: *left, right: *right, reason, span: *span })
                 } else {
                     None
-                }
+                };
             }
             Effect::Update { target, span, .. } => {
-                Self::path_depends_on_invalid(target, symbols, expressions)
-                    .then_some(Effect::Opaque { reason, span: *span })
+                return Self::path_depends_on_invalid(target, symbols, expressions)
+                    .then_some(Effect::Opaque { reason, span: *span });
             }
             Effect::If { condition, span, .. }
             | Effect::While { condition, span, .. }
             | Effect::For { condition, span, .. }
             | Effect::Assert { condition, span }
             | Effect::DeferredAssert { condition, span } => {
-                expressions.contains(condition).then_some(Effect::Opaque { reason, span: *span })
+                return expressions
+                    .contains(condition)
+                    .then_some(Effect::Opaque { reason, span: *span });
             }
             Effect::Return { value, span }
             | Effect::AnonymousComponent { expression: value, span } => {
-                expressions.contains(value).then_some(Effect::Opaque { reason, span: *span })
+                return expressions
+                    .contains(value)
+                    .then_some(Effect::Opaque { reason, span: *span });
             }
-            Effect::Log { values, span } => values
-                .iter()
-                .any(|id| expressions.contains(id))
-                .then_some(Effect::Opaque { reason, span: *span }),
+            Effect::Log { values, span } => {
+                return values
+                    .iter()
+                    .any(|id| expressions.contains(id))
+                    .then_some(Effect::Opaque { reason, span: *span });
+            }
             Effect::Declaration { .. }
             | Effect::OpaqueAssignment { .. }
             | Effect::OpaqueEquality { .. }
             | Effect::Block(_)
-            | Effect::Opaque { .. } => None,
+            | Effect::Opaque { .. } => return None,
+        };
+        if !Self::path_depends_on_invalid(target, symbols, expressions)
+            && !expressions.contains(&value)
+        {
+            return None;
         }
+        Some(Effect::OpaqueAssignment { target: target.clone(), value, operator, reason, span })
     }
 
     pub(super) fn lift_statement(&mut self, statement: &Statement) -> Vec<Effect> {
