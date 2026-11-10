@@ -13,6 +13,19 @@ use circomspect_program_structure::report_code::ReportCode;
 use circomspect_program_structure::sarif_conversion::{SarifError, ToSarif};
 
 #[test]
+fn actionable_help_is_preserved_in_sarif() {
+    let mut report =
+        Report::info("Additional context is needed.".into(), ReportCode::IncompleteCoverage);
+    report.add_note("Help: analyze a caller that supplies parameter `n`.".into());
+    let sarif = report.to_sarif(&FileLibrary::new()).unwrap();
+    assert_eq!(sarif.level.as_ref().and_then(|level| level.as_str()), Some("note"));
+    assert_eq!(
+        sarif.message.text.as_deref(),
+        Some("Additional context is needed.\nHelp: analyze a caller that supplies parameter `n`.")
+    );
+}
+
+#[test]
 fn relative_source_path_has_an_actionable_serialization_error() {
     let mut files = FileLibrary::new();
     let file = files.add_file("relative.circom".into(), "x".into(), true);

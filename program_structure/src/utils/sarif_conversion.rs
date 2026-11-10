@@ -78,7 +78,12 @@ impl ToSarif for Report {
         let level = self.category().to_level();
         let rule_id = self.id();
         trace!("building message");
-        let message = sarif::MessageBuilder::default().text(self.message()).build()?;
+        let mut text = self.message().clone();
+        for note in self.notes() {
+            text.push('\n');
+            text.push_str(note);
+        }
+        let message = sarif::MessageBuilder::default().text(text).build()?;
         trace!("building locations");
         let mut locations = self
             .primary()
