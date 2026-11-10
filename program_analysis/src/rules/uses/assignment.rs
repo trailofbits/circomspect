@@ -166,17 +166,11 @@ fn unused_internal_signal(
         return;
     }
     let incidence = context.template_internal_signal_incidence(target);
-    match incidence.certified() {
-        Some(Incidence::Zero) => report_unused_value(context, node, target, result),
-        Some(Incidence::May | Incidence::Must) => {}
-        None => {
-            summary_abstain(
-                context,
-                RuleKind::UnusedVariableValue,
-                target.span,
-                &incidence,
-                result,
-            );
+    match incidence.as_result() {
+        Ok(Incidence::Zero) => report_unused_value(context, node, target, result),
+        Ok(Incidence::May | Incidence::Must) => {}
+        Err(blockers) => {
+            summary_abstain(context, RuleKind::UnusedVariableValue, target.span, blockers, result);
         }
     }
 }

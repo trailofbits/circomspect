@@ -117,8 +117,8 @@ fn inspect(
         }
     };
     let incidence = context.template_internal_signal_incidence(path);
-    match incidence.certified() {
-        Some(Incidence::Zero) => {
+    match incidence.as_result() {
+        Ok(Incidence::Zero) => {
             if emitted.insert(key.clone()) {
                 result.add_finding(context.finding(
                     RuleKind::UnconstrainedSignal,
@@ -128,15 +128,14 @@ fn inspect(
                 ));
             }
         }
-        Some(Incidence::Must) => {}
-        Some(Incidence::May) => result.add_abstention(context.abstention(
+        Ok(Incidence::Must) => {}
+        Ok(Incidence::May) => result.add_abstention(context.abstention(
             RuleKind::UnconstrainedSignal,
             path.span,
             AbstentionReason::UnsupportedConstruct,
         )),
-        None => {
-            let reason =
-                AbstentionReason::Summary(incidence.unavailable().cloned().unwrap_or_default());
+        Err(blockers) => {
+            let reason = AbstentionReason::Summary(blockers.clone());
             result.add_abstention(context.abstention(
                 RuleKind::UnconstrainedSignal,
                 path.span,

@@ -51,6 +51,14 @@ impl<T> SummaryFact<T> {
         }
     }
 
+    /// Borrow either the certified value, including absence, or all blockers.
+    pub(crate) fn as_result(&self) -> Result<&T, &BTreeSet<SummaryBlocker>> {
+        match &self.0 {
+            SummaryState::Certified(value) => Ok(value),
+            SummaryState::Unavailable(blockers) => Err(blockers),
+        }
+    }
+
     #[must_use]
     pub fn certified(&self) -> Option<&T> {
         match &self.0 {
@@ -499,7 +507,7 @@ impl FunctionQueries<'_, '_> {
 
 enum ReturnPathStep {
     Continue,
-    Returned,
+    Closed,
     Unreturned,
 }
 
@@ -514,7 +522,7 @@ fn return_path_step(
     current: NodeId,
 ) -> ReturnPathStep {
     match facts.reachable_node(current).certified() {
-        Some(false) => return ReturnPathStep::Returned,
+        Some(false) => return ReturnPathStep::Closed,
         None => return ReturnPathStep::Unreturned,
         Some(true) => {}
     }
@@ -523,7 +531,7 @@ fn return_path_step(
     }
     let Some(node) = cfg.node(current) else { return ReturnPathStep::Unreturned };
     if let CfgNodeKind::Return(_) = node.kind {
-        ReturnPathStep::Returned
+        ReturnPathStep::Closed
     } else {
         ReturnPathStep::Continue
     }
@@ -554,7 +562,7 @@ fn unreturned_path_from(
             }
             ReturnTraversal::Enter(node) => {
                 match step(node) {
-                    ReturnPathStep::Returned => continue,
+                    ReturnPathStep::Closed => continue,
                     ReturnPathStep::Unreturned => return true,
                     ReturnPathStep::Continue => {}
                 }
@@ -693,7 +701,7 @@ mod tests {
         }
         assert!(!unreturned_path_from(NodeId::new(0), &successors, |node| {
             if node == terminal {
-                ReturnPathStep::Returned
+                ReturnPathStep::Closed
             } else {
                 ReturnPathStep::Continue
             }

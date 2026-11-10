@@ -9,7 +9,7 @@ use std::collections::BTreeSet;
 use parser::hir::DefinitionRef;
 use parser::frontend::Span;
 
-use crate::interprocedural::{SummaryBlocker, SummaryFact};
+use crate::interprocedural::SummaryBlocker;
 use crate::rules::{AbstentionReason, Rule, RuleContext, RuleKind, RuleResult};
 
 pub const KINDS: &[RuleKind] = &[
@@ -106,18 +106,16 @@ fn summary_reason(blocker: SummaryBlocker) -> AbstentionReason {
     }
 }
 
-fn summary_abstain<T>(
+fn summary_abstain(
     context: &RuleContext<'_, '_, '_>,
     kind: RuleKind,
     span: Span,
-    fact: &SummaryFact<T>,
+    blockers: &BTreeSet<SummaryBlocker>,
     result: &mut RuleResult,
 ) {
-    if let Some(blockers) = fact.unavailable() {
-        result.add_abstention(context.abstention(
-            kind,
-            span,
-            AbstentionReason::Summary(blockers.clone()),
-        ));
-    }
+    result.add_abstention(context.abstention(
+        kind,
+        span,
+        AbstentionReason::Summary(blockers.clone()),
+    ));
 }

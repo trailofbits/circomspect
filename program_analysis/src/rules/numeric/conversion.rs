@@ -109,14 +109,17 @@ fn inspect_called_output(
             return;
         }
     };
-    let Some(applied) = applied.certified() else {
-        let reason = AbstentionReason::Summary(applied.unavailable().cloned().unwrap_or_default());
-        result.add_abstention(context.abstention(
-            RuleKind::NonstrictBinaryConversion,
-            site.span,
-            reason,
-        ));
-        return;
+    let applied = match applied.as_result() {
+        Ok(applied) => applied,
+        Err(blockers) => {
+            let reason = AbstentionReason::Summary(blockers.clone());
+            result.add_abstention(context.abstention(
+                RuleKind::NonstrictBinaryConversion,
+                site.span,
+                reason,
+            ));
+            return;
+        }
     };
     for input in inputs {
         let summary = context.component_bit_ambiguity_ports(applied, input.id, output.id);
@@ -183,14 +186,17 @@ fn emit_or_abstain(
     output: &Port,
     summary: &SummaryFact<BitAmbiguityOutcome>,
 ) -> CandidateDecision {
-    let Some(outcome) = summary.certified() else {
-        let reason = AbstentionReason::Summary(summary.unavailable().cloned().unwrap_or_default());
-        result.add_abstention(context.abstention(
-            RuleKind::NonstrictBinaryConversion,
-            output.span,
-            reason,
-        ));
-        return CandidateDecision::Continue;
+    let outcome = match summary.as_result() {
+        Ok(outcome) => outcome,
+        Err(blockers) => {
+            let reason = AbstentionReason::Summary(blockers.clone());
+            result.add_abstention(context.abstention(
+                RuleKind::NonstrictBinaryConversion,
+                output.span,
+                reason,
+            ));
+            return CandidateDecision::Continue;
+        }
     };
     match outcome {
         BitAmbiguityOutcome::Proved(proof) => {
@@ -211,14 +217,17 @@ fn emit_called_or_abstain(
     candidate: &CalledConversion<'_>,
     summary: &SummaryFact<ComponentBitAmbiguityOutcome>,
 ) -> CandidateDecision {
-    let Some(outcome) = summary.certified() else {
-        let reason = AbstentionReason::Summary(summary.unavailable().cloned().unwrap_or_default());
-        result.add_abstention(context.abstention(
-            RuleKind::NonstrictBinaryConversion,
-            candidate.span,
-            reason,
-        ));
-        return CandidateDecision::Continue;
+    let outcome = match summary.as_result() {
+        Ok(outcome) => outcome,
+        Err(blockers) => {
+            let reason = AbstentionReason::Summary(blockers.clone());
+            result.add_abstention(context.abstention(
+                RuleKind::NonstrictBinaryConversion,
+                candidate.span,
+                reason,
+            ));
+            return CandidateDecision::Continue;
+        }
     };
     match outcome {
         ComponentBitAmbiguityOutcome::Proved(proof) => {

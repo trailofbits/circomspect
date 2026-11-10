@@ -15,28 +15,32 @@ impl Rule for Comparator {
     fn run(&self, context: &RuleContext<'_, '_, '_>) -> RuleResult {
         let mut result = RuleResult::default();
         let outputs = context.exact_component_outputs();
-        let Some(outputs) = outputs.certified() else {
-            if let Ok(header) = context.validated_header() {
-                result.add_abstention(context.abstention(
-                    self.kind(),
-                    header.name_span(),
-                    AbstentionReason::Summary(outputs.unavailable().cloned().unwrap_or_default()),
-                ));
+        let outputs = match outputs.as_result() {
+            Ok(outputs) => outputs,
+            Err(blockers) => {
+                if let Ok(header) = context.validated_header() {
+                    result.add_abstention(context.abstention(
+                        self.kind(),
+                        header.name_span(),
+                        AbstentionReason::Summary(blockers.clone()),
+                    ));
+                }
+                return result;
             }
-            return result;
         };
         let mut emitted = BTreeSet::new();
         for output in outputs {
             let violations = context.component_comparator_range(output.applied_port());
-            let Some(violations) = violations.certified() else {
-                result.add_abstention(context.abstention(
-                    self.kind(),
-                    output.source_span(),
-                    AbstentionReason::Summary(
-                        violations.unavailable().cloned().unwrap_or_default(),
-                    ),
-                ));
-                continue;
+            let violations = match violations.as_result() {
+                Ok(violations) => violations,
+                Err(blockers) => {
+                    result.add_abstention(context.abstention(
+                        self.kind(),
+                        output.source_span(),
+                        AbstentionReason::Summary(blockers.clone()),
+                    ));
+                    continue;
+                }
             };
             for violation in violations {
                 if emitted.insert(violation.input().clone()) {

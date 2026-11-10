@@ -96,10 +96,13 @@ fn inspect_output(
     };
     let Some(indices) = key.local_array_indices() else { return };
     let Some(summary) = context.template_port(port, &indices) else { return };
-    let Some(summary) = summary.certified() else {
-        let reason = AbstentionReason::Summary(summary.unavailable().cloned().unwrap_or_default());
-        result.add_abstention(context.abstention(RuleKind::SignalAssignment, span, reason));
-        return;
+    let summary = match summary.as_result() {
+        Ok(summary) => summary,
+        Err(blockers) => {
+            let reason = AbstentionReason::Summary(blockers.clone());
+            result.add_abstention(context.abstention(RuleKind::SignalAssignment, span, reason));
+            return;
+        }
     };
     match summary.incidence() {
         Incidence::Zero => report_zero(context, key, span, result, emitted),

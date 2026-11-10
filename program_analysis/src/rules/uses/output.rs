@@ -17,11 +17,14 @@ pub(super) fn unused_outputs(context: &RuleContext<'_, '_, '_>, result: &mut Rul
 fn closed_outputs(context: &RuleContext<'_, '_, '_>, result: &mut RuleResult) {
     let kind = RuleKind::UnusedOutputSignal;
     let closure = context.closed_project_output_uses();
-    let Some(uses) = closure.certified() else {
-        if let Some(span) = definition_span(context) {
-            summary_abstain(context, kind, span, &closure, result);
+    let uses = match closure.as_result() {
+        Ok(uses) => uses,
+        Err(blockers) => {
+            if let Some(span) = definition_span(context) {
+                summary_abstain(context, kind, span, blockers, result);
+            }
+            return;
         }
-        return;
     };
     let mut reported: Vec<&ProjectOutputUse> = Vec::new();
     for use_proof in uses {
@@ -42,11 +45,14 @@ fn closed_outputs(context: &RuleContext<'_, '_, '_>, result: &mut RuleResult) {
 fn symbolic_outputs(context: &RuleContext<'_, '_, '_>, result: &mut RuleResult) {
     let kind = RuleKind::UnusedOutputSignal;
     let outputs = context.exact_component_outputs();
-    let Some(outputs) = outputs.certified() else {
-        if let Some(span) = definition_span(context) {
-            summary_abstain(context, kind, span, &outputs, result);
+    let outputs = match outputs.as_result() {
+        Ok(outputs) => outputs,
+        Err(blockers) => {
+            if let Some(span) = definition_span(context) {
+                summary_abstain(context, kind, span, blockers, result);
+            }
+            return;
         }
-        return;
     };
     for output in outputs {
         result.add_abstention(context.abstention(

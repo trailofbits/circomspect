@@ -71,10 +71,13 @@ fn inspect_equation(
     let Some(origin) = node.origin else { return };
     let kind = RuleKind::RedundantWitnessAssignment;
     let equation = equations.for_witness(node.id);
-    let Some(equation) = equation.certified() else {
-        let reason = AbstentionReason::Summary(equation.unavailable().cloned().unwrap_or_default());
-        result.add_abstention(context.abstention(kind, origin.span, reason));
-        return;
+    let equation = match equation.as_result() {
+        Ok(equation) => equation,
+        Err(blockers) => {
+            let reason = AbstentionReason::Summary(blockers.clone());
+            result.add_abstention(context.abstention(kind, origin.span, reason));
+            return;
+        }
     };
     let Some(equation) = equation else { return };
     let CfgNodeKind::Witness { target, .. } = &node.kind else { return };
