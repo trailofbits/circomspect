@@ -114,14 +114,23 @@ impl ExecutionQueries<'_, '_> {
             return true;
         }
         for id in facts.cfg().nodes() {
+            let Some(node) = facts.cfg().node(*id) else { continue };
+            let fails = self.node_definitely_fails(&node.kind, facts);
+            let bus = if let CfgNodeKind::Declaration { symbol } = &node.kind {
+                self.parameterless_bus(*symbol)
+            } else {
+                None
+            };
+            if !fails && bus.is_none() {
+                continue;
+            }
             if facts.reachable_node(*id).certified() != Some(&true) {
                 continue;
             }
-            let Some(node) = facts.cfg().node(*id) else { continue };
-            if let CfgNodeKind::Declaration { symbol } = &node.kind {
-                self.collect_bus(*symbol, buses);
+            if let Some(bus) = bus {
+                buses.push(bus);
             }
-            if self.node_definitely_fails(&node.kind, facts) {
+            if fails {
                 return true;
             }
         }
@@ -212,11 +221,8 @@ impl ExecutionQueries<'_, '_> {
 
     fn required_local_failure(&self, facts: &AnalysisFacts<'_>) -> bool {
         for id in facts.cfg().nodes() {
-            if !required_node(facts, *id) {
-                continue;
-            }
             let Some(node) = facts.cfg().node(*id) else { continue };
-            if self.node_definitely_fails(&node.kind, facts) {
+            if self.node_definitely_fails(&node.kind, facts) && required_node(facts, *id) {
                 return true;
             }
         }
@@ -286,13 +292,14 @@ impl ExecutionQueries<'_, '_> {
         value.as_bigint().is_zero()
     }
 
-    fn collect_bus(&self, symbol: SymbolId, buses: &mut Vec<BusId>) {
-        let Some(symbol) = self.analysis.hir().symbol(symbol) else { return };
-        let Some(BusTarget::Bus(id)) = &symbol.bus_type else { return };
-        let Some(bus) = self.analysis.hir().bus(*id) else { return };
-        if bus.parameters.is_empty() && symbol.bus_arguments.is_empty() {
-            buses.push(*id);
+    fn parameterless_bus(&self, symbol: SymbolId) -> Option<BusId> {
+        let symbol = self.analysis.hir().symbol(symbol)?;
+        let Some(BusTarget::Bus(id)) = &symbol.bus_type else { return None };
+        let bus = self.analysis.hir().bus(*id)?;
+        if !bus.parameters.is_empty() || !symbol.bus_arguments.is_empty() {
+            return None;
         }
+        Some(*id)
     }
 }
 
@@ -584,3 +591,6 @@ pub(super) fn is_proven_nonzero(value: Option<&Range>, field: &FieldContext) -> 
         Some(Range::Canonical | Range::Unreachable) | None => false,
     }
 }
+
+#[cfg(test)]
+mod tests;
