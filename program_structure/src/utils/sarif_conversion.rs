@@ -36,7 +36,6 @@ impl ToSarif for ReportCollection {
 
     fn to_sarif(&self, files: &FileLibrary) -> Result<Self::Sarif, Self::Error> {
         debug!("converting report collection to Sarif-format");
-        // Build reporting descriptors.
         trace!("building reporting descriptors");
         let rules = self
             .iter()
@@ -48,8 +47,6 @@ impl ToSarif for ReportCollection {
             })
             .collect::<Result<Vec<_>, _>>()
             .map_err(SarifError::from)?;
-        // Build tool.
-        //
         // TODO: Should include primary package version.
         trace!("building tool");
         let driver = sarif::ToolComponentBuilder::default()
@@ -59,7 +56,6 @@ impl ToSarif for ReportCollection {
             .rules(rules)
             .build()?;
         let tool = sarif::ToolBuilder::default().driver(driver).build()?;
-        // Build run.
         trace!("building run");
         let results =
             self.iter().map(|report| report.to_sarif(files)).collect::<SarifResult<Vec<_>>>()?;
@@ -68,7 +64,6 @@ impl ToSarif for ReportCollection {
             .results(results)
             .column_kind(serde_json::Value::String("unicodeCodePoints".into()))
             .build()?;
-        // Build main object.
         trace!("building main Sarif object");
         let sarif = sarif::SarifBuilder::default().runs(vec![run]).version(SARIF_VERSION).build();
         sarif.map_err(SarifError::from)
@@ -82,10 +77,8 @@ impl ToSarif for Report {
     fn to_sarif(&self, files: &FileLibrary) -> SarifResult<sarif::Result> {
         let level = self.category().to_level();
         let rule_id = self.id();
-        // Build message.
         trace!("building message");
         let message = sarif::MessageBuilder::default().text(self.message()).build()?;
-        // Build primary and secondary locations.
         trace!("building locations");
         let mut locations = self
             .primary()
@@ -100,12 +93,10 @@ impl ToSarif for Report {
         for (id, location) in (0_i64..).zip(locations.iter_mut().chain(&mut related_locations)) {
             location.id = Some(id);
         }
-        // Build reporting descriptor reference.
         let rule = sarif::ReportingDescriptorReferenceBuilder::default()
             .id(&rule_id)
             .build()
             .map_err(SarifError::from)?;
-        // Build result.
         trace!("building result");
         sarif::ResultBuilder::default()
             .level(level)
@@ -124,11 +115,9 @@ impl ToSarif for ReportLabel {
     type Error = SarifError;
 
     fn to_sarif(&self, files: &FileLibrary) -> SarifResult<sarif::Location> {
-        // Build artifact location.
         trace!("building artifact location");
         let file_uri = self.file_id.to_uri(files)?;
         let artifact_location = sarif::ArtifactLocationBuilder::default().uri(file_uri).build()?;
-        // Build region.
         trace!("building region");
         if self.range.start > self.range.end {
             return Err(SarifError::UnknownLocation(self.file_id, self.range.clone()));
@@ -159,16 +148,13 @@ impl ToSarif for ReportLabel {
                     .map_err(|_| SarifError::UnknownLocation(self.file_id, self.range.clone()))?,
             )
             .build()?;
-        // Build physical location.
         trace!("building physical location");
         let physical_location = sarif::PhysicalLocationBuilder::default()
             .artifact_location(artifact_location)
             .region(region)
             .build()?;
-        // Build message.
         trace!("building message");
         let message = sarif::MessageBuilder::default().text(self.message.clone()).build()?;
-        // Build location.
         trace!("building location");
         sarif::LocationBuilder::default()
             .physical_location(physical_location)

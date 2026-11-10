@@ -17,6 +17,7 @@ first diagnostic code. Every fixture is a complete program with its own
 `main`; the compiler sees its original context. An additional semantic-error
 control proves that a type error is not mistaken for a grammar rejection.
 The compiler is a development oracle and is not used by Circomspect at runtime.
+The preparation script builds it with Rust 1.98.1, separately from the analyzer toolchain.
 
 | Feature | Since | Accepted and rejected cases |
 | --- | --- | --- |
