@@ -168,8 +168,8 @@ impl<'session, 'hir: 'session> FunctionQueries<'session, 'hir> {
         for site in self.analysis.graph().calls_from(owner) {
             self.record_certified_call(site, facts, &mut results);
         }
-        for expression in self.analysis.hir().expressions() {
-            self.record_certified_access(expression.id, facts, &mut results);
+        for expression in facts.cfg().evaluated_expressions() {
+            self.record_certified_access(expression, facts, &mut results);
         }
         results
     }
@@ -389,6 +389,54 @@ mod tests {
         fs::write(&path, source).unwrap();
         let loaded = load_sources(&[path], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
         lift_project(&loaded)
+    }
+
+    #[test]
+    fn local_scalar_evidence_matches_whole_project_reference() {
+        let lifted = fixture(
+            "function F(n){return n;} template Other(){var unrelated=7;var copy=unrelated;} \
+             template T(){var x=F(7);var y=x;for(var i=0;i<2;i++){var z=i;} \
+             if(0){var dead=x;}signal output out;out<==y;}",
+            "local-scalar-evidence",
+        );
+        let analysis = ProjectAnalysis::build(&lifted, Curve::Bn254).unwrap();
+        let definition = lifted.hir.definition("T").unwrap();
+        let context = analysis.contexts().symbolic_context_for(definition).unwrap();
+        let queries = analysis.functions();
+        let parameters = std::collections::BTreeMap::new();
+        for budget in [Some(0), Some(20), None] {
+            let facts = queries.refined_facts(&context, &parameters, budget).unwrap();
+            let actual = queries.certified_scalar_evidence(&context, &facts);
+            let mut expected = crate::scalar_evidence::ScalarExpressionEvidence::empty(
+                &lifted.hir,
+                &context,
+                Curve::Bn254,
+            );
+            for site in analysis.graph().calls_from(CallOwner::Definition(definition)) {
+                queries.record_certified_call(site, &facts, &mut expected);
+            }
+            for expression in lifted.hir.expressions() {
+                queries.record_certified_access(expression.id, &facts, &mut expected);
+            }
+            assert_eq!(actual, expected, "budget {budget:?}");
+            if budget.is_none() {
+                let access = lifted
+                    .hir
+                    .expressions()
+                    .iter()
+                    .find(|expression| {
+                        let parser::hir::ExprKind::Access(path) = &expression.kind else {
+                            return false;
+                        };
+                        lifted.hir.symbol(path.root).unwrap().name == "y"
+                    })
+                    .unwrap();
+                assert_eq!(
+                    actual.value(access.id),
+                    Some(&analysis.field_context().canonical(7.into()))
+                );
+            }
+        }
     }
 
     #[test]

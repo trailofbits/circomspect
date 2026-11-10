@@ -168,6 +168,10 @@ impl DefinitionCfg {
         self.evaluations.get(&expression).map_or(&[], Vec::as_slice)
     }
 
+    pub(crate) fn evaluated_expressions(&self) -> impl Iterator<Item = ExprId> + '_ {
+        self.evaluations.keys().copied()
+    }
+
     pub(crate) fn path_exists(
         &self,
         start: NodeId,
