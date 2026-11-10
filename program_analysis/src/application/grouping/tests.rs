@@ -8,7 +8,7 @@ use program_structure::report_code::ReportCode;
 use program_structure::utils::constants::Curve;
 use program_structure::utils::sarif_conversion::ToSarif;
 
-use crate::application::grouping::ReportGroups;
+use crate::application::grouping::{ContextDisplay, ReportGroups};
 use crate::application::{AnalysisObserver, AnalysisProgress, ApplicationError};
 use crate::hir_cfg::build_cfg;
 use crate::interprocedural::{
@@ -16,7 +16,7 @@ use crate::interprocedural::{
 };
 use crate::rules::{RenderError, SourceMap};
 
-fn loaded(source: &str) -> LoadedProject {
+pub(super) fn loaded(source: &str) -> LoadedProject {
     let id = SourceId::new(0);
     let policy = VersionPolicy::new(Version::new(2, 2, 3));
     LoadedProject {
@@ -86,7 +86,7 @@ fn sixteen_call_findings_become_one_terminal_and_sarif_result() {
     let sources = SourceMap::from_loaded(&loaded, &[SourceId::new(0)]).unwrap();
     let mut groups = ReportGroups::default();
     for context in &contexts {
-        groups.insert(report("Unused e2"), context);
+        groups.insert(report("Unused e2"), ContextDisplay::for_evidence(&project.hir, context));
     }
     let reports = groups.finish(&sources, &mut |_: AnalysisProgress<'_>| Ok(())).unwrap();
     assert_eq!(reports.len(), 1);
@@ -113,8 +113,8 @@ fn single_context_and_source_reports_preserve_existing_rendering() {
         let original = report("Unused value");
         let mut groups = ReportGroups::default();
         if let Some(evidence) = evidence {
-            groups.insert(original.clone(), evidence);
-            groups.insert(original.clone(), evidence);
+            groups.insert(original.clone(), ContextDisplay::for_evidence(&project.hir, evidence));
+            groups.insert(original.clone(), ContextDisplay::for_evidence(&project.hir, evidence));
         } else {
             groups.insert_source(original.clone());
             groups.insert_source(original.clone());
@@ -127,7 +127,7 @@ fn single_context_and_source_reports_preserve_existing_rendering() {
         let expected = evidence.map_or(0, |evidence| evidence.call_path().len());
         assert_eq!(reports[0].secondary().len(), expected);
         for label in reports[0].secondary() {
-            assert_eq!(label.message, "Reached through this call.");
+            assert!(label.message.starts_with("Observed for Issue(n = "));
         }
     }
 }
@@ -175,7 +175,7 @@ const NESTED: &str = "function Issue(n){return n;}function Left(n){return Issue(
     var c=Left(3);var unaffected=Right(4);}";
 
 #[test]
-fn shared_and_crossing_paths_keep_context_steps_without_unaffected_calls() {
+fn distinct_argument_qualifications_omit_ancestor_and_unaffected_calls() {
     let loaded = loaded(NESTED);
     let project = lift_project(&loaded);
     let provider = ProjectAnalysis::build(&project, Curve::Bn254).unwrap();
@@ -187,26 +187,27 @@ fn shared_and_crossing_paths_keep_context_steps_without_unaffected_calls() {
     assert_eq!(contexts.len(), 4);
     let mut groups = ReportGroups::default();
     for context in &contexts[..3] {
-        groups.insert(report("Unused value"), context);
+        groups.insert(report("Unused value"), ContextDisplay::for_evidence(&project.hir, context));
     }
     let reports = groups.finish(&sources, &mut |_: AnalysisProgress<'_>| Ok(())).unwrap();
     let labels = reports[0].secondary();
-    assert_eq!(labels.len(), 5);
+    assert_eq!(labels.len(), 3);
     let left_call = contexts[0].call_path()[1].span().start();
     let label = labels.iter().find(|label| label.range.start == left_call).unwrap();
-    assert_eq!(label.message, "Observed in analyzed context 1 (call 2), context 3 (call 2).",);
+    assert!(label.message.contains("Issue(n = 1)") || label.message.contains("Issue(n = 3)"));
     let unaffected = contexts[3].call_path()[0].span().start();
     assert!(labels.iter().all(|label| label.range.start != unaffected));
     let mut reversed = ReportGroups::default();
     for context in contexts[..3].iter().rev() {
-        reversed.insert(report("Unused value"), context);
+        reversed
+            .insert(report("Unused value"), ContextDisplay::for_evidence(&project.hir, context));
     }
     let reversed = reversed.finish(&sources, &mut |_: AnalysisProgress<'_>| Ok(())).unwrap();
     assert_eq!(reports[0].to_diagnostic(true), reversed[0].to_diagnostic(true));
 }
 
 #[test]
-fn repeated_recursive_call_span_keeps_each_step_in_each_context() {
+fn recursive_call_site_retains_distinct_active_arguments() {
     let loaded = loaded(
         "template Rec(n){if(n){component child=Rec(n-1);}}\
         template Root(){component child=Rec(3);}",
@@ -218,23 +219,21 @@ fn repeated_recursive_call_span_keeps_each_step_in_each_context() {
     let mut groups = ReportGroups::default();
     for _ in 0..3 {
         parent = child_contexts(&provider, &parent).remove(0);
-        groups.insert(report("Unused value"), &parent);
+        groups.insert(report("Unused value"), ContextDisplay::for_evidence(&project.hir, &parent));
     }
     assert_eq!(parent.call_path().len(), 3);
     assert_eq!(parent.call_path()[1], parent.call_path()[2]);
     let reports = groups.finish(&sources, &mut |_: AnalysisProgress<'_>| Ok(())).unwrap();
     let labels = reports[0].secondary();
-    assert_eq!(labels.len(), 2);
+    assert_eq!(labels.len(), 3);
     let recursive = parent.call_path()[1].span().start();
     let label = labels.iter().find(|label| label.range.start == recursive).unwrap();
-    assert_eq!(
-        label.message,
-        "Observed in analyzed context 1 (call 2), context 1 (call 3), context 2 (call 2)."
-    );
+    assert!(label.message.starts_with("Observed for Rec(n = "));
+    assert_eq!(labels.iter().filter(|label| label.range.start == recursive).count(), 2);
 }
 
 #[test]
-fn same_source_call_path_retains_distinct_argument_contexts() {
+fn same_call_site_retains_distinct_field_argument_values() {
     let loaded = loaded("function Issue(n){return n;}template Root(){var value=Issue(-1);}");
     let project = lift_project(&loaded);
     let sources = SourceMap::from_loaded(&loaded, &[SourceId::new(0)]).unwrap();
@@ -247,19 +246,16 @@ fn same_source_call_path_retains_distinct_argument_contexts() {
     assert_eq!(contexts[0].call_path()[0].span(), contexts[1].call_path()[0].span());
     let mut groups = ReportGroups::default();
     for context in &contexts {
-        groups.insert(report("Unused value"), context);
+        groups.insert(report("Unused value"), ContextDisplay::for_evidence(&project.hir, context));
     }
     let reports = groups.finish(&sources, &mut |_: AnalysisProgress<'_>| Ok(())).unwrap();
     assert_eq!(reports.len(), 1);
-    assert_eq!(reports[0].secondary().len(), 1);
-    assert_eq!(
-        reports[0].secondary()[0].message,
-        "Observed in analyzed context 1 (call 1), context 2 (call 1)."
-    );
+    assert_eq!(reports[0].secondary().len(), 2);
+    assert_ne!(reports[0].secondary()[0].message, reports[0].secondary()[1].message);
 }
 
 #[test]
-fn unknown_or_invalid_call_path_sources_are_errors() {
+fn unknown_or_invalid_qualification_sources_are_errors() {
     let loaded = loaded("function Issue(n){return n;}template Root(){var value=Issue(1);}");
     let project = lift_project(&loaded);
     let provider = ProjectAnalysis::build(&project, Curve::Bn254).unwrap();
@@ -271,7 +267,7 @@ fn unknown_or_invalid_call_path_sources_are_errors() {
     for invalid in [&missing, &shortened] {
         let sources = SourceMap::from_loaded(invalid, &[]).unwrap();
         let mut groups = ReportGroups::default();
-        groups.insert(report("Unused value"), &context);
+        groups.insert(report("Unused value"), ContextDisplay::for_evidence(&project.hir, &context));
         let ApplicationError::Render(error) =
             groups.finish(&sources, &mut |_: AnalysisProgress<'_>| Ok(())).err().unwrap()
         else {
@@ -344,7 +340,7 @@ fn reports_are_published_early_once_in_first_seen_order() {
 }
 
 #[test]
-fn later_contexts_add_one_complete_continuation_without_repeating_the_finding() {
+fn later_arguments_publish_complete_qualifications_without_repeating_the_finding() {
     let loaded = loaded(NESTED);
     let project = lift_project(&loaded);
     let provider = ProjectAnalysis::build(&project, Curve::Bn254).unwrap();
@@ -358,7 +354,7 @@ fn later_contexts_add_one_complete_continuation_without_repeating_the_finding() 
     let mut groups = ReportGroups::default();
     let mut observed = RecordedReports::default();
     for context in &contexts {
-        groups.insert(finding.clone(), context);
+        groups.insert(finding.clone(), ContextDisplay::for_evidence(&project.hir, context));
         groups.emit_new(&sources, &mut observed).unwrap();
         assert_eq!(observed.reports.len(), 1);
         assert!(observed.continuations.is_empty());
@@ -368,12 +364,12 @@ fn later_contexts_add_one_complete_continuation_without_repeating_the_finding() 
     assert_eq!(observed.continuations.len(), 1);
     let (complete, paths) = &observed.continuations[0];
     assert_eq!(complete.to_diagnostic(true), final_reports[0].to_diagnostic(true));
+    assert_eq!(paths.len(), 4);
     assert_eq!(paths, &complete.secondary()[1..]);
-    assert_eq!(paths.len(), 6);
-    assert_eq!(observed.reports[0].secondary().len(), 3);
+    assert_eq!(observed.reports[0].secondary().len(), 2);
     let mut quiet = ReportGroups::default();
     for context in &contexts {
-        quiet.insert(finding.clone(), context);
+        quiet.insert(finding.clone(), ContextDisplay::for_evidence(&project.hir, context));
     }
     let quiet = quiet.finish(&sources, &mut |_: AnalysisProgress<'_>| Ok(())).unwrap();
     let final_sarif = final_reports[0].to_sarif(sources.files()).unwrap();
@@ -448,9 +444,9 @@ fn final_continuation_propagates_output_failure() {
     let sources = SourceMap::from_loaded(&loaded, &[]).unwrap();
     let contexts = child_contexts(&provider, &root_context(&provider));
     let mut groups = ReportGroups::default();
-    groups.insert(report("Unused value"), &contexts[0]);
+    groups.insert(report("Unused value"), ContextDisplay::for_evidence(&project.hir, &contexts[0]));
     groups.emit_new(&sources, &mut RecordedReports::default()).unwrap();
-    groups.insert(report("Unused value"), &contexts[1]);
+    groups.insert(report("Unused value"), ContextDisplay::for_evidence(&project.hir, &contexts[1]));
     let error = groups.finish(&sources, &mut RejectedOutput).err().unwrap();
     let ApplicationError::Output(ReportWriteError::Status(error)) = error else {
         panic!("continuation failure must retain its type")
@@ -470,8 +466,84 @@ fn additional_empty_context_does_not_emit_an_empty_continuation() {
     let mut observed = RecordedReports::default();
     groups.insert_source(report("Unused value"));
     groups.emit_new(&sources, &mut observed).unwrap();
-    groups.insert(report("Unused value"), &context);
+    groups.insert(report("Unused value"), ContextDisplay::for_evidence(&project.hir, &context));
     groups.finish(&sources, &mut observed).unwrap();
     assert_eq!(observed.reports.len(), 1);
     assert!(observed.continuations.is_empty());
+}
+
+#[test]
+fn same_arguments_through_different_ancestors_do_not_repeat_qualifications() {
+    let loaded = loaded(
+        "function Issue(n){return n;}function Left(n){return Issue(n);}\
+        function Right(n){return Issue(n);}template Root(){var a=Left(1);var b=Right(1);}",
+    );
+    let project = lift_project(&loaded);
+    let provider = ProjectAnalysis::build(&project, Curve::Bn254).unwrap();
+    let sources = SourceMap::from_loaded(&loaded, &[]).unwrap();
+    let mut contexts = Vec::new();
+    for parent in child_contexts(&provider, &root_context(&provider)) {
+        contexts.extend(child_contexts(&provider, &parent));
+    }
+    assert_eq!(contexts[0].context(), contexts[1].context());
+    assert_ne!(contexts[0].call_path(), contexts[1].call_path());
+    let mut groups = ReportGroups::default();
+    let mut observer = RecordedReports::default();
+    for context in contexts.iter().rev() {
+        groups.insert(report("Unused value"), ContextDisplay::for_evidence(&project.hir, context));
+        groups.emit_new(&sources, &mut observer).unwrap();
+    }
+    groups.insert(report("Unused value"), ContextDisplay::Omit);
+    let reports = groups.finish(&sources, &mut observer).unwrap();
+    assert_eq!(observer.reports.len(), 1);
+    assert!(observer.continuations.is_empty());
+    assert_eq!(reports[0].secondary().len(), 1);
+    assert_eq!(reports[0].secondary()[0].message, "Observed for Issue(n = 1).");
+    assert_eq!(
+        reports[0].secondary()[0].range.start,
+        contexts[0].call_path().last().unwrap().span().start()
+    );
+}
+
+#[test]
+fn omitted_and_qualified_contexts_merge_without_discarding_proof_labels() {
+    let loaded = loaded("function Issue(n){return n;}template Root(){var value=Issue(1);}");
+    let project = lift_project(&loaded);
+    let provider = ProjectAnalysis::build(&project, Curve::Bn254).unwrap();
+    let sources = SourceMap::from_loaded(&loaded, &[]).unwrap();
+    let context = child_contexts(&provider, &root_context(&provider)).remove(0);
+    let mut finding = report("Unused value");
+    finding.add_secondary(2..3, 0, Some("Proof at this instance".into()));
+    let mut outputs = Vec::new();
+    for reverse in [false, true] {
+        let mut displays =
+            vec![ContextDisplay::Omit, ContextDisplay::for_evidence(&project.hir, &context)];
+        if reverse {
+            displays.reverse();
+        }
+        let mut groups = ReportGroups::default();
+        for display in displays {
+            groups.insert(finding.clone(), display);
+        }
+        let reports = groups.finish(&sources, &mut RecordedReports::default()).unwrap();
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].secondary().len(), 2);
+        assert_eq!(reports[0].secondary()[0], finding.secondary()[0]);
+        outputs.push(reports[0].to_diagnostic(true));
+    }
+    assert_eq!(outputs[0], outputs[1]);
+}
+
+#[test]
+fn aggregate_arguments_use_shape_descriptions_without_value_dumps() {
+    let loaded = loaded("template Issue(values){}template Root(){component issue=Issue([1,2,3]);}");
+    let project = lift_project(&loaded);
+    let provider = ProjectAnalysis::build(&project, Curve::Bn254).unwrap();
+    let context = child_contexts(&provider, &root_context(&provider)).remove(0);
+    let ContextDisplay::Qualify { message, .. } =
+        ContextDisplay::for_evidence(&project.hir, &context)
+    else {
+        panic!("a concrete array call has a qualification")
+    };
+    assert_eq!(message, "Observed for Issue(values = array of 3 elements).");
 }

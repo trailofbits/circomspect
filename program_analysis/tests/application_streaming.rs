@@ -107,7 +107,7 @@ const CALLERS: &str = "template Child(n){var dead=1;signal output out;out<==n;}\
     component main=Main();";
 
 #[test]
-fn repeated_findings_stream_once_and_later_call_paths_extend_the_same_report() {
+fn repeated_source_findings_stream_once_without_irrelevant_context_notes() {
     let fixture = Fixture::new(CALLERS);
     let mut observer = Recorder::default();
     let output = fixture.analyze(&mut observer).unwrap();
@@ -115,9 +115,7 @@ fn repeated_findings_stream_once_and_later_call_paths_extend_the_same_report() {
     assert_eq!(unused.len(), 1);
     let extensions: Vec<_> =
         observer.paths.iter().filter(|(report, _)| report.id() == "CS0006").collect();
-    assert_eq!(extensions.len(), 1);
-    assert!(extensions[0].1.iter().any(|label| label.message.contains("context 1")));
-    assert!(extensions[0].1.iter().any(|label| label.message.contains("context 2")));
+    assert!(extensions.is_empty());
     let final_reports = reports(&output);
     let final_unused: Vec<_> = final_reports["runs"][0]["results"]
         .as_array()
@@ -126,10 +124,7 @@ fn repeated_findings_stream_once_and_later_call_paths_extend_the_same_report() {
         .filter(|report| report["ruleId"] == "CS0006")
         .collect();
     assert_eq!(final_unused.len(), 1);
-    assert_eq!(
-        final_unused[0]["relatedLocations"].as_array().unwrap().len(),
-        extensions[0].1.len()
-    );
+    assert!(final_unused[0]["relatedLocations"].as_array().map_or(true, Vec::is_empty));
 }
 
 #[test]
@@ -181,7 +176,9 @@ fn included_definition_findings_do_not_leak_through_streaming_or_finalization() 
 
 #[test]
 fn diagnostic_and_continuation_failures_stop_analysis_without_becoming_findings() {
-    for (source, fail) in [(LIBRARY, "CS0019"), (LIBRARY, "CS0006"), (CALLERS, "paths")] {
+    let specialized = "template Child(n){var x=1;if(n==1){log(x);}}\
+        template Main(){component a=Child(0);component b=Child(-1);}component main=Main();";
+    for (source, fail) in [(LIBRARY, "CS0019"), (LIBRARY, "CS0006"), (specialized, "paths")] {
         let fixture = Fixture::new(source);
         let mut observer = Recorder { fail: Some(fail), ..Recorder::default() };
         let error = fixture.analyze(&mut observer).err().expect("output failure must propagate");

@@ -6,7 +6,7 @@ use program_structure::report::Report;
 
 use crate::application::coverage::CoverageContext;
 use crate::application::diagnostics::Diagnostics;
-use crate::application::grouping::ReportGroups;
+use crate::application::grouping::{ContextDisplay, ReportGroups};
 use crate::application::{AnalysisObserver, AnalysisProgress, ApplicationError};
 use crate::hir_cfg::build_cfg;
 use crate::hir_facts::AnalysisFacts;
@@ -162,7 +162,9 @@ impl<'a, 'b, 'c, 'd> ScopeRunner<'a, 'b, 'c, 'd> {
             .map_err(|error| ApplicationError::Invariant(error.to_string()))?;
         let reports = self.reports.entry(definition).or_default();
         for finding in result.findings() {
-            reports.insert(finding.to_report(self.sources)?, evidence);
+            let display =
+                ContextDisplay::for_finding(finding, &cfg, self.summaries.hir(), evidence);
+            reports.insert(finding.to_report(self.sources)?, display);
         }
         for abstention in result.abstentions() {
             let coverage = CoverageContext {

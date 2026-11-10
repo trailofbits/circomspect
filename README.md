@@ -52,20 +52,23 @@ visible.
 
 The analyzer recovers from source errors where possible and continues through
 independent definitions. Actionable `CS0020` notices name the affected checks,
-explain the limitation, and suggest a next step. Missing-context notices are
-informational (`-l INFO`) and hidden by default; nonactionable notices are omitted.
-Repeated findings at the same source location are grouped while retaining their
-affected call paths. No visible reports means exit status 0; any
+identify missing parameter values, and suggest analyzing a concrete caller. These
+notices are informational (`-l INFO`) and hidden by default. Generic resource-limit
+and unsupported-analysis notices are omitted; source errors remain visible.
+Repeated findings at the same source location are grouped. Proof locations remain,
+and relevant parameter values identify the affected call without an ancestry trace.
+No visible reports means exit status 0; any
 visible warning, informational result, or error means exit status 1.
 
 Source errors and findings appear as analysis progresses. Each finding is printed
-once; at `-l INFO`, call paths discovered later appear in an additional note.
+once; at `-l INFO`, useful call contexts discovered later appear in an additional
+note.
 Coverage notices wait until their affected checks have been collected. The final
 summary and SARIF file contain the complete grouped results.
 
-Bus declarations are parsed and resolved, but their analysis contexts remain
-unsupported and produce `CS0020`. Custom templates and other unsupported
-dependencies also retain scoped incomplete-analysis diagnostics.
+Bus declarations are parsed and resolved, but bus and custom-template analysis
+contexts remain unsupported. Silence about an unsupported construct is not a proof
+that its properties were checked.
 
 Development uses Rust 1.99.0; the tested minimum supported Rust version is 1.74.
 Run `cargo test --workspace --locked`, `cargo clippy --all-targets --all-features -- -D warnings`,

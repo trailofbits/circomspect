@@ -15,7 +15,7 @@ use crate::interprocedural::{CallOwner, CallReachability, ProjectAnalysis};
 use crate::rules::{RuleKind, SourceMap};
 
 #[test]
-fn a_warning_never_promotes_missing_context_from_the_same_scope() {
+fn an_internal_error_never_promotes_missing_context_from_the_same_scope() {
     let path = std::env::temp_dir().join(format!(
         "circomspect-coverage-severity-{}-{:?}.circom",
         std::process::id(),
@@ -41,10 +41,10 @@ fn a_warning_never_promotes_missing_context_from_the_same_scope() {
             help: "Analyze a caller supplying `n`.".into(),
         },
         CoverageExplanation {
-            kind: CoverageKind::ResourceLimit,
+            kind: CoverageKind::InternalError,
             span,
-            message: "The analysis work limit was reached.".into(),
-            help: "Review the affected check manually.".into(),
+            message: "The analysis context is inconsistent.".into(),
+            help: "Report the analyzer failure.".into(),
         },
     ];
     diagnostics.scope_incomplete(&evidence, span, explanations, Some(RuleKind::FieldArithmetic));
@@ -53,7 +53,7 @@ fn a_warning_never_promotes_missing_context_from_the_same_scope() {
     let policy = OutputPolicy::new(MessageCategory::Warning, HashSet::from([0]), HashSet::new());
     let visible: Vec<_> = reports.iter().filter(|report| policy.filter(report)).collect();
     assert_eq!(visible.len(), 1);
-    assert_eq!(visible[0].category(), &MessageCategory::Warning);
+    assert_eq!(visible[0].category(), &MessageCategory::Error);
     assert!(visible[0].secondary().iter().all(|label| !label.message.contains("parameter")));
     assert!(visible[0].notes().iter().all(|note| !note.contains("caller")));
     let info = reports.iter().find(|report| report.category() == &MessageCategory::Info).unwrap();
@@ -61,7 +61,7 @@ fn a_warning_never_promotes_missing_context_from_the_same_scope() {
 }
 
 #[test]
-fn a_source_notice_retains_both_contributing_call_paths() {
+fn coverage_keeps_the_explanation_without_generic_call_paths() {
     let path = std::env::temp_dir().join(format!(
         "circomspect-source-coverage-{}-{:?}.circom",
         std::process::id(),
@@ -89,10 +89,10 @@ fn a_source_notice_retains_both_contributing_call_paths() {
     let sources = SourceMap::from_loaded(&loaded, &[loaded.files[0].id]).unwrap();
     let mut diagnostics = Diagnostics::new(&sources);
     let explanation = CoverageExplanation {
-        kind: CoverageKind::Unsupported,
+        kind: CoverageKind::MissingContext,
         span,
-        message: "This check does not resolve parallel expression values.".into(),
-        help: "Review the parallel expression and its uses manually.".into(),
+        message: "This check needs a concrete parameter.".into(),
+        help: "Analyze a concrete caller.".into(),
     };
     diagnostics.source_incomplete(explanation.clone());
     let mut calls = 0;
@@ -115,7 +115,6 @@ fn a_source_notice_retains_both_contributing_call_paths() {
     assert_eq!(reports.len(), 1);
     let paths: Vec<_> =
         reports[0].secondary().iter().filter(|label| label.message.contains("context")).collect();
-    assert_eq!(paths.len(), 2);
-    assert!(paths.iter().any(|label| label.message.contains("context 1")));
-    assert!(paths.iter().any(|label| label.message.contains("context 2")));
+    assert!(paths.is_empty());
+    assert_eq!(reports[0].secondary().len(), 1);
 }

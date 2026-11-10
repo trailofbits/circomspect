@@ -5,8 +5,8 @@ use parser::frontend::{DiagnosticKind, Item, LoadedProject, Span};
 use program_structure::report::Report;
 use program_structure::report_code::ReportCode;
 
-use crate::application::coverage::{check_name, CoverageContext, CoverageExplanation, CoverageKind};
-use crate::application::grouping::ReportGroups;
+use crate::application::coverage::{check_name, CoverageExplanation, CoverageKind};
+use crate::application::grouping::{ContextDisplay, ReportGroups};
 use crate::application::{AnalysisObserver, ApplicationError};
 use crate::interprocedural::ContextEvidence;
 use crate::rules::{RenderError, RuleKind, SourceMap};
@@ -53,13 +53,6 @@ impl<'a, 'b> Diagnostics<'a, 'b> {
         self.main_diagnostics(lifted)?;
         for diagnostic in &lifted.diagnostics {
             self.reports.insert_source(self.sources.semantic_report(diagnostic)?);
-        }
-        for region in &lifted.incomplete {
-            let Some(span) = region.span() else { continue };
-            let coverage = CoverageContext { hir: &lifted.hir, facts: None, evidence: None, span };
-            for explanation in coverage.source(&region.reason) {
-                self.source_incomplete(explanation);
-            }
         }
         for source in &loaded.files {
             let versioned = source.outcome.ast.items.iter().any(|item| {
@@ -128,7 +121,6 @@ impl<'a, 'b> Diagnostics<'a, 'b> {
             if let Some(source) = self.incomplete.get_mut(&source_key) {
                 if source.has_cause(&explanation) {
                     source.add(explanation, rule);
-                    source.contexts.insert(evidence.clone());
                     continue;
                 }
             }
@@ -182,12 +174,9 @@ impl<'a, 'b> Diagnostics<'a, 'b> {
                 report.add_note(format!("Help: {action}"));
             }
             match key {
-                ScopeKey::Context(evidence, _) => self.reports.insert(report, evidence),
+                ScopeKey::Context(_, _) => self.reports.insert(report, ContextDisplay::Omit),
                 ScopeKey::Source(_, _, _, _) => {
-                    self.reports.insert_source(report.clone());
-                    for evidence in &scope.contexts {
-                        self.reports.insert(report.clone(), evidence);
-                    }
+                    self.reports.insert_source(report);
                 }
             }
         }
@@ -199,14 +188,6 @@ fn coverage_report(kind: CoverageKind) -> Report {
     match kind {
         CoverageKind::MissingContext => Report::info(
             "Some checks need additional context.".into(),
-            ReportCode::IncompleteCoverage,
-        ),
-        CoverageKind::Unsupported => Report::warning(
-            "Some checks are not supported for this code.".into(),
-            ReportCode::IncompleteCoverage,
-        ),
-        CoverageKind::ResourceLimit => Report::warning(
-            "Some checks reached an analysis limit.".into(),
             ReportCode::IncompleteCoverage,
         ),
         CoverageKind::InternalError => Report::error(
@@ -247,12 +228,11 @@ struct IncompleteLabel {
 struct IncompleteScope {
     primary: Span,
     details: BTreeMap<DetailKey, IncompleteLabel>,
-    contexts: BTreeSet<ContextEvidence>,
 }
 
 impl IncompleteScope {
     fn new(primary: Span) -> Self {
-        Self { primary, details: BTreeMap::new(), contexts: BTreeSet::new() }
+        Self { primary, details: BTreeMap::new() }
     }
 
     fn has_cause(&self, explanation: &CoverageExplanation) -> bool {

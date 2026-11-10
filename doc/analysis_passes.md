@@ -150,25 +150,29 @@ it does not prove the library correct for every parameter value. Libraries do
 not need a `main` component. Use `-l INFO` to see these notices; the default
 `WARNING` threshold hides them.
 
-Concrete unsupported constructs and analysis limits remain warnings when the
-analyzer can provide a useful explanation and action. An explanation that would
-only say that information is unavailable is omitted, even at `INFO`. Syntax and
-semantic errors remain errors; they do not generate redundant generic coverage
-notices. Internal analyzer failures are reported separately as analyzer errors.
+Generic notices about unsupported constructs or analysis limits are omitted,
+even at `INFO`: they do not offer a specific way to improve the analysis. Syntax
+and semantic errors remain errors; they do not generate redundant generic
+coverage notices. Internal analyzer failures are reported separately as analyzer
+errors. An omitted notice does not mean that the affected check succeeded.
 
 Repeated reports of the same source issue are grouped. Distinct messages,
-locations and supporting evidence remain separate. Related locations retain
-the affected call paths; numbered contexts and call steps distinguish multiple
-paths without repeating the warning. A finding in one instance does not imply
-that every instance has the same issue.
+locations and supporting evidence remain separate. Related locations explain
+the issue: for example, its input bindings, constraints or component instance.
+Generic call histories are omitted. When parameter values help explain a finding,
+a compact label such as `Observed for T(n = 0)` identifies an affected call.
+Ordinary unused assignments and coverage notices do not carry call histories.
+A finding in one instance does not imply that every instance has the same issue.
 
 Source errors and certified findings appear during analysis, before later scopes
-are analyzed. At `-l INFO`, if later callers add evidence to an existing finding, a final
-`Additional call paths` note links the complete paths to that finding's code and
-source location. This note is hidden by default, is not counted as another finding,
-and follows the original finding's filters. Coverage notices are emitted after
-their causes and affected checks have been aggregated. SARIF retains complete
-grouped reports in source order, independently of terminal arrival order.
+are analyzed. At `-l INFO`, an `Additional call paths` note supplies useful argument
+contexts discovered after a finding was printed. Calling the same definition with
+the same arguments through another path does not produce another note. These
+notes do not count as findings and follow the original finding's filters.
+Coverage notices are emitted after their causes and affected checks have been
+aggregated. SARIF retains complete grouped reports, including useful argument
+contexts and proof locations, in source order independently of terminal arrival
+order.
 
 The final summary separates source errors, findings, analysis notes and analysis
 limitations. It counts only visible reports. `--allow CS0020` hides coverage

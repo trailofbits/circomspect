@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::fs;
 
 use abstract_interpretation::graph::FlowGraph;
-use parser::hir::{lift_project, ExprId, ExprKind, IncompleteReason, LiftedProject};
+use parser::hir::{lift_project, ExprId, ExprKind, LiftedProject};
 use parser::frontend::{load_sources, Version, VersionPolicy};
 use program_structure::constants::Curve;
 
@@ -69,6 +69,23 @@ fn access(context: &CoverageContext<'_, '_>, name: &str) -> ExprId {
 }
 
 #[test]
+fn budget_and_unsupported_notices_are_suppressed() {
+    with_context("template T(){}", |context| {
+        for reason in [
+            SummaryBlocker::ContextBudget,
+            SummaryBlocker::RecursiveCycle,
+            SummaryBlocker::UnsupportedContext,
+            SummaryBlocker::ExternalSummary,
+        ] {
+            assert!(context.summary(&reason).is_empty(), "{reason:?}");
+        }
+        let entry = context.facts.unwrap().cfg().entry();
+        let blockers = BTreeSet::from([FactBlocker::Budget(entry)]);
+        assert!(context.rule(&AbstentionReason::LocalFacts(blockers)).is_empty());
+    });
+}
+
+#[test]
 fn missing_parameter_explanation_is_specific_and_excludes_unrelated_slots() {
     with_context("template T(n,m){var x=n;if(x){log(x);}}", |context| {
         let expression = access(context, "x");
@@ -121,20 +138,11 @@ fn vague_causes_and_duplicate_source_errors_are_suppressed() {
         assert!(context
             .summary(&SummaryBlocker::UnprovenArgument(access(context, "in")))
             .is_empty());
-        for reason in [
-            IncompleteReason::Syntax,
-            IncompleteReason::Include,
-            IncompleteReason::MissingReference("Missing".into()),
-            IncompleteReason::UnknownType,
-            IncompleteReason::Unsupported("unidentified feature".into()),
-        ] {
-            assert!(context.source(&reason).is_empty());
-        }
     });
 }
 
 #[test]
-fn mixed_context_and_resource_limits_keep_distinct_categories_and_locations() {
+fn resource_limits_do_not_hide_actionable_context() {
     with_context("template T(n){var x=n;if(x){log(x);}}", |context| {
         let cfg = context.facts.unwrap().cfg();
         let branch = cfg
@@ -152,12 +160,9 @@ fn mixed_context_and_resource_limits_keep_distinct_categories_and_locations() {
             FactBlocker::DeferredControl(branch),
             FactBlocker::Budget(branch),
         ])));
-        assert_eq!(result.len(), 2, "{result:?}");
+        assert_eq!(result.len(), 1, "{result:?}");
         let categories: BTreeSet<_> = result.iter().map(|item| item.kind).collect();
-        assert_eq!(
-            categories,
-            BTreeSet::from([CoverageKind::MissingContext, CoverageKind::ResourceLimit])
-        );
+        assert_eq!(categories, BTreeSet::from([CoverageKind::MissingContext]));
         for item in &result {
             assert_eq!(item.span, cfg.node(branch).unwrap().origin.unwrap().span);
         }
@@ -166,40 +171,31 @@ fn mixed_context_and_resource_limits_keep_distinct_categories_and_locations() {
 }
 
 #[test]
-fn supported_explanations_identify_analyzer_limits_without_claiming_source_defects() {
+fn internal_errors_remain_distinct_from_missing_source_context() {
     with_context("template T(){}", |context| {
-        let unsupported =
-            context.source(&IncompleteReason::Unsupported("nonliteral tuple initializer".into()));
-        assert_eq!(unsupported[0].kind, CoverageKind::Unsupported);
-        assert!(unsupported[0].message.contains("tuple"));
         let internal = context.summary(&SummaryBlocker::WrongContext);
         assert_eq!(internal[0].kind, CoverageKind::InternalError);
         assert!(internal[0].message.contains("analyzer"));
         assert!(internal[0].help.contains("Report"));
         assert!(context.summary(&SummaryBlocker::ForeignCall).is_empty());
-        assert_eq!(
-            context.summary(&SummaryBlocker::ContextBudget)[0].kind,
-            CoverageKind::ResourceLimit
-        );
         assert_eq!(check_name(RuleKind::UnconstrainedLessThan), "comparator input ranges");
     });
 }
 
 #[test]
-fn bus_explanation_requires_the_selected_definition_not_an_unrelated_bus() {
+fn unsupported_bus_context_is_not_a_user_action() {
     let lifted = fixture("pragma circom 2.2.3;bus B(){signal x;}template T(){}");
     let bus = &lifted.hir.buses()[0];
     let mut context =
         CoverageContext { hir: &lifted.hir, facts: None, evidence: None, span: bus.name_span };
     let result = context.summary(&SummaryBlocker::UnsupportedContext);
-    assert_eq!(result[0].kind, CoverageKind::Unsupported);
-    assert!(result[0].message.contains("bus `B`"));
+    assert!(result.is_empty());
     context.span = lifted.hir.templates()[0].name_span;
     assert!(context.summary(&SummaryBlocker::UnsupportedContext).is_empty());
 }
 
 #[test]
-fn unsupported_template_explanation_names_the_selected_definition() {
+fn unsupported_template_context_is_not_a_user_action() {
     let lifted = fixture("template custom extern_c T(){}template U(){}");
     let mut context = CoverageContext {
         hir: &lifted.hir,
@@ -208,9 +204,7 @@ fn unsupported_template_explanation_names_the_selected_definition() {
         span: lifted.hir.templates()[0].name_span,
     };
     let result = context.summary(&SummaryBlocker::ExternalSummary);
-    assert_eq!(result.len(), 1, "{result:?}");
-    assert_eq!(result[0].kind, CoverageKind::Unsupported);
-    assert!(result[0].message.contains("custom or external template `T`"));
+    assert!(result.is_empty());
     context.span = lifted.hir.templates()[1].name_span;
     assert!(context.summary(&SummaryBlocker::ExternalSummary).is_empty());
 }
@@ -261,7 +255,7 @@ fn summary_node_indices_do_not_resolve_against_the_caller_cfg() {
         assert!(context.summary(&SummaryBlocker::LocalFacts(blockers)).is_empty());
         let budget = context
             .summary(&SummaryBlocker::LocalFacts(BTreeSet::from([FactBlocker::Budget(branch)])));
-        assert_eq!(budget[0].span, context.span);
+        assert!(budget.is_empty());
     });
 }
 

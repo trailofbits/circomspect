@@ -305,7 +305,7 @@ fn diagnostics_are_interleaved_with_analysis_progress() {
 }
 
 #[test]
-fn call_path_continuations_require_info_and_preserve_finding_filters_and_sarif() {
+fn irrelevant_contexts_stay_hidden_at_all_levels_without_changing_finding_filters() {
     let input = fixture(
         "streamed-contexts",
         "pragma circom 2.2.3;\n\
@@ -317,7 +317,7 @@ fn call_path_continuations_require_info_and_preserve_finding_filters_and_sarif()
     let detailed =
         run(&input.path(), &["--level", "INFO", "--allow", "CS0008"], "streamed-contexts-info");
     let mut findings = Vec::new();
-    for (result, continuations) in [(&default, 0), (&detailed, 1)] {
+    for (result, continuations) in [(&default, 0), (&detailed, 0)] {
         assert_eq!(result.stdout.matches("warning: Assigned value of `dead`").count(), 1);
         assert_eq!(
             result.stdout.matches("Additional call paths for CS0006").count(),
@@ -328,7 +328,7 @@ fn call_path_continuations_require_info_and_preserve_finding_filters_and_sarif()
         let reports = result.sarif["runs"][0]["results"].as_array().unwrap();
         let unused: Vec<_> = reports.iter().filter(|report| report["ruleId"] == "CS0006").collect();
         assert_eq!(unused.len(), 1);
-        assert_eq!(unused[0]["relatedLocations"].as_array().unwrap().len(), 3);
+        assert!(unused[0]["relatedLocations"].as_array().map_or(true, Vec::is_empty));
         findings.push(unused[0]);
     }
     assert_eq!(findings[0], findings[1]);
@@ -398,19 +398,11 @@ fn repeated_unused_value_is_reported_once_across_callers() {
     let unused: Vec<_> = results.iter().filter(|result| result["ruleId"] == "CS0006").collect();
     assert_eq!(unused.len(), 1, "{}", result.stdout);
     assert_eq!(result.stdout.matches("warning: Assigned value of `dead`").count(), 1);
-    let related = unused[0]["relatedLocations"].as_array().unwrap();
-    let mut call_columns = BTreeSet::new();
-    for location in related {
-        let region = &location["physicalLocation"]["region"];
-        if region["startLine"] == 3 {
-            call_columns.insert(region["startColumn"].as_u64().unwrap());
-        }
-    }
-    assert_eq!(call_columns.len(), 2, "{related:?}");
+    assert!(unused[0]["relatedLocations"].as_array().map_or(true, Vec::is_empty));
 }
 
 #[test]
-fn grouped_curve_finding_keeps_both_call_paths() {
+fn source_literal_finding_omits_irrelevant_call_history() {
     let modulus = "21888242871839275222246405745257275088548364400416034343698204186575808495617";
     let input = fixture(
         "grouped-curve",
@@ -425,12 +417,7 @@ fn grouped_curve_finding_keeps_both_call_paths() {
     let results = result.sarif["runs"][0]["results"].as_array().unwrap();
     let curve: Vec<_> = results.iter().filter(|result| result["ruleId"] == "CS0016").collect();
     assert_eq!(curve.len(), 1, "{}", result.stdout);
-    let related = curve[0]["relatedLocations"].as_array().unwrap();
-    let calls: Vec<_> = related
-        .iter()
-        .filter(|location| location["physicalLocation"]["region"]["startLine"] == 3)
-        .collect();
-    assert_eq!(calls.len(), 2, "{related:?}");
+    assert!(curve[0]["relatedLocations"].as_array().map_or(true, Vec::is_empty));
 }
 
 #[test]
@@ -462,13 +449,12 @@ fn owned_bus_syntax_reaches_semantic_diagnostics() {
 }
 
 #[test]
-fn standalone_bus_library_reports_incomplete_without_main() {
+fn standalone_bus_library_omits_nonactionable_analysis_notice() {
     let input = fixture("bus-only", "pragma circom 2.2.3;\nbus Pair(){signal x;}\n");
     let path = input.path();
     let CliRun { status, stdout, sarif, .. } = run(&path, &[], "bus-only");
-    assert_eq!(status.code(), Some(1), "{stdout}");
-    assert_eq!(ids(&sarif), BTreeSet::from(["CS0020"]), "{stdout}");
-    assert_eq!(sarif["runs"][0]["results"].as_array().unwrap().len(), 1);
+    assert_eq!(status.code(), Some(0), "{stdout}");
+    assert!(ids(&sarif).is_empty(), "{stdout}");
 }
 
 #[test]
@@ -515,11 +501,11 @@ fn invalid_expression_statement_keeps_later_library_diagnostics() {
 }
 
 #[test]
-fn unsupported_library_definitions_have_scoped_incomplete_diagnostics() {
-    for (name, declaration, column) in [
-        ("standalone-bus", "bus Pair(){signal x;}", 5),
-        ("unsupported-bus", "bus Pair(){signal x;return 1;}", 5),
-        ("unused-custom", "template custom Native(){signal output out;}", 17),
+fn unsupported_library_definitions_omit_nonactionable_notices() {
+    for (name, declaration, status_code) in [
+        ("standalone-bus", "bus Pair(){signal x;}", 0),
+        ("unsupported-bus", "bus Pair(){signal x;return 1;}", 1),
+        ("unused-custom", "template custom Native(){signal output out;}", 0),
     ] {
         let input = fixture(
             name,
@@ -530,16 +516,13 @@ fn unsupported_library_definitions_have_scoped_incomplete_diagnostics() {
         );
         let path = input.path();
         let CliRun { status, stdout, sarif, .. } = run(&path, &[], name);
-        assert_eq!(status.code(), Some(1), "{stdout}");
-        assert!(stdout.contains("analysis limitation"), "{stdout}");
+        assert_eq!(status.code(), Some(status_code), "{stdout}");
+        assert!(!stdout.contains("analysis limitation"), "{stdout}");
         assert!(stdout.contains("analyzing template 'Good'"), "{stdout}");
         let results = sarif["runs"][0]["results"].as_array().unwrap();
         let incomplete: Vec<_> =
             results.iter().filter(|result| result["ruleId"] == "CS0020").collect();
-        assert_eq!(incomplete.len(), 1, "{stdout}");
-        let region = &incomplete[0]["locations"][0]["physicalLocation"]["region"];
-        assert_eq!(region["startLine"], 2, "{stdout}");
-        assert_eq!(region["startColumn"], column, "{stdout}");
+        assert!(incomplete.is_empty(), "{stdout}");
     }
 }
 
@@ -830,5 +813,47 @@ fn closed_stdout_reports_an_io_error_without_panicking() {
         let stderr = String::from_utf8(output.stderr).unwrap();
         assert!(stderr.contains("stdout"), "{stderr}");
         assert!(!stderr.contains("panicked"), "{stderr}");
+    }
+}
+
+#[test]
+fn useful_context_continuations_require_info_and_follow_finding_filters() {
+    let input = fixture(
+        "useful-contexts",
+        "pragma circom 2.2.3;\n\
+        template Child(n){var x=1;if(n==1){log(x);}}\n\
+        template Main(){component a=Child(0);component b=Child(-1);}\n\
+        component main=Main();",
+    );
+    let filters = ["--allow", "CS0008", "--allow", "CS0009"];
+    let default = run(&input.path(), &filters, "useful-context-default");
+    let mut detailed_args = filters.to_vec();
+    detailed_args.extend(["--level", "INFO"]);
+    let detailed = run(&input.path(), &detailed_args, "useful-context-info");
+    let mut findings = Vec::new();
+    for (result, notes) in [(&default, 0), (&detailed, 1)] {
+        assert_eq!(result.stdout.matches("warning: Assigned value of `x`").count(), 1);
+        assert_eq!(result.stdout.matches("Additional call paths for CS0006").count(), notes);
+        let reports = result.sarif["runs"][0]["results"].as_array().unwrap();
+        let unused: Vec<_> = reports.iter().filter(|item| item["ruleId"] == "CS0006").collect();
+        assert_eq!(unused.len(), 1);
+        let labels = unused[0]["relatedLocations"].as_array().unwrap();
+        assert_eq!(labels.len(), 2);
+        assert!(labels
+            .iter()
+            .any(|label| label["message"]["text"] == "Observed for Child(n = 0)."));
+        assert!(labels.iter().all(|label| label["message"]["text"]
+            .as_str()
+            .unwrap()
+            .starts_with("Observed for Child(n = ")));
+        findings.push(unused[0]);
+    }
+    assert_eq!(findings[0], findings[1]);
+    for mut args in [filters.to_vec(), detailed_args] {
+        args.extend(["--allow", "CS0006"]);
+        let result = run(&input.path(), &args, "useful-context-filtered");
+        assert!(!result.stdout.contains("Assigned value of `x`"));
+        assert!(!result.stdout.contains("Additional call paths"));
+        assert!(!ids(&result.sarif).contains("CS0006"));
     }
 }

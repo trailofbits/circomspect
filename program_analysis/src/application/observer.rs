@@ -28,7 +28,7 @@ pub trait AnalysisObserver {
         Ok(())
     }
 
-    /// Attach the complete final call paths to an already published diagnostic.
+    /// Attach the complete final useful call context to an already published diagnostic.
     ///
     /// These locations extend the earlier report; they are not another finding.
     /// Filter using the original report's severity, code and primary locations.

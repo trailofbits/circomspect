@@ -81,7 +81,7 @@ pub fn analyze_files_with_progress(
 
 /// Analyze files and publish diagnostics as independent scopes complete.
 ///
-/// Final reports retain source order and include every affected call path.
+/// Final reports retain source order, proof locations, and useful call-context qualifications.
 /// Coverage notices wait until their causes and affected checks are aggregated.
 ///
 /// # Errors

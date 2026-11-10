@@ -182,6 +182,10 @@ impl Finding {
         &self.context
     }
 
+    pub(crate) fn primary_span(&self) -> Span {
+        self.primary
+    }
+
     pub(super) fn compare_output(&self, other: &Self) -> Ordering {
         let primary = (
             self.kind,
