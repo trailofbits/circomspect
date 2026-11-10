@@ -26,7 +26,8 @@ impl AnalysisFacts<'_> {
         if self.certified_dead_node(node) {
             return Fact::known(false);
         }
-        let mut blockers = self.reachability_blockers(&BTreeSet::from([node]));
+        let mut blockers =
+            self.reachability_blockers(&BTreeSet::from([node]), &mut BTreeSet::new());
         blockers.retain(|blocker| match blocker {
             FactBlocker::OpaqueNode(id, _) => !self.typed_value_effect(*id),
             FactBlocker::Budget(_)

@@ -495,7 +495,7 @@ impl AnalysisFacts<'_> {
             TransferOutcome::Known(state) if state.variables().is_none() => Fact::known(false),
             TransferOutcome::Known(_) => {
                 let sites = BTreeSet::from([edge.source, edge.target]);
-                let blockers = self.deferred_control_blockers(&sites);
+                let blockers = self.deferred_control_blockers(&sites, &mut BTreeSet::new());
                 if blockers.is_empty() {
                     Fact::known(true)
                 } else {
@@ -578,13 +578,21 @@ impl AnalysisFacts<'_> {
     }
 
     pub(crate) fn reachable_node(&self, node: NodeId) -> Fact<bool> {
+        self.reachable_node_with_resolving_symbols(node, &mut BTreeSet::new())
+    }
+
+    fn reachable_node_with_resolving_symbols(
+        &self,
+        node: NodeId,
+        resolving_symbols: &mut BTreeSet<SymbolId>,
+    ) -> Fact<bool> {
         if self.cfg.node(node).is_none() {
             return Fact::blocked(BTreeSet::from([FactBlocker::ForeignQuery]));
         }
         if self.certified_dead_node(node) {
             return Fact::known(false);
         }
-        let blockers = self.reachability_blockers(&BTreeSet::from([node]));
+        let blockers = self.reachability_blockers(&BTreeSet::from([node]), resolving_symbols);
         if !blockers.is_empty() {
             return Fact::blocked(blockers);
         }
@@ -615,7 +623,7 @@ impl AnalysisFacts<'_> {
         if sites.is_empty() {
             return Fact::blocked(BTreeSet::from([FactBlocker::MissingExit]));
         }
-        let blockers = self.reachability_blockers(&sites);
+        let blockers = self.reachability_blockers(&sites, &mut BTreeSet::new());
         if !blockers.is_empty() {
             return Fact::blocked(blockers);
         }
@@ -628,8 +636,12 @@ impl AnalysisFacts<'_> {
         Fact::known(reachable)
     }
 
-    fn reachability_blockers(&self, sites: &BTreeSet<NodeId>) -> BTreeSet<FactBlocker> {
-        let mut blockers = self.deferred_control_blockers(sites);
+    fn reachability_blockers(
+        &self,
+        sites: &BTreeSet<NodeId>,
+        resolving_symbols: &mut BTreeSet<SymbolId>,
+    ) -> BTreeSet<FactBlocker> {
+        let mut blockers = self.deferred_control_blockers(sites, resolving_symbols);
         let SolveResult::Incomplete { blockers: solver, .. } = &self.forward else {
             return blockers;
         };
@@ -677,7 +689,7 @@ impl AnalysisFacts<'_> {
     }
 
     fn compute_range(&self, expression: ExprId) -> Fact<FieldRange> {
-        let scalar_blockers = self.scalar_blockers(expression);
+        let scalar_blockers = self.scalar_blockers(expression, &mut BTreeSet::new());
         if !scalar_blockers.is_empty() {
             return Fact::blocked(scalar_blockers);
         }
@@ -696,7 +708,7 @@ impl AnalysisFacts<'_> {
         if !observed {
             return Fact::blocked(BTreeSet::from([FactBlocker::MissingExit]));
         }
-        let blockers = self.expression_blockers(expression);
+        let blockers = self.expression_blockers(expression, &mut BTreeSet::new());
         if !blockers.is_empty() {
             return Fact::blocked(blockers);
         }
@@ -705,8 +717,8 @@ impl AnalysisFacts<'_> {
 
     /// Upper bound on witness polynomial degree; unknown operations are unbounded.
     pub fn degree(&self, expression: ExprId) -> Fact<DegreeUpper> {
-        let mut blockers = self.expression_blockers(expression);
-        blockers.extend(self.scalar_blockers(expression));
+        let mut blockers = self.expression_blockers(expression, &mut BTreeSet::new());
+        blockers.extend(self.scalar_blockers(expression, &mut BTreeSet::new()));
         if !blockers.is_empty() {
             return Fact::blocked(blockers);
         }
@@ -729,7 +741,7 @@ impl AnalysisFacts<'_> {
 
     /// May-dependencies of a source expression, including local variable assignments.
     pub fn dependencies(&self, expression: ExprId) -> Fact<BTreeSet<AccessKey>> {
-        let blockers = self.expression_blockers(expression);
+        let blockers = self.expression_blockers(expression, &mut BTreeSet::new());
         if !blockers.is_empty() {
             return Fact::blocked(blockers);
         }
@@ -755,7 +767,11 @@ impl AnalysisFacts<'_> {
         Fact::known(result)
     }
 
-    fn expression_blockers(&self, expression: ExprId) -> BTreeSet<FactBlocker> {
+    fn expression_blockers(
+        &self,
+        expression: ExprId,
+        resolving_symbols: &mut BTreeSet<SymbolId>,
+    ) -> BTreeSet<FactBlocker> {
         let mut blockers = BTreeSet::new();
         let mut uses = Vec::new();
         if !expression.visit_accesses_with(
@@ -777,7 +793,7 @@ impl AnalysisFacts<'_> {
                 self.variable_assignment_sites(path.root, &mut sites, &mut seen);
             }
         }
-        blockers.extend(self.deferred_control_blockers(&sites));
+        blockers.extend(self.deferred_control_blockers(&sites, resolving_symbols));
         if let SolveResult::Incomplete { blockers: solver_blockers, .. } = &self.forward {
             for blocker in solver_blockers {
                 match blocker {
@@ -843,7 +859,11 @@ impl AnalysisFacts<'_> {
         }
     }
 
-    fn scalar_blockers(&self, expression: ExprId) -> BTreeSet<FactBlocker> {
+    fn scalar_blockers(
+        &self,
+        expression: ExprId,
+        resolving_symbols: &mut BTreeSet<SymbolId>,
+    ) -> BTreeSet<FactBlocker> {
         let mut blockers = BTreeSet::new();
         let Some(expr) = self.hir.expression(expression) else {
             blockers.insert(FactBlocker::OpaqueExpression(expression));
@@ -865,7 +885,7 @@ impl AnalysisFacts<'_> {
             }
             if self.hir.symbol(path.terminal).is_some_and(|symbol| {
                 symbol.value_evidence == parser::hir::ValueEvidence::Deferred
-                    && !self.deferred_symbol_resolved(symbol.id)
+                    && !self.deferred_symbol_resolved(symbol.id, resolving_symbols)
             }) {
                 blockers.insert(FactBlocker::DeferredShape(expression));
             }
@@ -876,12 +896,30 @@ impl AnalysisFacts<'_> {
         blockers
     }
 
-    fn deferred_symbol_resolved(&self, symbol: SymbolId) -> bool {
+    fn deferred_symbol_resolved(
+        &self,
+        symbol: SymbolId,
+        resolving_symbols: &mut BTreeSet<SymbolId>,
+    ) -> bool {
+        // A scalar proof cannot rely on its own guard being certified.
+        if !resolving_symbols.insert(symbol) {
+            return false;
+        }
+        let resolved = self.deferred_assignments_resolved(symbol, resolving_symbols);
+        resolving_symbols.remove(&symbol);
+        resolved
+    }
+
+    fn deferred_assignments_resolved(
+        &self,
+        symbol: SymbolId,
+        resolving_symbols: &mut BTreeSet<SymbolId>,
+    ) -> bool {
         let mut found = false;
         for id in self.cfg.nodes() {
             let Some(node) = self.cfg.node(*id) else { continue };
-            let (CfgNodeKind::DeferredAssignment { target, operator, .. }
-            | CfgNodeKind::Assignment { target, operator, .. }) = &node.kind
+            let (CfgNodeKind::DeferredAssignment { target, .. }
+            | CfgNodeKind::Assignment { target, .. }) = &node.kind
             else {
                 continue;
             };
@@ -889,10 +927,10 @@ impl AnalysisFacts<'_> {
                 continue;
             }
             match &node.kind {
-                CfgNodeKind::DeferredAssignment { value, .. } => {
+                CfgNodeKind::DeferredAssignment { .. } => {
                     found = true;
                     if !self.resolved_deferred.contains(id)
-                        && !self.certified_deferred_scalar_site(*id, target, *value, *operator)
+                        && !self.certified_deferred_scalar_site(*id, resolving_symbols)
                     {
                         return false;
                     }
@@ -920,19 +958,23 @@ impl AnalysisFacts<'_> {
     fn certified_deferred_scalar_site(
         &self,
         node: NodeId,
-        target: &AccessPath,
-        value: ExprId,
-        operator: AssignmentOperator,
+        resolving_symbols: &mut BTreeSet<SymbolId>,
     ) -> bool {
-        if operator != AssignmentOperator::Assign || !deferred_scalar_target(self.hir, target) {
+        let Some(CfgNodeKind::DeferredAssignment { target, value, operator }) =
+            self.cfg.node(node).map(|node| &node.kind)
+        else {
+            return false;
+        };
+        if *operator != AssignmentOperator::Assign || !deferred_scalar_target(self.hir, target) {
             return false;
         }
         let Some(variables) = self.site_state(node).and_then(ForwardState::variables) else {
             return false;
         };
-        self.reachable_node(node).certified() == Some(&true)
-            && self.evaluate(value, variables).is_some()
-            && self.expression_blockers(value).is_empty()
+        self.evaluate(*value, variables).is_some()
+            && self.reachable_node_with_resolving_symbols(node, resolving_symbols).certified()
+                == Some(&true)
+            && self.expression_blockers(*value, resolving_symbols).is_empty()
     }
 
     fn depends_on_parameter(
@@ -1210,7 +1252,7 @@ impl AnalysisFacts<'_> {
         let query = key_for_path(self.hir, self.field, path, &BTreeMap::new());
         let potential_sites = self.potential_sites(&query);
         let queried_exit = BTreeSet::from([self.cfg.exit()]);
-        blockers.extend(self.deferred_control_blockers(&potential_sites));
+        blockers.extend(self.deferred_control_blockers(&potential_sites, &mut BTreeSet::new()));
         if self.hir.components().iter().any(|item| item.symbol == path.root) {
             blockers.insert(FactBlocker::ExternalSummary);
         }
@@ -1336,7 +1378,11 @@ impl AnalysisFacts<'_> {
         self.cfg.path_exists(start, targets, None, &BTreeSet::new())
     }
 
-    fn deferred_control_blockers(&self, sites: &BTreeSet<NodeId>) -> BTreeSet<FactBlocker> {
+    fn deferred_control_blockers(
+        &self,
+        sites: &BTreeSet<NodeId>,
+        resolving_symbols: &mut BTreeSet<SymbolId>,
+    ) -> BTreeSet<FactBlocker> {
         let mut blockers = BTreeSet::new();
         for site in sites {
             if self.certified_dead_node(*site) {
@@ -1344,7 +1390,9 @@ impl AnalysisFacts<'_> {
             }
             if let Some(node) = self.cfg.node(*site) {
                 for control in &node.deferred_controls {
-                    if !self.certified_dead_node(*control) && !self.specialized_guard(*control) {
+                    if !self.certified_dead_node(*control)
+                        && !self.specialized_guard(*control, resolving_symbols)
+                    {
                         blockers.insert(FactBlocker::DeferredControl(*control));
                     }
                 }
@@ -1357,7 +1405,7 @@ impl AnalysisFacts<'_> {
                 }
                 if branch.reaches(self.cfg.as_ref(), *site)
                     && self.can_reach_exit_avoiding(branch.node, *site)
-                    && !self.specialized_guard(branch.node)
+                    && !self.specialized_guard(branch.node, resolving_symbols)
                 {
                     blockers.insert(FactBlocker::DeferredControl(branch.node));
                 }
@@ -1390,7 +1438,11 @@ impl AnalysisFacts<'_> {
         branches
     }
 
-    fn specialized_guard(&self, branch: NodeId) -> bool {
+    fn specialized_guard(
+        &self,
+        branch: NodeId,
+        resolving_symbols: &mut BTreeSet<SymbolId>,
+    ) -> bool {
         let Some(CfgNodeKind::Branch {
             condition,
             guard: parser::hir::ControlGuard::DeferredScalar,
@@ -1398,7 +1450,7 @@ impl AnalysisFacts<'_> {
         else {
             return false;
         };
-        if !self.scalar_blockers(*condition).is_empty() {
+        if !self.scalar_blockers(*condition, resolving_symbols).is_empty() {
             return false;
         }
         let Some(values) = self.site_state(branch).and_then(ForwardState::variables) else {
@@ -1648,7 +1700,7 @@ impl AnalysisFacts<'_> {
 
 #[cfg(test)]
 mod call_shape_tests {
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::fs;
 
     use abstract_interpretation::graph::FlowGraph;
@@ -1670,6 +1722,53 @@ mod call_shape_tests {
         fs::write(&path, source).unwrap();
         let loaded = load_sources(&[path], &[directory], VersionPolicy::new(Version::new(2, 2, 3)));
         lift_project(&loaded).hir
+    }
+
+    #[test]
+    fn exact_deferred_value_cannot_use_its_own_guard_as_proof() {
+        let hir = fixture(
+            "function F(n,k){var prefix=k;var copy=prefix;\
+            var x;for(var i=0;i<n;i++){x=k;if(x){log(x);}}\
+            var z=Missing();return x;}",
+        );
+        let DefinitionRef::Function(id) = hir.definition("F").unwrap() else { panic!("F") };
+        let function = hir.function(id).unwrap();
+        let cfg = build_cfg(&hir, DefinitionRef::Function(id)).unwrap();
+        let field = FieldContext::for_curve(Curve::Bn254);
+        let seeds = BTreeMap::from([(function.parameters[1], field.canonical(1.into()))]);
+        let block = hir.block(function.body).unwrap();
+        let Some(Effect::Return { value, .. }) = block.effects.last() else { panic!("return") };
+        let prefix = hir
+            .expressions()
+            .iter()
+            .find_map(|expr| {
+                let ExprKind::Access(path) = &expr.kind else { return None };
+                hir.symbol(path.root)
+                    .is_some_and(|symbol| symbol.name == "prefix")
+                    .then_some(expr.id)
+            })
+            .unwrap();
+        for queries in [[prefix, *value], [*value, prefix]] {
+            let facts =
+                analyze_with_scalar_parameters(&hir, &cfg, &field, seeds.clone(), None).unwrap();
+            let mut resolving_symbols = BTreeSet::new();
+            for expression in queries {
+                let blockers = facts.scalar_blockers(expression, &mut resolving_symbols);
+                assert!(resolving_symbols.is_empty());
+                if expression == prefix {
+                    assert!(blockers.is_empty(), "{blockers:?}");
+                    assert_eq!(
+                        facts.range(prefix).certified(),
+                        Some(&Range::Exact(field.canonical(1.into())))
+                    );
+                } else {
+                    assert!(
+                        blockers.contains(&crate::hir_facts::FactBlocker::DeferredShape(*value))
+                    );
+                }
+            }
+            assert!(facts.range(*value).certified().is_none());
+        }
     }
 
     #[test]
@@ -1733,7 +1832,7 @@ mod call_shape_tests {
             let facts = analyze_with_scalar_parameters(&hir, &cfg, &field, seeds, None).unwrap();
             let mut observed = false;
             for node in cfg.nodes() {
-                let Some(CfgNodeKind::DeferredAssignment { target, value, operator }) =
+                let Some(CfgNodeKind::DeferredAssignment { target, operator, .. }) =
                     cfg.node(*node).map(|item| &item.kind)
                 else {
                     continue;
@@ -1745,7 +1844,7 @@ mod call_shape_tests {
                     continue;
                 }
                 observed = true;
-                assert!(!facts.certified_deferred_scalar_site(*node, target, *value, *operator));
+                assert!(!facts.certified_deferred_scalar_site(*node, &mut BTreeSet::new()));
             }
             assert!(observed, "deferred write must remain in the source CFG: {source}");
         }

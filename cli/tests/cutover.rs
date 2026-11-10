@@ -289,6 +289,18 @@ fn diagnostic_contracts_preserve_filtering_levels_and_exit_status() {
 }
 
 #[test]
+fn deferred_loop_guard_reports_incomplete_without_recursive_proof() {
+    let input = fixture(
+        "deferred-loop-guard",
+        "pragma circom 2.2.3;\n\
+        function F(n){var x;for(var i=0;i<n;i++){x=n>>i;if(x){log(x);}}return 0;}",
+    );
+    let result = run(&input.path(), &[], "deferred-loop-guard");
+    assert_eq!(result.status.code(), Some(1), "{}", result.stdout);
+    assert_eq!(ids(&result.sarif), BTreeSet::from(["CS0020"]), "{}", result.stdout);
+}
+
+#[test]
 fn owned_bus_syntax_reaches_semantic_diagnostics() {
     let input = fixture(
         "bus",

@@ -141,7 +141,9 @@ fn reference_deferred_control_blockers(
         }
         if let Some(node) = cfg.node(*site) {
             for control in &node.deferred_controls {
-                if !facts.certified_dead_node(*control) && !facts.specialized_guard(*control) {
+                if !facts.certified_dead_node(*control)
+                    && !facts.specialized_guard(*control, &mut BTreeSet::new())
+                {
                     blockers.insert(FactBlocker::DeferredControl(*control));
                 }
             }
@@ -164,7 +166,7 @@ fn reference_deferred_control_blockers(
                     Some(*site),
                     &BTreeSet::new(),
                 )
-                && !facts.specialized_guard(*branch)
+                && !facts.specialized_guard(*branch, &mut BTreeSet::new())
             {
                 blockers.insert(FactBlocker::DeferredControl(*branch));
             }
@@ -210,7 +212,7 @@ fn reachability_blockers_match_forward_paths_at_every_query_site_and_budget() {
             queries.push(BTreeSet::from([cfg.entry(), cfg.exit()]));
             for sites in queries {
                 assert_eq!(
-                    facts.reachability_blockers(&sites),
+                    facts.reachability_blockers(&sites, &mut BTreeSet::new()),
                     reference_reachability_blockers(&facts, &sites),
                     "{source}, budget {budget:?}, sites {sites:?}",
                 );
@@ -273,7 +275,9 @@ fn returned_array_elements_already_have_their_lexical_deferred_blocker() {
             let node = cfg.node(*id)?;
             let control = node.deferred_controls.first()?;
             facts.site_state(*id)?.variables()?;
-            if facts.specialized_guard(*control) || facts.certified_dead_node(*control) {
+            if facts.specialized_guard(*control, &mut BTreeSet::new())
+                || facts.certified_dead_node(*control)
+            {
                 return None;
             }
             Some((*id, *control))
@@ -282,7 +286,7 @@ fn returned_array_elements_already_have_their_lexical_deferred_blocker() {
     let sites = BTreeSet::from([site]);
     let expected = reference_deferred_control_blockers(&facts, &sites);
     assert!(expected.contains(&FactBlocker::DeferredControl(control)));
-    assert_eq!(facts.deferred_control_blockers(&sites), expected);
+    assert_eq!(facts.deferred_control_blockers(&sites, &mut BTreeSet::new()), expected);
 }
 
 #[test]
@@ -318,7 +322,7 @@ fn deferred_blockers_match_old_walks_with_full_partial_and_disabled_caches() {
                     }
                     saw_multiple_controls |= control_count > 1;
                     assert_eq!(
-                        facts.deferred_control_blockers(&sites),
+                        facts.deferred_control_blockers(&sites, &mut BTreeSet::new()),
                         expected,
                         "{source}, {budget:?}, capacity {capacity}, sites {sites:?}",
                     );
