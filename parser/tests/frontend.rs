@@ -521,6 +521,25 @@ fn include_loader_keeps_definitions_after_missing_and_cyclic_includes() {
 }
 
 #[test]
+fn library_directory_resolves_relative_include_when_local_file_is_missing() {
+    let directory =
+        std::env::temp_dir().join(format!("circomspect-relative-library-{}", std::process::id()));
+    let source_dir = directory.join("source");
+    let library_dir = directory.join("library");
+    fs::create_dir_all(&source_dir).expect("create source directory");
+    fs::create_dir_all(&library_dir).expect("create library directory");
+    let source = source_dir.join("root.circom");
+    fs::write(&source, "include \"../node_modules/pkg/lib.circom\"; function Root() { return 1; }")
+        .expect("write source");
+    fs::write(library_dir.join("lib.circom"), "function Library() { return 2; }")
+        .expect("write library");
+    let loaded = load_sources(&[source], &[library_dir], VersionPolicy::new(Version::new(2, 2, 3)));
+    assert!(loaded.diagnostics.is_empty(), "{:?}", loaded.diagnostics);
+    assert!(loaded.files.iter().any(|file| has_definition(&file.outcome, "Library")));
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
 fn malformed_utf8_file_has_path_located_read_diagnostic() {
     let directory = std::env::temp_dir().join(format!("circomspect-utf8-{}", std::process::id()));
     fs::create_dir_all(&directory).expect("create test directory");

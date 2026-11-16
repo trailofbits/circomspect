@@ -43,27 +43,54 @@ impl Loader<'_> {
         }
     }
 
-    fn resolve_include(&self, path: &Path, name: &str) -> Option<PathBuf> {
+    fn resolve_include(&self, path: &Path, name: &str) -> Result<Option<PathBuf>, Vec<PathBuf>> {
         let local = path.parent().unwrap_or_else(|| Path::new(".")).join(name);
         if local.is_file() {
-            return Some(local);
+            return Ok(Some(local));
         }
+        let mut candidates = Vec::new();
         for directory in self.include_dirs {
-            if directory.is_file()
-                && Path::new(name).components().count() == 1
-                && directory.file_name() == Path::new(name).file_name()
-            {
-                return Some(directory.clone());
-            }
-            if name.starts_with('.') {
+            if directory.is_file() {
+                if directory.file_name() == Path::new(name).file_name() {
+                    candidates.push((
+                        Path::new(name).components().count().saturating_sub(1),
+                        directory.clone(),
+                    ));
+                }
                 continue;
             }
-            let candidate = directory.join(name);
-            if candidate.is_file() {
-                return Some(candidate);
+            let mut suffix = Path::new(name);
+            let mut removed = 0;
+            loop {
+                let candidate = directory.join(suffix);
+                if candidate.is_file() {
+                    candidates.push((removed, candidate));
+                }
+                let mut components = suffix.components();
+                components.next();
+                let remainder = components.as_path();
+                if remainder.as_os_str().is_empty() {
+                    break;
+                }
+                suffix = remainder;
+                removed += 1;
             }
         }
-        None
+        let Some(best) = candidates.iter().map(|(removed, _)| *removed).min() else {
+            return Ok(None);
+        };
+        let mut matches: Vec<_> = candidates
+            .into_iter()
+            .filter(|(removed, _)| *removed == best)
+            .filter_map(|(_, path)| path.canonicalize().ok())
+            .collect();
+        matches.sort();
+        matches.dedup();
+        if matches.len() > 1 {
+            Err(matches)
+        } else {
+            Ok(matches.pop())
+        }
     }
 
     fn visit(&mut self, path: &Path, origin: Option<Span>) {
@@ -122,14 +149,25 @@ impl Loader<'_> {
         self.active.insert(canonical.clone());
         self.visited.insert(canonical.clone());
         for (name, span) in includes {
-            if let Some(include) = self.resolve_include(&canonical, &name) {
-                self.visit(&include, Some(span));
-            } else {
-                self.project.diagnostics.push(SyntaxDiagnostic::new(
+            match self.resolve_include(&canonical, &name) {
+                Ok(Some(include)) => self.visit(&include, Some(span)),
+                Ok(None) => self.project.diagnostics.push(SyntaxDiagnostic::new(
                     DiagnosticKind::MissingInclude,
                     span,
                     format!("cannot find included file {name}"),
-                ));
+                )),
+                Err(matches) => self.project.diagnostics.push(SyntaxDiagnostic::new(
+                    DiagnosticKind::MissingInclude,
+                    span,
+                    format!(
+                        "ambiguous included file {name}; matches {}",
+                        matches
+                            .iter()
+                            .map(|path| path.display().to_string())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                )),
             }
         }
         self.active.remove(&canonical);
