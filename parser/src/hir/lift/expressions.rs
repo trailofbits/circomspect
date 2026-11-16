@@ -396,9 +396,16 @@ impl Lifter<'_> {
                 target = CallTarget::Opaque { reason: IncompleteReason::InvalidAssignment };
             }
         }
+        let knownness = if matches!(target, CallTarget::Function(_)) {
+            arguments.iter().fold(Knownness::Constant, |knownness, argument| {
+                knownness.join(self.knownness(*argument))
+            })
+        } else {
+            Knownness::Opaque
+        };
         self.add_expression(
             ExprKind::Call { target, arguments },
-            Knownness::Opaque,
+            knownness,
             span,
             ValueType::Unknown,
         )

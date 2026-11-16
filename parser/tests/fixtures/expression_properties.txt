@@ -60,42 +60,6 @@
                     source: SourceId(
                         0,
                     ),
-                    start: 321,
-                    end: 334,
-                },
-            ),
-            reason: UnknownType,
-        },
-        IncompleteRegion {
-            location: Source(
-                Span {
-                    source: SourceId(
-                        0,
-                    ),
-                    start: 328,
-                    end: 333,
-                },
-            ),
-            reason: UnknownType,
-        },
-        IncompleteRegion {
-            location: Source(
-                Span {
-                    source: SourceId(
-                        0,
-                    ),
-                    start: 362,
-                    end: 370,
-                },
-            ),
-            reason: UnknownType,
-        },
-        IncompleteRegion {
-            location: Source(
-                Span {
-                    source: SourceId(
-                        0,
-                    ),
                     start: 377,
                     end: 431,
                 },
@@ -110,42 +74,6 @@
                     ),
                     start: 395,
                     end: 416,
-                },
-            ),
-            reason: UnknownType,
-        },
-        IncompleteRegion {
-            location: Source(
-                Span {
-                    source: SourceId(
-                        0,
-                    ),
-                    start: 403,
-                    end: 416,
-                },
-            ),
-            reason: UnknownType,
-        },
-        IncompleteRegion {
-            location: Source(
-                Span {
-                    source: SourceId(
-                        0,
-                    ),
-                    start: 410,
-                    end: 415,
-                },
-            ),
-            reason: UnknownType,
-        },
-        IncompleteRegion {
-            location: Source(
-                Span {
-                    source: SourceId(
-                        0,
-                    ),
-                    start: 422,
-                    end: 427,
                 },
             ),
             reason: UnknownType,
