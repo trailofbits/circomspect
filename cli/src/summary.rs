@@ -8,7 +8,11 @@ pub(super) fn describe(reports: &[Report], policy: &impl ReportFilter) -> String
     let mut notes = 0;
     let mut limits = 0;
     let mut analysis_errors = 0;
+    let timeouts = timeout_count(reports);
     for report in reports {
+        if let ReportCode::AnalysisTimeout = report.code() {
+            continue;
+        }
         if !policy.filter(report) {
             continue;
         }
@@ -35,7 +39,15 @@ pub(super) fn describe(reports: &[Report], policy: &impl ReportFilter) -> String
     append_count(&mut parts, notes, "analysis note", "analysis notes");
     append_count(&mut parts, limits, "analysis limitation", "analysis limitations");
     append_count(&mut parts, analysis_errors, "analyzer error", "analyzer errors");
+    if timeouts > 0 {
+        let noun = if timeouts == 1 { "analysis" } else { "analyses" };
+        parts.push(format!("{timeouts} {noun} timed out."));
+    }
     parts.join(" ")
+}
+
+pub(super) fn timeout_count(reports: &[Report]) -> usize {
+    reports.iter().filter(|report| *report.code() == ReportCode::AnalysisTimeout).count()
 }
 
 fn append_count(parts: &mut Vec<String>, count: usize, singular: &str, plural: &str) {
@@ -77,6 +89,31 @@ mod tests {
         assert_eq!(
             describe(&reports, &|_: &Report| true),
             "No findings reported. 1 analysis note reported."
+        );
+    }
+
+    #[test]
+    fn findings_without_errors_or_timeouts_have_a_short_summary() {
+        let reports = [Report::warning("unused value".into(), ReportCode::UnusedVariableValue)];
+        assert_eq!(describe(&reports, &|_: &Report| true), "1 finding reported.");
+        assert_eq!(describe(&[], &|_: &Report| true), "No findings reported.");
+    }
+
+    #[test]
+    fn timeout_warnings_have_their_own_count() {
+        let reports = [
+            Report::error("bad include".into(), ReportCode::ParseFail),
+            Report::warning("unused value".into(), ReportCode::UnusedVariableValue),
+            Report::warning("slow scope".into(), ReportCode::AnalysisTimeout),
+            Report::warning("another slow scope".into(), ReportCode::AnalysisTimeout),
+        ];
+        assert_eq!(
+            describe(&reports, &|_: &Report| true),
+            "1 source error reported. 1 finding reported. 2 analyses timed out."
+        );
+        assert_eq!(
+            describe(&reports, &|_: &Report| false),
+            "No findings reported. 2 analyses timed out."
         );
     }
 }

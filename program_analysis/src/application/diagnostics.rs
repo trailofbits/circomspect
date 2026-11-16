@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::time::Duration;
 
 use parser::hir::LiftedProject;
 use parser::frontend::{DiagnosticKind, Item, LoadedProject, Span};
@@ -33,11 +34,19 @@ pub(super) struct Diagnostics<'a, 'b> {
     sources: &'a SourceMap<'b>,
     reports: ReportGroups,
     incomplete: BTreeMap<ScopeKey, IncompleteScope>,
+    timeouts: Vec<Report>,
+    emitted_timeouts: usize,
 }
 
 impl<'a, 'b> Diagnostics<'a, 'b> {
     pub(super) fn new(sources: &'a SourceMap<'b>) -> Self {
-        Self { sources, reports: ReportGroups::default(), incomplete: BTreeMap::new() }
+        Self {
+            sources,
+            reports: ReportGroups::default(),
+            incomplete: BTreeMap::new(),
+            timeouts: Vec::new(),
+            emitted_timeouts: 0,
+        }
     }
 
     pub(super) fn frontend(
@@ -138,6 +147,14 @@ impl<'a, 'b> Diagnostics<'a, 'b> {
         self.reports.insert_source(report);
     }
 
+    pub(super) fn timed_out(&mut self, name: &str, kind: &str, limit: Duration) {
+        let report = Report::warning(
+            format!("Analysis of the '{name}' {kind} timed out after {} seconds.", limit.as_secs()),
+            ReportCode::AnalysisTimeout,
+        );
+        self.timeouts.push(report);
+    }
+
     pub(super) fn source_incomplete(&mut self, explanation: CoverageExplanation) {
         let span = explanation.span;
         let key =
@@ -182,7 +199,12 @@ impl<'a, 'b> Diagnostics<'a, 'b> {
         &mut self,
         observer: &mut dyn AnalysisObserver,
     ) -> Result<(), ApplicationError> {
-        self.reports.emit_new(self.sources, observer)
+        self.reports.emit_new(self.sources, observer)?;
+        for report in &self.timeouts[self.emitted_timeouts..] {
+            observer.report(report, self.sources.files())?;
+            self.emitted_timeouts += 1;
+        }
+        Ok(())
     }
 
     pub(super) fn finish(
@@ -221,7 +243,9 @@ impl<'a, 'b> Diagnostics<'a, 'b> {
                 }
             }
         }
-        self.reports.finish(self.sources, observer)
+        let mut reports = self.reports.finish(self.sources, observer)?;
+        reports.append(&mut self.timeouts);
+        Ok(reports)
     }
 }
 

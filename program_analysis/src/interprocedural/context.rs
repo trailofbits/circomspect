@@ -507,8 +507,20 @@ impl<'session, 'hir: 'session> ContextQueries<'session, 'hir> {
         if cfg.definition() != evidence.context.definition {
             return Err(AnalyzeEvidenceError::Blocked(SummaryBlocker::WrongContext));
         }
+        self.analyze_without_cfg(evidence, budget)
+    }
+
+    pub(crate) fn analyze_without_cfg<'facts>(
+        &self,
+        evidence: &ContextEvidence,
+        budget: Option<usize>,
+    ) -> Result<AnalysisFacts<'facts>, AnalyzeEvidenceError>
+    where
+        'session: 'facts,
+    {
+        self.check_evidence(evidence).map_err(AnalyzeEvidenceError::Blocked)?;
         let parameters = self
-            .parameters(cfg.definition())
+            .parameters(evidence.context.definition)
             .ok_or(AnalyzeEvidenceError::Blocked(SummaryBlocker::ForeignDefinition))?;
         let seeds = evidence.context.scalar_seeds(parameters);
         let mut facts = self

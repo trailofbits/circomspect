@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::fs;
+use std::time::Duration;
 
 use parser::frontend::{load_sources, Version, VersionPolicy};
 use parser::hir::{lift_project, DefinitionRef};
@@ -13,6 +14,26 @@ use crate::application::AnalysisProgress;
 use crate::hir_cfg::build_cfg;
 use crate::interprocedural::{CallOwner, CallReachability, ProjectAnalysis};
 use crate::rules::{RuleKind, SourceMap};
+
+#[test]
+fn repeated_timeouts_for_one_template_are_counted_separately() {
+    let path = std::env::temp_dir().join(format!(
+        "circomspect-repeat-timeout-{}-{:?}.circom",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    fs::write(&path, "pragma circom 2.2.3; template Same(){}").unwrap();
+    let loaded =
+        load_sources(std::slice::from_ref(&path), &[], VersionPolicy::new(Version::new(2, 2, 3)));
+    fs::remove_file(path).unwrap();
+    let sources = SourceMap::from_loaded(&loaded, &[loaded.files[0].id]).unwrap();
+    let mut diagnostics = Diagnostics::new(&sources);
+    diagnostics.timed_out("Same", "template", Duration::from_secs(2));
+    diagnostics.timed_out("Same", "template", Duration::from_secs(2));
+    let reports = diagnostics.finish(&mut |_: AnalysisProgress<'_>| Ok(())).unwrap();
+    assert_eq!(reports.iter().filter(|report| report.id() == "T3002").count(), 2);
+    assert_eq!(reports[0].message(), reports[1].message());
+}
 
 #[test]
 fn an_internal_error_never_promotes_missing_context_from_the_same_scope() {

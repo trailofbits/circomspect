@@ -83,6 +83,7 @@ impl ExecutionQueries<'_, '_> {
         }
         let mut visited = BTreeSet::new();
         while let Some(id) = pending.pop() {
+            abstract_interpretation::timeout::check();
             if !visited.insert(id) {
                 continue;
             }
@@ -194,6 +195,7 @@ impl ExecutionQueries<'_, '_> {
         self.collect_required_functions(facts, &mut pending);
         let mut visited = BTreeSet::new();
         while let Some(context) = pending.pop() {
+            abstract_interpretation::timeout::check();
             if !visited.insert(context.clone()) {
                 continue;
             }

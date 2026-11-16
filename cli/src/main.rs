@@ -1,9 +1,11 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::num::NonZeroU64;
+use std::time::Duration;
 use clap::{CommandFactory, Parser};
 
 use program_analysis::config;
-use program_analysis::application::{analyze_files_with_observer, ApplicationError};
+use program_analysis::application::{analyze_files_with_observer, AnalysisTimeout, ApplicationError};
 use program_structure::file_definition::FileLibrary;
 use program_structure::report_code::ReportCode;
 
@@ -53,6 +55,10 @@ struct Cli {
     #[clap(short = 'c', long = "curve", name = "NAME", default_value = config::DEFAULT_CURVE,
         help = "Set curve (BN254, BLS12_381, or GOLDILOCKS)")]
     curve: Curve,
+
+    /// Maximum analysis time per template/function context in seconds; omitted means unlimited.
+    #[clap(long = "timeout", value_name = "SECONDS")]
+    timeout: Option<NonZeroU64>,
 }
 
 /// Styles the help output for the [`Cli`].
@@ -79,7 +85,15 @@ fn main() -> Result<ExitCode, String> {
     run(options).map_err(|error| error.to_string())
 }
 
+fn analysis_timeout(seconds: Option<NonZeroU64>) -> AnalysisTimeout {
+    match seconds {
+        Some(seconds) => AnalysisTimeout::Bounded(Duration::from_secs(seconds.get())),
+        None => AnalysisTimeout::Unlimited,
+    }
+}
+
 fn run(options: Cli) -> Result<ExitCode, ReportWriteError> {
+    let timeout = analysis_timeout(options.timeout);
     let ignored = options.allow_list.into_iter().collect();
     let mut stdout_writer = StdoutWriter::new(options.verbose);
     let output = match progress::report(options.verbose, |reporter| {
@@ -93,6 +107,7 @@ fn run(options: Cli) -> Result<ExitCode, ReportWriteError> {
             &options.input_files,
             &options.libraries,
             options.curve,
+            timeout,
             &mut observer,
         )
     }) {
@@ -132,5 +147,9 @@ fn run(options: Cli) -> Result<ExitCode, ReportWriteError> {
     }
 
     stdout_writer.write_message(summary::describe(&reports, &policy))?;
-    Ok(if stdout_writer.reports_written() == 0 { ExitCode::SUCCESS } else { ExitCode::FAILURE })
+    Ok(if stdout_writer.reports_written() == 0 && summary::timeout_count(&reports) == 0 {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    })
 }

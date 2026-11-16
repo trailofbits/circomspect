@@ -3,11 +3,13 @@
 
 use std::io;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use circomspect_program_analysis::application::{
     analyze_files, analyze_files_with_observer, AnalysisObserver, AnalysisOutput, AnalysisProgress,
     ApplicationError,
 };
+use circomspect_program_analysis::application::AnalysisTimeout;
 use program_structure::constants::Curve;
 use program_structure::file_definition::FileLibrary;
 use program_structure::report::{Report, ReportLabel};
@@ -31,7 +33,13 @@ impl Fixture {
         &self,
         observer: &mut dyn AnalysisObserver,
     ) -> Result<AnalysisOutput, ApplicationError> {
-        analyze_files_with_observer(std::slice::from_ref(&self.0), &[], Curve::Bn254, observer)
+        analyze_files_with_observer(
+            std::slice::from_ref(&self.0),
+            &[],
+            Curve::Bn254,
+            circomspect_program_analysis::application::AnalysisTimeout::Unlimited,
+            observer,
+        )
     }
 }
 
@@ -89,6 +97,46 @@ fn reports(output: &AnalysisOutput) -> serde_json::Value {
 const LIBRARY: &str = "template Broken(){component c=Missing();}\n\
     template Early(){var dead=7;signal output out;out<==0;}\n\
     template Later(){signal output out;out<==1;}";
+
+#[test]
+fn missing_include_has_a_sentence_cased_source_annotation() {
+    let fixture = Fixture::new("include \"missing.circom\"; template T(){}");
+    let output = analyze_files(std::slice::from_ref(&fixture.0), &[], Curve::Bn254).unwrap();
+    let report = output.diagnostics.iter().find(|report| report.id() == "P1000").unwrap();
+    assert_eq!(report.primary()[0].message, "This include cannot be resolved.");
+}
+
+#[test]
+fn per_context_timeout_reports_incomplete_scopes_and_continues() {
+    let fixture = Fixture::new("template First(){} template Second(){}");
+    let mut observer = Recorder::default();
+    let output = analyze_files_with_observer(
+        std::slice::from_ref(&fixture.0),
+        &[],
+        Curve::Bn254,
+        AnalysisTimeout::Bounded(Duration::ZERO),
+        &mut observer,
+    )
+    .unwrap();
+    assert_eq!(output.diagnostics.iter().filter(|report| report.id() == "T3002").count(), 2);
+    assert!(observer.events.iter().any(|event| event.contains("First")));
+    assert!(observer.events.iter().any(|event| event.contains("Second")));
+    assert!(output.scopes.iter().all(|scope| scope.reports.is_empty()));
+    assert_eq!(observer.reports.iter().filter(|report| report.id() == "T3002").count(), 2);
+    let warnings: Vec<_> =
+        output.diagnostics.iter().filter(|report| report.id() == "T3002").collect();
+    assert!(warnings
+        .iter()
+        .all(|report| report.primary().is_empty() && report.secondary().is_empty()));
+    assert!(warnings.iter().any(|report| {
+        report.message() == "Analysis of the 'First' template timed out after 0 seconds."
+    }));
+    assert!(warnings.iter().any(|report| {
+        report.message() == "Analysis of the 'Second' template timed out after 0 seconds."
+    }));
+    let sarif = reports(&output);
+    assert_eq!(sarif["runs"][0]["results"].as_array().unwrap().len(), 2);
+}
 
 #[test]
 fn diagnostics_arrive_before_independent_analysis_finishes() {

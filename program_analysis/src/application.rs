@@ -10,6 +10,7 @@ mod scopes;
 use std::collections::BTreeSet;
 use std::io;
 use std::path::PathBuf;
+use abstract_interpretation::timeout::Timeout;
 
 use parser::hir::{lift_project, DefinitionRef};
 use parser::frontend::{load_sources, SourceId, Version, VersionPolicy};
@@ -19,6 +20,7 @@ use program_structure::report::Report;
 use program_structure::writers::ReportWriteError;
 
 pub use crate::application::observer::AnalysisObserver;
+pub use abstract_interpretation::timeout::Timeout as AnalysisTimeout;
 
 use crate::application::diagnostics::Diagnostics;
 use crate::application::scopes::ScopeRunner;
@@ -76,7 +78,7 @@ pub fn analyze_files_with_progress(
     curve: Curve,
     mut progress: impl FnMut(AnalysisProgress<'_>) -> io::Result<()>,
 ) -> Result<AnalysisOutput, ApplicationError> {
-    analyze_files_with_observer(paths, libraries, curve, &mut progress)
+    analyze_files_with_observer(paths, libraries, curve, Timeout::Unlimited, &mut progress)
 }
 
 /// Analyze files and publish diagnostics as independent scopes complete.
@@ -90,6 +92,7 @@ pub fn analyze_files_with_observer(
     paths: &[PathBuf],
     libraries: &[PathBuf],
     curve: Curve,
+    timeout: AnalysisTimeout,
     observer: &mut dyn AnalysisObserver,
 ) -> Result<AnalysisOutput, ApplicationError> {
     observer.progress(AnalysisProgress::LoadingSources)?;
@@ -118,7 +121,7 @@ pub fn analyze_files_with_observer(
     observer.progress(AnalysisProgress::IndexingProject)?;
     let summaries = ProjectAnalysis::build(&lifted, curve)
         .map_err(|error| ApplicationError::Invariant(format!("invalid call graph: {error:?}")))?;
-    let mut runner = ScopeRunner::new(&summaries, &sources, &mut diagnostics);
+    let mut runner = ScopeRunner::new(&summaries, &sources, &mut diagnostics, timeout);
     runner.analyze(observer)?;
     let reports = runner.finish(observer)?;
     let mut scopes = Vec::new();

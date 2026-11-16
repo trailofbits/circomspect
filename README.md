@@ -50,6 +50,18 @@ the path may name a directory or an individual library file. Results from
 included files are hidden unless the file is also an input; errors remain
 visible.
 
+Pass each imported package's file or directory with its own `-L`. Package
+prefixes in include paths are matched against those roots; ambiguous matches
+are reported. Separate input files may each declare a `main` component.
+`--timeout SECONDS` gives each template or function call context a positive
+wall-clock limit. When a context times out, Circomspect reports `T3002`,
+discards findings from that context, and continues with other contexts.
+Timeout warnings have no source location and are counted separately from
+findings in the final summary.
+Source loading, parsing, and project indexing are outside this limit.
+The deadline is checked cooperatively during each context's analysis.
+Without the option, analysis has no wall-clock limit.
+
 The analyzer recovers from source errors where possible and continues through
 independent definitions. Actionable `CS0020` notices name the affected checks,
 identify missing parameter values, and suggest analyzing a concrete caller. These
@@ -57,8 +69,8 @@ notices are informational (`-l INFO`) and hidden by default. Generic resource-li
 and unsupported-analysis notices are omitted; source errors remain visible.
 Repeated findings at the same source location are grouped. Proof locations remain,
 and relevant parameter values identify the affected call without an ancestry trace.
-No visible reports means exit status 0; any
-visible warning, informational result, or error means exit status 1.
+No visible reports and no timed-out analyses means exit status 0. Any
+visible warning, informational result, error, or timeout means exit status 1.
 
 Source errors and findings appear as analysis progresses. Each finding is printed
 once; at `-l INFO`, useful call contexts discovered later appear in an additional

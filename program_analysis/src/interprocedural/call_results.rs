@@ -322,6 +322,7 @@ impl<'session, 'hir: 'session> FunctionQueries<'session, 'hir> {
         let mut active = BTreeSet::new();
         let mut done = BTreeSet::new();
         while let Some(visit) = stack.pop() {
+            abstract_interpretation::timeout::check();
             match visit {
                 Visit::Enter(id) => {
                     if !self.enter_function(id, &mut active, &done, &mut stack) {

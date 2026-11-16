@@ -1,4 +1,8 @@
 use std::collections::HashSet;
+use std::num::NonZeroU64;
+use std::time::Duration;
+
+use crate::{analysis_timeout, AnalysisTimeout};
 
 use program_structure::report::{MessageCategory, Report};
 use program_structure::report_code::ReportCode;
@@ -77,4 +81,11 @@ fn allowed_ids_hide_errors_as_well_as_warnings_and_information() {
             assert_eq!(policy.filter(&report), expected);
         }
     }
+}
+
+#[test]
+fn timeout_is_unlimited_by_default_and_bounded_when_requested() {
+    assert_eq!(analysis_timeout(None), AnalysisTimeout::Unlimited);
+    let seconds = NonZeroU64::new(3);
+    assert_eq!(analysis_timeout(seconds), AnalysisTimeout::Bounded(Duration::from_secs(3)));
 }

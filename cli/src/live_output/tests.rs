@@ -53,6 +53,7 @@ fn blocked_analysis(source: &Path) {
             &[source.to_owned()],
             &[],
             Curve::Bn254,
+            program_analysis::application::AnalysisTimeout::Unlimited,
             &mut PausingOutput(output),
         )
     })
