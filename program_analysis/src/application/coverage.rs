@@ -283,5 +283,8 @@ pub(super) fn check_name(kind: RuleKind) -> &'static str {
         RuleKind::Complexity => "cyclomatic complexity",
         RuleKind::TooManyArguments => "argument counts",
         RuleKind::IncompleteCoverage => "analysis coverage",
+        RuleKind::SignalDependentAssert => "signal-dependent assertions",
+        RuleKind::UnassignedOutput => "unassigned outputs",
+        RuleKind::ComparatorPrecondition => "comparator preconditions",
     }
 }

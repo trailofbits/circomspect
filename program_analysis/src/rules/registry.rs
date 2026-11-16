@@ -31,6 +31,7 @@ fn run_rules<'a>(
     let mut seen = BTreeSet::new();
     let mut combined = RuleResult::default();
     for rule in rules {
+        abstract_interpretation::timeout::check();
         let kind = rule.kind();
         if !seen.insert(kind) {
             return Err(RuleRunError::DuplicateRule(kind));

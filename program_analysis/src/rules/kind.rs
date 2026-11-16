@@ -22,6 +22,9 @@ pub enum RuleKind {
     Complexity,
     TooManyArguments,
     IncompleteCoverage,
+    SignalDependentAssert,
+    UnassignedOutput,
+    ComparatorPrecondition,
 }
 
 impl RuleKind {
@@ -35,6 +38,7 @@ impl RuleKind {
             RedundantWitnessAssignment, UnconstrainedSignal, UnconstrainedLessThan,
             UnusedVariableValue, UnusedParameterValue, SideEffectFreeAssignment,
             UnusedOutputSignal, Complexity, TooManyArguments, IncompleteCoverage,
+            SignalDependentAssert, UnassignedOutput, ComparatorPrecondition,
         };
         match self {
             BitwiseComplement | FieldArithmetic => ReportCode::FieldElementArithmetic,
@@ -54,6 +58,9 @@ impl RuleKind {
             Complexity => ReportCode::CyclomaticComplexity,
             TooManyArguments => ReportCode::TooManyArguments,
             IncompleteCoverage => ReportCode::IncompleteCoverage,
+            SignalDependentAssert => ReportCode::SignalDependentAssert,
+            UnassignedOutput => ReportCode::UnassignedOutput,
+            ComparatorPrecondition => ReportCode::ComparatorPrecondition,
         }
     }
 
@@ -65,7 +72,7 @@ impl RuleKind {
             SignalAssignment, RedundantWitnessAssignment, UnconstrainedSignal,
             UnconstrainedLessThan, UnusedVariableValue, UnusedParameterValue,
             SideEffectFreeAssignment, UnusedOutputSignal, Complexity, TooManyArguments,
-            IncompleteCoverage,
+            IncompleteCoverage, SignalDependentAssert, UnassignedOutput, ComparatorPrecondition,
         };
         match self {
             BitwiseComplement | FieldArithmetic | FieldComparison => MessageCategory::Info,
@@ -84,6 +91,9 @@ impl RuleKind {
             | Complexity
             | TooManyArguments
             | IncompleteCoverage => MessageCategory::Warning,
+            SignalDependentAssert | UnassignedOutput | ComparatorPrecondition => {
+                MessageCategory::Warning
+            }
         }
     }
 }

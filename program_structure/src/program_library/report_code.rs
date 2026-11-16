@@ -1,7 +1,7 @@
 const DOC_URL: &str = "https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md";
 
 /// Diagnostic codes emitted by the current frontend, semantic checks, and analysis rules.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Eq, PartialEq)]
 pub enum ReportCode {
     ParseFail,
     CompilerVersionError,
@@ -27,6 +27,7 @@ pub enum ReportCode {
     InvalidArrayIndexBus,
     ConstraintGeneratorInFunction,
     RuntimeError,
+    AnalysisTimeout,
     NonConstantArrayLength,
     NonComputableExpression,
     WrongBusAssignment,
@@ -54,6 +55,9 @@ pub enum ReportCode {
     IncompleteCoverage,
     RedundantWitnessAssignment,
     MissingBusType,
+    SignalDependentAssert,
+    UnassignedOutput,
+    ComparatorPrecondition,
 }
 
 struct DiagnosticDescriptor {
@@ -93,6 +97,7 @@ impl ReportCode {
                 ("T2039", "constraint-generator-in-function", None)
             }
             Self::RuntimeError => ("T3001", "runtime-error", None),
+            Self::AnalysisTimeout => ("T3002", "analysis-timeout", None),
             Self::NonConstantArrayLength => ("T20463", "non-constant-array-length", None),
             Self::NonComputableExpression => ("T20464", "non-computable-expression", None),
             Self::WrongBusAssignment => ("T2059", "wrong-bus-assignment", None),
@@ -154,6 +159,13 @@ impl ReportCode {
                 ("CS0021", "redundant-witness-assignment", Some("redundant-witness-assignment"))
             }
             Self::MissingBusType => ("CS0022", "missing-bus-type", None),
+            Self::SignalDependentAssert => {
+                ("CS0023", "signal-dependent-assert", Some("signal-dependent-assert"))
+            }
+            Self::UnassignedOutput => ("CS0024", "unassigned-output", Some("unassigned-output")),
+            Self::ComparatorPrecondition => {
+                ("CS0025", "comparator-precondition", Some("comparator-precondition"))
+            }
         };
         DiagnosticDescriptor { id, name, anchor }
     }

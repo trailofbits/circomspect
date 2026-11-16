@@ -3,18 +3,18 @@ use std::sync::OnceLock;
 #[cfg(test)]
 mod cache_tests;
 
-use parser::hir::{AccessPath, DefinitionRef, HirProject, PortId};
+use parser::hir::{AccessPath, DefinitionRef, FunctionId, HirProject, PortId};
 use parser::frontend::Span;
 
 use crate::hir_facts::{
     AccessHandle, AnalysisFacts, AssignmentDemand, BitAmbiguityOutcome, BitDecomposition, Fact,
 };
 use crate::interprocedural::{
-    AppliedComponentPort, CallBlocker, CallContext, CallOwner, CallReachability, CallSite,
-    CallPathSite, CallSiteId, CallerOutputRead, ComposedConstraintFixedOutput, ContextEvidence,
-    ComponentBitAmbiguityOutcome, EnumeratedComponentOutput, FunctionEffects, FunctionSummary,
-    GeneratedEquationQueries, PortSummary, ProjectOutputUse, ProjectAnalysis, SummaryBlocker,
-    SummaryFact, ValidatedDefinition, ValidatedHeader, WitnessSite,
+    AppliedComponentPort, ArgumentValue, CallBlocker, CallContext, CallOwner, CallReachability,
+    CallSite, CallPathSite, CallSiteId, CallerOutputRead, ComposedConstraintFixedOutput,
+    ContextEvidence, ComponentBitAmbiguityOutcome, EnumeratedComponentOutput, FunctionEffects,
+    FunctionSummary, GeneratedEquationQueries, PortSummary, ProjectOutputUse, ProjectAnalysis,
+    SummaryBlocker, SummaryFact, ValidatedDefinition, ValidatedHeader, WitnessSite,
 };
 
 use crate::rules::{AbstentionReason, Finding, RuleKind, ScopedAbstention};
@@ -46,6 +46,7 @@ pub struct RuleContext<'a, 'facts, 'project> {
     summaries: &'a ProjectAnalysis<'project>,
     evidence: &'a ContextEvidence,
     warning_execution: OnceLock<Result<(), SummaryBlocker>>,
+    template_incidence_scope: OnceLock<Result<(), SummaryBlocker>>,
     component_outputs: OnceLock<SummaryFact<Vec<EnumeratedComponentOutput>>>,
 }
 
@@ -78,6 +79,7 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
             summaries,
             evidence,
             warning_execution: OnceLock::new(),
+            template_incidence_scope: OnceLock::new(),
             component_outputs: OnceLock::new(),
         })
     }
@@ -268,11 +270,12 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
         &self,
         path: &parser::hir::AccessPath,
     ) -> SummaryFact<crate::hir_facts::Incidence> {
-        self.summaries.templates().template_internal_signal_incidence(
-            self.facts,
-            self.evidence,
-            path,
-        )
+        let scope = self.template_incidence_scope.get_or_init(|| {
+            self.summaries.execution().check_template_incidence_scope(self.facts, self.evidence)
+        });
+        SummaryFact::from_result(scope.clone().and_then(|()| {
+            self.summaries.templates().internal_signal_incidence_checked_scope(self.facts, path)
+        }))
     }
 
     /// Validate this fact snapshot once for a batch of generated equation queries.
@@ -397,6 +400,29 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
     pub fn function_summary(&self) -> Option<SummaryFact<FunctionSummary>> {
         let DefinitionRef::Function(id) = self.call_context().definition() else { return None };
         Some(self.summaries.functions().function(id, self.call_context()))
+    }
+
+    /// Evaluate a complete scalar function return for concrete compile-time arguments.
+    pub(crate) fn exact_function_result(
+        &self,
+        function: FunctionId,
+        arguments: Vec<crate::hir_facts::FieldValue>,
+    ) -> Option<crate::hir_facts::FieldValue> {
+        let arguments = arguments.into_iter().map(ArgumentValue::Scalar).collect();
+        let key = self
+            .summaries
+            .contexts()
+            .context_for(DefinitionRef::Function(function), arguments)
+            .ok()?;
+        let summary = self.summaries.functions().function(function, &key);
+        let crate::hir_facts::Range::Exact(value) = summary.certified()?.complete_return()? else {
+            return None;
+        };
+        Some(value.clone())
+    }
+
+    pub(crate) fn function_has_no_hard_source_issue(&self, function: FunctionId) -> bool {
+        self.summaries.sources().has_no_hard_source_issue(DefinitionRef::Function(function))
     }
 
     /// Return effects only for the active function specialization.

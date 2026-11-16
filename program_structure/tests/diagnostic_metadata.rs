@@ -1,4 +1,8 @@
 use circomspect_program_structure::report_code::ReportCode;
+use circomspect_program_structure::report::Report;
+use circomspect_program_structure::file_definition::FileLibrary;
+use codespan_reporting::term;
+use termcolor::Buffer;
 
 const CODES: &[(&str, ReportCode)] = &[
     ("ParseFail", ReportCode::ParseFail),
@@ -25,6 +29,7 @@ const CODES: &[(&str, ReportCode)] = &[
     ("InvalidArrayIndexBus", ReportCode::InvalidArrayIndexBus),
     ("ConstraintGeneratorInFunction", ReportCode::ConstraintGeneratorInFunction),
     ("RuntimeError", ReportCode::RuntimeError),
+    ("AnalysisTimeout", ReportCode::AnalysisTimeout),
     ("NonConstantArrayLength", ReportCode::NonConstantArrayLength),
     ("NonComputableExpression", ReportCode::NonComputableExpression),
     ("WrongBusAssignment", ReportCode::WrongBusAssignment),
@@ -52,6 +57,9 @@ const CODES: &[(&str, ReportCode)] = &[
     ("IncompleteCoverage", ReportCode::IncompleteCoverage),
     ("RedundantWitnessAssignment", ReportCode::RedundantWitnessAssignment),
     ("MissingBusType", ReportCode::MissingBusType),
+    ("SignalDependentAssert", ReportCode::SignalDependentAssert),
+    ("UnassignedOutput", ReportCode::UnassignedOutput),
+    ("ComparatorPrecondition", ReportCode::ComparatorPrecondition),
 ];
 
 #[test]
@@ -67,4 +75,26 @@ fn diagnostic_metadata_matches_the_frozen_public_contract() {
         let url = if fields[3] == "<none>" { None } else { Some(fields[3]) };
         assert_eq!(code.url().as_deref(), url, "{variant} URL");
     }
+}
+
+#[test]
+fn timeout_warning_renders_without_a_source_location() -> Result<(), Box<dyn std::error::Error>> {
+    let report = Report::warning(
+        "Analysis of the 'Slow' template timed out after 3 seconds.".into(),
+        ReportCode::AnalysisTimeout,
+    );
+    let files = FileLibrary::new();
+    let mut writer = Buffer::no_color();
+    term::emit(
+        &mut writer,
+        &term::Config::default(),
+        files.to_storage(),
+        &report.to_diagnostic(false),
+    )?;
+    let rendered = std::str::from_utf8(writer.as_slice())?;
+    let expected = "warning: Analysis of the 'Slow' template timed out after 3 seconds.";
+    if rendered.trim_end() != expected {
+        return Err(format!("unexpected timeout warning: {rendered:?}").into());
+    }
+    Ok(())
 }

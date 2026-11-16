@@ -552,6 +552,113 @@ fn include_cycles_have_source_locations_and_terminate() {
 }
 
 #[test]
+fn partial_output_array_reports_assignment_and_constraint_warnings() {
+    let input = fixture(
+        "partial-output",
+        "pragma circom 2.2.3; template Partial() { \
+         signal input x; signal output out[4]; \
+         out[0] <== x; out[1] <-- x; out[2] <== x; }",
+    );
+    let result = run(&input.path(), &[], "partial-output");
+    assert!(ids(&result.sarif).contains("CS0024"), "{}", result.stdout);
+    assert!(result.stdout.contains("out[1]"), "{}", result.stdout);
+    assert!(result.stdout.contains("out[3]"), "{}", result.stdout);
+    let messages: Vec<_> = result.sarif["runs"][0]["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|entry| entry["ruleId"] == "CS0024")
+        .filter_map(|entry| entry["message"]["text"].as_str())
+        .collect();
+    assert_eq!(messages.len(), 2, "{}", result.stdout);
+    assert!(messages.contains(&"Output `out[3]` is never assigned."));
+    assert!(messages.contains(&"Output `out` has 2 elements without generated constraints."));
+    assert!(messages
+        .iter()
+        .all(|message| !message.contains("out[0]") && !message.contains("out[2]")));
+}
+
+#[test]
+fn complete_output_array_does_not_report_output_completeness() {
+    let input = fixture(
+        "complete-output",
+        "pragma circom 2.2.3; template Complete() { \
+         signal input x; signal output out[2]; out[0] <== x; out[1] <== x; }",
+    );
+    let result = run(&input.path(), &[], "complete-output");
+    assert!(!ids(&result.sarif).contains("CS0024"), "{}", result.stdout);
+}
+
+#[test]
+fn witness_dependent_assertion_is_reported_but_parameter_assertion_is_not() {
+    let input = fixture(
+        "witness-assert",
+        "pragma circom 2.2.3; template Check(n) { \
+         assert(n > 0); signal input x; signal output out; \
+         assert(x == 1); out <== x; } component main = Check(1);",
+    );
+    let result = run(&input.path(), &[], "witness-assert");
+    let messages: Vec<_> = result.sarif["runs"][0]["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|entry| entry["ruleId"] == "CS0023")
+        .collect();
+    assert_eq!(messages.len(), 1, "{}", result.stdout);
+    assert!(result.stdout.contains("witness-dependent"), "{}", result.stdout);
+}
+
+#[test]
+fn assertion_repeated_by_a_mandatory_constraint_is_not_reported() {
+    let input = fixture(
+        "constrained-assert",
+        "pragma circom 2.2.3; template Check() { \
+         signal input x; signal output out; assert(x == 1); x === 1; out <== x; } \
+         component main = Check();",
+    );
+    let result = run(&input.path(), &[], "constrained-assert");
+    assert!(!ids(&result.sarif).contains("CS0023"), "{}", result.stdout);
+}
+
+#[test]
+fn comparator_precondition_distinguishes_symbolic_and_exact_operands() {
+    let input = fixture(
+        "comparator-precondition",
+        "pragma circom 2.2.3; \
+         template LessThan(n) {assert(n <= 252); signal input in[2]; \
+         signal output out; out <== in[0];} \
+         template Check(max) {signal input x; signal output y; \
+         y <== LessThan(8)([x, max + 1]);} component main = Check(256);",
+    );
+    let result = run(&input.path(), &[], "comparator-precondition");
+    let messages: Vec<_> = result.sarif["runs"][0]["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|entry| entry["ruleId"] == "CS0025")
+        .filter_map(|entry| entry["message"]["text"].as_str())
+        .collect();
+    assert!(messages.iter().any(|message| message.contains("input 1 is 257")));
+    assert!(messages.iter().any(|message| message.contains("input 0")));
+}
+
+#[test]
+fn comparator_width_from_complete_compile_time_function_is_analyzed() {
+    let input = fixture(
+        "comparator-function-width",
+        "pragma circom 2.2.3; \
+         function log2Ceil(a) {var n=a-1; var r=0; while(n>0) {r++; n \\= 2;} return r;} \
+         template LessThan(n) {signal input in[2]; signal output out; out <== in[0];} \
+         template Check(max) {signal input length; signal output y; \
+         y <== LessThan(log2Ceil(max+1))([length,max+1]);} \
+         component main = Check(5);",
+    );
+    let result = run(&input.path(), &[], "comparator-function-width");
+    assert!(ids(&result.sarif).contains("CS0025"), "{}", result.stdout);
+    assert!(result.stdout.contains("3-bit range"), "{}", result.stdout);
+}
+
+#[test]
 fn concrete_main_arguments_reach_numeric_rules() {
     let input = fixture(
         "main-argument",

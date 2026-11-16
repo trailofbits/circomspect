@@ -354,7 +354,7 @@ impl ExecutionQueries<'_, '_> {
         Ok(())
     }
 
-    pub(super) fn check_template_incidence_scope(
+    pub(crate) fn check_template_incidence_scope(
         &self,
         facts: &AnalysisFacts<'_>,
         evidence: &ContextEvidence,

@@ -456,6 +456,9 @@ fn every_rule_kind_has_a_frozen_id_and_level() {
         (Complexity, "CS0011", MessageCategory::Warning),
         (TooManyArguments, "CS0012", MessageCategory::Warning),
         (IncompleteCoverage, "CS0020", MessageCategory::Warning),
+        (SignalDependentAssert, "CS0023", MessageCategory::Warning),
+        (UnassignedOutput, "CS0024", MessageCategory::Warning),
+        (ComparatorPrecondition, "CS0025", MessageCategory::Warning),
     ];
     for (kind, id, level) in expected {
         assert_eq!(kind.code().id(), id, "{kind:?}");
@@ -472,7 +475,7 @@ fn rule_families_partition_the_planned_rules() {
             assert!(kinds.insert(*kind), "duplicate rule kind: {kind:?}");
         }
     }
-    assert_eq!(kinds.len(), 17);
+    assert_eq!(kinds.len(), 20);
     assert!(!kinds.contains(&RuleKind::IncompleteCoverage));
     assert!(kinds.contains(&RuleKind::UnconstrainedSignal));
     assert!(kinds.contains(&RuleKind::UnusedVariableValue));

@@ -50,7 +50,10 @@ impl ContextDisplay {
             | RuleKind::UnusedParameterValue
             | RuleKind::UnusedOutputSignal
             | RuleKind::Complexity
-            | RuleKind::IncompleteCoverage => {}
+            | RuleKind::IncompleteCoverage
+            | RuleKind::SignalDependentAssert
+            | RuleKind::UnassignedOutput
+            | RuleKind::ComparatorPrecondition => {}
         }
         Self::for_evidence(hir, evidence)
     }

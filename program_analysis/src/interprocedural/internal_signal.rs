@@ -32,6 +32,14 @@ impl TemplateQueries<'_, '_> {
         path: &AccessPath,
     ) -> Result<Incidence, SummaryBlocker> {
         self.analysis.execution().check_template_incidence_scope(facts, evidence)?;
+        self.internal_signal_incidence_checked_scope(facts, path)
+    }
+
+    pub(crate) fn internal_signal_incidence_checked_scope(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        path: &AccessPath,
+    ) -> Result<Incidence, SummaryBlocker> {
         self.check_internal_signal(path)?;
         certified(&facts.exact_access_key(path))?;
         Ok(*certified(&facts.incidence(path))?)

@@ -271,6 +271,13 @@ impl<'session> SourceQueries<'session, '_> {
         Ok(ValidatedDefinition { header })
     }
 
+    pub(crate) fn has_no_hard_source_issue(&self, definition: DefinitionRef) -> bool {
+        if self.validated_header(definition).is_err() {
+            return false;
+        }
+        self.definition_has_hard_source_issue(definition).is_ok_and(|has_issue| !has_issue)
+    }
+
     fn definition_parts(
         &self,
         definition: DefinitionRef,

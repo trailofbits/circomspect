@@ -44,7 +44,7 @@ impl<T> SummaryFact<T> {
         Self(SummaryState::Unavailable(BTreeSet::from([blocker])))
     }
 
-    pub(super) fn from_result(result: Result<T, SummaryBlocker>) -> Self {
+    pub(crate) fn from_result(result: Result<T, SummaryBlocker>) -> Self {
         match result {
             Ok(value) => Self::known(value),
             Err(blocker) => Self::blocked(blocker),
@@ -295,6 +295,7 @@ impl FunctionQueries<'_, '_> {
         let mut records = BTreeMap::new();
         let mut pending = vec![context.clone()];
         while let Some(next) = pending.pop() {
+            abstract_interpretation::timeout::check();
             if records.contains_key(&next) {
                 continue;
             }
@@ -339,6 +340,7 @@ impl FunctionQueries<'_, '_> {
         let mut current = cfg.entry();
         let mut visited = BTreeSet::new();
         while current != cfg.exit() {
+            abstract_interpretation::timeout::check();
             if !visited.insert(current) {
                 return None;
             }

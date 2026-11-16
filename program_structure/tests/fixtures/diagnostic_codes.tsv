@@ -22,6 +22,7 @@ InvalidArraySize	T2033	invalid-array-size	<none>
 InvalidArrayIndexBus	T2053	invalid-array-index-bus	<none>
 ConstraintGeneratorInFunction	T2039	constraint-generator-in-function	<none>
 RuntimeError	T3001	runtime-error	<none>
+AnalysisTimeout	T3002	analysis-timeout	<none>
 NonConstantArrayLength	T20463	non-constant-array-length	<none>
 NonComputableExpression	T20464	non-computable-expression	<none>
 WrongBusAssignment	T2059	wrong-bus-assignment	<none>
@@ -49,3 +50,6 @@ UnresolvedCall	CS0019	unresolved-call	<none>
 IncompleteCoverage	CS0020	incomplete-analysis	https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md#incomplete-analysis
 RedundantWitnessAssignment	CS0021	redundant-witness-assignment	https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md#redundant-witness-assignment
 MissingBusType	CS0022	missing-bus-type	<none>
+SignalDependentAssert	CS0023	signal-dependent-assert	https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md#signal-dependent-assert
+UnassignedOutput	CS0024	unassigned-output	https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md#unassigned-output
+ComparatorPrecondition	CS0025	comparator-precondition	https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md#comparator-precondition

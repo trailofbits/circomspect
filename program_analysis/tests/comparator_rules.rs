@@ -370,13 +370,7 @@ fn pure_helper_guard_retains_typed_abstention_when_shape_is_unresolved() {
     assert!(result.abstentions().iter().any(|abstention| {
         let AbstentionReason::Summary(blockers) = &abstention.reason else { return false };
         abstention.kind == RuleKind::UnconstrainedLessThan
-            && blockers.iter().any(|blocker| {
-                if let SummaryBlocker::LocalFacts(facts) = blocker {
-                    !facts.is_empty()
-                } else {
-                    false
-                }
-            })
+            && blockers.contains(&SummaryBlocker::UnsupportedContext)
     }));
 }
 

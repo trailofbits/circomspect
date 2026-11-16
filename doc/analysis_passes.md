@@ -18,6 +18,8 @@ finding.
 
 `CS0006` reports an assigned local value that is never read before overwrite
 or exit, or an internal signal with no read or generated-constraint use.
+For a loop, the source comment identifies an unused final update when earlier
+assigned values of that variable are read.
 `CS0007` reports an unused parameter. These are use findings: an unread return
 value can be reported even when evaluating its function has side effects.
 
@@ -33,6 +35,30 @@ keeps distinct symbols separate.
 signal with zero incidence in the complete generated constraint closure.
 `<--` computes a witness value but creates no constraint. Propagating a
 constant through `<--` does not prove that constraints fix that value.
+
+## Signal-dependent assert
+
+`CS0023` identifies a reachable `assert` whose condition depends on a
+witness value. Circom evaluates such assertions while generating a witness;
+the assertion itself adds no R1CS constraint. A compile-time assertion on a
+parameter is not reported. The rule suppresses a direct equality assertion
+when a structurally equivalent generated equality must execute in the same
+context. It does not prove that all other assertions lack an equivalent
+constraint elsewhere, or that bypassing one yields an accepted proof.
+
+## Unassigned output
+
+`CS0024` checks declared template outputs, including library templates
+without `main`. Missing witness assignments and missing generated constraints
+produce separate warnings. A `<--` write satisfies the assignment check but
+does not create a constraint. For arrays with concrete dimensions, the rule
+checks individual elements. Loop indices certified at each write site are
+resolved separately. Multiple elements missing assignments or constraints in
+one output array produce one warning per issue type with the affected count.
+Unresolved write indices, unknown dimensions, incomplete source, and arrays
+above 10,000 elements cause scoped abstention. This rule checks
+assignment and incidence, not unique determination by the full constraint
+system. Custom and external templates are excluded.
 
 ## Redundant witness assignment
 
@@ -93,6 +119,19 @@ conversion child. The comparator has two input elements and uses a validated
 must be smaller than the field prime. A complete satisfying assignment checks
 every generated equation in all three scopes. Additional component dependencies
 or unsupported guards prevent this finding.
+
+## Comparator precondition
+
+`CS0025` examines direct anonymous `LessThan(n)([a,b])` calls with a
+constrained two-element input and a known width. It reports a concrete
+operand outside `[0, 2^n)` and distinguishes that from a witness-dependent
+operand whose range this pass cannot establish. The latter is a review lead,
+not proof of a counterexample: a caller may enforce a sufficient range.
+This check recognizes the common `LessThan` interface by its template name;
+it does not certify the callee's generated equations. `CS0014` remains the
+name-independent, model-checked comparator violation rule. Other comparator
+interfaces, explicit component bindings, and symbolic widths are not yet
+covered by `CS0025`.
 
 ## Unconstrained division
 

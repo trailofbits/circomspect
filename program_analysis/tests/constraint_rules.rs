@@ -109,6 +109,202 @@ fn assert_rendered(loaded: &LoadedProject, result: &RuleResult, kind: RuleKind) 
 }
 
 #[test]
+fn output_annotations_describe_the_missing_assignment_or_constraint() {
+    for (source, expected) in [
+        (
+            "template T(){signal output out;}",
+            &[
+                "The signal `out` has no witness assignment.",
+                "The signal `out` is never constrained.",
+            ][..],
+        ),
+        (
+            "template T(){signal output out[2];out[0]<==1;}",
+            &[
+                "The signal `out[1]` has no witness assignment.",
+                "The signal `out[1]` is never constrained.",
+            ],
+        ),
+        (
+            "template T(){signal output out[1];}",
+            &[
+                "The signal `out[0]` has no witness assignment.",
+                "The signal `out[0]` is never constrained.",
+            ],
+        ),
+        ("template T(){signal output out;out<--1;}", &["The signal `out` is never constrained."]),
+    ] {
+        let (loaded, result) = inspect(source, None);
+        let sources = SourceMap::from_loaded(&loaded, &[loaded.files[0].id]).unwrap();
+        let labels: Vec<_> = result
+            .findings()
+            .iter()
+            .filter(|finding| finding.kind() == RuleKind::UnassignedOutput)
+            .map(|finding| finding.to_report(&sources).unwrap().primary()[0].message.clone())
+            .collect();
+        let mut labels = labels;
+        labels.sort();
+        let mut expected = expected.to_vec();
+        expected.sort_unstable();
+        assert_eq!(labels, expected, "{source}");
+    }
+}
+
+#[test]
+fn constrained_output_without_a_witness_reports_only_the_missing_assignment() {
+    let source = "template T(){signal output out[2];out[0]<==1;out[1]===0;}";
+    let (loaded, result) = inspect(source, None);
+    let sources = SourceMap::from_loaded(&loaded, &[loaded.files[0].id]).unwrap();
+    let reports: Vec<_> = result
+        .findings()
+        .iter()
+        .filter(|finding| finding.kind() == RuleKind::UnassignedOutput)
+        .map(|finding| finding.to_report(&sources).unwrap())
+        .collect();
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].message(), "Output `out[1]` is never assigned.");
+    assert_eq!(reports[0].primary()[0].message, "The signal `out[1]` has no witness assignment.");
+}
+
+#[test]
+fn multiple_unconstrained_elements_use_the_plural_comment() {
+    let source = "template T(){signal output out[4];out[0]<==1;out[1]<--1;out[2]===0;}";
+    let (loaded, result) = inspect(source, None);
+    let sources = SourceMap::from_loaded(&loaded, &[loaded.files[0].id]).unwrap();
+    let reports: Vec<_> = result
+        .findings()
+        .iter()
+        .filter(|finding| finding.kind() == RuleKind::UnassignedOutput)
+        .map(|finding| finding.to_report(&sources).unwrap())
+        .collect();
+    assert_eq!(reports.len(), 2);
+    for message in [
+        "Output `out` has 2 unassigned elements.",
+        "Output `out` has 2 elements without generated constraints.",
+    ] {
+        assert!(reports.iter().any(|report| report.message() == message));
+    }
+    let aggregate =
+        reports.iter().find(|report| report.message().contains("generated constraints")).unwrap();
+    assert_eq!(aggregate.primary()[0].message, "Multiple elements in `out` are unconstrained.");
+    let missing = reports.iter().find(|report| report.message().contains("unassigned")).unwrap();
+    assert_eq!(missing.primary()[0].message, "Multiple elements in `out` are unassigned.");
+}
+
+#[test]
+fn wholly_unwritten_array_has_one_assignment_and_one_constraint_warning() {
+    let source = "template T(){signal output out[256];}";
+    let (loaded, result) = inspect(source, None);
+    let sources = SourceMap::from_loaded(&loaded, &[loaded.files[0].id]).unwrap();
+    let reports: Vec<_> = result
+        .findings()
+        .iter()
+        .filter(|finding| finding.kind() == RuleKind::UnassignedOutput)
+        .map(|finding| finding.to_report(&sources).unwrap())
+        .collect();
+    assert_eq!(reports.len(), 2);
+    assert!(reports
+        .iter()
+        .any(|report| report.message() == "Output `out` has 256 unassigned elements."));
+    let assignment = reports.iter().find(|report| report.message().contains("unassigned")).unwrap();
+    assert_eq!(assignment.primary()[0].message, "Multiple elements in `out` are unassigned.");
+    assert!(reports.iter().any(|report| {
+        report.message() == "Output `out` has 256 elements without generated constraints."
+    }));
+}
+
+#[test]
+fn partially_unwritten_array_summarizes_both_kinds_of_missing_elements() {
+    let source = "template T(){signal output out[256];out[0]<==0;}";
+    let (loaded, result) = inspect(source, None);
+    let sources = SourceMap::from_loaded(&loaded, &[loaded.files[0].id]).unwrap();
+    let messages: Vec<_> = result
+        .findings()
+        .iter()
+        .filter(|finding| finding.kind() == RuleKind::UnassignedOutput)
+        .map(|finding| finding.to_report(&sources).unwrap().message().to_owned())
+        .collect();
+    assert_eq!(messages.len(), 2);
+    assert!(messages.contains(&"Output `out` has 255 unassigned elements.".into()));
+    assert!(
+        messages.contains(&"Output `out` has 255 elements without generated constraints.".into())
+    );
+}
+
+#[test]
+fn constant_loop_writes_leave_the_unassigned_output_element_visible() {
+    let source = "template T(){signal input in[2];signal output out[3];var i;\
+                  for(i=0;i<2;i++){out[i]<==in[i];}}";
+    let (loaded, result) = inspect(source, None);
+    let sources = SourceMap::from_loaded(&loaded, &[loaded.files[0].id]).unwrap();
+    let reports: Vec<_> = result
+        .findings()
+        .iter()
+        .filter(|finding| finding.kind() == RuleKind::UnassignedOutput)
+        .map(|finding| finding.to_report(&sources).unwrap())
+        .collect();
+    assert_eq!(reports.len(), 2);
+    assert!(reports.iter().any(|report| report.message() == "Output `out[2]` is never assigned."));
+    assert!(reports
+        .iter()
+        .any(|report| report.message() == "Output `out[2]` has no generated constraint."));
+
+    let complete = "template T(){signal input in[2];signal output out[3];var i;\
+                    for(i=0;i<2;i++){out[i]<==in[i];}out[2]<==0;}";
+    let (_, result) = inspect(complete, None);
+    assert_eq!(count(&result, RuleKind::UnassignedOutput), 0);
+}
+
+#[test]
+fn pointbits_shape_reports_only_the_missing_254th_output() {
+    let source = "template T(){signal output out[256];var i;\
+                  for(i=0;i<254;i++){out[i]<==0;}out[255]<==1;}";
+    let (loaded, result) = inspect(source, None);
+    let sources = SourceMap::from_loaded(&loaded, &[loaded.files[0].id]).unwrap();
+    let reports: Vec<_> = result
+        .findings()
+        .iter()
+        .filter(|finding| finding.kind() == RuleKind::UnassignedOutput)
+        .map(|finding| finding.to_report(&sources).unwrap())
+        .collect();
+    assert_eq!(reports.len(), 2);
+    assert!(reports
+        .iter()
+        .any(|report| report.message() == "Output `out[254]` is never assigned."));
+    assert!(reports
+        .iter()
+        .any(|report| report.message() == "Output `out[254]` has no generated constraint."));
+}
+
+#[test]
+fn component_sourced_loop_writes_preserve_exact_output_indices() {
+    let source = "template Bits(){signal output bits[2];bits[0]<==1;bits[1]<==0;}\
+                  template T(){signal output out[3];component bits=Bits();var i;\
+                  for(i=0;i<2;i++){out[i]<==bits.bits[i];}}";
+    let (loaded, result) = inspect(source, None);
+    let sources = SourceMap::from_loaded(&loaded, &[loaded.files[0].id]).unwrap();
+    let reports: Vec<_> = result
+        .findings()
+        .iter()
+        .filter(|finding| finding.kind() == RuleKind::UnassignedOutput)
+        .map(|finding| finding.to_report(&sources).unwrap())
+        .collect();
+    assert_eq!(reports.len(), 2);
+    assert!(reports.iter().any(|report| report.message() == "Output `out[2]` is never assigned."));
+    assert!(reports
+        .iter()
+        .any(|report| report.message() == "Output `out[2]` has no generated constraint."));
+}
+
+#[test]
+fn unknown_loop_index_does_not_certify_missing_output_elements() {
+    let source = "template T(n){signal output out[3];var i;\
+                  for(i=0;i<n;i++){out[i]<==1;}}";
+    let (_, result) = inspect(source, None);
+    assert_abstention(&result, RuleKind::UnassignedOutput);
+}
+
+#[test]
 fn witness_only_outputs_emit_without_treating_constants_as_constraints() {
     for value in
         ["0", "1", "21888242871839275222246405745257275088548364400416034343698204186575808495616"]
