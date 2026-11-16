@@ -153,8 +153,7 @@ fn report_zero(
                         )
                         .into(),
                         span,
-                        "Witness-only assignment to an output with zero constraint incidence"
-                            .into(),
+                        "This output assignment adds no constraint.".into(),
                     ),
                 );
             }

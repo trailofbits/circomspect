@@ -840,7 +840,7 @@ fn empty_sarif_is_written_without_a_result_written_status() {
 }
 
 #[test]
-fn multiple_main_files_report_both_source_locations() {
+fn independent_main_files_analyze_without_a_multiple_main_error() {
     let input =
         fixture("multiple-main", "pragma circom 2.2.3; template First(){} component main=First();");
     let path = input.path();
@@ -848,11 +848,27 @@ fn multiple_main_files_report_both_source_locations() {
     fs::write(&other, "pragma circom 2.2.3; template Second(){} component main=Second();").unwrap();
     let CliRun { stdout, sarif, .. } =
         run(path.parent().unwrap(), &["--level", "error"], "multiple-main");
-    assert_eq!(ids(&sarif), BTreeSet::from(["P1002"]), "{stdout}");
-    let report = &sarif["runs"][0]["results"][0];
-    assert_eq!(report["locations"].as_array().unwrap().len(), 1);
-    assert_eq!(report["relatedLocations"].as_array().unwrap().len(), 1);
-    assert_ne!(report["locations"][0]["id"], report["relatedLocations"][0]["id"]);
+    assert!(!ids(&sarif).contains("P1002"), "{stdout}");
+    assert!(stdout.contains("analyzing template 'First'"), "{stdout}");
+    assert!(stdout.contains("analyzing template 'Second'"), "{stdout}");
+}
+
+#[test]
+fn duplicate_main_in_second_root_is_reported() {
+    let input = fixture(
+        "duplicate-main",
+        "pragma circom 2.2.3; template First(){} component main=First();",
+    );
+    let path = input.path();
+    let other = path.with_file_name("other.circom");
+    fs::write(
+        &other,
+        "pragma circom 2.2.3; template Second(){} component main=Second(); component main=Second();",
+    )
+    .unwrap();
+    let CliRun { stdout, sarif, .. } =
+        run(path.parent().unwrap(), &["--level", "error"], "duplicate-main");
+    assert!(ids(&sarif).contains("P1002"), "{stdout}");
 }
 
 #[test]

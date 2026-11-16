@@ -9,7 +9,7 @@
             {
               "id": 0,
               "message": {
-                "text": "only an anonymous component call may be used as an expression statement"
+                "text": "This syntax is invalid."
               },
               "physicalLocation": {
                 "artifactLocation": {
@@ -39,7 +39,7 @@
             {
               "id": 0,
               "message": {
-                "text": "unresolved Function call `Missing`"
+                "text": "This call cannot be resolved."
               },
               "physicalLocation": {
                 "artifactLocation": {

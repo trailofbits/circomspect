@@ -94,7 +94,10 @@ fn check(source: &str, operand: Operand) -> ExampleResult {
             );
             assert_eq!(report.primary().len(), 1);
             assert_eq!(report.primary()[0].range, 39..42);
-            assert_eq!(report.primary()[0].message, "Proved modular wraparound");
+            assert_eq!(
+                report.primary()[0].message,
+                "This arithmetic wraps modulo the field prime."
+            );
             assert_eq!(
                 Some(report.primary()[0].file_id),
                 sources.file_id(expression.span.source())

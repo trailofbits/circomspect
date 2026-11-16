@@ -108,10 +108,11 @@ fn report_equation(
         )
         .into(),
         equation.witness_origin().span,
-        "Witness assignment matches an existing generated equation".into(),
+        "This witness assignment repeats a generated equation.".into(),
     );
     for origin in equation.constraint_origins() {
-        finding = finding.with_secondary(origin.span, "Equivalent generated equation".into());
+        finding = finding
+            .with_secondary(origin.span, "This equation already constrains the value.".into());
     }
     result.add_finding(finding);
 }

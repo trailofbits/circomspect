@@ -14,6 +14,21 @@ use crate::rules::{RenderError, RuleKind, SourceMap};
 #[cfg(test)]
 mod tests;
 
+fn syntax_comment(kind: DiagnosticKind) -> &'static str {
+    match kind {
+        DiagnosticKind::UnsupportedVersion => "This Circom version is unsupported.",
+        DiagnosticKind::FeatureVersion => "This syntax requires another Circom version.",
+        DiagnosticKind::InvalidToken => "This token is invalid.",
+        DiagnosticKind::UnterminatedString => "This string literal is unterminated.",
+        DiagnosticKind::UnterminatedComment => "This block comment is unterminated.",
+        DiagnosticKind::InvalidNumber => "This numeric literal is invalid.",
+        DiagnosticKind::Syntax => "This syntax is invalid.",
+        DiagnosticKind::MissingInclude => "This include cannot be resolved.",
+        DiagnosticKind::CyclicInclude => "This include creates a cycle.",
+        DiagnosticKind::FileRead => "This file could not be read.",
+    }
+}
+
 pub(super) struct Diagnostics<'a, 'b> {
     sources: &'a SourceMap<'b>,
     reports: ReportGroups,
@@ -46,7 +61,7 @@ impl<'a, 'b> Diagnostics<'a, 'b> {
             };
             let mut report = Report::error(diagnostic.message.clone(), code);
             if let Some(span) = diagnostic.span() {
-                self.locate(&mut report, span, diagnostic.message.clone())?;
+                self.locate(&mut report, span, syntax_comment(diagnostic.kind).into())?;
             }
             self.reports.insert_source(report);
         }
@@ -70,7 +85,11 @@ impl<'a, 'b> Diagnostics<'a, 'b> {
                     ReportCode::NoCompilerVersionWarning,
                 );
                 if let Some(file) = self.sources.file_id(source.id) {
-                    report.add_primary(0..0, file, "Add `pragma circom 2.2.3;`.".to_string());
+                    report.add_primary(
+                        0..0,
+                        file,
+                        "This file has no Circom version pragma.".to_string(),
+                    );
                 }
                 self.reports.insert_source(report);
             }
@@ -79,15 +98,37 @@ impl<'a, 'b> Diagnostics<'a, 'b> {
     }
 
     fn main_diagnostics(&mut self, lifted: &LiftedProject) -> Result<(), RenderError> {
-        let Some(first) = lifted.hir.mains().first() else { return Ok(()) };
-        for main in lifted.hir.mains().iter().skip(1) {
+        let mut seen = Vec::new();
+        for main in lifted.hir.mains() {
+            let current_is_root = self
+                .sources
+                .file_id(main.span.source())
+                .is_some_and(|file| self.sources.files().user_inputs().contains(&file));
+            let independent_roots = current_is_root
+                && seen.iter().all(|previous: &&parser::hir::Main| {
+                    previous.span.source() != main.span.source()
+                        && self
+                            .sources
+                            .file_id(previous.span.source())
+                            .is_some_and(|file| self.sources.files().user_inputs().contains(&file))
+                });
+            if seen.is_empty() || independent_roots {
+                seen.push(main);
+                continue;
+            }
+            let first = seen
+                .iter()
+                .find(|previous| previous.span.source() == main.span.source())
+                .copied()
+                .unwrap_or(seen[0]);
+            seen.push(main);
             let mut report = Report::error(
                 "Multiple main components are defined.".into(),
                 ReportCode::MultipleMainInComponent,
             );
-            self.locate(&mut report, main.span, "Additional main component.".into())?;
+            self.locate(&mut report, main.span, "This is an additional main component.".into())?;
             let (file, range) = self.sources.location(first.span)?;
-            report.add_secondary(range, file, Some("First main component.".into()));
+            report.add_secondary(range, file, Some("This is the first main component.".into()));
             self.reports.insert_source(report);
         }
         Ok(())
@@ -165,7 +206,7 @@ impl<'a, 'b> Diagnostics<'a, 'b> {
                 let message = if checks.is_empty() {
                     key.message.clone()
                 } else {
-                    format!("{}: {}", checks.join(", "), key.message)
+                    format!("{} This affects {}.", key.message, checks.join(", "))
                 };
                 report.add_secondary(range, file, Some(message));
                 help.insert(&key.help);

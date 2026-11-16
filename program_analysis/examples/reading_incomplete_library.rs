@@ -63,7 +63,7 @@ fn check_neighbor(output: &AnalysisOutput) -> ExampleResult {
     assert_eq!(report.primary().len(), 1);
     let label = &report.primary()[0];
     assert_eq!(label.range, 119..122);
-    assert_eq!(label.message, "Proved modular wraparound");
+    assert_eq!(label.message, "This arithmetic wraps modulo the field prime.");
     let file = output.files.to_storage().get(label.file_id)?;
     assert!(std::path::Path::new(file.name()).ends_with("library.circom"));
     assert_eq!(&file.source()[label.range.clone()], "0-1");
@@ -127,7 +127,10 @@ fn main() -> ExampleResult {
         &output,
         &[("P1004", "No compiler version is specified; analyzing as Circom 2.2.3.", 0..0)],
     );
-    assert_eq!(output.diagnostics[0].primary()[0].message, "Add `pragma circom 2.2.3;`.");
+    assert_eq!(
+        output.diagnostics[0].primary()[0].message,
+        "This file has no Circom version pragma."
+    );
     check_neighbor(&output)?;
 
     let output = analyze(&SOURCE.replace("0-1", "0-"))?;

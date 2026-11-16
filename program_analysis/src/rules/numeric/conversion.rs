@@ -260,9 +260,9 @@ fn emit(
             RuleKind::NonstrictBinaryConversion,
             message,
             output.span,
-            "Two checked bit representations".into(),
+            "This output admits two checked bit representations.".into(),
         )
-        .with_secondary(input.span, "Shared field input".into());
+        .with_secondary(input.span, "Both representations share this field input.".into());
     result.add_finding(finding);
 }
 
@@ -286,10 +286,10 @@ fn emit_called(
             RuleKind::NonstrictBinaryConversion,
             message,
             candidate.span,
-            "Called conversion with two checked bit representations".into(),
+            "This conversion admits two checked bit representations.".into(),
         )
-        .with_secondary(candidate.input.span, "Child input port".into())
-        .with_secondary(candidate.output.span, "Child bit output port".into());
+        .with_secondary(candidate.input.span, "This port supplies the child input.".into())
+        .with_secondary(candidate.output.span, "This port exposes the child bits.".into());
     result.add_finding(finding);
 }
 

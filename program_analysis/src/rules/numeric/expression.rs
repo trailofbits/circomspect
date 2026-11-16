@@ -33,7 +33,7 @@ pub(super) fn complement(context: &RuleContext<'_, '_, '_>) -> RuleResult {
             RuleKind::BitwiseComplement,
             message,
             expression.span,
-            "Bitwise complement is evaluated in the selected field".into(),
+            "This complement is evaluated in the selected field.".into(),
         ));
     }
     result
@@ -63,7 +63,7 @@ pub(super) fn bn254_constant(context: &RuleContext<'_, '_, '_>) -> RuleResult {
                 context.facts().curve()
             ),
             expression.span,
-            "Hard-coded BN254 modulus".into(),
+            "This literal is the BN254 field modulus.".into(),
         );
         result.add_finding(finding);
     }
@@ -131,7 +131,7 @@ pub(super) fn field_arithmetic(context: &RuleContext<'_, '_, '_>) -> RuleResult 
                 reduced.as_bigint()
             ),
             expression.span,
-            "Proved modular wraparound".into(),
+            "This arithmetic wraps modulo the field prime.".into(),
         ));
     }
     result
@@ -177,7 +177,7 @@ pub(super) fn field_comparison(context: &RuleContext<'_, '_, '_>) -> RuleResult 
                 right.as_bigint()
             ),
             expression.span,
-            "Proved signed versus unsigned comparison difference".into(),
+            "This comparison has different signed and unsigned results.".into(),
         ));
     }
     result

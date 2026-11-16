@@ -107,7 +107,7 @@ fn report_local_zero_incidence(
         kind,
         "No generated constraint depends on this exact input divisor or excludes zero.".into(),
         expression.span,
-        "Witness-only division has an unconstrained input divisor".into(),
+        "This divisor can be zero without violating a constraint.".into(),
     ));
 }
 

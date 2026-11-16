@@ -4,13 +4,13 @@ error: invalid statement; parsing continued at the next statement or block bound
    ┌─ <fixture>:10:5
    │
 10 │     var value = ;
-   │     ^^^^^^^^^^^^^ invalid statement; parsing continued at the next statement or block boundary
+   │     ^^^^^^^^^^^^^ This syntax is invalid.
 
 error: invalid statement; parsing continued at the next statement or block boundary
    ┌─ <fixture>:20:5
    │
 20 │     var value = ;
-   │     ^^^^^^^^^^^^^ invalid statement; parsing continued at the next statement or block boundary
+   │     ^^^^^^^^^^^^^ This syntax is invalid.
 
 circomspect: preparing analysis
 circomspect: analyzing template 'BeforeError'

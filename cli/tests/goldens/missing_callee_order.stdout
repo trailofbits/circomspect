@@ -4,19 +4,19 @@ error: unresolved Function call `MissingFunction`
   ┌─ <fixture>:4:12
   │
 4 │     return MissingFunction(MissingInner(x));
-  │            ^^^^^^^^^^^^^^^ unresolved Function call `MissingFunction`
+  │            ^^^^^^^^^^^^^^^ This call cannot be resolved.
 
 error: unresolved Function call `MissingInner`
   ┌─ <fixture>:4:28
   │
 4 │     return MissingFunction(MissingInner(x));
-  │                            ^^^^^^^^^^^^ unresolved Function call `MissingInner`
+  │                            ^^^^^^^^^^^^ This call cannot be resolved.
 
 error: unresolved Template call `MissingTemplate`
   ┌─ <fixture>:8:23
   │
 8 │     component child = MissingTemplate();
-  │                       ^^^^^^^^^^^^^^^ unresolved Template call `MissingTemplate`
+  │                       ^^^^^^^^^^^^^^^ This call cannot be resolved.
 
 circomspect: preparing analysis
 circomspect: analyzing function 'UsesMissingFunction'

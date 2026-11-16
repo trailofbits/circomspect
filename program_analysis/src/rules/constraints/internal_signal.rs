@@ -124,7 +124,7 @@ fn inspect(
                     RuleKind::UnconstrainedSignal,
                     "No generated constraint depends on this exact internal signal path.".into(),
                     path.span,
-                    "Internal signal with zero generated-constraint incidence".into(),
+                    "This internal signal has no generated constraint.".into(),
                 ));
             }
         }

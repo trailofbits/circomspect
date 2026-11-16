@@ -361,14 +361,15 @@ impl<'session, 'hir: 'session> ProjectUseQueries<'session, 'hir> {
                 self.analysis.sources().model_source_complete(facts.definition(), Some(completed))
             }
         };
-        if !complete || self.analysis.hir().mains().len() != 1 {
+        if !complete {
             return Err(SummaryBlocker::ExternalSummary);
         }
         let ContextOrigin::Main(id) = main.origin() else {
             return Err(SummaryBlocker::UnsupportedContext);
         };
         let site = self.analysis.graph().site(id).ok_or(SummaryBlocker::ForeignCall)?;
-        if site.owner != CallOwner::Main(0) || site.resolved() != Some(facts.definition()) {
+        if !matches!(site.owner, CallOwner::Main(_)) || site.resolved() != Some(facts.definition())
+        {
             return Err(SummaryBlocker::WrongContext);
         }
         if !*certified(&facts.reachable_node(facts.cfg().exit()))? {

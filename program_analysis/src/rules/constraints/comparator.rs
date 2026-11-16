@@ -82,7 +82,7 @@ fn report(
             proof.upper_bound()
         ),
         proof.binding_span(),
-        "Generated equality fixes this comparator input".into(),
+        "This equality fixes the comparator input.".into(),
     );
     let mut spans = BTreeSet::new();
     for origin in proof.constraint_origins() {
@@ -90,7 +90,7 @@ fn report(
             continue;
         }
         finding =
-            finding.with_secondary(origin.span, "Validated generated comparator constraint".into());
+            finding.with_secondary(origin.span, "This constraint checks the comparator.".into());
     }
     result.add_finding(finding);
 }

@@ -4,13 +4,13 @@ error: only an anonymous component call may be used as an expression statement
   ┌─ <fixture>:3:5
   │
 3 │     1;
-  │     ^^ only an anonymous component call may be used as an expression statement
+  │     ^^ This syntax is invalid.
 
 error: unresolved Function call `Missing`
   ┌─ <fixture>:4:12
   │
 4 │     return Missing();
-  │            ^^^^^^^ unresolved Function call `Missing`
+  │            ^^^^^^^ This call cannot be resolved.
 
 circomspect: preparing analysis
 circomspect: analyzing function 'F'

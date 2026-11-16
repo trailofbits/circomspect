@@ -4,7 +4,7 @@ error: cannot find included file not_found.circom
   ┌─ <fixture>:2:1
   │
 2 │ include "not_found.circom";
-  │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^ cannot find included file not_found.circom
+  │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^ This include cannot be resolved.
 
 circomspect: preparing analysis
 circomspect: analyzing template 'StillAvailable'

@@ -106,9 +106,9 @@ pub fn analyze_files_with_observer(
         diagnostics.push(report);
     }
     for path in libraries {
-        if !path.exists() && path.extension().is_some_and(|extension| extension == "circom") {
+        if !path.exists() {
             diagnostics.push(Report::error(
-                format!("Cannot read library file {}", path.display()),
+                format!("Cannot read library path {}", path.display()),
                 program_structure::report_code::ReportCode::ParseFail,
             ));
         }

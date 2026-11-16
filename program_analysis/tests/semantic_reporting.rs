@@ -78,6 +78,7 @@ fn reachable_array_argument_renders_t2000_with_exact_source_location() {
     assert_eq!(*report.category(), MessageCategory::Error);
     assert_eq!(report.message(), &diagnostic.message);
     assert_eq!(report.primary()[0].range, diagnostic.span.start()..diagnostic.span.end());
+    assert_eq!(report.primary()[0].message, "This assignment is invalid here.");
     let terminal = report.to_diagnostic(true);
     assert_eq!(terminal.code.as_deref(), Some("T2000"));
     assert_eq!(terminal.message, diagnostic.message);

@@ -67,9 +67,9 @@ fn report_output(
         return;
     };
     let message = format!("Component output `{}` is never read", path.name);
-    let mut finding = context.finding(kind, message, span, "unused output".into());
+    let mut finding = context.finding(kind, message, span, "This output is never read.".into());
     for (name, source) in path.ancestors {
-        finding = finding.with_secondary(source, format!("instance `{name}`"));
+        finding = finding.with_secondary(source, format!("This call creates instance `{name}`."));
     }
     result.add_finding(finding);
 }

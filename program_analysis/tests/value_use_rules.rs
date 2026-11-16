@@ -429,8 +429,15 @@ fn unresolved_symbolic_value_keeps_unused_value_claim_incomplete() {
 
 #[test]
 fn unread_validated_parameter_emits_cs0007_but_any_reachable_read_suppresses_it() {
-    run_case("function Check(p){return 7;}", "Check", |results, _| {
+    run_case("function Check(p){return 7;}", "Check", |results, sources| {
         assert_eq!(count(results, RuleKind::UnusedParameterValue), 1);
+        let finding = results
+            .findings()
+            .iter()
+            .find(|finding| finding.kind() == RuleKind::UnusedParameterValue)
+            .unwrap();
+        let report = finding.to_report(sources).unwrap();
+        assert_eq!(report.primary()[0].message, "This parameter is unused.");
     });
     run_case("function Check(p){return p;}", "Check", |results, _| {
         assert_eq!(count(results, RuleKind::UnusedParameterValue), 0);
@@ -882,7 +889,10 @@ fn nested_unused_array_output_preserves_full_instance_path_and_sarif_location() 
         assert_eq!(item["ruleId"], "CS0018");
         assert_eq!(item["level"], "warning");
         assert!(item["message"]["text"].as_str().unwrap().contains("m.c.out[1]"));
-        assert_eq!(item["relatedLocations"][0]["message"]["text"], "instance `m`");
+        assert_eq!(
+            item["relatedLocations"][0]["message"]["text"],
+            "This call creates instance `m`."
+        );
         assert_eq!(
             item["relatedLocations"][0]["physicalLocation"]["region"]["startColumn"],
             source.find("m=Middle()").unwrap() + "m=".len() + 1
@@ -941,7 +951,7 @@ fn equal_nested_source_sites_keep_distinct_rooted_instance_warnings() {
                 .unwrap();
             assert_eq!(
                 item["relatedLocations"][0]["message"]["text"],
-                format!("instance `{label}`")
+                format!("This call creates instance `{label}`.")
             );
             assert_eq!(
                 item["relatedLocations"][0]["physicalLocation"]["region"]["startColumn"],

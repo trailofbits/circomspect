@@ -9,7 +9,7 @@
             {
               "id": 0,
               "message": {
-                "text": "cannot find included file not_found.circom"
+                "text": "This include cannot be resolved."
               },
               "physicalLocation": {
                 "artifactLocation": {

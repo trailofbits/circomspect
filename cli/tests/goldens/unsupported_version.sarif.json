@@ -9,7 +9,7 @@
             {
               "id": 0,
               "message": {
-                "text": "source requires Circom 2.3.0, but the supported target is 2.2.3"
+                "text": "This Circom version is unsupported."
               },
               "physicalLocation": {
                 "artifactLocation": {

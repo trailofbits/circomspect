@@ -4,7 +4,7 @@ error: source requires Circom 2.3.0, but the supported target is 2.2.3
   ┌─ <fixture>:1:1
   │
 1 │ pragma circom 2.3.0;
-  │ ^^^^^^^^^^^^^^^^^^^^ source requires Circom 2.3.0, but the supported target is 2.2.3
+  │ ^^^^^^^^^^^^^^^^^^^^ This Circom version is unsupported.
 
 circomspect: preparing analysis
 circomspect: analyzing template 'LibraryItem'

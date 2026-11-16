@@ -9,6 +9,7 @@
 )]
 use std::path::PathBuf;
 use std::process::{Command, Output};
+use std::fs;
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(name)
@@ -19,6 +20,83 @@ fn run(args: &[&str]) -> Output {
         .args(args)
         .output()
         .expect("failed to run circomspect")
+}
+
+#[test]
+fn explicit_library_roots_resolve_package_prefixed_imports() {
+    let root = std::env::temp_dir().join(format!(
+        "circomspect-explicit-libraries-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id(),
+    ));
+    let first = root.join("first/circuits");
+    let second = root.join("second");
+    fs::create_dir_all(&first).unwrap();
+    fs::create_dir_all(&second).unwrap();
+    fs::write(first.join("a.circom"), "pragma circom 2.2.3; template A() {}\n").unwrap();
+    fs::write(second.join("b.circom"), "pragma circom 2.2.3; template B() {}\n").unwrap();
+    let entry = root.join("entry.circom");
+    fs::write(
+        &entry,
+        "pragma circom 2.2.3; include \"first/circuits/a.circom\"; \
+         include \"@scope/second/b.circom\"; template Entry() {}\n",
+    )
+    .unwrap();
+    let output = run(&[
+        entry.to_str().unwrap(),
+        "-L",
+        first.to_str().unwrap(),
+        "-L",
+        second.to_str().unwrap(),
+        "--level",
+        "error",
+    ]);
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(output.status.success(), "{stdout}");
+    assert!(stdout.contains("analyzing template 'Entry'"), "{stdout}");
+}
+
+#[test]
+fn nonexistent_library_root_is_reported() {
+    let entry = fixture("library_item.circom");
+    let absent = entry.with_file_name("missing-package");
+    let output = run(&[entry.to_str().unwrap(), "-L", absent.to_str().unwrap()]);
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(!output.status.success(), "{stdout}");
+    assert!(stdout.contains("Cannot read library path"), "{stdout}");
+}
+
+#[test]
+fn equally_matching_library_roots_report_ambiguity() {
+    let root = std::env::temp_dir().join(format!(
+        "circomspect-ambiguous-libraries-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id(),
+    ));
+    let first = root.join("first/circuits");
+    let second = root.join("second/circuits");
+    fs::create_dir_all(&first).unwrap();
+    fs::create_dir_all(&second).unwrap();
+    fs::write(first.join("shared.circom"), "pragma circom 2.2.3;\n").unwrap();
+    fs::write(second.join("shared.circom"), "pragma circom 2.2.3;\n").unwrap();
+    let entry = root.join("entry.circom");
+    fs::write(
+        &entry,
+        "pragma circom 2.2.3; include \"pkg/circuits/shared.circom\"; template Entry() {}",
+    )
+    .unwrap();
+    let output = run(&[
+        entry.to_str().unwrap(),
+        "-L",
+        first.to_str().unwrap(),
+        "-L",
+        second.to_str().unwrap(),
+        "--level",
+        "error",
+    ]);
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(!output.status.success(), "{stdout}");
+    assert!(stdout.contains("ambiguous included file"), "{stdout}");
 }
 
 #[test]

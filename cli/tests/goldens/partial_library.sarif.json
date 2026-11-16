@@ -9,7 +9,7 @@
             {
               "id": 0,
               "message": {
-                "text": "invalid statement; parsing continued at the next statement or block boundary"
+                "text": "This syntax is invalid."
               },
               "physicalLocation": {
                 "artifactLocation": {
@@ -39,7 +39,7 @@
             {
               "id": 0,
               "message": {
-                "text": "invalid statement; parsing continued at the next statement or block boundary"
+                "text": "This syntax is invalid."
               },
               "physicalLocation": {
                 "artifactLocation": {

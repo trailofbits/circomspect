@@ -37,16 +37,45 @@ fn unrelated_parameters_do_not_annotate_unused_values() {
 }
 
 #[test]
-fn final_loop_update_does_not_repeat_irrelevant_bit_width_contexts() {
+fn final_loop_update_names_the_unused_iteration_without_repeating_contexts() {
     let output = analyze(
         "template Child(n){var e2=1;var total=0;\
         for(var i=0;i<n;i++){total+=e2;e2=e2+e2;}signal output out;out<==total;}\
-        template Main(){component a=Child(2);component b=Child(3);}component main=Main();",
+        template Main(){component a=Child(1);component b=Child(2);component c=Child(3);}\
+        component main=Main();",
     );
     let unused = findings(&output, "CS0006");
     assert_eq!(unused.len(), 1);
     assert!(unused[0].message().contains("e2"));
+    assert_eq!(unused[0].primary()[0].message, "The final loop update to this variable is unused.");
     assert!(unused[0].secondary().is_empty(), "{:?}", unused[0].secondary());
+}
+
+#[test]
+fn entirely_unused_variable_keeps_the_general_annotation() {
+    let output = analyze("template T(){var dead=1;}");
+    let unused = findings(&output, "CS0006");
+    assert_eq!(unused.len(), 1);
+    assert_eq!(unused[0].primary()[0].message, "This assigned value is unused.");
+}
+
+#[test]
+fn unread_loop_variable_keeps_the_general_annotation() {
+    let output = analyze("template T(){var dead=0;for(var i=0;i<2;i++){dead=1;}}");
+    let unused = findings(&output, "CS0006");
+    assert!(!unused.is_empty());
+    assert!(unused
+        .iter()
+        .all(|report| report.primary()[0].message == "This assigned value is unused."));
+}
+
+#[test]
+fn loop_update_read_after_the_loop_is_not_reported_as_unused() {
+    let output = analyze(
+        "template T(){var e2=1;var total=0;for(var i=0;i<2;i++){total+=e2;e2=e2+e2;}\
+         signal output out;out<==total+e2;}",
+    );
+    assert!(findings(&output, "CS0006").iter().all(|report| !report.message().contains("e2")));
 }
 
 #[test]

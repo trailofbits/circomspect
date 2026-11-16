@@ -68,7 +68,7 @@ impl<'a> SourceMap<'a> {
             Severity::Error => Report::error(diagnostic.message.clone(), code),
             Severity::Warning => Report::warning(diagnostic.message.clone(), code),
         };
-        report.add_primary(range, file, diagnostic.message.clone());
+        report.add_primary(range, file, semantic_comment(diagnostic.code).into());
         Ok(report)
     }
 
@@ -122,6 +122,44 @@ fn semantic_report_code(code: SemanticCode) -> ReportCode {
         SemanticCode::NonConstantArrayLength => ReportCode::NonConstantArrayLength,
         SemanticCode::NonComputableExpression => ReportCode::NonComputableExpression,
         SemanticCode::FeatureVersion => ReportCode::CompilerVersionError,
+    }
+}
+
+fn semantic_comment(code: SemanticCode) -> &'static str {
+    match code {
+        SemanticCode::MissingCall => "This call cannot be resolved.",
+        SemanticCode::WrongFunction => "This call does not resolve to a function.",
+        SemanticCode::WrongTemplate => "This expression does not resolve to a template call.",
+        SemanticCode::DuplicateFunction
+        | SemanticCode::DuplicateTemplate
+        | SemanticCode::DuplicateSymbol => "This declaration duplicates an earlier name.",
+        SemanticCode::Shadowing => "This declaration shadows an outer variable.",
+        SemanticCode::ParameterCollision => "This parameter duplicates an existing name.",
+        SemanticCode::MissingBusType => "This bus type cannot be resolved.",
+        SemanticCode::InvalidAssignment
+        | SemanticCode::WrongBusAssignment
+        | SemanticCode::WrongAssignmentExpression
+        | SemanticCode::WrongAssignmentRank => "This assignment is invalid here.",
+        SemanticCode::InvalidCallArgument => "This argument has an invalid type.",
+        SemanticCode::InvalidSignalAccess => "This signal cannot be accessed here.",
+        SemanticCode::InvalidTag => "This tag cannot be accessed here.",
+        SemanticCode::InputTagAccess => "This input tag cannot be accessed here.",
+        SemanticCode::InvalidTagAfterArray => "This tag cannot follow array indexing.",
+        SemanticCode::InvalidArrayAccess | SemanticCode::InvalidArrayIndexDimension => {
+            "This array access is invalid."
+        }
+        SemanticCode::InvalidArrayIndexBus => "This bus value cannot be used as an array index.",
+        SemanticCode::AnonymousInput => "This anonymous input binding is invalid.",
+        SemanticCode::ForbiddenDeclaration => "This declaration is not allowed in a function.",
+        SemanticCode::TemplateReturn => "This return is not allowed in a template.",
+        SemanticCode::ConstraintInFunction => "This function cannot generate constraints.",
+        SemanticCode::UnknownSymbol => "This symbol is undefined.",
+        SemanticCode::WrongArity => "This call has the wrong number of arguments.",
+        SemanticCode::NonConstantArrayLength => "This array length is not known at compile time.",
+        SemanticCode::NonComputableExpression => {
+            "This expression cannot be evaluated at compile time."
+        }
+        SemanticCode::FeatureVersion => "This feature requires another Circom version.",
     }
 }
 

@@ -54,7 +54,7 @@ pub(super) fn constant_conditional(context: &RuleContext<'_, '_, '_>) -> RuleRes
             RuleKind::ConstantConditional,
             format!("This condition is always {boolean} in the reported call context."),
             expression.span,
-            format!("Condition is always {boolean}"),
+            format!("This condition is always {boolean}."),
         ));
     }
     result

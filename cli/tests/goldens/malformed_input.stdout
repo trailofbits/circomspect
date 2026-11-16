@@ -4,13 +4,13 @@ error: invalid Circom token
   ┌─ <fixture>:4:17
   │
 4 │     var value = @;
-  │                 ^ invalid Circom token
+  │                 ^ This token is invalid.
 
 error: unexpected token in Circom source
   ┌─ <fixture>:4:17
   │
 4 │     var value = @;
-  │                 ^ unexpected token in Circom source
+  │                 ^ This syntax is invalid.
 
 circomspect: preparing analysis
 circomspect: analyzing template 'AfterInvalidToken'

@@ -24,7 +24,7 @@ pub(super) fn unused_parameters(context: &RuleContext<'_, '_, '_>, result: &mut 
                     kind,
                     message,
                     symbol.span,
-                    "unused parameter".into(),
+                    "This parameter is unused.".into(),
                 ));
             }
             Ok(true) => {}

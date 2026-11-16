@@ -9,7 +9,7 @@
             {
               "id": 0,
               "message": {
-                "text": "unresolved Function call `MissingFunction`"
+                "text": "This call cannot be resolved."
               },
               "physicalLocation": {
                 "artifactLocation": {
@@ -39,7 +39,7 @@
             {
               "id": 0,
               "message": {
-                "text": "unresolved Function call `MissingInner`"
+                "text": "This call cannot be resolved."
               },
               "physicalLocation": {
                 "artifactLocation": {
@@ -69,7 +69,7 @@
             {
               "id": 0,
               "message": {
-                "text": "unresolved Template call `MissingTemplate`"
+                "text": "This call cannot be resolved."
               },
               "physicalLocation": {
                 "artifactLocation": {

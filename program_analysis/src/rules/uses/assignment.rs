@@ -1,5 +1,5 @@
 use abstract_interpretation::graph::FlowGraph;
-use parser::hir::{AccessPath, DefinitionRef, SymbolId, SymbolKind};
+use parser::hir::{AccessPath, DefinitionRef, Effect, SymbolId, SymbolKind};
 use parser::frontend::AssignmentOperator;
 
 use crate::hir_cfg::{CfgNode, CfgNodeKind};
@@ -55,7 +55,7 @@ fn report_removable_assignment(
                     kind,
                     message,
                     proof.span(),
-                    "unused value".into(),
+                    "This assigned value is unused.".into(),
                 ));
             }
             Ok(AssignmentDemand::MayBeObserved) => {}
@@ -144,7 +144,12 @@ fn report_unused_value(
         Ok(false) => {
             let Some(symbol) = context.hir().symbol(target.root) else { return };
             let message = format!("Assigned value of `{}` is never read", symbol.name);
-            result.add_finding(context.finding(kind, message, target.span, "unused value".into()));
+            let comment = if final_loop_update(context, node, target) {
+                "The final loop update to this variable is unused."
+            } else {
+                "This assigned value is unused."
+            };
+            result.add_finding(context.finding(kind, message, target.span, comment.into()));
         }
         Ok(true) => {}
         Err(blockers) => result.add_abstention(context.abstention(
@@ -153,6 +158,78 @@ fn report_unused_value(
             AbstentionReason::LocalFacts(blockers),
         )),
     }
+}
+
+fn final_loop_update(
+    context: &RuleContext<'_, '_, '_>,
+    node: &CfgNode,
+    target: &AccessPath,
+) -> bool {
+    if !inside_loop(context, target) {
+        return false;
+    }
+    let mut prior_value_read = false;
+    for id in context.facts().cfg().nodes() {
+        let Some(other) = context.facts().cfg().node(*id) else { return false };
+        let Some(other_target) = assignment_target(other) else { continue };
+        if other_target.root != target.root {
+            continue;
+        }
+        if later_copy(other, other_target, node, target) {
+            return false;
+        }
+        if earlier_value_is_read(context, other, other_target, node) {
+            prior_value_read = true;
+        }
+    }
+    prior_value_read
+}
+
+fn assignment_target(node: &CfgNode) -> Option<&AccessPath> {
+    let (CfgNodeKind::Assignment { target, .. } | CfgNodeKind::DeferredAssignment { target, .. }) =
+        &node.kind
+    else {
+        return None;
+    };
+    Some(target)
+}
+
+fn later_copy(
+    other: &CfgNode,
+    other_target: &AccessPath,
+    node: &CfgNode,
+    target: &AccessPath,
+) -> bool {
+    other.id > node.id && other_target.span == target.span
+}
+
+fn earlier_value_is_read(
+    context: &RuleContext<'_, '_, '_>,
+    other: &CfgNode,
+    other_target: &AccessPath,
+    node: &CfgNode,
+) -> bool {
+    other.id < node.id
+        && context.facts().reachable_node(other.id).certified() == Some(&true)
+        && context.facts().live_after(other.id, other_target).certified() == Some(&true)
+}
+
+fn inside_loop(context: &RuleContext<'_, '_, '_>, target: &AccessPath) -> bool {
+    let hir = context.hir();
+    for block in hir.blocks() {
+        for effect in &block.effects {
+            let (Effect::For { body, .. } | Effect::While { body, .. }) = effect else { continue };
+            let Some(body) = hir.block(*body) else { continue };
+            let span = body.span;
+            if span.source() == target.span.source()
+                && span.start() <= target.span.start()
+                && target.span.end() <= span.end()
+            {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 fn unused_internal_signal(
