@@ -174,6 +174,7 @@ impl<N: Copy + Ord, E: Copy + Ord> ValidatedGraph<N, E> {
     fn new<G: FlowGraph<NodeId = N, EdgeId = E>>(graph: &G) -> Result<Self, GraphError<N, E>> {
         let mut nodes = BTreeSet::new();
         for &node in graph.nodes() {
+            crate::timeout::check();
             if !nodes.insert(node) {
                 return Err(GraphError::DuplicateNode(node));
             }
@@ -182,6 +183,7 @@ impl<N: Copy + Ord, E: Copy + Ord> ValidatedGraph<N, E> {
             }
         }
         for &node in graph.entries().iter().chain(graph.exits()) {
+            crate::timeout::check();
             if !nodes.contains(&node) {
                 return Err(GraphError::MissingBoundary(node));
             }
@@ -192,6 +194,7 @@ impl<N: Copy + Ord, E: Copy + Ord> ValidatedGraph<N, E> {
             incoming: BTreeMap::new(),
         };
         for &edge in graph.edges() {
+            crate::timeout::check();
             let Some(item) = graph.edge(edge) else {
                 return Err(GraphError::MissingEdge(edge));
             };
@@ -310,6 +313,7 @@ where
 {
     work.queue.extend(D::boundaries(graph).iter().copied());
     for &node in D::boundaries(graph) {
+        crate::timeout::check();
         let seed = analysis.boundary(node);
         let Some(facts) = work.facts.get_mut(&node) else {
             return Err(GraphError::MissingBoundary(node));
@@ -416,6 +420,7 @@ where
         }
     }
     for &edge in D::next_edges(context.validated, node) {
+        crate::timeout::check();
         match propagate_edge::<G, A, D>(context, work, edge, node, &value)? {
             StepOutcome::Completed => {}
             outcome @ StepOutcome::BudgetExhausted { .. } => return Ok(outcome),
@@ -442,6 +447,7 @@ where
     G::Node: Transfer<A, A::State, A::Reason>,
     G::Edge: Transfer<A, A::State, A::Reason>,
 {
+    crate::timeout::check();
     let validated = ValidatedGraph::new(graph)?;
     let mut work = Working {
         facts: graph.nodes().iter().copied().map(|node| (node, NodeFacts::default())).collect(),
@@ -457,6 +463,7 @@ where
     }
     let context = FlowContext { graph, analysis, validated: &validated };
     while let Some(&node) = work.queue.first() {
+        crate::timeout::check();
         work.queue.remove(&node);
         match process_node::<G, A, D>(&context, &mut work, node)? {
             StepOutcome::Completed => {}

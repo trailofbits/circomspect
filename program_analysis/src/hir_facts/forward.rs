@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::cmp::Ordering;
 use std::sync::Arc;
+use rpds::RedBlackTreeSetSync as OrdSet;
 
 use abstract_interpretation::graph::NodeId;
 use abstract_interpretation::lattice::Lattice;
@@ -47,10 +48,10 @@ struct LocalValueFacts {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ConstraintFacts {
-    may_constraints: BTreeSet<NodeId>,
-    must_constraints: BTreeSet<NodeId>,
-    must_touches: BTreeSet<AccessKey>,
-    must_fixed: BTreeSet<(AccessKey, FieldValue)>,
+    may_constraints: OrdSet<NodeId>,
+    must_constraints: OrdSet<NodeId>,
+    must_touches: OrdSet<AccessKey>,
+    must_fixed: OrdSet<(AccessKey, FieldValue)>,
     must_equations: Arc<MustEquations>,
 }
 
@@ -158,35 +159,52 @@ impl LocalValueFacts {
 impl ConstraintFacts {
     fn boundary() -> Self {
         Self {
-            may_constraints: BTreeSet::new(),
-            must_constraints: BTreeSet::new(),
-            must_touches: BTreeSet::new(),
-            must_fixed: BTreeSet::new(),
+            may_constraints: OrdSet::new_sync(),
+            must_constraints: OrdSet::new_sync(),
+            must_touches: OrdSet::new_sync(),
+            must_fixed: OrdSet::new_sync(),
             must_equations: Arc::new(MustEquations::reachable_empty()),
         }
     }
 
     fn leq(&self, other: &Self) -> bool {
         self.may_constraints.is_subset(&other.may_constraints)
-            && self.must_constraints.is_superset(&other.must_constraints)
-            && self.must_touches.is_superset(&other.must_touches)
-            && self.must_fixed.is_superset(&other.must_fixed)
+            && other.must_constraints.is_subset(&self.must_constraints)
+            && other.must_touches.is_subset(&self.must_touches)
+            && other.must_fixed.is_subset(&self.must_fixed)
             && self.must_equations.leq(&other.must_equations)
     }
 
     fn join_assign(&mut self, other: &Self) -> bool {
-        let may_count = self.may_constraints.len();
-        self.may_constraints.extend(&other.may_constraints);
-        let mut changed = self.may_constraints.len() != may_count;
-        let must_count = self.must_constraints.len();
-        self.must_constraints.retain(|site| other.must_constraints.contains(site));
-        changed |= self.must_constraints.len() != must_count;
-        let touch_count = self.must_touches.len();
-        self.must_touches.retain(|key| other.must_touches.contains(key));
-        changed |= self.must_touches.len() != touch_count;
-        let fixed_count = self.must_fixed.len();
-        self.must_fixed.retain(|equation| other.must_fixed.contains(equation));
-        changed |= self.must_fixed.len() != fixed_count;
+        let may_count = self.may_constraints.size();
+        for site in &other.may_constraints {
+            self.may_constraints.insert_mut(*site);
+        }
+        let mut changed = self.may_constraints.size() != may_count;
+        let must_count = self.must_constraints.size();
+        self.must_constraints = self
+            .must_constraints
+            .iter()
+            .filter(|site| other.must_constraints.contains(*site))
+            .copied()
+            .collect();
+        changed |= self.must_constraints.size() != must_count;
+        let touch_count = self.must_touches.size();
+        self.must_touches = self
+            .must_touches
+            .iter()
+            .filter(|key| other.must_touches.contains(*key))
+            .cloned()
+            .collect();
+        changed |= self.must_touches.size() != touch_count;
+        let fixed_count = self.must_fixed.size();
+        self.must_fixed = self
+            .must_fixed
+            .iter()
+            .filter(|pair| other.must_fixed.contains(*pair))
+            .cloned()
+            .collect();
+        changed |= self.must_fixed.size() != fixed_count;
         changed |= self.must_equations.join_assign(&other.must_equations);
         changed
     }
@@ -228,17 +246,17 @@ impl ForwardState {
         Some(&facts.locals.degrees)
     }
 
-    pub fn constraints(&self) -> Option<(&BTreeSet<NodeId>, &BTreeSet<NodeId>)> {
+    pub fn constraints(&self) -> Option<(&OrdSet<NodeId>, &OrdSet<NodeId>)> {
         let Self::Reached(facts) = self else { return None };
         Some((&facts.constraints.may_constraints, &facts.constraints.must_constraints))
     }
 
-    pub fn fixed_equations(&self) -> Option<&BTreeSet<(AccessKey, FieldValue)>> {
+    pub fn fixed_equations(&self) -> Option<&OrdSet<(AccessKey, FieldValue)>> {
         let Self::Reached(facts) = self else { return None };
         Some(&facts.constraints.must_fixed)
     }
 
-    pub fn must_touches(&self) -> Option<&BTreeSet<AccessKey>> {
+    pub fn must_touches(&self) -> Option<&OrdSet<AccessKey>> {
         let Self::Reached(facts) = self else { return None };
         Some(&facts.constraints.must_touches)
     }
@@ -1006,11 +1024,13 @@ impl ConstraintFacts {
         let CfgNodeKind::Constraint(constraint) = &node.kind else {
             return Err("expected constraint node".into());
         };
-        may_constraints.insert(node.id);
-        must_constraints.insert(node.id);
-        must_touches.extend(constraint_touches(analysis, &node.kind, variables));
+        may_constraints.insert_mut(node.id);
+        must_constraints.insert_mut(node.id);
+        for key in constraint_touches(analysis, &node.kind, variables) {
+            must_touches.insert_mut(key);
+        }
         if let Some((key, value)) = fixed_equation(analysis, constraint, variables) {
-            must_fixed.insert((key, value));
+            must_fixed.insert_mut((key, value));
         }
         let inputs = NormalizationInputs::new(
             analysis.hir,
@@ -1632,7 +1652,7 @@ mod tests {
         for equations in fixed {
             let mut state = ForwardState::boundary();
             let ForwardState::Reached(facts) = &mut state else { panic!("reached") };
-            Arc::make_mut(&mut facts.constraints).must_fixed = equations;
+            Arc::make_mut(&mut facts.constraints).must_fixed = equations.into_iter().collect();
             states.push(state);
         }
         for a in &states {
@@ -1704,8 +1724,8 @@ mod tests {
                     constraints: Arc::new(ConstraintFacts {
                         may_constraints,
                         must_constraints,
-                        must_touches: BTreeSet::new(),
-                        must_fixed: BTreeSet::new(),
+                        must_touches: OrdSet::new_sync(),
+                        must_fixed: OrdSet::new_sync(),
                         must_equations: Arc::new(MustEquations::reachable_empty()),
                     }),
                 }));

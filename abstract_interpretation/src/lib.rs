@@ -15,3 +15,4 @@
 pub mod graph;
 pub mod lattice;
 pub mod solver;
+pub mod timeout;

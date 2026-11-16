@@ -98,6 +98,7 @@ impl ProofBudget {
 }
 
 fn charge(remaining: &mut usize, amount: usize) -> bool {
+    abstract_interpretation::timeout::check();
     let Some(rest) = remaining.checked_sub(amount) else { return false };
     *remaining = rest;
     true
@@ -160,7 +161,7 @@ impl AnalysisFacts<'_> {
             }
         }
         let collected: BTreeSet<_> = result.sites.iter().map(|site| site.site).collect();
-        if collected != *expected {
+        if collected != expected.iter().copied().collect() {
             return Err(BTreeSet::from([FactBlocker::UnsupportedRelation(self.cfg.exit())]));
         }
         Ok(result)

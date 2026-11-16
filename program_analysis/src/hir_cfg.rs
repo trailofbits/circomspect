@@ -183,8 +183,16 @@ impl DefinitionCfg {
     }
 
     /// Nodes with a path to any target, including the targets themselves.
-    pub(crate) fn nodes_reaching(&self, targets: &BTreeSet<NodeId>) -> BTreeSet<NodeId> {
-        self.topology.nodes_reaching(targets)
+    pub(crate) fn reaching_candidates(
+        &self,
+        targets: &BTreeSet<NodeId>,
+        candidates: &BTreeSet<NodeId>,
+    ) -> BTreeSet<NodeId> {
+        self.topology.reaching_candidates(targets, candidates)
+    }
+
+    pub(crate) fn nodes_reachable_from(&self, starts: &BTreeSet<NodeId>) -> BTreeSet<NodeId> {
+        self.topology.nodes_reachable_from(starts)
     }
 
     /// Unpruned reachable nodes, including `start`, or `None` when capacity is exceeded.

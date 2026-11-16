@@ -8,7 +8,8 @@ mod completion;
 mod decomposition;
 mod polynomial;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
+use rpds::RedBlackTreeMapSync as OrdMap;
 
 use abstract_interpretation::graph::{FlowGraph, NodeId};
 use abstract_interpretation::lattice::Lattice;
@@ -37,20 +38,17 @@ pub(crate) use crate::hir_facts::relations::polynomial::{
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum MustEquations {
     Unreachable,
-    Reached {
-        equations: BTreeMap<NormalizedEquation, BTreeSet<NodeId>>,
-        blockers: BTreeSet<NodeId>,
-    },
+    Reached { equations: OrdMap<NormalizedEquation, BTreeSet<NodeId>>, blockers: BTreeSet<NodeId> },
 }
 
 impl MustEquations {
     pub(crate) fn reachable_empty() -> Self {
-        Self::Reached { equations: BTreeMap::new(), blockers: BTreeSet::new() }
+        Self::Reached { equations: OrdMap::new_sync(), blockers: BTreeSet::new() }
     }
 
     pub(crate) fn insert(&mut self, equation: NormalizedEquation, origin: NodeId) {
         if let Self::Reached { equations, .. } = self {
-            equations.insert(equation, BTreeSet::from([origin]));
+            equations.insert_mut(equation, BTreeSet::from([origin]));
         }
     }
 
@@ -118,16 +116,18 @@ impl Lattice for MustEquations {
             return false;
         };
         let mut changed = false;
-        left.retain(|equation, origins| {
-            let Some(other_origins) = right.get(equation) else {
+        let mut common = OrdMap::new_sync();
+        for (equation, origins) in left.iter() {
+            if let Some(other_origins) = right.get(equation) {
+                let mut merged = origins.clone();
+                merged.extend(other_origins);
+                changed |= merged.len() != origins.len();
+                common.insert_mut(equation.clone(), merged);
+            } else {
                 changed = true;
-                return false;
-            };
-            let origin_count = origins.len();
-            origins.extend(other_origins);
-            changed |= origins.len() != origin_count;
-            true
-        });
+            }
+        }
+        *left = common;
         let blocker_count = left_blockers.len();
         left_blockers.extend(right_blockers.iter().copied());
         changed || left_blockers.len() != blocker_count

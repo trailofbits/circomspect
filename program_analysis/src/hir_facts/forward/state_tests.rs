@@ -8,6 +8,7 @@ use abstract_interpretation::solver::{Transfer, TransferOutcome};
 use parser::hir::{lift_project, ExprKind, HirProject, SymbolId};
 use parser::frontend::{load_sources, AssignmentOperator, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
+use rpds::{RedBlackTreeMapSync as OrdMap, RedBlackTreeSetSync as OrdSet};
 
 use crate::hir_cfg::{build_cfg, CfgNode, CfgNodeKind, DefinitionCfg};
 use crate::hir_facts::access::{AccessKey, AccessKeyStep, IndexKey, MayAccessSet};
@@ -76,8 +77,8 @@ fn seeded_state(hir: &HirProject, cfg: &DefinitionCfg, field: &FieldContext) -> 
         };
         state = output;
     }
-    assert_eq!(state.constraints().unwrap().0.len(), 2);
-    assert_eq!(state.fixed_equations().unwrap().len(), 1);
+    assert_eq!(state.constraints().unwrap().0.size(), 2);
+    assert_eq!(state.fixed_equations().unwrap().size(), 1);
     state
 }
 
@@ -138,7 +139,9 @@ fn constraint_transfers_preserve_shared_input_and_sibling_snapshots() {
             panic!("known constraint transfer")
         };
         let expected_sites = BTreeSet::from([*id]);
-        assert_eq!(output.constraints(), Some((&expected_sites, &expected_sites)));
+        let expected_persistent: rpds::RedBlackTreeSetSync<_> =
+            expected_sites.iter().copied().collect();
+        assert_eq!(output.constraints(), Some((&expected_persistent, &expected_persistent)));
         let MustEquations::Reached { equations, blockers } = output.must_equations() else {
             panic!("reached equations")
         };
@@ -439,16 +442,16 @@ fn constraint_join_reports_each_set_and_provenance_change() {
         altered(&left, |facts| {
             Arc::make_mut(&mut facts.constraints)
                 .may_constraints
-                .insert(additional_constraint_site);
+                .insert_mut(additional_constraint_site);
         }),
         altered(&left, |facts| {
-            Arc::make_mut(&mut facts.constraints).must_constraints.clear();
+            Arc::make_mut(&mut facts.constraints).must_constraints = OrdSet::default();
         }),
         altered(&left, |facts| {
-            Arc::make_mut(&mut facts.constraints).must_touches.clear();
+            Arc::make_mut(&mut facts.constraints).must_touches = OrdSet::default();
         }),
         altered(&left, |facts| {
-            Arc::make_mut(&mut facts.constraints).must_fixed.clear();
+            Arc::make_mut(&mut facts.constraints).must_fixed = OrdSet::default();
         }),
         altered(&left, |facts| {
             let constraints = Arc::make_mut(&mut facts.constraints);
@@ -457,9 +460,11 @@ fn constraint_join_reports_each_set_and_provenance_change() {
             else {
                 panic!("reached")
             };
-            assert_eq!(equations.len(), 1);
-            for origins in equations.values_mut() {
+            assert_eq!(equations.size(), 1);
+            for (equation, origins) in &equations.clone() {
+                let mut origins = origins.clone();
                 origins.insert(additional_constraint_site);
+                equations.insert_mut(equation.clone(), origins);
             }
         }),
         altered(&left, |facts| {
@@ -473,7 +478,7 @@ fn constraint_join_reports_each_set_and_provenance_change() {
             else {
                 panic!("reached")
             };
-            equations.clear();
+            *equations = OrdMap::default();
         }),
     ];
     for right in right_states {
@@ -493,10 +498,10 @@ fn shared_constraint_joins_match_the_unshared_product() {
     for site in [NodeId::new(998), NodeId::new(999)] {
         states.push(altered(&initial, |facts| {
             let constraints = Arc::make_mut(&mut facts.constraints);
-            constraints.may_constraints.insert(site);
-            constraints.must_constraints.clear();
-            constraints.must_touches.clear();
-            constraints.must_fixed.clear();
+            constraints.may_constraints.insert_mut(site);
+            constraints.must_constraints = OrdSet::default();
+            constraints.must_touches = OrdSet::default();
+            constraints.must_fixed = OrdSet::default();
         }));
         states.push(altered(&initial, |facts| {
             let constraints = Arc::make_mut(&mut facts.constraints);
@@ -505,8 +510,10 @@ fn shared_constraint_joins_match_the_unshared_product() {
             else {
                 panic!("reached equations")
             };
-            for origins in equations.values_mut() {
+            for (equation, origins) in &equations.clone() {
+                let mut origins = origins.clone();
                 origins.insert(site);
+                equations.insert_mut(equation.clone(), origins);
             }
             blockers.insert(site);
         }));
@@ -541,10 +548,10 @@ fn join_keeps_later_changes_and_distinguishes_bottom_from_reached_empty() {
         facts.locals.dependencies.clear();
         facts.locals.degrees.clear();
         let constraints = Arc::make_mut(&mut facts.constraints);
-        constraints.may_constraints.insert(NodeId::new(999));
-        constraints.must_constraints.clear();
-        constraints.must_touches.clear();
-        constraints.must_fixed.clear();
+        constraints.may_constraints.insert_mut(NodeId::new(999));
+        constraints.must_constraints = OrdSet::default();
+        constraints.must_touches = OrdSet::default();
+        constraints.must_fixed = OrdSet::default();
         constraints.must_equations = Arc::new(MustEquations::reachable_empty());
     });
     let expected = altered(&right, |facts| {

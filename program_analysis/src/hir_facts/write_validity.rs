@@ -603,13 +603,21 @@ impl AnalysisFacts<'_> {
         const WRITE_UPDATE_BUDGET: usize = 100_000;
         let mut exact_writes = BTreeMap::new();
         let mut uncertain = Vec::new();
+        let blocked = self.forward_blocked_descendants();
         for site in self.cfg.nodes() {
-            // A reached provisional input can be blocked, but cannot be certified dead.
-            let reached = self.site_state(*site).is_some_and(|state| state.variables().is_some());
-            if !reached && self.reachable_node(*site).certified() == Some(&false) {
+            let Some(node) = self.cfg.node(*site) else { continue };
+            let candidate = match &node.kind {
+                CfgNodeKind::Witness { .. } | CfgNodeKind::Opaque(_) => true,
+                CfgNodeKind::OpaqueAssignment { operator, .. } => witness_operator(*operator),
+                _ => false,
+            };
+            if !candidate {
                 continue;
             }
-            let Some(node) = self.cfg.node(*site) else { continue };
+            let reached = self.site_state(*site).is_some_and(|state| state.variables().is_some());
+            if !reached && self.reachable_node_from_blockers(*site, &blocked) == Some(false) {
+                continue;
+            }
             self.classify_write(*site, &node.kind, &mut exact_writes, &mut uncertain);
         }
         if let Some(ports) = ports {
@@ -635,6 +643,45 @@ impl AnalysisFacts<'_> {
                 Err(blockers.iter().map(FactBlocker::from).collect())
             }
         }
+    }
+
+    pub(crate) fn reachable_node_from_blockers(
+        &self,
+        site: NodeId,
+        blocked: &BTreeSet<NodeId>,
+    ) -> Option<bool> {
+        self.cfg.node(site)?;
+        if self.certified_dead_node(site) {
+            return Some(false);
+        }
+        if blocked.contains(&site)
+            || !self
+                .deferred_control_blockers(&BTreeSet::from([site]), &mut BTreeSet::new())
+                .is_empty()
+        {
+            return None;
+        }
+        Some(self.site_state(site).is_some_and(|state| state.variables().is_some()))
+    }
+
+    pub(crate) fn forward_blocked_descendants(&self) -> BTreeSet<NodeId> {
+        let SolveResult::Incomplete { blockers, .. } = &self.forward else {
+            return BTreeSet::new();
+        };
+        let mut starts = BTreeSet::new();
+        for blocker in blockers {
+            match blocker {
+                Blocker::PendingNode(node) | Blocker::OpaqueNode { node, .. } => {
+                    starts.insert(*node);
+                }
+                Blocker::OpaqueEdge { edge, .. } => {
+                    if let Some(edge) = self.cfg.edge(*edge) {
+                        starts.insert(edge.target);
+                    }
+                }
+            }
+        }
+        self.cfg.nodes_reachable_from(&starts)
     }
 
     fn check_forward_write_budget(

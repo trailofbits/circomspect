@@ -3,9 +3,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use abstract_interpretation::graph::{EdgeId, FlowGraph, NodeId};
+use rpds::RedBlackTreeSetSync as OrdSet;
 use abstract_interpretation::lattice::Lattice;
 use abstract_interpretation::solver::{DataflowAnalysis, SolveResult, Transfer, TransferOutcome};
-use parser::hir::{AccessPath, DefinitionRef, Effect, ExprId, ExprKind, HirProject, SymbolKind};
+use parser::hir::{
+    AccessPath, AccessStep, ArrayIndex, DefinitionRef, Effect, ExprId, ExprKind, HirProject,
+    SymbolKind,
+};
 use parser::frontend::{AssignmentOperator, Span};
 
 use crate::hir_cfg::{Constraint, CfgEdge, CfgNode, CfgNodeKind, DefinitionCfg};
@@ -22,7 +26,7 @@ use crate::scalar_evidence::ScalarExpressionEvidence;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum DemandState {
     Unreachable,
-    Reached(BTreeSet<AccessKey>),
+    Reached(OrdSet<AccessKey>),
 }
 
 impl DemandState {
@@ -53,9 +57,11 @@ impl Lattice for DemandState {
                 true
             }
             (Self::Reached(left), Self::Reached(right)) => {
-                let before = left.len();
-                left.extend(right.iter().cloned());
-                left.len() != before
+                let before = left.size();
+                for key in right {
+                    left.insert_mut(key.clone());
+                }
+                left.size() != before
             }
         }
     }
@@ -109,15 +115,40 @@ impl<'a> DemandAnalysis<'a> {
         self.calls.is_some_and(|calls| calls.removable_call(expression))
     }
 
-    fn collect(&self, expression: ExprId, keys: &mut BTreeSet<AccessKey>) -> bool {
+    fn collect(&self, expression: ExprId, keys: &mut OrdSet<AccessKey>) -> bool {
         expression.visit_accesses_with(self.hir, &|id| self.removable_call(id), &mut |path| {
-            keys.insert(key_for_path(self.hir, self.field, path, &BTreeMap::new()));
+            keys.insert_mut(key_for_path(self.hir, self.field, path, &BTreeMap::new()));
         })
     }
 
-    fn collect_path(&self, path: &AccessPath, keys: &mut BTreeSet<AccessKey>) -> bool {
+    fn collect_path(&self, path: &AccessPath, keys: &mut OrdSet<AccessKey>) -> bool {
         path.visit_accesses_with(self.hir, &|id| self.removable_call(id), &mut |read| {
-            keys.insert(key_for_path(self.hir, self.field, read, &BTreeMap::new()));
+            keys.insert_mut(key_for_path(self.hir, self.field, read, &BTreeMap::new()));
+        })
+    }
+
+    fn collect_indices(&self, path: &AccessPath, keys: &mut OrdSet<AccessKey>) -> bool {
+        let mut complete = true;
+        for step in &path.steps {
+            if let AccessStep::Index { index: ArrayIndex::Symbolic(expression), .. } = step {
+                complete &= self.collect(*expression, keys);
+            }
+        }
+        complete
+    }
+
+    pub(super) fn has_removable_assignment(&self, cfg: &DefinitionCfg) -> bool {
+        cfg.nodes().iter().any(|id| {
+            let Some(node) = cfg.node(*id) else { return false };
+            let (CfgNodeKind::Assignment { target, value, operator }
+            | CfgNodeKind::DeferredAssignment { target, value, operator }) = &node.kind
+            else {
+                return false;
+            };
+            *operator == AssignmentOperator::Assign
+                && (!matches!(node.kind, CfgNodeKind::DeferredAssignment { .. })
+                    || self.resolved_deferred.contains(id))
+                && self.pure_scalar_assignment(target, *value)
         })
     }
 
@@ -126,18 +157,21 @@ impl<'a> DemandAnalysis<'a> {
         target: &AccessPath,
         value: ExprId,
         operator: AssignmentOperator,
-        keys: &mut BTreeSet<AccessKey>,
+        keys: &mut OrdSet<AccessKey>,
     ) -> bool {
-        if operator != AssignmentOperator::Assign || !self.pure_scalar_assignment(target, value) {
+        if operator != AssignmentOperator::Assign {
             return self.collect_path(target, keys) && self.collect(value, keys);
+        }
+        if !self.pure_scalar_assignment(target, value) {
+            return self.collect_indices(target, keys) && self.collect(value, keys);
         }
         let key = key_for_path(self.hir, self.field, target, &BTreeMap::new());
         let demanded = keys.iter().any(|candidate| candidate.may_alias(&key));
-        keys.remove(&key);
+        keys.remove_mut(&key);
         !demanded || self.collect(value, keys)
     }
 
-    fn collect_log(&self, node: &CfgNode, keys: &mut BTreeSet<AccessKey>) -> bool {
+    fn collect_log(&self, node: &CfgNode, keys: &mut OrdSet<AccessKey>) -> bool {
         let Some(origin) = node.origin else { return false };
         let Some(block) = self.hir.block(origin.block) else { return false };
         let Some(Effect::Log { values, .. }) = block.effects.get(origin.effect_index) else {
@@ -146,7 +180,7 @@ impl<'a> DemandAnalysis<'a> {
         values.iter().all(|value| self.collect(*value, keys))
     }
 
-    fn collect_evaluation(&self, expression: ExprId, keys: &mut BTreeSet<AccessKey>) -> bool {
+    fn collect_evaluation(&self, expression: ExprId, keys: &mut OrdSet<AccessKey>) -> bool {
         let Some(expr) = self.hir.expression(expression) else { return false };
         if pure_scalar_value(
             self.hir,
@@ -163,13 +197,13 @@ impl<'a> DemandAnalysis<'a> {
     fn collect_dimensions(
         &self,
         symbol: parser::hir::SymbolId,
-        keys: &mut BTreeSet<AccessKey>,
+        keys: &mut OrdSet<AccessKey>,
     ) -> bool {
         let Some(symbol) = self.hir.symbol(symbol) else { return false };
         symbol.dimensions.iter().all(|dimension| self.collect(*dimension, keys))
     }
 
-    fn transfer_local(&self, node: &CfgNode, keys: &mut BTreeSet<AccessKey>) -> bool {
+    fn transfer_local(&self, node: &CfgNode, keys: &mut OrdSet<AccessKey>) -> bool {
         if let CfgNodeKind::Evaluate(expression) = &node.kind {
             return self.collect_evaluation(*expression, keys);
         }
@@ -182,13 +216,13 @@ impl<'a> DemandAnalysis<'a> {
                 && self.transfer_assignment(target, *value, *operator, keys);
         }
         if let CfgNodeKind::Declaration { symbol } = &node.kind {
-            keys.retain(|key| key.root != *symbol);
+            *keys = keys.iter().filter(|key| key.root != *symbol).cloned().collect();
             return self.collect_dimensions(*symbol, keys);
         }
         self.collect_log(node, keys)
     }
 
-    fn transfer_observation(&self, node: &CfgNode, keys: &mut BTreeSet<AccessKey>) -> bool {
+    fn transfer_observation(&self, node: &CfgNode, keys: &mut OrdSet<AccessKey>) -> bool {
         if let CfgNodeKind::Constraint(constraint) = &node.kind {
             return match constraint {
                 Constraint::Assignment { target, value } => {
@@ -210,7 +244,7 @@ impl<'a> DemandAnalysis<'a> {
         self.collect(*value, keys)
     }
 
-    fn transfer_effect(&self, node: &CfgNode, keys: &mut BTreeSet<AccessKey>) -> bool {
+    fn transfer_effect(&self, node: &CfgNode, keys: &mut OrdSet<AccessKey>) -> bool {
         let (CfgNodeKind::Witness { target, value } | CfgNodeKind::Instantiate { target, value }) =
             &node.kind
         else {
@@ -225,7 +259,7 @@ impl DataflowAnalysis<DefinitionCfg> for DemandAnalysis<'_> {
     type Reason = String;
 
     fn boundary(&self, _: NodeId) -> Self::State {
-        DemandState::Reached(BTreeSet::new())
+        DemandState::Reached(OrdSet::new_sync())
     }
 }
 
@@ -431,7 +465,7 @@ impl AnalysisFacts<'_> {
         if !forward.is_empty() {
             return Fact::blocked(forward);
         }
-        let SolveResult::Complete(facts) = &self.demand else {
+        let Some(SolveResult::Complete(facts)) = &self.demand else {
             return Fact::blocked(self.demand_blockers());
         };
         let Some(state) = facts.get(&id).and_then(|facts| facts.output.as_ref()) else {
@@ -446,7 +480,7 @@ impl AnalysisFacts<'_> {
     }
 
     fn demand_blockers(&self) -> BTreeSet<FactBlocker> {
-        let SolveResult::Incomplete { blockers, .. } = &self.demand else {
+        let Some(SolveResult::Incomplete { blockers, .. }) = &self.demand else {
             return BTreeSet::new();
         };
         let mut reasons = BTreeSet::new();
@@ -468,6 +502,7 @@ mod tests {
     use abstract_interpretation::graph::FlowGraph;
     use abstract_interpretation::lattice::Lattice;
     use abstract_interpretation::solver::{Transfer, TransferOutcome};
+    use rpds::RedBlackTreeSetSync as OrdSet;
     use parser::hir::lift_project;
     use parser::frontend::{load_sources, Version, VersionPolicy};
     use program_structure::utils::constants::Curve;
@@ -477,6 +512,39 @@ mod tests {
     use crate::hir_facts::demand::{DemandAnalysis, DemandState};
     use crate::hir_facts::FieldContext;
     use crate::interprocedural::ProjectAnalysis;
+
+    #[test]
+    fn array_write_demands_index_but_not_written_element() {
+        let directory = std::env::temp_dir().join(format!(
+            "circomspect-demand-index-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let source = directory.join("case.circom");
+        fs::write(&source, "function Check(i){var a[2];a[i]=7;return 0;}").unwrap();
+        let loaded = load_sources(&[source], &[], VersionPolicy::new(Version::new(2, 2, 3)));
+        let hir = lift_project(&loaded).hir;
+        let cfg = build_cfg(&hir, hir.definition("Check").unwrap()).unwrap();
+        let field = FieldContext::for_curve(Curve::Bn254);
+        let analysis = DemandAnalysis::new(&hir, &field, BTreeSet::new());
+        assert!(!analysis.has_removable_assignment(&cfg));
+        let node = cfg
+            .nodes()
+            .iter()
+            .filter_map(|id| cfg.node(*id))
+            .find(|node| matches!(node.kind, CfgNodeKind::Assignment { .. }))
+            .unwrap();
+        let CfgNodeKind::Assignment { target, .. } = &node.kind else { unreachable!() };
+        let TransferOutcome::Known(DemandState::Reached(keys)) =
+            node.apply(&analysis, &DemandState::Reached(OrdSet::new_sync()))
+        else {
+            panic!("array assignment transfer must be known")
+        };
+        assert_eq!(keys.size(), 1);
+        assert!(keys.iter().all(|key| key.root != target.root));
+        fs::remove_dir_all(directory).unwrap();
+    }
 
     #[test]
     fn production_assignment_transfer_is_monotone_over_finite_demand_states() {
@@ -510,7 +578,7 @@ mod tests {
                     demanded.insert(key.clone());
                 }
             }
-            states.push(DemandState::Reached(demanded));
+            states.push(DemandState::Reached(demanded.into_iter().collect()));
         }
         let analysis = DemandAnalysis::new(&hir, &field, BTreeSet::new());
         for left in &states {
@@ -595,8 +663,8 @@ mod tests {
             .with_resolved_deferred(facts.resolved_deferred.clone());
         let states = [
             DemandState::Unreachable,
-            DemandState::Reached(BTreeSet::new()),
-            DemandState::Reached(BTreeSet::from([key])),
+            DemandState::Reached(OrdSet::new_sync()),
+            DemandState::Reached([key].into_iter().collect()),
         ];
         for left in &states {
             for right in &states {

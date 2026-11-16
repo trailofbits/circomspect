@@ -6,35 +6,67 @@ use abstract_interpretation::graph::{EdgeId, FlowGraph, NodeId};
 
 #[derive(Clone)]
 pub(super) struct TopologyIndex {
-    outgoing: BTreeMap<NodeId, Vec<(EdgeId, NodeId)>>,
-    incoming: BTreeMap<NodeId, Vec<NodeId>>,
+    ids: Vec<NodeId>,
+    positions: BTreeMap<NodeId, usize>,
+    outgoing: Vec<Vec<(EdgeId, usize)>>,
+    incoming: Vec<Vec<usize>>,
 }
 
 impl TopologyIndex {
     pub(super) fn new<G: FlowGraph<NodeId = NodeId, EdgeId = EdgeId>>(graph: &G) -> Self {
-        let mut outgoing: BTreeMap<NodeId, Vec<(EdgeId, NodeId)>> = BTreeMap::new();
-        let mut incoming: BTreeMap<NodeId, Vec<NodeId>> = BTreeMap::new();
+        let ids = graph.nodes().to_vec();
+        let positions: BTreeMap<_, _> =
+            ids.iter().enumerate().map(|(index, id)| (*id, index)).collect();
+        let mut outgoing = vec![Vec::new(); ids.len()];
+        let mut incoming = vec![Vec::new(); ids.len()];
         for id in graph.edges() {
-            if let Some(edge) = graph.edge(*id) {
-                outgoing.entry(edge.source).or_default().push((*id, edge.target));
-                incoming.entry(edge.target).or_default().push(edge.source);
-            }
+            let Some(edge) = graph.edge(*id) else { continue };
+            let (Some(&source), Some(&target)) =
+                (positions.get(&edge.source), positions.get(&edge.target))
+            else {
+                continue;
+            };
+            outgoing[source].push((*id, target));
+            incoming[target].push(source);
         }
-        Self { outgoing, incoming }
+        Self { ids, positions, outgoing, incoming }
     }
 
-    pub(super) fn nodes_reaching(&self, targets: &BTreeSet<NodeId>) -> BTreeSet<NodeId> {
-        let mut reached = targets.clone();
-        let mut pending: Vec<_> = targets.iter().copied().collect();
+    pub(super) fn reaching_candidates(
+        &self,
+        targets: &BTreeSet<NodeId>,
+        candidates: &BTreeSet<NodeId>,
+    ) -> BTreeSet<NodeId> {
+        let visited = self.reverse_visited(targets);
+        candidates
+            .iter()
+            .filter(|candidate| {
+                targets.contains(candidate)
+                    || self.positions.get(candidate).is_some_and(|index| visited[*index])
+            })
+            .copied()
+            .collect()
+    }
+
+    fn reverse_visited(&self, targets: &BTreeSet<NodeId>) -> Vec<bool> {
+        let mut visited = vec![false; self.ids.len()];
+        let mut pending = Vec::new();
+        for target in targets {
+            if let Some(&index) = self.positions.get(target) {
+                visited[index] = true;
+                pending.push(index);
+            }
+        }
         while let Some(node) = pending.pop() {
-            let Some(sources) = self.incoming.get(&node) else { continue };
-            for source in sources {
-                if reached.insert(*source) {
-                    pending.push(*source);
+            abstract_interpretation::timeout::check();
+            for &source in &self.incoming[node] {
+                if !visited[source] {
+                    visited[source] = true;
+                    pending.push(source);
                 }
             }
         }
-        reached
+        visited
     }
 
     pub(super) fn reachable_nodes(
@@ -42,22 +74,50 @@ impl TopologyIndex {
         start: NodeId,
         capacity: usize,
     ) -> Option<BTreeSet<NodeId>> {
-        let mut reached = BTreeSet::new();
-        let mut pending = vec![start];
+        let Some(&start_index) = self.positions.get(&start) else {
+            return (capacity >= 1).then(|| BTreeSet::from([start]));
+        };
+        let mut visited = vec![false; self.ids.len()];
+        let mut pending = vec![start_index];
+        let mut count = 0;
         while let Some(node) = pending.pop() {
-            if !reached.insert(node) {
+            abstract_interpretation::timeout::check();
+            if visited[node] {
                 continue;
             }
-            if reached.len() > capacity {
+            visited[node] = true;
+            count += 1;
+            if count > capacity {
                 return None;
             }
-            if let Some(edges) = self.outgoing.get(&node) {
-                for (_, target) in edges {
+            for (_, target) in &self.outgoing[node] {
+                pending.push(*target);
+            }
+        }
+        Some(self.collect_visited(&visited))
+    }
+
+    pub(super) fn nodes_reachable_from(&self, starts: &BTreeSet<NodeId>) -> BTreeSet<NodeId> {
+        let mut visited = vec![false; self.ids.len()];
+        let mut pending = Vec::new();
+        for start in starts {
+            if let Some(&index) = self.positions.get(start) {
+                visited[index] = true;
+                pending.push(index);
+            }
+        }
+        while let Some(node) = pending.pop() {
+            abstract_interpretation::timeout::check();
+            for (_, target) in &self.outgoing[node] {
+                if !visited[*target] {
+                    visited[*target] = true;
                     pending.push(*target);
                 }
             }
         }
-        Some(reached)
+        let mut reached = starts.clone();
+        reached.extend(self.collect_visited(&visited));
+        reached
     }
 
     pub(super) fn reaches(
@@ -67,23 +127,39 @@ impl TopologyIndex {
         excluded: Option<NodeId>,
         pruned: &BTreeSet<EdgeId>,
     ) -> bool {
-        let mut visited = BTreeSet::new();
-        let mut pending = vec![start];
+        if Some(start) == excluded {
+            return false;
+        }
+        if targets.contains(&start) {
+            return true;
+        }
+        let Some(&start_index) = self.positions.get(&start) else { return false };
+        let mut visited = vec![false; self.ids.len()];
+        let mut pending = vec![start_index];
         while let Some(node) = pending.pop() {
-            if Some(node) == excluded || !visited.insert(node) {
+            abstract_interpretation::timeout::check();
+            if Some(self.ids[node]) == excluded || visited[node] {
                 continue;
             }
-            if targets.contains(&node) {
+            visited[node] = true;
+            if targets.contains(&self.ids[node]) {
                 return true;
             }
-            let Some(edges) = self.outgoing.get(&node) else { continue };
-            for (id, target) in edges {
+            for (id, target) in &self.outgoing[node] {
                 if !pruned.contains(id) {
                     pending.push(*target);
                 }
             }
         }
         false
+    }
+
+    fn collect_visited(&self, visited: &[bool]) -> BTreeSet<NodeId> {
+        self.ids
+            .iter()
+            .enumerate()
+            .filter_map(|(index, id)| visited[index].then_some(*id))
+            .collect()
     }
 }
 

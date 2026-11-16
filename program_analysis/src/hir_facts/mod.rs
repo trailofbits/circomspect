@@ -245,14 +245,21 @@ pub struct AnalysisFacts<'a> {
     calls: Option<Cow<'a, ScalarExpressionEvidence>>,
     forward: ForwardResult,
     backward: BackwardResult,
-    demand: DemandResult,
+    demand: Option<DemandResult>,
     scalar_evaluation_safety: ScalarEvaluationSafety,
     specialized_parameters: BTreeSet<SymbolId>,
     resolved_deferred: BTreeSet<NodeId>,
     evidence_binding: Option<ContextEvidence>,
     ranges: Mutex<BTreeMap<ExprId, Fact<FieldRange>>>,
+    potential_touches: OnceLock<PotentialTouches>,
     body_writes: OnceLock<write_validity::BodyWriteResult>,
     deferred_branches: OnceLock<Vec<DeferredBranch>>,
+}
+
+#[derive(Default)]
+struct PotentialTouches {
+    by_root: BTreeMap<SymbolId, Vec<(NodeId, AccessKey)>>,
+    fallback: Vec<NodeId>,
 }
 
 /// Compute local facts without external call evidence.
@@ -361,8 +368,14 @@ fn analyze_seeded<'a>(
         .with_calls(options.calls.as_deref())
         .with_scalar_evaluation_safety(scalar_evaluation_safety.clone())
         .with_resolved_deferred(resolved_deferred.clone());
-    let demand = solve::<_, _, Backward>(cfg.as_ref(), &demand_analysis, budget)
-        .map_err(AnalysisError::InvalidGraph)?;
+    let demand = if demand_analysis.has_removable_assignment(cfg.as_ref()) {
+        Some(
+            solve::<_, _, Backward>(cfg.as_ref(), &demand_analysis, budget)
+                .map_err(AnalysisError::InvalidGraph)?,
+        )
+    } else {
+        None
+    };
     Ok(AnalysisFacts {
         hir,
         cfg,
@@ -376,6 +389,7 @@ fn analyze_seeded<'a>(
         resolved_deferred,
         evidence_binding: None,
         ranges: Mutex::new(BTreeMap::new()),
+        potential_touches: OnceLock::new(),
         body_writes: OnceLock::new(),
         deferred_branches: OnceLock::new(),
     })
@@ -567,6 +581,7 @@ impl AnalysisFacts<'_> {
 
     pub(crate) fn bind_evidence(&mut self, evidence: ContextEvidence) {
         self.ranges.get_mut().unwrap_or_else(PoisonError::into_inner).clear();
+        self.potential_touches = OnceLock::new();
         self.body_writes = OnceLock::new();
         self.deferred_branches = OnceLock::new();
         self.evidence_binding = Some(evidence);
@@ -645,7 +660,14 @@ impl AnalysisFacts<'_> {
         let SolveResult::Incomplete { blockers: solver, .. } = &self.forward else {
             return blockers;
         };
-        let reaching = self.cfg.nodes_reaching(sites);
+        let candidates: BTreeSet<_> = solver
+            .iter()
+            .filter_map(|blocker| match blocker {
+                Blocker::PendingNode(node) | Blocker::OpaqueNode { node, .. } => Some(*node),
+                Blocker::OpaqueEdge { edge, .. } => self.cfg.edge(*edge).map(|item| item.target),
+            })
+            .collect();
+        let reaching = self.cfg.reaching_candidates(sites, &candidates);
         for blocker in solver {
             match blocker {
                 Blocker::PendingNode(node) if reaching.contains(node) => {
@@ -795,23 +817,30 @@ impl AnalysisFacts<'_> {
         }
         blockers.extend(self.deferred_control_blockers(&sites, resolving_symbols));
         if let SolveResult::Incomplete { blockers: solver_blockers, .. } = &self.forward {
+            let candidates: BTreeSet<_> = solver_blockers
+                .iter()
+                .filter_map(|blocker| match blocker {
+                    Blocker::PendingNode(node) | Blocker::OpaqueNode { node, .. } => Some(*node),
+                    Blocker::OpaqueEdge { edge, .. } => {
+                        self.cfg.edge(*edge).map(|item| item.target)
+                    }
+                })
+                .collect();
+            let reaching = self.cfg.reaching_candidates(&sites, &candidates);
             for blocker in solver_blockers {
                 match blocker {
-                    Blocker::PendingNode(node) if self.can_reach_any(*node, &sites) => {
+                    Blocker::PendingNode(node) if reaching.contains(node) => {
                         blockers.insert(FactBlocker::Budget(*node));
                     }
                     Blocker::OpaqueNode { node, reason }
-                        if self.can_reach_any(*node, &sites)
+                        if reaching.contains(node)
                             && uses.iter().any(|path| self.opaque_relevant(*node, path)) =>
                     {
                         blockers.insert(FactBlocker::OpaqueNode(*node, reason.clone()));
                     }
                     Blocker::PendingNode(_) | Blocker::OpaqueNode { .. } => {}
                     Blocker::OpaqueEdge { edge, reason } => {
-                        if self
-                            .cfg
-                            .edge(*edge)
-                            .map_or(true, |item| self.can_reach_any(item.target, &sites))
+                        if self.cfg.edge(*edge).map_or(true, |item| reaching.contains(&item.target))
                         {
                             blockers.insert(FactBlocker::OpaqueEdge(*edge, reason.clone()));
                         }
@@ -1064,7 +1093,7 @@ impl AnalysisFacts<'_> {
         path: &AccessPath,
         schema_checked: bool,
     ) -> BTreeSet<FactBlocker> {
-        let mut blockers = self.blockers_for_query(path, schema_checked);
+        let (mut blockers, _) = self.blockers_for_query(path, schema_checked);
         let SolveResult::Incomplete { blockers: backward, .. } = &self.backward else {
             return blockers;
         };
@@ -1102,12 +1131,12 @@ impl AnalysisFacts<'_> {
     }
 
     fn incidence_query(&self, path: &AccessPath, schema_checked: bool) -> Fact<Incidence> {
-        let blockers = self.blockers_for_query(path, schema_checked);
+        let (blockers, potential_sites) = self.blockers_for_query(path, schema_checked);
         if !blockers.is_empty() {
             return Fact::blocked(blockers);
         }
         let query = key_for_path(self.hir, self.field, path, &BTreeMap::new());
-        if self.potential_sites(&query).is_empty() {
+        if potential_sites.is_empty() {
             return Fact::known(Incidence::Zero);
         }
         let Some(state) = self.exit_state() else {
@@ -1149,12 +1178,12 @@ impl AnalysisFacts<'_> {
         path: &AccessPath,
         schema_checked: bool,
     ) -> Fact<Option<FieldValue>> {
-        let blockers = self.blockers_for_query(path, schema_checked);
+        let (blockers, potential_sites) = self.blockers_for_query(path, schema_checked);
         if !blockers.is_empty() {
             return Fact::blocked(blockers);
         }
         let query = key_for_path(self.hir, self.field, path, &BTreeMap::new());
-        if self.potential_sites(&query).is_empty() {
+        if potential_sites.is_empty() {
             return Fact::known(None);
         }
         let Some(state) = self.exit_state() else {
@@ -1243,11 +1272,15 @@ impl AnalysisFacts<'_> {
             .map_or(true, |accesses| accesses.iter().any(|key| key.may_alias(query)))
     }
 
-    fn blockers_for_query(&self, path: &AccessPath, schema_checked: bool) -> BTreeSet<FactBlocker> {
+    fn blockers_for_query(
+        &self,
+        path: &AccessPath,
+        schema_checked: bool,
+    ) -> (BTreeSet<FactBlocker>, BTreeSet<NodeId>) {
         let mut blockers = BTreeSet::new();
         if let Some(blocker) = self.validate_query_path(path, schema_checked) {
             blockers.insert(blocker);
-            return blockers;
+            return (blockers, BTreeSet::new());
         }
         let query = key_for_path(self.hir, self.field, path, &BTreeMap::new());
         let potential_sites = self.potential_sites(&query);
@@ -1280,7 +1313,7 @@ impl AnalysisFacts<'_> {
             }
         }
         let SolveResult::Incomplete { blockers: solver_blockers, .. } = &self.forward else {
-            return blockers;
+            return (blockers, potential_sites);
         };
         for blocker in solver_blockers {
             match blocker {
@@ -1312,7 +1345,7 @@ impl AnalysisFacts<'_> {
                 Blocker::PendingNode(_) | Blocker::OpaqueNode { .. } => {}
             }
         }
-        blockers
+        (blockers, potential_sites)
     }
 
     fn validate_query_path(&self, path: &AccessPath, schema_checked: bool) -> Option<FactBlocker> {
@@ -1355,23 +1388,91 @@ impl AnalysisFacts<'_> {
     }
 
     fn potential_sites(&self, query: &AccessKey) -> BTreeSet<NodeId> {
+        let touches = self.potential_touches.get_or_init(|| self.build_potential_touches());
+        let mut sites = BTreeSet::new();
+        if let Some(candidates) = touches.by_root.get(&query.root) {
+            for (node, key) in candidates {
+                if key.may_alias(query) {
+                    sites.insert(*node);
+                }
+            }
+        }
+        sites.extend(touches.fallback.iter().copied());
+        sites
+    }
+
+    fn build_potential_touches(&self) -> PotentialTouches {
         let incomplete = match &self.forward {
             SolveResult::Complete(_) => false,
             SolveResult::Incomplete { .. } => true,
         };
         let unknown = ForwardState::boundary();
-        self.cfg
-            .nodes()
-            .iter()
-            .copied()
-            .filter(|node| {
-                if incomplete {
-                    self.site_touches_with_state(*node, query, &unknown)
+        let mut index = PotentialTouches::default();
+        for node in self.cfg.nodes() {
+            let Some(cfg_node) = self.cfg.node(*node) else { continue };
+            if let CfgNodeKind::Constraint(_) = &cfg_node.kind {
+                let state =
+                    if incomplete { &unknown } else { self.site_state(*node).unwrap_or(&unknown) };
+                if let Some(touches) = self.constraint_possible_touches(&cfg_node.kind, state) {
+                    for key in touches {
+                        index.by_root.entry(key.root).or_default().push((*node, key));
+                    }
                 } else {
-                    self.site_touches(*node, query)
+                    index.fallback.push(*node);
                 }
-            })
-            .collect()
+            }
+        }
+        index
+    }
+
+    fn constraint_possible_touches(
+        &self,
+        kind: &CfgNodeKind,
+        state: &ForwardState,
+    ) -> Option<BTreeSet<AccessKey>> {
+        let empty_values = BTreeMap::new();
+        let empty_dependencies = BTreeMap::new();
+        let values = state.variables().unwrap_or(&empty_values);
+        let dependencies = state.dependencies().unwrap_or(&empty_dependencies);
+        let analysis = self.forward_analysis();
+        if let Some(touches) = forward::proven_linear_touches(&analysis, kind, values) {
+            return Some(touches);
+        }
+        let CfgNodeKind::Constraint(constraint) = kind else { return None };
+        match constraint {
+            Constraint::Assignment { target, value } => {
+                let mut touches =
+                    BTreeSet::from([key_for_path(self.hir, self.field, target, values)]);
+                for step in &target.steps {
+                    if let AccessStep::Index { index: ArrayIndex::Symbolic(id), .. } = step {
+                        touches.extend(forward::expression_dependencies(
+                            &analysis,
+                            *id,
+                            values,
+                            dependencies,
+                        )?);
+                    }
+                }
+                touches.extend(forward::expression_dependencies(
+                    &analysis,
+                    *value,
+                    values,
+                    dependencies,
+                )?);
+                Some(touches)
+            }
+            Constraint::Equality { left, right } => {
+                let mut touches =
+                    forward::expression_dependencies(&analysis, *left, values, dependencies)?;
+                touches.extend(forward::expression_dependencies(
+                    &analysis,
+                    *right,
+                    values,
+                    dependencies,
+                )?);
+                Some(touches)
+            }
+        }
     }
 
     fn can_reach_any(&self, start: NodeId, targets: &BTreeSet<NodeId>) -> bool {

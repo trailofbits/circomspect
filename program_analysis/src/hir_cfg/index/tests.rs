@@ -96,8 +96,26 @@ fn target_start_is_reachable_without_metadata_unless_excluded() {
     assert!(index.reaches(start, &targets, None, &BTreeSet::new()));
     assert!(!index.reaches(start, &targets, Some(start), &BTreeSet::new()));
     assert!(!index.reaches(start, &BTreeSet::new(), None, &BTreeSet::new()));
-    assert_eq!(index.nodes_reaching(&targets), targets);
-    assert!(index.nodes_reaching(&BTreeSet::new()).is_empty());
+    assert_eq!(index.reaching_candidates(&targets, &targets), targets);
+    assert!(index.reaching_candidates(&BTreeSet::new(), &targets).is_empty());
+}
+
+#[test]
+fn multiple_starts_cover_the_union_of_their_successors() {
+    let graph = IndexedGraph::new(
+        vec![(); 5],
+        vec![
+            (NodeId::new(0), NodeId::new(1), ()),
+            (NodeId::new(1), NodeId::new(2), ()),
+            (NodeId::new(3), NodeId::new(4), ()),
+        ],
+        vec![],
+        vec![],
+    )
+    .unwrap();
+    let starts = BTreeSet::from([NodeId::new(0), NodeId::new(3)]);
+    let reached = TopologyIndex::new(&graph).nodes_reachable_from(&starts);
+    assert_eq!(reached.len(), 5);
 }
 
 #[test]
@@ -117,7 +135,13 @@ fn reverse_walk_matches_forward_reference_for_every_three_node_graph() {
         let mut nodes = graph.nodes().to_vec();
         nodes.push(foreign);
         for targets in target_sets(&nodes) {
-            let reached = index.nodes_reaching(&targets);
+            let candidates: BTreeSet<_> = nodes.iter().copied().collect();
+            let reached = index.reaching_candidates(&targets, &candidates);
+            let candidates = BTreeSet::from([NodeId::new(0), NodeId::new(2), foreign]);
+            assert_eq!(
+                index.reaching_candidates(&targets, &candidates),
+                reached.intersection(&candidates).copied().collect()
+            );
             for start in &nodes {
                 assert_eq!(
                     reached.contains(start),
@@ -138,7 +162,8 @@ fn reverse_walk_handles_parallel_edges_and_cycles() {
     let graph = IndexedGraph::new(vec![(); 6], edges, vec![], vec![]).unwrap();
     let index = TopologyIndex::new(&graph);
     for targets in target_sets(graph.nodes()) {
-        let reached = index.nodes_reaching(&targets);
+        let candidates: BTreeSet<_> = graph.nodes().iter().copied().collect();
+        let reached = index.reaching_candidates(&targets, &candidates);
         for start in graph.nodes() {
             assert_eq!(
                 reached.contains(start),

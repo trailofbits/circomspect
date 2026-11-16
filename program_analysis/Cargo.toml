@@ -10,6 +10,10 @@ repository = "https://github.com/trailofbits/circomspect"
 
 [dependencies]
 abstract_interpretation = { package = "circomspect-abstract-interpretation", version = "0.1.0", path = "../abstract_interpretation" }
+# rpds otherwise selects archery 1.2.3, whose 2024 edition exceeds Rust 1.74.
+archery = "=1.2.0"
+# Newer rpds releases require Rust 1.85; this version supports the workspace MSRV.
+rpds = "=1.0.1"
 num-bigint-dig = "0.8"
 num-traits = "0.2"
 thiserror = "1.0"
