@@ -12,6 +12,7 @@ allow = [
     "CC0-1.0",
     "LGPL-3.0-only",
     "MIT",
+    "MPL-2.0",
     "Unicode-3.0",
     "Unicode-DFS-2016",
 ]
@@ -21,6 +22,9 @@ multiple-versions = "deny"
 multiple-versions-include-dev = true
 wildcards = "deny"
 skip = [
+    # Criterion 0.5 supports the MSRV but needs an older itertools than LALRPOP.
+    { crate = "itertools@0.10.5", reason = "Criterion 0.5 requires itertools 0.10" },
+    { crate = "itertools@0.11.0", reason = "LALRPOP 0.20 requires itertools 0.11" },
     # LALRPOP 0.20 and proptest 1.8 require incompatible bit-set/bit-vec APIs.
     { crate = "bit-set@0.5.3", reason = "LALRPOP 0.20 requires bit-set 0.5" },
     { crate = "bit-vec@0.6.3", reason = "bit-set 0.5 requires bit-vec 0.6" },

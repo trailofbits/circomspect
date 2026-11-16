@@ -21,7 +21,19 @@ parser = { package = "circomspect-parser", version = "2.2.0", path = "../parser"
 program_structure = { package = "circomspect-program-structure", version = "2.1.4", path = "../program_structure" }
 
 [dev-dependencies]
+criterion = { version = "=0.5.1", default-features = false, features = ["cargo_bench_support"] }
+# Criterion's serializer otherwise selects half 2.5+, which exceeds Rust 1.74.
+half = "=2.4.1"
+libc = "=0.2.191"
 serde_json = "=1.0.151"
+
+[[bench]]
+name = "analysis"
+harness = false
+
+[[bench]]
+name = "memory"
+harness = false
 
 [lints]
 workspace = true

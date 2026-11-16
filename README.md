@@ -83,6 +83,8 @@ contexts remain unsupported. Silence about an unsupported construct is not a pro
 that its properties were checked.
 
 Development uses Rust 1.99.0; the tested minimum supported Rust version is 1.74.
+See the [analysis benchmarks](program_analysis/benches/README.md) for `cargo bench` usage and
+before-and-after comparisons.
 Run `cargo test --workspace --locked`, `cargo clippy --all-targets --all-features -- -D warnings`,
 and `cargo fmt --all -- --check` from the project root. Dependency checks use
 `cargo deny --workspace --all-features --locked check --deny warnings`.
