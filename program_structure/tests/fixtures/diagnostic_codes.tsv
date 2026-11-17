@@ -1,4 +1,5 @@
 ParseFail	P1000	parse-fail	<none>
+ProjectSetup	P1099	project-setup	<none>
 CompilerVersionError	P1003	compiler-version-error	<none>
 WrongTypesInAssignOperation	T2000	wrong-types-in-assign-operation	<none>
 WrongArityUnspecified	T20465	wrong-number-of-arguments	<none>

@@ -67,6 +67,23 @@ fn independent_mains_reuse_names_without_duplicate_errors() {
 }
 
 #[test]
+fn included_root_main_is_duplicate_within_its_parent_unit() {
+    let fixture = Fixture::new("included-root-main");
+    fixture.write(
+        "child.circom",
+        "pragma circom 2.2.3; template Child(){signal output out;out<==1;} \
+         component main=Child();",
+    );
+    fixture.write(
+        "root.circom",
+        "pragma circom 2.2.3; include \"child.circom\"; \
+         template Root(){signal output out;out<==1;} component main=Root();",
+    );
+    let output = analyze_files(std::slice::from_ref(&fixture.0), &[], Curve::Bn254).unwrap();
+    assert!(all_reports(&output).iter().any(|report| report.id() == "P1002"));
+}
+
+#[test]
 fn one_include_closure_still_reports_duplicate_definitions() {
     let fixture = Fixture::new("real-duplicate");
     fixture.write("a.circom", "pragma circom 2.2.3; template Shared(){}");

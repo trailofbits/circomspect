@@ -534,7 +534,7 @@ fn missing_input_file_is_visible_in_terminal_and_sarif() {
     let CliRun { status, stdout, sarif, .. } = run(&path, &[], "missing");
     assert_eq!(status.code(), Some(1));
     assert!(stdout.contains("absent.circom"));
-    assert!(ids(&sarif).contains("P1000"));
+    assert!(ids(&sarif).contains("P1099"));
 }
 
 #[test]
@@ -980,7 +980,7 @@ fn a_missing_explicit_library_file_is_reported_even_without_an_include() {
         "library-missing",
     );
     assert_eq!(status.code(), Some(1), "{stdout}");
-    assert!(ids(&sarif).contains("P1000"));
+    assert!(ids(&sarif).contains("P1099"));
     assert!(stdout.contains("missing.circom"));
 }
 

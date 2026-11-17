@@ -1,9 +1,11 @@
 const DOC_URL: &str = "https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md";
+const INCOMPLETE_ANALYSIS: &str = "incomplete-analysis";
 
 /// Diagnostic codes emitted by the current frontend, semantic checks, and analysis rules.
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub enum ReportCode {
     ParseFail,
+    ProjectSetup,
     CompilerVersionError,
     WrongTypesInAssignOperation,
     WrongArityUnspecified,
@@ -70,6 +72,7 @@ impl ReportCode {
     fn descriptor(self) -> DiagnosticDescriptor {
         let (id, name, anchor) = match self {
             Self::ParseFail => ("P1000", "parse-fail", None),
+            Self::ProjectSetup => ("P1099", "project-setup", None),
             Self::CompilerVersionError => ("P1003", "compiler-version-error", None),
             Self::WrongTypesInAssignOperation => ("T2000", "wrong-types-in-assign-operation", None),
             Self::WrongArityUnspecified => ("T20465", "wrong-number-of-arguments", None),
@@ -152,9 +155,7 @@ impl ReportCode {
                 ("CS0018", "unused-output-signal", Some("unused-output-signal"))
             }
             Self::UnresolvedCall => ("CS0019", "unresolved-call", None),
-            Self::IncompleteCoverage => {
-                ("CS0020", "incomplete-analysis", Some("incomplete-analysis"))
-            }
+            Self::IncompleteCoverage => ("CS0020", INCOMPLETE_ANALYSIS, Some(INCOMPLETE_ANALYSIS)),
             Self::RedundantWitnessAssignment => {
                 ("CS0021", "redundant-witness-assignment", Some("redundant-witness-assignment"))
             }

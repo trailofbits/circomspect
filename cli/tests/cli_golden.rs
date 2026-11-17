@@ -42,7 +42,7 @@ const CASES: &[GoldenCase] = &[
     },
     GoldenCase {
         name: "missing_callee_order",
-        source: "unresolved_library.circom",
+        source: "consumer/unresolved_main.circom",
         args: &["--level", "error"],
         status: 1,
     },
@@ -61,7 +61,7 @@ const CASES: &[GoldenCase] = &[
     GoldenCase { name: "locationless_error", source: "absent_input.circom", args: &[], status: 1 },
     GoldenCase {
         name: "allow_suppression",
-        source: "unresolved_library.circom",
+        source: "consumer/unresolved_main.circom",
         args: &["--allow", "CS0019", "--level", "error"],
         status: 0,
     },
@@ -122,6 +122,7 @@ fn run_case(case: &GoldenCase) {
     let stdout = String::from_utf8(output.stdout).expect("CLI stdout is not UTF-8");
     let stdout = stdout
         .replace(&source.display().to_string(), "<fixture>")
+        .replace(&root.display().to_string(), "<fixtures>")
         .replace(&sarif_path.display().to_string(), "<sarif>");
     let golden_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/goldens");
     let expected_stdout =

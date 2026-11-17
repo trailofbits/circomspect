@@ -6,6 +6,7 @@ use termcolor::Buffer;
 
 const CODES: &[(&str, ReportCode)] = &[
     ("ParseFail", ReportCode::ParseFail),
+    ("ProjectSetup", ReportCode::ProjectSetup),
     ("CompilerVersionError", ReportCode::CompilerVersionError),
     ("WrongTypesInAssignOperation", ReportCode::WrongTypesInAssignOperation),
     ("WrongArityUnspecified", ReportCode::WrongArityUnspecified),

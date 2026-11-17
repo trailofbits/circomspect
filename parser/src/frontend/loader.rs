@@ -44,9 +44,27 @@ impl Loader<'_> {
 
     fn resolve_include(&self, path: &Path, name: &str) -> Option<PathBuf> {
         let local = path.parent().unwrap_or_else(|| Path::new(".")).join(name);
-        std::iter::once(local)
+        let exact = std::iter::once(local)
             .chain(self.include_dirs.iter().map(|directory| directory.join(name)))
-            .find_map(|candidate| candidate.canonicalize().ok().filter(|path| path.is_file()))
+            .find_map(|candidate| candidate.canonicalize().ok().filter(|path| path.is_file()));
+        if exact.is_some() {
+            return exact;
+        }
+
+        for directory in self.include_dirs {
+            let Ok(root) = directory.canonicalize() else {
+                continue;
+            };
+            for ancestor in root.ancestors().skip(1) {
+                let Ok(candidate) = ancestor.join(name).canonicalize() else {
+                    continue;
+                };
+                if candidate.is_file() && candidate.starts_with(&root) {
+                    return Some(candidate);
+                }
+            }
+        }
+        None
     }
 
     fn visit(&mut self, path: &Path, origin: Option<Span>) {

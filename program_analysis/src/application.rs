@@ -13,6 +13,7 @@ use std::path::PathBuf;
 use abstract_interpretation::timeout::Timeout;
 
 use parser::hir::{lift_project, DefinitionRef};
+use parser::frontend::DiagnosticKind;
 use program_structure::constants::Curve;
 use program_structure::file_definition::FileLibrary;
 use program_structure::report::Report;
@@ -109,7 +110,7 @@ pub fn analyze_files_with_observer(
         if !path.exists() {
             pre_reports.push(Report::error(
                 format!("Cannot read library path {}", path.display()),
-                program_structure::report_code::ReportCode::ParseFail,
+                program_structure::report_code::ReportCode::ProjectSetup,
             ));
         }
     }
@@ -150,6 +151,11 @@ fn analyze_unit(
     }
     diagnostics.frontend(loaded, &lifted, unit.open_namespace())?;
     diagnostics.emit_new(observer)?;
+    if loaded.diagnostics.iter().any(|diagnostic| {
+        matches!(diagnostic.kind, DiagnosticKind::MissingInclude | DiagnosticKind::FileRead)
+    }) {
+        return Ok((diagnostics.finish(observer)?, Vec::new()));
+    }
     observer.progress(AnalysisProgress::IndexingProject)?;
     let summaries = ProjectAnalysis::build(&lifted, settings.curve.clone())
         .map_err(|error| ApplicationError::Invariant(format!("invalid call graph: {error:?}")))?;

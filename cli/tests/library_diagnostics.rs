@@ -515,10 +515,11 @@ fn unversioned_user_input_still_has_a_warning() {
 fn syntax_error_in_included_library_is_visible() {
     let source = fixture("consumer/includes_broken.circom");
     let library = fixture("broken_library.circom");
+    let library_root = library.parent().expect("library has parent");
     let output = run(&[
         source.to_str().expect("fixture path is not UTF-8"),
         "--library",
-        library.to_str().expect("fixture path is not UTF-8"),
+        library_root.to_str().expect("fixture path is not UTF-8"),
     ]);
     let stdout = String::from_utf8(output.stdout).expect("CLI output is not UTF-8");
 

@@ -29,9 +29,9 @@
           },
           "relatedLocations": [],
           "rule": {
-            "id": "P1000"
+            "id": "P1099"
           },
-          "ruleId": "P1000"
+          "ruleId": "P1099"
         }
       ],
       "tool": {
@@ -41,8 +41,8 @@
           "organization": "Trail of Bits",
           "rules": [
             {
-              "id": "P1000",
-              "name": "parse-fail"
+              "id": "P1099",
+              "name": "project-setup"
             }
           ]
         }

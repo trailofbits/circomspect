@@ -8,8 +8,10 @@
     clippy::unwrap_used
 )]
 use circomspect_parser::frontend::{
-    parse_source, DiagnosticKind, SourceId, SyntaxCategory, Version, VersionPolicy, WalkSyntax,
+    load_sources, parse_source, DiagnosticKind, SourceId, SyntaxCategory, Version, VersionPolicy,
+    WalkSyntax,
 };
+use circomspect_parser::hir::{lift_project, Effect, IncompleteReason};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -155,6 +157,46 @@ fn owned_parser_agrees_with_every_determinate_compiler_case() {
         failures.len(),
         failures.join("\n")
     );
+}
+
+#[test]
+fn compiler_success_cases_have_supported_hir_forms() {
+    let root = corpus_root();
+    let manifest: Value = serde_json::from_str(
+        &std::fs::read_to_string(root.join("manifest.json")).expect("manifest"),
+    )
+    .expect("valid manifest");
+    let mut unsupported = Vec::new();
+    for case in manifest["cases"].as_array().expect("cases") {
+        if required(case, "compiler_class") != "success" {
+            continue;
+        }
+        let path = root.join(required(case, "source"));
+        let loaded = load_sources(&[path], &[], VersionPolicy::new(Version::new(2, 2, 3)));
+        let lifted = lift_project(&loaded);
+        for region in &lifted.incomplete {
+            if let IncompleteReason::Unsupported(reason) = &region.reason {
+                unsupported.push(format!("{}: {reason}", required(case, "id")));
+            }
+        }
+        for block in lifted.hir.blocks() {
+            for effect in &block.effects {
+                let (Effect::Opaque { reason, .. }
+                | Effect::OpaqueAssignment { reason, .. }
+                | Effect::OpaqueEquality { reason, .. }) = effect
+                else {
+                    continue;
+                };
+                if let IncompleteReason::Unsupported(_)
+                | IncompleteReason::InvalidAssignment
+                | IncompleteReason::Syntax = reason
+                {
+                    unsupported.push(format!("{}: opaque effect {reason:?}", required(case, "id")));
+                }
+            }
+        }
+    }
+    assert!(unsupported.is_empty(), "compiler-success HIR gaps:\n{}", unsupported.join("\n"));
 }
 
 fn predecessor(version: &str) -> Option<Version> {

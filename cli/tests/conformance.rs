@@ -33,6 +33,35 @@ fn diagnostic_codes(output: &str) -> Vec<&str> {
     codes
 }
 
+fn analyzer_errors(source: &Path, output_dir: &Path, id: &str) -> Vec<Value> {
+    let sarif_path = output_dir.join("analyzer.sarif");
+    let output = Command::new(env!("CARGO_BIN_EXE_circomspect"))
+        .arg(source)
+        .args(["--curve", "BN254", "--level", "error", "--timeout", "2"])
+        .arg("--sarif-file")
+        .arg(&sarif_path)
+        .output()
+        .expect("failed to run Circomspect on accepted compiler case");
+    assert!(
+        sarif_path.is_file(),
+        "{id}: Circomspect wrote no SARIF; status={}, stdout={}, stderr={}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let sarif: Value = serde_json::from_slice(
+        &std::fs::read(&sarif_path).expect("failed to read Circomspect SARIF"),
+    )
+    .expect("invalid Circomspect SARIF");
+    let results = sarif["runs"][0]["results"].as_array().expect("missing SARIF results");
+    let errors: Vec<_> =
+        results.iter().filter(|result| result["level"] == "error").cloned().collect();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!stdout.contains("timed out"), "{id}: Circomspect analysis timed out: {stdout}");
+    assert!(output.status.success() || !errors.is_empty(), "{id}: {stdout}");
+    errors
+}
+
 fn run_case(binary: &Path, case: &Value) {
     let root = corpus_root();
     let relative = Path::new(required_string(case, "source"));
@@ -45,6 +74,7 @@ fn run_case(binary: &Path, case: &Value) {
     }
     let source = root.join(relative);
     assert!(source.is_file(), "missing conformance source: {}", source.display());
+    let source = source.canonicalize().expect("canonicalize conformance source");
     let text = std::fs::read_to_string(&source).expect("failed to read conformance source");
     if required_string(case, "expected_syntax") == "accept" {
         let expected_pragma = if required_string(case, "id") == "old_pragma_bus_success" {
@@ -102,6 +132,23 @@ fn run_case(binary: &Path, case: &Value) {
     );
     if class == "syntax_error" {
         assert!(code.starts_with('P'), "{}: {stderr}", required_string(case, "id"));
+    }
+    if class == "success" {
+        let errors = analyzer_errors(&source, &output_dir, required_string(case, "id"));
+        assert!(
+            errors.is_empty(),
+            "{}: compiler accepted {}, Circomspect source errors: {errors:#?}",
+            required_string(case, "id"),
+            source.display()
+        );
+    }
+    if let Some(expected_code) = case["analyzer_code"].as_str() {
+        let errors = analyzer_errors(&source, &output_dir, required_string(case, "id"));
+        assert!(
+            errors.iter().any(|result| result["ruleId"] == expected_code),
+            "{}: Circomspect did not preserve {expected_code}: {errors:#?}",
+            required_string(case, "id")
+        );
     }
     std::fs::remove_dir_all(output_dir).expect("failed to remove compiler output directory");
 }

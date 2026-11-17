@@ -3191,6 +3191,147 @@
       "expected_syntax": "accept",
       "compiler_class": "success",
       "compiler_code": ""
+    },
+    {
+      "id": "source_comment_overlap_valid",
+      "feature": "semantic_control",
+      "min_version": "2.2.3",
+      "curve": "bn128",
+      "source": "cases/source_comment_overlap_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "source_discard_valid",
+      "feature": "semantic_control",
+      "min_version": "2.2.3",
+      "curve": "bn128",
+      "source": "cases/source_discard_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "source_cycle_valid",
+      "feature": "semantic_control",
+      "min_version": "2.2.3",
+      "curve": "bn128",
+      "source": "cases/source_cycle_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "source_component_array_valid",
+      "feature": "semantic_control",
+      "min_version": "2.2.3",
+      "curve": "bn128",
+      "source": "cases/source_component_array_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "source_array_assignment_valid",
+      "feature": "semantic_control",
+      "min_version": "2.2.3",
+      "curve": "bn128",
+      "source": "cases/source_array_assignment_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "source_unknown_call_invalid",
+      "feature": "semantic_control",
+      "min_version": "2.2.3",
+      "curve": "bn128",
+      "source": "cases/source_unknown_call_invalid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "semantic_error",
+      "compiler_code": "T2021",
+      "analyzer_code": "CS0019"
+    },
+    {
+      "id": "source_dependency_valid",
+      "feature": "semantic_control",
+      "min_version": "2.2.3",
+      "curve": "bn128",
+      "source": "cases/source_dependency_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "source_array_component_valid",
+      "feature": "semantic_control",
+      "min_version": "2.2.3",
+      "curve": "bn128",
+      "source": "cases/source_array_component_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "anonymous_tuple_assignment_valid",
+      "feature": "semantic_control",
+      "min_version": "2.2.3",
+      "curve": "bn128",
+      "source": "cases/anonymous_tuple_assignment_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "anonymous_tuple_declaration_valid",
+      "feature": "semantic_control",
+      "min_version": "2.2.3",
+      "curve": "bn128",
+      "source": "cases/anonymous_tuple_declaration_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "flattened_tuple_assignment_valid",
+      "feature": "semantic_control",
+      "min_version": "2.2.3",
+      "curve": "bn128",
+      "source": "cases/flattened_tuple_assignment_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "mixed_anonymous_tuple_valid",
+      "feature": "semantic_control",
+      "min_version": "2.2.3",
+      "curve": "bn128",
+      "source": "cases/mixed_anonymous_tuple_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "nested_tuple_assignment_valid",
+      "feature": "semantic_control",
+      "min_version": "2.2.3",
+      "curve": "bn128",
+      "source": "cases/nested_tuple_assignment_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "parallel_anonymous_tuple_valid",
+      "feature": "semantic_control",
+      "min_version": "2.2.3",
+      "curve": "bn128",
+      "source": "cases/parallel_anonymous_tuple_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
     }
   ]
 }

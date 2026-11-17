@@ -54,6 +54,9 @@ impl<'a, 'b> Diagnostics<'a, 'b> {
         lifted: &LiftedProject,
         open_namespace: bool,
     ) -> Result<(), RenderError> {
+        let incomplete_dependency = lifted.syntax_diagnostics.iter().any(|diagnostic| {
+            matches!(diagnostic.kind, DiagnosticKind::MissingInclude | DiagnosticKind::FileRead)
+        });
         for diagnostic in &lifted.syntax_diagnostics {
             let code = match diagnostic.kind {
                 DiagnosticKind::UnsupportedVersion | DiagnosticKind::FeatureVersion => {
@@ -63,18 +66,32 @@ impl<'a, 'b> Diagnostics<'a, 'b> {
                 | DiagnosticKind::UnterminatedString
                 | DiagnosticKind::UnterminatedComment
                 | DiagnosticKind::InvalidNumber
-                | DiagnosticKind::Syntax
-                | DiagnosticKind::MissingInclude
-                | DiagnosticKind::FileRead => ReportCode::ParseFail,
+                | DiagnosticKind::Syntax => ReportCode::ParseFail,
+                DiagnosticKind::MissingInclude | DiagnosticKind::FileRead => {
+                    ReportCode::ProjectSetup
+                }
             };
             let mut report = Report::error(diagnostic.message.clone(), code);
             if let Some(span) = diagnostic.span() {
                 self.locate(&mut report, span, syntax_comment(diagnostic.kind).into())?;
+                if diagnostic.kind == DiagnosticKind::MissingInclude {
+                    self.source_incomplete(CoverageExplanation {
+                        kind: CoverageKind::MissingContext,
+                        span,
+                        message: "This include is unavailable; semantic checks were skipped."
+                            .into(),
+                        help: "Provide the include path or dependency and rerun the analysis."
+                            .into(),
+                    });
+                }
             }
             self.reports.insert_source(report);
         }
         self.main_diagnostics(lifted)?;
         for diagnostic in &lifted.diagnostics {
+            if incomplete_dependency {
+                continue;
+            }
             if open_namespace && unresolved_global(diagnostic.code) {
                 self.source_incomplete(CoverageExplanation {
                     kind: CoverageKind::MissingContext,
@@ -118,19 +135,7 @@ impl<'a, 'b> Diagnostics<'a, 'b> {
     fn main_diagnostics(&mut self, lifted: &LiftedProject) -> Result<(), RenderError> {
         let mut seen = Vec::new();
         for main in lifted.hir.mains() {
-            let current_is_root = self
-                .sources
-                .file_id(main.span.source())
-                .is_some_and(|file| self.sources.files().user_inputs().contains(&file));
-            let independent_roots = current_is_root
-                && seen.iter().all(|previous: &&parser::hir::Main| {
-                    previous.span.source() != main.span.source()
-                        && self
-                            .sources
-                            .file_id(previous.span.source())
-                            .is_some_and(|file| self.sources.files().user_inputs().contains(&file))
-                });
-            if seen.is_empty() || independent_roots {
+            if seen.is_empty() {
                 seen.push(main);
                 continue;
             }

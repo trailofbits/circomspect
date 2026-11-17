@@ -6,14 +6,8 @@ error: only an anonymous component call may be used as an expression statement
 3 │     1;
   │     ^^ This syntax is invalid.
 
-error: unresolved Function call `Missing`
-  ┌─ <fixture>:4:12
-  │
-4 │     return Missing();
-  │            ^^^^^^^ This call cannot be resolved.
-
 circomspect: preparing analysis
 circomspect: analyzing function 'F'
 circomspect: analyzing function 'Neighbor'
 circomspect: Result written to `<sarif>`.
-circomspect: 2 source errors reported.
+circomspect: 1 source error reported.

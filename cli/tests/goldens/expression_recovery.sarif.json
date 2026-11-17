@@ -32,36 +32,6 @@
             "id": "P1000"
           },
           "ruleId": "P1000"
-        },
-        {
-          "level": "error",
-          "locations": [
-            {
-              "id": 0,
-              "message": {
-                "text": "This call cannot be resolved."
-              },
-              "physicalLocation": {
-                "artifactLocation": {
-                  "uri": "file:///fixtures/expression_recovery.circom"
-                },
-                "region": {
-                  "endColumn": 19,
-                  "endLine": 4,
-                  "startColumn": 12,
-                  "startLine": 4
-                }
-              }
-            }
-          ],
-          "message": {
-            "text": "unresolved Function call `Missing`"
-          },
-          "relatedLocations": [],
-          "rule": {
-            "id": "CS0019"
-          },
-          "ruleId": "CS0019"
         }
       ],
       "tool": {
@@ -73,10 +43,6 @@
             {
               "id": "P1000",
               "name": "parse-fail"
-            },
-            {
-              "id": "CS0019",
-              "name": "unresolved-call"
             }
           ]
         }

@@ -99,10 +99,10 @@ const LIBRARY: &str = "template Broken(){component c=Missing();}\n\
     template Later(){signal output out;out<==1;} component main=Broken();";
 
 #[test]
-fn missing_include_has_a_sentence_cased_source_annotation() {
+fn missing_include_has_a_sentence_cased_project_annotation() {
     let fixture = Fixture::new("include \"missing.circom\"; template T(){}");
     let output = analyze_files(std::slice::from_ref(&fixture.0), &[], Curve::Bn254).unwrap();
-    let report = output.diagnostics.iter().find(|report| report.id() == "P1000").unwrap();
+    let report = output.diagnostics.iter().find(|report| report.id() == "P1099").unwrap();
     assert_eq!(report.primary()[0].message, "This include cannot be resolved.");
 }
 

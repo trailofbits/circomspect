@@ -50,6 +50,6 @@ fn directory_files(path: &Path) -> std::io::Result<Vec<PathBuf>> {
 fn read_error(path: &Path, error: &std::io::Error) -> Report {
     Report::error(
         format!("Cannot read input directory {}: {error}", path.display()),
-        ReportCode::ParseFail,
+        ReportCode::ProjectSetup,
     )
 }

@@ -4,6 +4,7 @@ use program_structure::writers::ReportFilter;
 
 pub(super) fn describe(reports: &[Report], policy: &impl ReportFilter) -> String {
     let mut source_errors = 0;
+    let mut project_errors = 0;
     let mut findings = 0;
     let mut notes = 0;
     let mut limits = 0;
@@ -16,7 +17,9 @@ pub(super) fn describe(reports: &[Report], policy: &impl ReportFilter) -> String
         if !policy.filter(report) {
             continue;
         }
-        if let ReportCode::RuntimeError = report.code() {
+        if let ReportCode::ProjectSetup = report.code() {
+            project_errors += 1;
+        } else if let ReportCode::RuntimeError = report.code() {
             analysis_errors += 1;
         } else if let ReportCode::IncompleteCoverage = report.code() {
             match report.category() {
@@ -32,8 +35,9 @@ pub(super) fn describe(reports: &[Report], policy: &impl ReportFilter) -> String
     }
     let mut parts = Vec::new();
     append_count(&mut parts, source_errors, "source error", "source errors");
+    append_count(&mut parts, project_errors, "project setup error", "project setup errors");
     append_count(&mut parts, findings, "finding", "findings");
-    if source_errors == 0 && findings == 0 && analysis_errors == 0 {
+    if source_errors == 0 && project_errors == 0 && findings == 0 && analysis_errors == 0 {
         parts.push("No findings reported.".into());
     }
     append_count(&mut parts, notes, "analysis note", "analysis notes");
@@ -90,6 +94,12 @@ mod tests {
             describe(&reports, &|_: &Report| true),
             "No findings reported. 1 analysis note reported."
         );
+    }
+
+    #[test]
+    fn project_setup_failure_is_separate_from_source_errors() {
+        let reports = [Report::error("missing package".into(), ReportCode::ProjectSetup)];
+        assert_eq!(describe(&reports, &|_: &Report| true), "1 project setup error reported.");
     }
 
     #[test]

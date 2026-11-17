@@ -87,3 +87,32 @@ fn library_search_does_not_strip_include_prefixes() {
         .iter()
         .any(|diagnostic| diagnostic.kind == DiagnosticKind::MissingInclude));
 }
+
+#[test]
+fn direct_library_directory_resolves_its_package_prefixed_paths() {
+    let fixture = Fixture::new("direct-library-directory");
+    let entry = fixture.write(
+        "consumer/deep/entry.circom",
+        "include \"./pkg/circuits/first.circom\"; \
+         include \"../pkg/circuits/second.circom\";",
+    );
+    let first = fixture.write("pkg/circuits/first.circom", "template First(){}");
+    let second = fixture.write("pkg/circuits/second.circom", "template Second(){}");
+    let loaded = Fixture::load(&entry, &[fixture.0.join("pkg/circuits")]);
+    assert!(loaded.diagnostics.is_empty(), "{:?}", loaded.diagnostics);
+    assert_eq!(loaded.files.len(), 3);
+    assert_eq!(loaded.files[1].path, first);
+    assert_eq!(loaded.files[2].path, second);
+}
+
+#[test]
+fn exact_library_match_precedes_compatibility_lookup() {
+    let fixture = Fixture::new("exact-before-compatibility");
+    let entry = fixture.write("consumer/entry.circom", "include \"pkg/circuits/shared.circom\";");
+    fixture.write("pkg/circuits/shared.circom", "template Fallback(){}");
+    let exact = fixture.write("exact/pkg/circuits/shared.circom", "template CompilerSelected(){}");
+    let loaded = Fixture::load(&entry, &[fixture.0.join("pkg/circuits"), fixture.0.join("exact")]);
+    assert!(loaded.diagnostics.is_empty(), "{:?}", loaded.diagnostics);
+    assert_eq!(loaded.files.len(), 2);
+    assert_eq!(loaded.files[1].path, exact);
+}
