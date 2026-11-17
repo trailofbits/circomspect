@@ -3334,6 +3334,36 @@
       "compiler_code": ""
     },
     {
+      "id": "source_reverse_assignments_valid",
+      "feature": "semantic_control",
+      "min_version": "2.2.3",
+      "curve": "bn128",
+      "source": "cases/source_reverse_assignments_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "source_named_anonymous_inputs_valid",
+      "feature": "semantic_control",
+      "min_version": "2.2.3",
+      "curve": "bn128",
+      "source": "cases/source_named_anonymous_inputs_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
+      "id": "source_parallel_expressions_valid",
+      "feature": "semantic_control",
+      "min_version": "2.2.3",
+      "curve": "bn128",
+      "source": "cases/source_parallel_expressions_valid.circom",
+      "expected_syntax": "accept",
+      "compiler_class": "success",
+      "compiler_code": ""
+    },
+    {
       "id": "source_duplicate_main_invalid",
       "feature": "semantic_control",
       "min_version": "2.2.3",

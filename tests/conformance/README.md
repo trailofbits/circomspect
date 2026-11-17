@@ -59,14 +59,16 @@ upstream recovery or invalid-source branches omitted from the valid-source
 matrix. The ordinary test checks exact inventory agreement and fixture spans;
 the compiler test also checks the operator and assignment token sets against
 the pinned grammar text. A fixture with a compiler semantic error still counts
-as syntax accepted. The `project_error` result for a definition-only library
-records `P1001` (missing main), which is a project requirement rather than a
-syntax error: the upstream `ParseAst` production makes `main` optional.
+as syntax accepted. Project errors include `P1001` for a definition-only
+library without a `main` and `P1002` for a root that includes a second `main`.
+The upstream `ParseAst` production makes `main` optional in an individual file.
 
-The 319 compiler cases include 139 new accepted/malformed matrix pairs, the
-original 18 feature pairs (two also appear in the matrix), one semantic
-control, and four compiler-boundary cases. Prefix `++x` and `--x` are grammar
-recovery alternatives that produce `P1012`; they are rejected-source cases,
+The 337 compiler cases include 150 successful programs, 159 syntax errors,
+25 semantic errors, two project errors, and one compiler panic. Compiler-success
+cases cover reverse signal assignments, named anonymous `<==` inputs in a
+different order from their declarations, and regular plus anonymous `parallel`
+calls. Prefix `++x` and `--x` are grammar recovery alternatives that produce
+`P1012`; they are rejected-source cases,
 not valid-source production rows. The upstream HEXNUMBER regular expression
 matches `0x`, but its action panics while converting an empty digit sequence.
 That case is recorded as `compiler_panic` with indeterminate syntax status; it

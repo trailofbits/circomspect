@@ -7,7 +7,7 @@ use circomspect_parser::frontend::{
     VersionPolicy,
 };
 use circomspect_parser::hir::{lift_project, AccessStep, Effect, ExprKind, LiftedProject, SemanticCode};
-use circomspect_parser::frontend::AssignmentOperator;
+use circomspect_parser::frontend::{AssignmentOperator, InputAssignmentOperator};
 use std::path::PathBuf;
 
 fn fixture(name: &str) -> PathBuf {
@@ -21,6 +21,14 @@ fn parse_fixture(name: &str) -> circomspect_parser::frontend::ParseOutcome {
 
 fn lift_fixture(name: &str) -> LiftedProject {
     let project = load_sources(&[fixture(name)], &[], VersionPolicy::new(Version::new(2, 2, 3)));
+    assert!(project.diagnostics.is_empty(), "{:?}", project.diagnostics);
+    lift_project(&project)
+}
+
+fn lift_conformance_fixture(name: &str) -> LiftedProject {
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/conformance/cases").join(name);
+    let project = load_sources(&[path], &[], VersionPolicy::new(Version::new(2, 2, 3)));
     assert!(project.diagnostics.is_empty(), "{:?}", project.diagnostics);
     lift_project(&project)
 }
@@ -333,4 +341,101 @@ fn genuinely_unknown_assignment_target_still_reports_an_error() {
         "{:?}",
         lifted.diagnostics
     );
+}
+
+#[test]
+fn compiler_valid_reverse_assignments_bind_the_correct_targets() {
+    let lifted = lift_conformance_fixture("source_reverse_assignments_valid.circom");
+    assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
+    assert!(lifted.incomplete.is_empty(), "{:?}", lifted.incomplete);
+    let template = lifted.hir.templates().iter().find(|item| item.name == "Main").expect("Main");
+    let body = lifted.hir.block(template.body).expect("Main body");
+    let assignments: Vec<_> = body
+        .effects
+        .iter()
+        .filter_map(|effect| {
+            let (target, value, kind) = match effect {
+                Effect::WitnessAssignment { target, value, .. } => (target, value, "witness"),
+                Effect::ConstraintAssignment { target, value, .. } => (target, value, "constraint"),
+                _ => return None,
+            };
+            let ExprKind::Access(source) = &lifted.hir.expression(*value)?.kind else {
+                return None;
+            };
+            let target = &lifted.hir.symbol(target.terminal)?.name;
+            let source = &lifted.hir.symbol(source.terminal)?.name;
+            Some((target.as_str(), source.as_str(), kind))
+        })
+        .collect();
+    assert_eq!(
+        assignments,
+        [("witness", "value", "witness"), ("constrained", "value", "constraint")]
+    );
+}
+
+#[test]
+fn compiler_valid_named_anonymous_inputs_keep_their_port_mapping() {
+    let lifted = lift_conformance_fixture("source_named_anonymous_inputs_valid.circom");
+    assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
+    assert!(lifted.incomplete.is_empty(), "{:?}", lifted.incomplete);
+    let inputs = lifted
+        .hir
+        .expressions()
+        .iter()
+        .find_map(|expression| {
+            if let ExprKind::AnonymousComponent { inputs, .. } = &expression.kind {
+                Some(inputs)
+            } else {
+                None
+            }
+        })
+        .expect("anonymous call");
+    let bindings: Vec<_> = inputs
+        .iter()
+        .map(|input| {
+            assert_eq!(input.operator, InputAssignmentOperator::Constraint);
+            let port = lifted
+                .hir
+                .port(input.resolved_port().expect("resolved named port"))
+                .expect("named input port");
+            let target = &lifted.hir.symbol(port.symbol).expect("port symbol").name;
+            let ExprKind::Access(value) =
+                &lifted.hir.expression(input.value).expect("input expression").kind
+            else {
+                panic!("named input reads a signal")
+            };
+            let source = &lifted.hir.symbol(value.terminal).expect("input symbol").name;
+            (target.as_str(), source.as_str())
+        })
+        .collect();
+    assert_eq!(bindings, [("right", "b"), ("left", "a")]);
+}
+
+#[test]
+fn compiler_valid_parallel_calls_keep_both_expression_forms() {
+    let lifted = lift_conformance_fixture("source_parallel_expressions_valid.circom");
+    assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
+    assert!(lifted.incomplete.is_empty(), "{:?}", lifted.incomplete);
+    let template = lifted.hir.templates().iter().find(|item| item.name == "Main").expect("Main");
+    let body = lifted.hir.block(template.body).expect("Main body");
+    let mut regular = false;
+    let mut anonymous = false;
+    for effect in &body.effects {
+        let value = match effect {
+            Effect::ComponentInstantiation { value, .. }
+            | Effect::ConstraintAssignment { value, .. } => *value,
+            _ => continue,
+        };
+        let Some(ExprKind::Parallel(inner)) =
+            lifted.hir.expression(value).map(|expression| &expression.kind)
+        else {
+            continue;
+        };
+        match &lifted.hir.expression(*inner).expect("parallel operand").kind {
+            ExprKind::Call { .. } => regular = true,
+            ExprKind::AnonymousComponent { .. } => anonymous = true,
+            _ => panic!("parallel expression wraps a template call"),
+        }
+    }
+    assert!(regular && anonymous, "parallel forms must remain typed");
 }
