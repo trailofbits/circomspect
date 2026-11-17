@@ -6,7 +6,7 @@ use circomspect_parser::frontend::{
     load_sources, parse_source, tokenize, DiagnosticKind, SourceId, TriviaKind, Version,
     VersionPolicy,
 };
-use circomspect_parser::hir::{lift_project, Effect, SemanticCode};
+use circomspect_parser::hir::{lift_project, AccessStep, Effect, ExprKind, LiftedProject, SemanticCode};
 use circomspect_parser::frontend::AssignmentOperator;
 use std::path::PathBuf;
 
@@ -17,6 +17,41 @@ fn fixture(name: &str) -> PathBuf {
 fn parse_fixture(name: &str) -> circomspect_parser::frontend::ParseOutcome {
     let text = std::fs::read_to_string(fixture(name)).expect("fixture is readable");
     parse_source(SourceId::new(0), &text, VersionPolicy::new(Version::new(2, 2, 3)))
+}
+
+fn lift_fixture(name: &str) -> LiftedProject {
+    let project = load_sources(&[fixture(name)], &[], VersionPolicy::new(Version::new(2, 2, 3)));
+    assert!(project.diagnostics.is_empty(), "{:?}", project.diagnostics);
+    lift_project(&project)
+}
+
+fn anonymous_output_assignments(lifted: &LiftedProject) -> Vec<(String, String)> {
+    let template = lifted
+        .hir
+        .templates()
+        .iter()
+        .find(|template| template.name == "Main")
+        .expect("Main template");
+    let body = lifted.hir.block(template.body).expect("Main body");
+    body.effects
+        .iter()
+        .filter_map(|effect| {
+            let (target, value) = match effect {
+                Effect::ConstraintAssignment { target, value, .. }
+                | Effect::VariableAssignment { target, value, .. } => (target, *value),
+                _ => return None,
+            };
+            let ExprKind::Access(source) = &lifted.hir.expression(value)?.kind else {
+                return None;
+            };
+            let Some(AccessStep::Port { .. }) = source.steps.first() else {
+                return None;
+            };
+            let target = lifted.hir.symbol(target.terminal)?.name.clone();
+            let output = lifted.hir.symbol(source.terminal)?.name.clone();
+            Some((target, output))
+        })
+        .collect()
 }
 
 #[test]
@@ -170,6 +205,118 @@ fn tuple_assignment_with_wrong_arity_is_rejected() {
         "{:?}",
         lifted.diagnostics
     );
+}
+
+#[test]
+fn anonymous_multioutput_assignment_binds_each_output_in_order() {
+    let lifted = lift_fixture("anonymous_tuple_assignment_valid.circom");
+    assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
+    assert!(lifted.incomplete.is_empty(), "{:?}", lifted.incomplete);
+    assert_eq!(
+        anonymous_output_assignments(&lifted),
+        [("first".into(), "left".into()), ("second".into(), "right".into())]
+    );
+}
+
+#[test]
+fn anonymous_multioutput_tuple_declarations_bind_each_output_in_order() {
+    let lifted = lift_fixture("anonymous_tuple_declaration_valid.circom");
+    assert!(lifted.diagnostics.is_empty(), "{:?}", lifted.diagnostics);
+    assert!(lifted.incomplete.is_empty(), "{:?}", lifted.incomplete);
+    assert_eq!(
+        anonymous_output_assignments(&lifted),
+        [
+            ("first".into(), "left".into()),
+            ("second".into(), "right".into()),
+            ("a".into(), "left".into()),
+            ("b".into(), "right".into()),
+        ]
+    );
+}
+
+#[test]
+fn anonymous_multioutput_tuple_arity_is_rejected() {
+    let lifted = lift_fixture("anonymous_tuple_arity_invalid.circom");
+    assert!(
+        lifted
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == SemanticCode::InvalidAssignment),
+        "{:?}",
+        lifted.diagnostics
+    );
+}
+
+#[test]
+fn incomplete_anonymous_inputs_do_not_prove_output_assignments() {
+    let lifted = lift_fixture("anonymous_tuple_missing_input_invalid.circom");
+    assert!(
+        lifted.diagnostics.iter().any(|diagnostic| diagnostic.code == SemanticCode::AnonymousInput),
+        "{:?}",
+        lifted.diagnostics
+    );
+    assert!(
+        lifted
+            .diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code != SemanticCode::InvalidAssignment),
+        "{:?}",
+        lifted.diagnostics
+    );
+}
+
+#[test]
+fn nested_tuple_assignments_preserve_all_three_targets() {
+    for name in ["nested_tuple_assignment_valid.circom", "flattened_tuple_assignment_valid.circom"]
+    {
+        let lifted = lift_fixture(name);
+        assert!(lifted.diagnostics.is_empty(), "{name}: {:?}", lifted.diagnostics);
+        let template =
+            lifted.hir.templates().iter().find(|item| item.name == "Main").expect("Main template");
+        let body = lifted.hir.block(template.body).expect("Main body");
+        let count = body
+            .effects
+            .iter()
+            .filter_map(|effect| {
+                if let Effect::ConstraintAssignment { .. } = effect {
+                    Some(())
+                } else {
+                    None
+                }
+            })
+            .count();
+        assert_eq!(count, 3, "{name}: {:?}", body.effects);
+    }
+}
+
+#[test]
+fn mixed_and_parallel_anonymous_tuples_keep_one_output_binding_per_port() {
+    for (name, assignments) in
+        [("mixed_anonymous_tuple_valid.circom", 3), ("parallel_anonymous_tuple_valid.circom", 2)]
+    {
+        let lifted = lift_fixture(name);
+        assert!(lifted.diagnostics.is_empty(), "{name}: {:?}", lifted.diagnostics);
+        assert!(lifted.incomplete.is_empty(), "{name}: {:?}", lifted.incomplete);
+        assert_eq!(
+            anonymous_output_assignments(&lifted),
+            [("first".into(), "left".into()), ("second".into(), "right".into())]
+        );
+        let template =
+            lifted.hir.templates().iter().find(|item| item.name == "Main").expect("Main template");
+        let body = lifted.hir.block(template.body).expect("Main body");
+        let targets: Vec<_> = body
+            .effects
+            .iter()
+            .filter_map(|effect| {
+                if let Effect::ConstraintAssignment { target, .. } = effect {
+                    Some(target.terminal)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(targets.len(), assignments, "{name}: {:?}", body.effects);
+    }
 }
 
 #[test]

@@ -3,10 +3,15 @@ use crate::hir::lift::{
     AccessPath, AccessStep, ArrayIndex, AssignmentOperator, BTreeSet, BlockId, BusTarget,
     CallTarget, ControlGuard, Declaration, DeclarationKind, DeclaredSymbol, DefinitionKind,
     DefinitionRef, DirectionSyntax, Effect, ExprId, ExprKind, Expression, Identifier,
-    IncompleteReason, Knownness, Lifter, LogArgument, PortDirection, ScalarShape, SemanticCode,
-    Severity, ShapeCheck, Span, Statement, SymbolId, SymbolKind, SymbolSnapshot, ValueEvidence,
-    ValueType, TemplateInvocation, ForLoop, PostfixOperator,
+    IncompleteReason, Knownness, Lifter, LogArgument, PortDirection, PortSchema, ScalarShape,
+    SemanticCode, Severity, ShapeCheck, Span, Statement, SymbolId, SymbolKind, SymbolSnapshot,
+    ValueEvidence, ValueType, TemplateInvocation, ForLoop, PostfixOperator,
 };
+
+enum TupleValue<'a> {
+    Source(&'a Expression),
+    Projected(ExprId),
+}
 
 impl Lifter<'_> {
     fn path_depends_on_invalid(
@@ -703,37 +708,37 @@ impl Lifter<'_> {
 
     pub(super) fn lift_tuple_initialization(&mut self, declaration: &Declaration) -> Vec<Effect> {
         let Some((operator, value)) = &declaration.tuple_initialization else { return Vec::new() };
-        let mut effects = Vec::new();
-        if let Expression::Tuple { elements, .. } = value {
-            if elements.len() == declaration.symbols.len() {
-                for (declared, element) in declaration.symbols.iter().zip(elements) {
-                    if let Some(symbol) = self.scopes.resolve(&declared.name.name) {
-                        if self.hir.symbols[symbol.index].span != declared.name.span {
-                            effects.push(self.opaque(
-                                declared.span,
-                                IncompleteReason::AmbiguousReference(declared.name.name.clone()),
-                            ));
-                            continue;
-                        }
-                        effects.push(self.assignment_for_symbol(
-                            symbol,
-                            *operator,
-                            element,
-                            declared.span,
-                        ));
+        let Some((mut effects, values)) = self.tuple_values(value) else {
+            return vec![self.opaque(declaration.span, IncompleteReason::UnknownType)];
+        };
+        if values.len() != declaration.symbols.len() {
+            effects.push(self.invalid_assignment(
+                declaration.span,
+                "tuple initializer has the wrong number of elements",
+            ));
+            return effects;
+        }
+        for (declared, value) in declaration.symbols.iter().zip(values) {
+            let Some(symbol) = self.scopes.resolve(&declared.name.name) else { continue };
+            if self.hir.symbols[symbol.index].span != declared.name.span {
+                effects.push(self.opaque(
+                    declared.span,
+                    IncompleteReason::AmbiguousReference(declared.name.name.clone()),
+                ));
+                continue;
+            }
+            effects.push(match value {
+                TupleValue::Source(value) => {
+                    self.assignment_for_symbol(symbol, *operator, value, declared.span)
+                }
+                TupleValue::Projected(value) => {
+                    if self.hir.symbols[symbol.index].kind == SymbolKind::Component {
+                        self.opaque(declared.span, IncompleteReason::UnknownType)
+                    } else {
+                        self.assignment_for_symbol_value(symbol, *operator, value, declared.span)
                     }
                 }
-            } else {
-                effects.push(self.invalid_assignment(
-                    declaration.span,
-                    "tuple initializer has the wrong number of elements",
-                ));
-            }
-        } else {
-            effects.push(self.opaque(
-                declaration.span,
-                IncompleteReason::Unsupported("nonliteral tuple initializer".into()),
-            ));
+            });
         }
         effects
     }
@@ -767,6 +772,22 @@ impl Lifter<'_> {
         value: &Expression,
         span: Span,
     ) -> Effect {
+        let kind = self.hir.symbols[symbol.index].kind;
+        let value = if kind == SymbolKind::Component {
+            self.lift_component_value(symbol, value)
+        } else {
+            self.lift_expression(value)
+        };
+        self.assignment_for_symbol_value(symbol, operator, value, span)
+    }
+
+    fn assignment_for_symbol_value(
+        &mut self,
+        symbol: SymbolId,
+        operator: AssignmentOperator,
+        value: ExprId,
+        span: Span,
+    ) -> Effect {
         let path = AccessPath {
             root: symbol,
             steps: Vec::new(),
@@ -776,11 +797,6 @@ impl Lifter<'_> {
             span,
         };
         let kind = self.hir.symbols[symbol.index].kind;
-        let value = if kind == SymbolKind::Component {
-            self.lift_component_value(symbol, value)
-        } else {
-            self.lift_expression(value)
-        };
         self.assignment_effect(path, kind, operator, value, span)
     }
 
@@ -848,6 +864,153 @@ impl Lifter<'_> {
         current
     }
 
+    fn tuple_leaves(expression: &Expression) -> Vec<&Expression> {
+        let mut pending = vec![expression];
+        let mut leaves = Vec::new();
+        while let Some(expression) = pending.pop() {
+            match Self::ungroup(expression) {
+                Expression::Tuple { elements, .. } => pending.extend(elements.iter().rev()),
+                leaf => leaves.push(leaf),
+            }
+        }
+        leaves
+    }
+
+    fn anonymous_output_projections(&mut self, expression: ExprId) -> Option<Vec<ExprId>> {
+        let anonymous = match &self.hir.expression(expression)?.kind {
+            ExprKind::Parallel(inner) => *inner,
+            ExprKind::AnonymousComponent { .. } => expression,
+            _ => return None,
+        };
+        let ExprKind::AnonymousComponent { component, .. } = &self.hir.expression(anonymous)?.kind
+        else {
+            return None;
+        };
+        if self.hir.expression(anonymous)?.knownness != Knownness::WitnessDependent {
+            return None;
+        }
+        let component = &self.hir.components[component.index];
+        let CallTarget::Template(template) = component.target.as_ref()? else { return None };
+        let root = component.symbol;
+        let outputs: Vec<_> = self.hir.templates[template.index]
+            .ports
+            .iter()
+            .filter(|id| self.hir.ports[id.index].direction == Some(PortDirection::Output))
+            .map(|id| {
+                let port = &self.hir.ports[id.index];
+                let ty = match &port.schema {
+                    PortSchema::Signal => ValueType::Plain,
+                    PortSchema::Bus(id) => ValueType::Bus(*id),
+                    PortSchema::Opaque(_) => ValueType::Unknown,
+                };
+                (*id, port.symbol, ty)
+            })
+            .collect();
+        let span = self.hir.expression(expression)?.span;
+        Some(
+            outputs
+                .into_iter()
+                .map(|(port, terminal, ty)| {
+                    let path = AccessPath {
+                        root,
+                        steps: vec![AccessStep::Port { port, span }],
+                        terminal,
+                        component_input: false,
+                        component_output: true,
+                        span,
+                    };
+                    self.add_expression(
+                        ExprKind::Access(path),
+                        Knownness::WitnessDependent,
+                        span,
+                        ty,
+                    )
+                })
+                .collect(),
+        )
+    }
+
+    fn tuple_values<'a>(
+        &mut self,
+        value: &'a Expression,
+    ) -> Option<(Vec<Effect>, Vec<TupleValue<'a>>)> {
+        match Self::ungroup(value) {
+            Expression::Tuple { .. } | Expression::AnonymousCall(_) => {}
+            Expression::Parallel { operand, .. }
+                if let Expression::AnonymousCall(_) = Self::ungroup(operand) => {}
+            _ => return None,
+        }
+        let mut effects = Vec::new();
+        let mut values = Vec::new();
+        for value in Self::tuple_leaves(value) {
+            match value {
+                Expression::AnonymousCall(_) | Expression::Parallel { .. } => {
+                    let id = self.lift_expression(value);
+                    let outputs = self.anonymous_output_projections(id)?;
+                    effects.push(Effect::AnonymousComponent { expression: id, span: value.span() });
+                    values.extend(outputs.into_iter().map(TupleValue::Projected));
+                }
+                _ => values.push(TupleValue::Source(value)),
+            }
+        }
+        Some((effects, values))
+    }
+
+    fn lift_projected_assignment(
+        &mut self,
+        target: &Expression,
+        operator: AssignmentOperator,
+        value: ExprId,
+        span: Span,
+    ) -> Effect {
+        let target = Self::ungroup(target);
+        if let Expression::Name { identifier, access, .. } = target {
+            if identifier.name == "_" && access.is_empty() {
+                if let Some(DefinitionRef::Function(_)) = self.current_definition {
+                    if operator != AssignmentOperator::Assign {
+                        return self.invalid_assignment(
+                            span,
+                            "a function cannot use signal assignment operators",
+                        );
+                    }
+                }
+                return match operator {
+                    AssignmentOperator::Assign
+                    | AssignmentOperator::Witness
+                    | AssignmentOperator::Constraint
+                    | AssignmentOperator::ReverseWitness
+                    | AssignmentOperator::ReverseConstraint => {
+                        Effect::Discard { value, operator, span }
+                    }
+                    AssignmentOperator::Add
+                    | AssignmentOperator::Subtract
+                    | AssignmentOperator::Multiply
+                    | AssignmentOperator::Divide
+                    | AssignmentOperator::IntegerDivide
+                    | AssignmentOperator::Modulo
+                    | AssignmentOperator::Power
+                    | AssignmentOperator::ShiftLeft
+                    | AssignmentOperator::ShiftRight
+                    | AssignmentOperator::BitAnd
+                    | AssignmentOperator::BitOr
+                    | AssignmentOperator::BitXor => self
+                        .invalid_assignment(span, "underscore discard requires a plain assignment"),
+                };
+            }
+        }
+        let Some(path) = self.lift_access(target) else {
+            return self.opaque(span, IncompleteReason::UnknownType);
+        };
+        let kind = self.hir.symbols[path.terminal.index].kind;
+        if kind == SymbolKind::Component {
+            return self.opaque(span, IncompleteReason::UnknownType);
+        }
+        if path.component_output {
+            return self.invalid_assignment(span, "cannot assign a component output port");
+        }
+        self.assignment_effect(path, kind, operator, value, span)
+    }
+
     fn lift_assignment_effects(
         &mut self,
         target: &Expression,
@@ -856,23 +1019,26 @@ impl Lifter<'_> {
         span: Span,
     ) -> Vec<Effect> {
         let target = Self::ungroup(target);
-        let Expression::Tuple { elements: targets, .. } = target else {
+        let Expression::Tuple { .. } = target else {
             return vec![self.lift_assignment(target, operator, value, span)];
         };
-        let Expression::Tuple { elements: values, .. } = Self::ungroup(value) else {
-            return vec![self.opaque(
-                span,
-                IncompleteReason::Unsupported("nonliteral tuple assignment".into()),
-            )];
+        let Some((mut effects, values)) = self.tuple_values(value) else {
+            return vec![self.opaque(span, IncompleteReason::UnknownType)];
         };
+        let targets = Self::tuple_leaves(target);
         if targets.len() != values.len() {
-            return vec![self.invalid_assignment(span, "tuple assignment has the wrong arity")];
+            effects.push(self.invalid_assignment(span, "tuple assignment has the wrong arity"));
+            return effects;
         }
-        targets
-            .iter()
-            .zip(values)
-            .flat_map(|(target, value)| self.lift_assignment_effects(target, operator, value, span))
-            .collect()
+        for (target, value) in targets.into_iter().zip(values) {
+            effects.push(match value {
+                TupleValue::Source(value) => self.lift_assignment(target, operator, value, span),
+                TupleValue::Projected(value) => {
+                    self.lift_projected_assignment(target, operator, value, span)
+                }
+            });
+        }
+        effects
     }
 
     pub(super) fn assignment_effect(

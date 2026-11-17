@@ -492,14 +492,26 @@ impl Lifter<'_> {
                     self.knownness(condition).join(self.knownness(yes)).join(self.knownness(no));
                 self.add_expression(ExprKind::Ternary { condition, yes, no }, knownness, span, ty)
             }
-            Expression::Parallel { .. } => {
-                self.incomplete(span, IncompleteReason::Unsupported("parallel value".into()));
-                self.add_expression(
-                    ExprKind::Opaque(IncompleteReason::Unsupported("parallel value".into())),
-                    Knownness::Opaque,
-                    span,
-                    ValueType::Unknown,
-                )
+            Expression::Parallel { operand, .. } => {
+                let operand = self.lift_expression(operand);
+                if let Some(ExprKind::AnonymousComponent { .. }) =
+                    self.hir.expression(operand).map(|expression| &expression.kind)
+                {
+                    self.add_expression(
+                        ExprKind::Parallel(operand),
+                        self.knownness(operand),
+                        span,
+                        self.expression_type(operand),
+                    )
+                } else {
+                    self.incomplete(span, IncompleteReason::Unsupported("parallel value".into()));
+                    self.add_expression(
+                        ExprKind::Opaque(IncompleteReason::Unsupported("parallel value".into())),
+                        Knownness::Opaque,
+                        span,
+                        ValueType::Unknown,
+                    )
+                }
             }
             _ => self.add_expression(
                 ExprKind::Opaque(IncompleteReason::Unsupported("expression operation".into())),
