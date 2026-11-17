@@ -45,14 +45,19 @@ To output the results to a Sarif file (which can be read by the [VSCode Sarif Vi
 Circomspect supports the same curves that Circom does: BN254, BLS12-381, and Goldilocks. If you are using a different curve than the default (BN254) you can set the curve using the command line option `--curve`.
 
 Libraries do not need a `main` component. Input directories are searched
-recursively for `.circom` files. Use `-L path/to/library` to resolve includes;
-the path may name a directory or an individual library file. Results from
-included files are hidden unless the file is also an input; errors remain
-visible.
+recursively for `.circom` files. Use `-L path/to/library-directory` to resolve
+includes. Results from included files are hidden unless the file is also an
+input; errors remain visible.
 
-Pass each imported package's file or directory with its own `-L`. Package
-prefixes in include paths are matched against those roots; ambiguous matches
-are reported. Separate input files may each declare a `main` component.
+Pass each imported package directory with its own `-L`. Include resolution
+checks the including file's directory, then each `-L` directory in order, for
+the literal include path. The first existing file wins. If those exact checks
+fail, Circomspect can resolve a package-prefixed path inside an explicit `-L`
+directory. This compatibility lookup supports commands that pass a package's
+`circuits` directory; for compiler parity, supply include roots that match
+each literal include path. Separate input files may each declare a `main`
+component. Missing dependencies are reported as project setup errors, while
+independent warning checks continue.
 `--timeout SECONDS` gives each template or function call context a positive
 wall-clock limit. When a context times out, Circomspect reports `T3002`,
 discards findings from that context, and continues with other contexts.
