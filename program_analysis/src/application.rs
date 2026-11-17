@@ -44,7 +44,7 @@ pub struct AnalyzedScope {
 struct AnalysisSession {
     curve: Curve,
     timeout: AnalysisTimeout,
-    seen_setup: BTreeSet<ReportIdentity>,
+    seen_source: BTreeSet<ReportIdentity>,
 }
 
 /// Work about to begin. Definition events include each distinct call context.
@@ -106,7 +106,7 @@ pub fn analyze_files_with_observer(
     let (paths, input_reports) = inputs::expand(paths);
     let paths = units::distinct_paths(paths);
     let (files, file_ids) = units::catalog(&paths, libraries)?;
-    let mut session = AnalysisSession { curve, timeout, seen_setup: BTreeSet::new() };
+    let mut session = AnalysisSession { curve, timeout, seen_source: BTreeSet::new() };
     let mut pre_reports = input_reports;
     for path in libraries {
         if !path.exists() {
@@ -156,7 +156,7 @@ fn analyze_unit(
     for report in pre_reports {
         diagnostics.push(report);
     }
-    diagnostics.frontend(loaded, &lifted, unit.open_namespace(), &mut session.seen_setup)?;
+    diagnostics.frontend(loaded, &lifted, unit.open_namespace(), &mut session.seen_source)?;
     diagnostics.emit_new(observer)?;
     observer.progress(AnalysisProgress::IndexingProject)?;
     let summaries = ProjectAnalysis::build(&lifted, session.curve.clone())

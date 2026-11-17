@@ -108,7 +108,7 @@ fn run_case(binary: &Path, case: &Value) {
         "success"
     } else if stderr.contains("panicked at") && codes.is_empty() {
         "compiler_panic"
-    } else if codes == ["P1001"] {
+    } else if codes == ["P1001"] || codes == ["P1002"] {
         "project_error"
     } else if codes.iter().any(|code| code.starts_with('P')) {
         "syntax_error"

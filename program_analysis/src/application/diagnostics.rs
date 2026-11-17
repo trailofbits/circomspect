@@ -53,11 +53,23 @@ impl<'a, 'b> Diagnostics<'a, 'b> {
         loaded: &LoadedProject,
         lifted: &LiftedProject,
         open_namespace: bool,
-        seen_setup: &mut BTreeSet<ReportIdentity>,
+        seen_source: &mut BTreeSet<ReportIdentity>,
     ) -> Result<(), RenderError> {
         let incomplete_dependency = lifted.syntax_diagnostics.iter().any(|diagnostic| {
             matches!(diagnostic.kind, DiagnosticKind::MissingInclude | DiagnosticKind::FileRead)
         });
+        self.syntax_diagnostics(lifted, seen_source)?;
+        self.main_diagnostics(lifted, seen_source)?;
+        self.semantic_diagnostics(lifted, incomplete_dependency, open_namespace, seen_source)?;
+        self.version_warnings(loaded, seen_source);
+        Ok(())
+    }
+
+    fn syntax_diagnostics(
+        &mut self,
+        lifted: &LiftedProject,
+        seen_source: &mut BTreeSet<ReportIdentity>,
+    ) -> Result<(), RenderError> {
         for diagnostic in &lifted.syntax_diagnostics {
             let code = match diagnostic.kind {
                 DiagnosticKind::UnsupportedVersion | DiagnosticKind::FeatureVersion => {
@@ -76,10 +88,7 @@ impl<'a, 'b> Diagnostics<'a, 'b> {
             if let Some(span) = diagnostic.span() {
                 self.locate(&mut report, span, syntax_comment(diagnostic.kind).into())?;
             }
-            if (diagnostic.kind == DiagnosticKind::MissingInclude
-                || diagnostic.kind == DiagnosticKind::FileRead)
-                && !seen_setup.insert(ReportIdentity::from(&report))
-            {
+            if !seen_source.insert(ReportIdentity::from(&report)) {
                 continue;
             }
             if diagnostic.kind == DiagnosticKind::MissingInclude {
@@ -95,7 +104,16 @@ impl<'a, 'b> Diagnostics<'a, 'b> {
             }
             self.reports.insert_source(report);
         }
-        self.main_diagnostics(lifted)?;
+        Ok(())
+    }
+
+    fn semantic_diagnostics(
+        &mut self,
+        lifted: &LiftedProject,
+        incomplete_dependency: bool,
+        open_namespace: bool,
+        seen_source: &mut BTreeSet<ReportIdentity>,
+    ) -> Result<(), RenderError> {
         for diagnostic in &lifted.diagnostics {
             if incomplete_dependency {
                 continue;
@@ -110,8 +128,19 @@ impl<'a, 'b> Diagnostics<'a, 'b> {
                 });
                 continue;
             }
-            self.reports.insert_source(self.sources.semantic_report(diagnostic)?);
+            let report = self.sources.semantic_report(diagnostic)?;
+            if seen_source.insert(ReportIdentity::from(&report)) {
+                self.reports.insert_source(report);
+            }
         }
+        Ok(())
+    }
+
+    fn version_warnings(
+        &mut self,
+        loaded: &LoadedProject,
+        seen_source: &mut BTreeSet<ReportIdentity>,
+    ) {
         for source in &loaded.files {
             let versioned = source.outcome.ast.items.iter().any(|item| {
                 if let Item::Pragma { pragma, .. } = item {
@@ -134,13 +163,18 @@ impl<'a, 'b> Diagnostics<'a, 'b> {
                         "This file has no Circom version pragma.".to_string(),
                     );
                 }
-                self.reports.insert_source(report);
+                if seen_source.insert(ReportIdentity::from(&report)) {
+                    self.reports.insert_source(report);
+                }
             }
         }
-        Ok(())
     }
 
-    fn main_diagnostics(&mut self, lifted: &LiftedProject) -> Result<(), RenderError> {
+    fn main_diagnostics(
+        &mut self,
+        lifted: &LiftedProject,
+        seen_source: &mut BTreeSet<ReportIdentity>,
+    ) -> Result<(), RenderError> {
         let mut seen = Vec::new();
         for main in lifted.hir.mains() {
             if seen.is_empty() {
@@ -160,7 +194,9 @@ impl<'a, 'b> Diagnostics<'a, 'b> {
             self.locate(&mut report, main.span, "This is an additional main component.".into())?;
             let (file, range) = self.sources.location(first.span)?;
             report.add_secondary(range, file, Some("This is the first main component.".into()));
-            self.reports.insert_source(report);
+            if seen_source.insert(ReportIdentity::from(&report)) {
+                self.reports.insert_source(report);
+            }
         }
         Ok(())
     }

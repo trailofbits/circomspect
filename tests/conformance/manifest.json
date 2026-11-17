@@ -3339,8 +3339,8 @@
       "min_version": "2.2.3",
       "curve": "bn128",
       "source": "cases/source_duplicate_main_invalid.circom",
-      "expected_syntax": "reject",
-      "compiler_class": "syntax_error",
+      "expected_syntax": "accept",
+      "compiler_class": "project_error",
       "compiler_code": "P1002",
       "analyzer_code": "P1002"
     }

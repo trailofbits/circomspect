@@ -72,3 +72,68 @@ fn shared_missing_include_is_reported_once_across_roots() {
     assert_eq!(stdout.matches("error:").count(), 1, "{stdout}");
     fs::remove_dir_all(directory).unwrap();
 }
+
+#[test]
+fn shared_syntax_error_is_reported_once_across_roots() {
+    let directory = std::env::temp_dir().join(format!(
+        "circomspect-shared-syntax-error-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id(),
+    ));
+    fs::create_dir_all(&directory).unwrap();
+    fs::write(
+        directory.join("shared.circom"),
+        "pragma circom 2.2.3; template Shared(){var value = ;}",
+    )
+    .unwrap();
+    fs::write(
+        directory.join("first.circom"),
+        "pragma circom 2.2.3; include \"shared.circom\"; component main=Shared();",
+    )
+    .unwrap();
+    fs::write(
+        directory.join("second.circom"),
+        "pragma circom 2.2.3; include \"shared.circom\"; component main=Shared();",
+    )
+    .unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_circomspect"))
+        .args([directory.to_str().unwrap(), "--level", "error"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(!output.status.success(), "{stdout}");
+    assert_eq!(stdout.matches("error:").count(), 1, "{stdout}");
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn shared_semantic_error_is_reported_once_across_roots() {
+    let directory = std::env::temp_dir().join(format!(
+        "circomspect-shared-semantic-error-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id(),
+    ));
+    fs::create_dir_all(&directory).unwrap();
+    fs::write(
+        directory.join("shared.circom"),
+        "pragma circom 2.2.3; template Shared(){component child=Missing();}",
+    )
+    .unwrap();
+    for name in ["first.circom", "second.circom"] {
+        fs::write(
+            directory.join(name),
+            "pragma circom 2.2.3; include \"shared.circom\"; component main=Shared();",
+        )
+        .unwrap();
+    }
+
+    let output = Command::new(env!("CARGO_BIN_EXE_circomspect"))
+        .args([directory.to_str().unwrap(), "--level", "error"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(!output.status.success(), "{stdout}");
+    assert_eq!(stdout.matches("error: unresolved Template call `Missing`").count(), 1, "{stdout}");
+    fs::remove_dir_all(directory).unwrap();
+}
