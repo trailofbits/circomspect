@@ -6,11 +6,11 @@ use parser::frontend::{DiagnosticKind, Item, LoadedProject, Span};
 use program_structure::report::Report;
 use program_structure::report_code::ReportCode;
 
-use crate::application::coverage::{check_name, CoverageExplanation, CoverageKind};
+use crate::application::coverage::{CoverageExplanation, CoverageKind};
 use crate::application::grouping::{ContextDisplay, ReportGroups};
 use crate::application::{AnalysisObserver, ApplicationError};
 use crate::interprocedural::ContextEvidence;
-use crate::rules::{RenderError, RuleKind, SourceMap};
+use crate::rules::{RenderError, SourceMap};
 
 #[cfg(test)]
 mod tests;
@@ -159,10 +159,7 @@ impl<'a, 'b> Diagnostics<'a, 'b> {
         let span = explanation.span;
         let key =
             ScopeKey::Source(span.source().index(), span.start(), span.end(), explanation.kind);
-        self.incomplete
-            .entry(key)
-            .or_insert_with(|| IncompleteScope::new(span))
-            .add(explanation, None);
+        self.incomplete.entry(key).or_insert_with(|| IncompleteScope::new(span)).add(explanation);
     }
 
     pub(super) fn scope_incomplete(
@@ -170,7 +167,6 @@ impl<'a, 'b> Diagnostics<'a, 'b> {
         evidence: &ContextEvidence,
         name: Span,
         explanations: Vec<CoverageExplanation>,
-        rule: Option<RuleKind>,
     ) {
         for explanation in explanations {
             let span = explanation.span;
@@ -178,14 +174,14 @@ impl<'a, 'b> Diagnostics<'a, 'b> {
                 ScopeKey::Source(span.source().index(), span.start(), span.end(), explanation.kind);
             if let Some(source) = self.incomplete.get_mut(&source_key) {
                 if source.has_cause(&explanation) {
-                    source.add(explanation, rule);
+                    source.add(explanation);
                     continue;
                 }
             }
             self.incomplete
                 .entry(ScopeKey::Context(evidence.clone(), explanation.kind))
                 .or_insert_with(|| IncompleteScope::new(name))
-                .add(explanation, rule);
+                .add(explanation);
         }
     }
 
@@ -219,18 +215,9 @@ impl<'a, 'b> Diagnostics<'a, 'b> {
                 "Some checks could not be completed here.".into(),
             )?;
             let mut help = BTreeSet::new();
-            for (key, label) in &scope.details {
-                let (file, range) = self.sources.location(label.span)?;
-                let mut checks = Vec::new();
-                for kind in &label.rules {
-                    checks.push(format!("{} ({})", check_name(*kind), kind.code().id()));
-                }
-                let message = if checks.is_empty() {
-                    key.message.clone()
-                } else {
-                    format!("{} This affects {}.", key.message, checks.join(", "))
-                };
-                report.add_secondary(range, file, Some(message));
+            for (key, span) in &scope.details {
+                let (file, range) = self.sources.location(*span)?;
+                report.add_secondary(range, file, Some(key.message.clone()));
                 help.insert(&key.help);
             }
             for action in help {
@@ -285,14 +272,9 @@ struct DetailKey {
     help: String,
 }
 
-struct IncompleteLabel {
-    span: Span,
-    rules: BTreeSet<RuleKind>,
-}
-
 struct IncompleteScope {
     primary: Span,
-    details: BTreeMap<DetailKey, IncompleteLabel>,
+    details: BTreeMap<DetailKey, Span>,
 }
 
 impl IncompleteScope {
@@ -306,7 +288,7 @@ impl IncompleteScope {
             .any(|key| key.message == explanation.message && key.help == explanation.help)
     }
 
-    fn add(&mut self, explanation: CoverageExplanation, rule: Option<RuleKind>) {
+    fn add(&mut self, explanation: CoverageExplanation) {
         let span = explanation.span;
         let key = DetailKey {
             source: span.source().index(),
@@ -315,12 +297,6 @@ impl IncompleteScope {
             message: explanation.message,
             help: explanation.help,
         };
-        let label = self
-            .details
-            .entry(key)
-            .or_insert_with(|| IncompleteLabel { span, rules: BTreeSet::new() });
-        if let Some(rule) = rule {
-            label.rules.insert(rule);
-        }
+        self.details.entry(key).or_insert(span);
     }
 }

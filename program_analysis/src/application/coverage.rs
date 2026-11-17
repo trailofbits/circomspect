@@ -8,7 +8,7 @@ use parser::frontend::Span;
 use crate::hir_cfg::CfgNodeKind;
 use crate::hir_facts::{AnalysisFacts, FactBlocker, VisitAccesses};
 use crate::interprocedural::{ArgumentValue, CallBlocker, ContextEvidence, SummaryBlocker};
-use crate::rules::{AbstentionReason, RuleKind};
+use crate::rules::AbstentionReason;
 
 #[cfg(test)]
 mod tests;
@@ -261,30 +261,4 @@ fn unknown_argument(argument: &ArgumentValue) -> bool {
 
 fn explanation(kind: CoverageKind, span: Span, message: &str, help: &str) -> CoverageExplanation {
     CoverageExplanation { kind, span, message: message.into(), help: help.into() }
-}
-
-pub(super) fn check_name(kind: RuleKind) -> &'static str {
-    match kind {
-        RuleKind::BitwiseComplement => "bitwise complement",
-        RuleKind::Bn254SpecificCircuit => "field-specific constants",
-        RuleKind::ConstantConditional => "constant branch conditions",
-        RuleKind::FieldArithmetic => "field arithmetic",
-        RuleKind::FieldComparison => "field comparisons",
-        RuleKind::NonstrictBinaryConversion => "binary conversion bounds",
-        RuleKind::UnconstrainedDivision => "division constraints",
-        RuleKind::SignalAssignment => "signal assignments",
-        RuleKind::RedundantWitnessAssignment => "redundant witness assignments",
-        RuleKind::UnconstrainedSignal => "signal constraints",
-        RuleKind::UnconstrainedLessThan => "comparator input ranges",
-        RuleKind::UnusedVariableValue => "unused variable values",
-        RuleKind::UnusedParameterValue => "unused parameter values",
-        RuleKind::SideEffectFreeAssignment => "assignments without side effects",
-        RuleKind::UnusedOutputSignal => "unused component outputs",
-        RuleKind::Complexity => "cyclomatic complexity",
-        RuleKind::TooManyArguments => "argument counts",
-        RuleKind::IncompleteCoverage => "analysis coverage",
-        RuleKind::SignalDependentAssert => "signal-dependent assertions",
-        RuleKind::UnassignedOutput => "unassigned outputs",
-        RuleKind::ComparatorPrecondition => "comparator preconditions",
-    }
 }

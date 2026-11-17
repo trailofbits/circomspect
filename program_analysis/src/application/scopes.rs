@@ -22,7 +22,6 @@ const CONTEXT_BUDGET: usize = 1024;
 struct ScopeNote {
     span: Span,
     explanations: Vec<CoverageExplanation>,
-    rule: Option<RuleKind>,
 }
 
 enum CallOutcome {
@@ -214,7 +213,6 @@ impl<'a, 'b, 'c, 'd> ScopeRunner<'a, 'b, 'c, 'd> {
             notes.push(ScopeNote {
                 span: self.span(abstention.definition())?,
                 explanations: coverage.rule(&abstention.reason),
-                rule: Some(abstention.kind),
             });
         }
         let calls = self.compute_calls(&facts, evidence)?;
@@ -252,7 +250,6 @@ impl<'a, 'b, 'c, 'd> ScopeRunner<'a, 'b, 'c, 'd> {
                     outcomes.push(CallOutcome::Incomplete(ScopeNote {
                         span: self.span(evidence.context().definition())?,
                         explanations: coverage.call(&reason),
-                        rule: None,
                     }));
                     continue;
                 }
@@ -284,7 +281,7 @@ impl<'a, 'b, 'c, 'd> ScopeRunner<'a, 'b, 'c, 'd> {
             reports.insert(report, display);
         }
         for note in computed.notes {
-            self.diagnostics.scope_incomplete(evidence, note.span, note.explanations, note.rule);
+            self.diagnostics.scope_incomplete(evidence, note.span, note.explanations);
         }
         for call in computed.calls {
             match call {
@@ -293,12 +290,7 @@ impl<'a, 'b, 'c, 'd> ScopeRunner<'a, 'b, 'c, 'd> {
                     self.context_blocked(evidence, span, &reason)?;
                 }
                 CallOutcome::Incomplete(note) => {
-                    self.diagnostics.scope_incomplete(
-                        evidence,
-                        note.span,
-                        note.explanations,
-                        note.rule,
-                    );
+                    self.diagnostics.scope_incomplete(evidence, note.span, note.explanations);
                 }
             }
         }
@@ -366,7 +358,6 @@ impl<'a, 'b, 'c, 'd> ScopeRunner<'a, 'b, 'c, 'd> {
             evidence,
             self.span(evidence.context().definition())?,
             coverage.summary(reason),
-            None,
         );
         Ok(())
     }

@@ -6,11 +6,11 @@ use parser::hir::{lift_project, ExprId, ExprKind, LiftedProject};
 use parser::frontend::{load_sources, Version, VersionPolicy};
 use program_structure::constants::Curve;
 
-use crate::application::coverage::{check_name, CoverageContext, CoverageKind};
+use crate::application::coverage::{CoverageContext, CoverageKind};
 use crate::hir_cfg::{build_cfg, CfgNodeKind};
 use crate::hir_facts::FactBlocker;
 use crate::interprocedural::{CallOwner, CallReachability, ProjectAnalysis, SummaryBlocker};
-use crate::rules::{run_registered, AbstentionReason, RuleContext, RuleKind};
+use crate::rules::{run_registered, AbstentionReason, RuleContext};
 
 fn fixture(source: &str) -> LiftedProject {
     let directory = std::env::temp_dir().join(format!(
@@ -178,7 +178,6 @@ fn internal_errors_remain_distinct_from_missing_source_context() {
         assert!(internal[0].message.contains("analyzer"));
         assert!(internal[0].help.contains("Report"));
         assert!(context.summary(&SummaryBlocker::ForeignCall).is_empty());
-        assert_eq!(check_name(RuleKind::UnconstrainedLessThan), "comparator input ranges");
     });
 }
 

@@ -13,7 +13,7 @@ use crate::application::diagnostics::Diagnostics;
 use crate::application::AnalysisProgress;
 use crate::hir_cfg::build_cfg;
 use crate::interprocedural::{CallOwner, CallReachability, ProjectAnalysis};
-use crate::rules::{RuleKind, SourceMap};
+use crate::rules::SourceMap;
 
 #[test]
 fn repeated_timeouts_for_one_template_are_counted_separately() {
@@ -68,17 +68,18 @@ fn an_internal_error_never_promotes_missing_context_from_the_same_scope() {
             help: "Report the analyzer failure.".into(),
         },
     ];
-    diagnostics.scope_incomplete(&evidence, span, explanations, Some(RuleKind::FieldArithmetic));
+    diagnostics.scope_incomplete(&evidence, span, explanations);
     let reports = diagnostics.finish(&mut |_: AnalysisProgress<'_>| Ok(())).unwrap();
     assert_eq!(reports.len(), 2);
     let policy = OutputPolicy::new(MessageCategory::Warning, HashSet::from([0]), HashSet::new());
     let visible: Vec<_> = reports.iter().filter(|report| policy.filter(report)).collect();
     assert_eq!(visible.len(), 1);
     assert_eq!(visible[0].category(), &MessageCategory::Error);
+    assert_eq!(visible[0].secondary()[0].message, "The analysis context is inconsistent.");
     assert!(visible[0].secondary().iter().all(|label| !label.message.contains("parameter")));
     assert!(visible[0].notes().iter().all(|note| !note.contains("caller")));
     let info = reports.iter().find(|report| report.category() == &MessageCategory::Info).unwrap();
-    assert!(info.secondary().iter().any(|label| label.message.contains("parameter `n`")));
+    assert_eq!(info.secondary()[0].message, "parameter `n` is unknown");
 }
 
 #[test]
@@ -123,12 +124,7 @@ fn coverage_keeps_the_explanation_without_generic_call_paths() {
             panic!("reachable child")
         };
         let evidence = project.contexts().call_evidence(&call, &facts, &parent).unwrap();
-        diagnostics.scope_incomplete(
-            &evidence,
-            span,
-            vec![explanation.clone()],
-            Some(RuleKind::FieldArithmetic),
-        );
+        diagnostics.scope_incomplete(&evidence, span, vec![explanation.clone()]);
         calls += 1;
     }
     assert_eq!(calls, 2);
@@ -138,4 +134,5 @@ fn coverage_keeps_the_explanation_without_generic_call_paths() {
         reports[0].secondary().iter().filter(|label| label.message.contains("context")).collect();
     assert!(paths.is_empty());
     assert_eq!(reports[0].secondary().len(), 1);
+    assert_eq!(reports[0].secondary()[0].message, "This check needs a concrete parameter.");
 }
