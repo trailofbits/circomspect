@@ -7,7 +7,6 @@ use parser::frontend::BinaryOperator;
 use parser::hir::{ExprId, ExprKind, Knownness};
 
 use crate::hir_cfg::{CfgNodeKind, Constraint};
-use crate::hir_facts::VisitAccesses;
 use crate::rules::{AbstentionReason, Rule, RuleContext, RuleKind, RuleResult};
 
 pub(super) struct SignalAssert;
@@ -56,25 +55,11 @@ impl Rule for SignalAssert {
                     if equivalent_constraint(context, condition) {
                         continue;
                     }
-                    let mut names = Vec::new();
-                    condition.visit_accesses(context.hir(), &mut |path| {
-                        if let Some(symbol) = context.hir().symbol(path.root) {
-                            if !names.contains(&symbol.name) {
-                                names.push(symbol.name.clone());
-                            }
-                        }
-                    });
-                    let detail = if names.is_empty() {
-                        "a witness-dependent expression".to_owned()
-                    } else {
-                        format!("witness-dependent value(s): {}", names.join(", "))
-                    };
                     result.add_finding(context.finding(
                         self.kind(),
-                        format!(
-                            "This assertion checks {detail} only during witness generation; \
-                             it adds no constraint to the proof system."
-                        ),
+                        "This assertion checks witness dependent values during witness generation, \
+                         but it adds no constraint to the proof system."
+                            .into(),
                         origin.span,
                         "This assertion does not constrain the proof.".into(),
                     ));

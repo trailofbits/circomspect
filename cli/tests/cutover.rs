@@ -605,7 +605,30 @@ fn witness_dependent_assertion_is_reported_but_parameter_assertion_is_not() {
         .filter(|entry| entry["ruleId"] == "CS0023")
         .collect();
     assert_eq!(messages.len(), 1, "{}", result.stdout);
-    assert!(result.stdout.contains("witness-dependent"), "{}", result.stdout);
+    assert!(result.stdout.contains("witness dependent values"), "{}", result.stdout);
+}
+
+#[test]
+fn year_assertion_uses_plain_witness_dependent_warning() {
+    let input = fixture(
+        "year-assert",
+        "pragma circom 2.2.3; template Check() {signal input year; signal output out; \
+         assert(year <= 2030); out <== year;} component main = Check();",
+    );
+    let result = run(&input.path(), &[], "year-assert");
+    let messages: Vec<_> = result.sarif["runs"][0]["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|entry| entry["ruleId"] == "CS0023")
+        .filter_map(|entry| entry["message"]["text"].as_str())
+        .collect();
+    let expected = concat!(
+        "This assertion checks witness dependent values during witness generation, ",
+        "but it adds no constraint to the proof system."
+    );
+    assert_eq!(messages, [expected]);
+    assert!(result.stdout.contains("This assertion does not constrain the proof."));
 }
 
 #[test]
