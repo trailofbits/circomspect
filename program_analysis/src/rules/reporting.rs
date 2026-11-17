@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::cmp::Ordering;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -17,6 +17,7 @@ use crate::rules::RuleKind;
 pub struct SourceMap<'a> {
     files: Arc<FileLibrary>,
     sources: BTreeMap<SourceId, (FileID, &'a str)>,
+    roots: BTreeSet<SourceId>,
 }
 
 impl<'a> SourceMap<'a> {
@@ -46,7 +47,7 @@ impl<'a> SourceMap<'a> {
                 return Err(RenderError::UnknownRoot(*root));
             }
         }
-        Ok(Self { files: Arc::new(files), sources })
+        Ok(Self { files: Arc::new(files), sources, roots: roots.iter().copied().collect() })
     }
 
     pub(crate) fn from_shared_files(
@@ -72,7 +73,7 @@ impl<'a> SourceMap<'a> {
                 return Err(RenderError::UnknownRoot(*root));
             }
         }
-        Ok(Self { files, sources })
+        Ok(Self { files, sources, roots: roots.iter().copied().collect() })
     }
 
     #[must_use]
@@ -83,6 +84,11 @@ impl<'a> SourceMap<'a> {
     #[must_use]
     pub fn file_id(&self, source: SourceId) -> Option<FileID> {
         self.sources.get(&source).map(|(file, _)| *file)
+    }
+
+    #[must_use]
+    pub(crate) fn is_root(&self, source: SourceId) -> bool {
+        self.roots.contains(&source)
     }
 
     /// Convert a typed HIR diagnostic through the existing report renderers.

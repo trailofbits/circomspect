@@ -376,8 +376,7 @@ impl<'a, 'b, 'c, 'd> ScopeRunner<'a, 'b, 'c, 'd> {
         if let DefinitionRef::Bus(_) = definition {
             return Ok(false);
         }
-        let (file, _) = self.sources.location(self.span(definition)?)?;
-        Ok(self.sources.files().user_inputs().contains(&file))
+        Ok(self.sources.is_root(self.span(definition)?.source()))
     }
 
     pub(super) fn finish(

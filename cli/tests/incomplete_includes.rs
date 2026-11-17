@@ -137,3 +137,40 @@ fn shared_semantic_error_is_reported_once_across_roots() {
     assert_eq!(stdout.matches("error: unresolved Template call `Missing`").count(), 1, "{stdout}");
     fs::remove_dir_all(directory).unwrap();
 }
+
+#[test]
+fn included_root_warning_is_streamed_once() {
+    let directory = std::env::temp_dir().join(format!(
+        "circomspect-included-root-warning-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id(),
+    ));
+    fs::create_dir_all(&directory).unwrap();
+    fs::write(
+        directory.join("child.circom"),
+        "pragma circom 2.2.3; template Child(){signal input x; \
+         signal output out; assert(x == 1); out <== x;}",
+    )
+    .unwrap();
+    fs::write(
+        directory.join("root.circom"),
+        "pragma circom 2.2.3; include \"child.circom\"; \
+         template Root(){signal input x; signal output out; \
+         component child=Child(); child.x <== x; out <== child.out;} \
+         component main=Root();",
+    )
+    .unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_circomspect"))
+        .arg(&directory)
+        .args(["--timeout", "2"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(
+        stdout.matches("warning: This assertion checks witness-dependent").count(),
+        1,
+        "{stdout}"
+    );
+    fs::remove_dir_all(directory).unwrap();
+}
