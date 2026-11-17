@@ -52,7 +52,8 @@ impl DescribeSignalAssignment for Effect {
                 | AssignmentOperator::BitOr
                 | AssignmentOperator::BitXor => None,
             },
-            Self::Declaration { .. }
+            Self::Discard { .. }
+            | Self::Declaration { .. }
             | Self::VariableAssignment { .. }
             | Self::DeferredVariableAssignment { .. }
             | Self::ComponentInstantiation { .. }

@@ -1754,7 +1754,8 @@ impl AnalysisFacts<'_> {
             | parser::hir::Effect::ComponentInstantiation { target, .. } => {
                 target.root == path.root
             }
-            parser::hir::Effect::Declaration { .. }
+            parser::hir::Effect::Discard { .. }
+            | parser::hir::Effect::Declaration { .. }
             | parser::hir::Effect::OpaqueAssignment { .. }
             | parser::hir::Effect::OpaqueEquality { .. }
             | parser::hir::Effect::ConstraintAssignment { .. }

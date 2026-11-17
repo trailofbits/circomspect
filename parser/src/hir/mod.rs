@@ -321,6 +321,11 @@ pub enum Effect {
         symbol: SymbolId,
         span: Span,
     },
+    Discard {
+        value: ExprId,
+        operator: AssignmentOperator,
+        span: Span,
+    },
     VariableAssignment {
         target: AccessPath,
         value: ExprId,

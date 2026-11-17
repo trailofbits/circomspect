@@ -531,7 +531,8 @@ impl<'session> SourceQueries<'session, '_> {
             {
                 Self::matches_checked_assignment(&node.kind, target, *value, *operator)
             }
-            Effect::OpaqueAssignment { .. }
+            Effect::Discard { .. }
+            | Effect::OpaqueAssignment { .. }
             | Effect::Declaration { .. }
             | Effect::VariableAssignment { .. }
             | Effect::ComponentInstantiation { .. }

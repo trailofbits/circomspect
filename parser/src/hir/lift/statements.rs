@@ -77,7 +77,8 @@ impl Lifter<'_> {
                                 symbols.insert(target.root);
                             }
                         }
-                        Effect::Declaration { .. }
+                        Effect::Discard { .. }
+                        | Effect::Declaration { .. }
                         | Effect::EqualityConstraint { .. }
                         | Effect::OpaqueEquality { .. }
                         | Effect::If { .. }
@@ -162,7 +163,8 @@ impl Lifter<'_> {
                     .then_some(Effect::Opaque { reason, span: *span });
             }
             Effect::Return { value, span }
-            | Effect::AnonymousComponent { expression: value, span } => {
+            | Effect::AnonymousComponent { expression: value, span }
+            | Effect::Discard { value, span, .. } => {
                 return expressions
                     .contains(value)
                     .then_some(Effect::Opaque { reason, span: *span });
@@ -197,7 +199,7 @@ impl Lifter<'_> {
             }
             Statement::Declaration(declaration) => return self.lift_declaration(declaration),
             Statement::Assignment { target, operator, value, .. } => {
-                self.lift_assignment(target, *operator, value, span)
+                return self.lift_assignment_effects(target, *operator, value, span);
             }
             Statement::PostfixUpdate { target, operator, .. } => {
                 self.lift_postfix_update(target, *operator, span)
@@ -422,6 +424,25 @@ impl Lifter<'_> {
             Effect::Log { values, .. } => {
                 values.iter().all(|id| self.expression_is_witness_only(*id))
             }
+            Effect::Discard { value, operator, .. } => match operator {
+                AssignmentOperator::Assign
+                | AssignmentOperator::Witness
+                | AssignmentOperator::ReverseWitness => self.expression_is_witness_only(*value),
+                AssignmentOperator::Constraint
+                | AssignmentOperator::ReverseConstraint
+                | AssignmentOperator::Add
+                | AssignmentOperator::Subtract
+                | AssignmentOperator::Multiply
+                | AssignmentOperator::Divide
+                | AssignmentOperator::IntegerDivide
+                | AssignmentOperator::Modulo
+                | AssignmentOperator::Power
+                | AssignmentOperator::ShiftLeft
+                | AssignmentOperator::ShiftRight
+                | AssignmentOperator::BitAnd
+                | AssignmentOperator::BitOr
+                | AssignmentOperator::BitXor => false,
+            },
             Effect::Block(child) => self.branch_is_witness_only(*child),
             Effect::DeferredAssert { .. }
             | Effect::ComponentInstantiation { .. }
@@ -770,6 +791,40 @@ impl Lifter<'_> {
         value: &Expression,
         span: Span,
     ) -> Effect {
+        if let Expression::Name { identifier, access, .. } = target {
+            if identifier.name == "_" && access.is_empty() {
+                if let Some(DefinitionRef::Function(_)) = self.current_definition {
+                    if operator != AssignmentOperator::Assign {
+                        return self.invalid_assignment(
+                            span,
+                            "a function cannot use signal assignment operators",
+                        );
+                    }
+                }
+                return match operator {
+                    AssignmentOperator::Assign
+                    | AssignmentOperator::Witness
+                    | AssignmentOperator::Constraint
+                    | AssignmentOperator::ReverseWitness
+                    | AssignmentOperator::ReverseConstraint => {
+                        Effect::Discard { value: self.lift_expression(value), operator, span }
+                    }
+                    AssignmentOperator::Add
+                    | AssignmentOperator::Subtract
+                    | AssignmentOperator::Multiply
+                    | AssignmentOperator::Divide
+                    | AssignmentOperator::IntegerDivide
+                    | AssignmentOperator::Modulo
+                    | AssignmentOperator::Power
+                    | AssignmentOperator::ShiftLeft
+                    | AssignmentOperator::ShiftRight
+                    | AssignmentOperator::BitAnd
+                    | AssignmentOperator::BitOr
+                    | AssignmentOperator::BitXor => self
+                        .invalid_assignment(span, "underscore discard requires a plain assignment"),
+                };
+            }
+        }
         let Some(path) = self.lift_access(target) else {
             return self.opaque(span, IncompleteReason::InvalidAssignment);
         };
@@ -783,6 +838,41 @@ impl Lifter<'_> {
             return self.invalid_assignment(span, "cannot assign a component output port");
         }
         self.assignment_effect(path, kind, operator, value, span)
+    }
+
+    fn ungroup(expression: &Expression) -> &Expression {
+        let mut current = expression;
+        while let Expression::Group { expression, .. } = current {
+            current = expression;
+        }
+        current
+    }
+
+    fn lift_assignment_effects(
+        &mut self,
+        target: &Expression,
+        operator: AssignmentOperator,
+        value: &Expression,
+        span: Span,
+    ) -> Vec<Effect> {
+        let target = Self::ungroup(target);
+        let Expression::Tuple { elements: targets, .. } = target else {
+            return vec![self.lift_assignment(target, operator, value, span)];
+        };
+        let Expression::Tuple { elements: values, .. } = Self::ungroup(value) else {
+            return vec![self.opaque(
+                span,
+                IncompleteReason::Unsupported("nonliteral tuple assignment".into()),
+            )];
+        };
+        if targets.len() != values.len() {
+            return vec![self.invalid_assignment(span, "tuple assignment has the wrong arity")];
+        }
+        targets
+            .iter()
+            .zip(values)
+            .flat_map(|(target, value)| self.lift_assignment_effects(target, operator, value, span))
+            .collect()
     }
 
     pub(super) fn assignment_effect(

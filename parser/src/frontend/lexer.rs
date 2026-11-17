@@ -346,10 +346,10 @@ pub fn tokenize(source: SourceId, text: &str) -> LexOutcome {
             });
             continue;
         }
-        if rest.starts_with("/*") {
-            if let Some(end) = rest.find("*/") {
+        if let Some(body) = rest.strip_prefix("/*") {
+            if let Some(end) = body.find("*/") {
                 let start = index;
-                index += end + 2;
+                index += end + 4;
                 trivia.push(Trivia {
                     kind: TriviaKind::BlockComment,
                     span: Span::from_lexer(source, start, index),

@@ -552,6 +552,7 @@ impl Builder<'_> {
     ) -> Result<Tails, BuildError> {
         match effect {
             Effect::Declaration { symbol, .. } => self.declaration_effect(tails, *symbol, origin),
+            Effect::Discard { value, .. } => self.evaluate(tails, *value, origin),
             Effect::VariableAssignment { target, value, operator, .. } => self.assignment_effect(
                 tails,
                 target,
@@ -1073,6 +1074,7 @@ impl Builder<'_> {
                     initial = Some((target.root, self.small_static_value(*value)?));
                 }
                 Effect::VariableAssignment { .. }
+                | Effect::Discard { .. }
                 | Effect::DeferredVariableAssignment { .. }
                 | Effect::ComponentInstantiation { .. }
                 | Effect::WitnessAssignment { .. }
@@ -1159,7 +1161,8 @@ impl Builder<'_> {
                     | Effect::DeferredVariableAssignment { target, .. }
                     | Effect::OpaqueAssignment { target, .. }
                     | Effect::Update { target, .. } => Some(target),
-                    Effect::Declaration { .. }
+                    Effect::Discard { .. }
+                    | Effect::Declaration { .. }
                     | Effect::ComponentInstantiation { .. }
                     | Effect::WitnessAssignment { .. }
                     | Effect::ConstraintAssignment { .. }
@@ -1224,7 +1227,8 @@ impl Builder<'_> {
             Effect::VariableAssignment { target, .. }
             | Effect::DeferredVariableAssignment { target, .. }
             | Effect::Update { target, .. } => target.root == variable,
-            Effect::Declaration { .. }
+            Effect::Discard { .. }
+            | Effect::Declaration { .. }
             | Effect::WitnessAssignment { .. }
             | Effect::ConstraintAssignment { .. }
             | Effect::EqualityConstraint { .. }
@@ -1328,6 +1332,7 @@ fn definition_symbols(
 fn effect_span(effect: &Effect, block_span: Span) -> Span {
     match effect {
         Effect::Declaration { span, .. }
+        | Effect::Discard { span, .. }
         | Effect::VariableAssignment { span, .. }
         | Effect::DeferredVariableAssignment { span, .. }
         | Effect::ComponentInstantiation { span, .. }

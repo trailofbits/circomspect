@@ -342,6 +342,7 @@ impl<'a> Scanner<'a> {
                     self.expression(*id)?;
                 }
             }
+            Effect::Discard { value, .. } => self.expression(*value)?,
             Effect::VariableAssignment { target, value, .. }
             | Effect::ComponentInstantiation { target, value, .. }
             | Effect::WitnessAssignment { target, value, .. }
