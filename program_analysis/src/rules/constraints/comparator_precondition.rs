@@ -359,14 +359,17 @@ fn inspect_operand(
     if expression.knownness != Knownness::WitnessDependent {
         return;
     }
+    let subject = match &expression.kind {
+        ExprKind::Access(path) if path.steps.is_empty() => context
+            .hir()
+            .symbol(path.root)
+            .map_or_else(|| "this input".to_owned(), |symbol| format!("`{}`", symbol.name)),
+        _ => "this input".to_owned(),
+    };
     result.add_finding(context.finding(
         RuleKind::ComparatorPrecondition,
-        format!(
-            "This pass cannot establish a {}-bit range for LessThan input \
-             {position}; review caller constraints before relying on the comparison.",
-            environment.bits
-        ),
+        format!("Failed to prove that {subject} is constrained to be {} bits.", environment.bits),
         expression.span,
-        "This operand has no proved range bound here.".into(),
+        "This input to `LessThan` may not be properly constrained.".into(),
     ));
 }

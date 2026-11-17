@@ -639,7 +639,44 @@ fn comparator_precondition_distinguishes_symbolic_and_exact_operands() {
         .filter_map(|entry| entry["message"]["text"].as_str())
         .collect();
     assert!(messages.iter().any(|message| message.contains("input 1 is 257")));
-    assert!(messages.iter().any(|message| message.contains("input 0")));
+    assert!(
+        messages.contains(&"Failed to prove that `x` is constrained to be 8 bits."),
+        "{messages:?}"
+    );
+}
+
+#[test]
+fn comparator_precondition_names_unbounded_signal() {
+    let source = "pragma circom 2.2.3; \
+         template LessThan(n) {assert(n <= 252); signal input in[2]; \
+         signal output out; out <== in[0];} \
+         template Check(n) {signal input a; signal output lta; \
+         lta <== LessThan(252)([a, 2**n]);} component main = Check(2);";
+    let input = fixture("comparator-unbounded-signal", source);
+    let result = run(&input.path(), &[], "comparator-unbounded-signal");
+    let messages: Vec<_> = result.sarif["runs"][0]["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|entry| entry["ruleId"] == "CS0025")
+        .filter_map(|entry| entry["message"]["text"].as_str())
+        .collect();
+    assert_eq!(messages, ["Failed to prove that `a` is constrained to be 252 bits."]);
+    assert!(
+        result.stdout.contains("This input to `LessThan` may not be properly constrained."),
+        "{}",
+        result.stdout
+    );
+    let compound = fixture("comparator-unbounded-expression", &source.replace("[a,", "[a + 1,"));
+    let result = run(&compound.path(), &[], "comparator-unbounded-expression");
+    let messages: Vec<_> = result.sarif["runs"][0]["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|entry| entry["ruleId"] == "CS0025")
+        .filter_map(|entry| entry["message"]["text"].as_str())
+        .collect();
+    assert_eq!(messages, ["Failed to prove that this input is constrained to be 252 bits."]);
 }
 
 #[test]
@@ -655,7 +692,11 @@ fn comparator_width_from_complete_compile_time_function_is_analyzed() {
     );
     let result = run(&input.path(), &[], "comparator-function-width");
     assert!(ids(&result.sarif).contains("CS0025"), "{}", result.stdout);
-    assert!(result.stdout.contains("3-bit range"), "{}", result.stdout);
+    assert!(
+        result.stdout.contains("Failed to prove that `length` is constrained to be 3 bits."),
+        "{}",
+        result.stdout
+    );
 }
 
 #[test]
