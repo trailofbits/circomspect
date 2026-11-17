@@ -3,6 +3,8 @@
 `active.json` is executed by `cli/tests/cutover.rs` against the application CLI.
 It fixes the IDs, SARIF severity, locations, filters, and exit status for
 incomplete analysis (`CS0020`) and redundant witness assignments (`CS0021`).
+An unresolved global call in a mainless library is incomplete context; it is
+visible at info level and does not become a source error.
 
 The redundant-witness fixture also has incomplete field arithmetic and
 zero-incidence analysis: its input value is unknown and its witness target

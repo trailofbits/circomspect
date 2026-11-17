@@ -2,16 +2,19 @@
   "status": "active",
   "cases": [
     {
-      "id": "incomplete_library_default",
+      "id": "incomplete_library_info",
       "source": "cases/incomplete_library.circom",
-      "args": [],
+      "args": [
+        "--level",
+        "info"
+      ],
       "source_scope": "Partial",
       "expected_exit_code": 1,
       "expected_rule_ids": [
-        "CS0019"
+        "CS0020"
       ],
       "expected_sarif_levels": {
-        "CS0019": "error"
+        "CS0020": "note"
       }
     },
     {
@@ -22,13 +25,9 @@
         "error"
       ],
       "source_scope": "Partial",
-      "expected_exit_code": 1,
-      "expected_rule_ids": [
-        "CS0019"
-      ],
-      "expected_sarif_levels": {
-        "CS0019": "error"
-      }
+      "expected_exit_code": 0,
+      "expected_rule_ids": [],
+      "expected_sarif_levels": {}
     },
     {
       "id": "incomplete_library_allow_filter",
@@ -38,13 +37,9 @@
         "CS0020"
       ],
       "source_scope": "Partial",
-      "expected_exit_code": 1,
-      "expected_rule_ids": [
-        "CS0019"
-      ],
-      "expected_sarif_levels": {
-        "CS0019": "error"
-      }
+      "expected_exit_code": 0,
+      "expected_rule_ids": [],
+      "expected_sarif_levels": {}
     },
     {
       "id": "redundant_witness_default",

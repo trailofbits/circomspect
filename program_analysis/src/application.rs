@@ -6,14 +6,13 @@ mod grouping;
 mod inputs;
 mod observer;
 mod scopes;
+mod units;
 
-use std::collections::BTreeSet;
 use std::io;
 use std::path::PathBuf;
 use abstract_interpretation::timeout::Timeout;
 
 use parser::hir::{lift_project, DefinitionRef};
-use parser::frontend::{load_sources, SourceId, Version, VersionPolicy};
 use program_structure::constants::Curve;
 use program_structure::file_definition::FileLibrary;
 use program_structure::report::Report;
@@ -38,6 +37,11 @@ pub struct AnalysisOutput {
 pub struct AnalyzedScope {
     pub description: String,
     pub reports: Vec<Report>,
+}
+
+struct AnalysisSettings {
+    curve: Curve,
+    timeout: AnalysisTimeout,
 }
 
 /// Work about to begin. Definition events include each distinct call context.
@@ -97,31 +101,59 @@ pub fn analyze_files_with_observer(
 ) -> Result<AnalysisOutput, ApplicationError> {
     observer.progress(AnalysisProgress::LoadingSources)?;
     let (paths, input_reports) = inputs::expand(paths);
-    let loaded = load_sources(&paths, libraries, VersionPolicy::new(Version::new(2, 2, 3)));
-    let paths: BTreeSet<_> = paths.iter().filter_map(|path| path.canonicalize().ok()).collect();
-    let roots: Vec<SourceId> =
-        loaded.files.iter().filter(|file| paths.contains(&file.path)).map(|file| file.id).collect();
-    let sources = SourceMap::from_loaded(&loaded, &roots)?;
-    observer.progress(AnalysisProgress::LiftingSources)?;
-    let lifted = lift_project(&loaded);
-    let mut diagnostics = Diagnostics::new(&sources);
-    for report in input_reports {
-        diagnostics.push(report);
-    }
+    let paths = units::distinct_paths(paths);
+    let (files, file_ids) = units::catalog(&paths, libraries)?;
+    let settings = AnalysisSettings { curve, timeout };
+    let mut pre_reports = input_reports;
     for path in libraries {
         if !path.exists() {
-            diagnostics.push(Report::error(
+            pre_reports.push(Report::error(
                 format!("Cannot read library path {}", path.display()),
                 program_structure::report_code::ReportCode::ParseFail,
             ));
         }
     }
-    diagnostics.frontend(&loaded, &lifted)?;
+    let mut all_diagnostics = Vec::new();
+    let mut all_scopes = Vec::new();
+    let roots: Vec<_> =
+        if paths.is_empty() { vec![None] } else { paths.iter().map(Some).collect() };
+    for root in roots {
+        let unit = units::load(root, libraries);
+        let roots = unit.roots();
+        let sources = SourceMap::from_shared_files(&unit.loaded, &roots, files.clone(), &file_ids)?;
+        let (diagnostics, scopes) =
+            analyze_unit(&unit, &sources, std::mem::take(&mut pre_reports), &settings, observer)?;
+        all_diagnostics.extend(diagnostics);
+        all_scopes.extend(scopes);
+    }
+    Ok(AnalysisOutput {
+        files: files.as_ref().clone(),
+        diagnostics: all_diagnostics,
+        scopes: all_scopes,
+    })
+}
+
+fn analyze_unit(
+    unit: &units::Unit,
+    sources: &SourceMap<'_>,
+    pre_reports: Vec<Report>,
+    settings: &AnalysisSettings,
+    observer: &mut dyn AnalysisObserver,
+) -> Result<(Vec<Report>, Vec<AnalyzedScope>), ApplicationError> {
+    observer.progress(AnalysisProgress::LiftingSources)?;
+    let loaded = &unit.loaded;
+    let roots = unit.roots();
+    let lifted = lift_project(loaded);
+    let mut diagnostics = Diagnostics::new(sources);
+    for report in pre_reports {
+        diagnostics.push(report);
+    }
+    diagnostics.frontend(loaded, &lifted, unit.open_namespace())?;
     diagnostics.emit_new(observer)?;
     observer.progress(AnalysisProgress::IndexingProject)?;
-    let summaries = ProjectAnalysis::build(&lifted, curve)
+    let summaries = ProjectAnalysis::build(&lifted, settings.curve.clone())
         .map_err(|error| ApplicationError::Invariant(format!("invalid call graph: {error:?}")))?;
-    let mut runner = ScopeRunner::new(&summaries, &sources, &mut diagnostics, timeout);
+    let mut runner = ScopeRunner::new(&summaries, sources, &mut diagnostics, settings.timeout);
     runner.analyze(observer)?;
     let reports = runner.finish(observer)?;
     let mut scopes = Vec::new();
@@ -147,11 +179,7 @@ pub fn analyze_files_with_observer(
             });
         }
     }
-    Ok(AnalysisOutput {
-        files: sources.files().clone(),
-        diagnostics: diagnostics.finish(observer)?,
-        scopes,
-    })
+    Ok((diagnostics.finish(observer)?, scopes))
 }
 
 #[derive(Debug, thiserror::Error)]

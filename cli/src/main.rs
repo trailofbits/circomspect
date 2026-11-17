@@ -31,7 +31,7 @@ struct Cli {
     #[clap(name = "INPUT")]
     input_files: Vec<PathBuf>,
 
-    /// Library file paths
+    /// Ordered include search directories
     #[clap(short = 'L', long = "library", name = "LIBRARIES")]
     libraries: Vec<PathBuf>,
 

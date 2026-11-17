@@ -96,7 +96,7 @@ fn reports(output: &AnalysisOutput) -> serde_json::Value {
 
 const LIBRARY: &str = "template Broken(){component c=Missing();}\n\
     template Early(){var dead=7;signal output out;out<==0;}\n\
-    template Later(){signal output out;out<==1;}";
+    template Later(){signal output out;out<==1;} component main=Broken();";
 
 #[test]
 fn missing_include_has_a_sentence_cased_source_annotation() {

@@ -222,9 +222,9 @@ impl Lifter<'_> {
     fn collect_syntax_incomplete(&mut self) {
         for diagnostic in &self.source.diagnostics {
             let reason = match diagnostic.kind {
-                DiagnosticKind::MissingInclude
-                | DiagnosticKind::FileRead
-                | DiagnosticKind::CyclicInclude => IncompleteReason::Include,
+                DiagnosticKind::MissingInclude | DiagnosticKind::FileRead => {
+                    IncompleteReason::Include
+                }
                 _ => IncompleteReason::Syntax,
             };
             self.incomplete.push(IncompleteRegion {

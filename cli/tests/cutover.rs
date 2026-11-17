@@ -295,7 +295,7 @@ fn diagnostics_are_interleaved_with_analysis_progress() {
         "pragma circom 2.2.3;\n\
         template Broken(){component c=Missing();}\n\
         template Early(){var dead=1;signal output out;out<==0;}\n\
-        template Later(){signal output out;out<==1;}",
+        template Later(){signal output out;out<==1;} component main=Broken();",
     );
     let result = run(&input.path(), &[], "streamed-reports");
     let position = |text: &str| result.stdout.find(text).unwrap();
@@ -438,7 +438,7 @@ fn owned_bus_syntax_reaches_semantic_diagnostics() {
         "bus",
         "pragma circom 2.2.3;\nbus Pair(){signal x;}\n\
         template Good(){signal output out;out<==1;}\n\
-        template Bad(){MissingBus() value;}\n",
+        template Bad(){MissingBus() value;} component main=Good();\n",
     );
     let path = input.path();
     let CliRun { status, stdout, sarif, .. } = run(&path, &["--level", "error"], "bus");
@@ -458,11 +458,12 @@ fn standalone_bus_library_omits_nonactionable_analysis_notice() {
 }
 
 #[test]
-fn invalid_expression_statement_keeps_later_library_diagnostics() {
+fn invalid_expression_statement_keeps_later_source_diagnostics() {
     let input = fixture(
         "expression-recovery",
         "pragma circom 2.2.3;\nfunction F() {\n    1;\n    return Missing();\n}\n\
-         function Neighbor() { return 0; }\n",
+         function Neighbor() { return 0; }\n\
+         template Main(){signal output out;out<==F();} component main=Main();\n",
     );
     let path = input.path();
     for (name, args) in [
@@ -537,18 +538,16 @@ fn missing_input_file_is_visible_in_terminal_and_sarif() {
 }
 
 #[test]
-fn include_cycles_have_source_locations_and_terminate() {
+fn include_cycles_terminate_without_source_errors() {
     let input =
         fixture("cycle", "pragma circom 2.2.3; include \"child.circom\"; template Good(){}");
     let path = input.path();
     fs::write(path.with_file_name("child.circom"), "pragma circom 2.2.3; include \"main.circom\";")
         .unwrap();
     let CliRun { status, stdout, sarif, .. } = run(&path, &["--level", "error"], "cycle");
-    assert_eq!(status.code(), Some(1), "{stdout}");
+    assert!(status.success(), "{stdout}");
     let results = sarif["runs"][0]["results"].as_array().unwrap();
-    assert_eq!(results.len(), 1, "{stdout}");
-    assert!(results[0]["message"]["text"].as_str().unwrap().contains("cyclic include"));
-    assert_eq!(results[0]["locations"][0]["physicalLocation"]["region"]["startLine"], 1);
+    assert!(results.is_empty(), "{stdout}");
 }
 
 #[test]
@@ -767,13 +766,17 @@ fn unresolved_main_argument_is_a_source_error_without_an_internal_error() {
 
 #[test]
 fn directory_inputs_preserve_root_diagnostics_and_skip_non_circom_files() {
-    let input =
-        fixture("directory", "pragma circom 2.2.3; template Root(){component c=Missing();}");
+    let input = fixture(
+        "directory",
+        "pragma circom 2.2.3; template Root(){component c=Missing();} \
+            component main=Root();",
+    );
     let path = input.path();
     fs::create_dir_all(path.parent().unwrap().join("nested")).unwrap();
     fs::write(
         path.parent().unwrap().join("nested/child.circom"),
-        "pragma circom 2.2.3; template Nested(){component c=OtherMissing();}",
+        "pragma circom 2.2.3; template Nested(){component c=OtherMissing();} \
+         component main=Nested();",
     )
     .unwrap();
     fs::write(path.with_file_name("notes.txt"), "invalid text").unwrap();
@@ -792,7 +795,7 @@ fn repeated_runs_preserve_exact_sarif_order_and_source_spans() {
         "repeat",
         "pragma circom 2.2.3;\n\
         template First(){component c=Missing();}\n\
-        template Second(){component c=Other();}\n",
+        template Second(){component c=Other();} component main=First();\n",
     );
     let path = input.path();
     let CliRun { stdout: first_stdout, sarif: first, .. } = run(&path, &[], "repeat");
@@ -954,7 +957,8 @@ fn sarif_file_uris_preserve_reserved_and_unicode_file_names() {
 
 #[test]
 fn sarif_columns_use_declared_unicode_code_points() {
-    let source = "pragma circom 2.2.3;\n/* 🦀 */ template Main(){component c=Missing();}\n";
+    let source = "pragma circom 2.2.3;\n/* 🦀 */ template Main(){component c=Missing();} \
+        component main=Main();\n";
     let input = fixture("unicode-column", source);
     let path = input.path();
     let CliRun { sarif, .. } = run(&path, &["--level", "error"], "unicode-column");

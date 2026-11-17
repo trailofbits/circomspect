@@ -29,16 +29,17 @@ fn explicit_library_roots_resolve_package_prefixed_imports() {
         std::process::id(),
         std::thread::current().id(),
     ));
-    let first = root.join("first/circuits");
+    let first = root.join("first");
     let second = root.join("second");
-    fs::create_dir_all(&first).unwrap();
-    fs::create_dir_all(&second).unwrap();
-    fs::write(first.join("a.circom"), "pragma circom 2.2.3; template A() {}\n").unwrap();
-    fs::write(second.join("b.circom"), "pragma circom 2.2.3; template B() {}\n").unwrap();
+    fs::create_dir_all(first.join("circuits")).unwrap();
+    fs::create_dir_all(second.join("@scope/second")).unwrap();
+    fs::write(first.join("circuits/a.circom"), "pragma circom 2.2.3; template A() {}\n").unwrap();
+    fs::write(second.join("@scope/second/b.circom"), "pragma circom 2.2.3; template B() {}\n")
+        .unwrap();
     let entry = root.join("entry.circom");
     fs::write(
         &entry,
-        "pragma circom 2.2.3; include \"first/circuits/a.circom\"; \
+        "pragma circom 2.2.3; include \"circuits/a.circom\"; \
          include \"@scope/second/b.circom\"; template Entry() {}\n",
     )
     .unwrap();
@@ -67,36 +68,37 @@ fn nonexistent_library_root_is_reported() {
 }
 
 #[test]
-fn equally_matching_library_roots_report_ambiguity() {
+fn first_exactly_matching_library_root_wins() {
     let root = std::env::temp_dir().join(format!(
         "circomspect-ambiguous-libraries-{}-{:?}",
         std::process::id(),
         std::thread::current().id(),
     ));
-    let first = root.join("first/circuits");
-    let second = root.join("second/circuits");
+    let first = root.join("first/pkg/circuits");
+    let second = root.join("second/pkg/circuits");
     fs::create_dir_all(&first).unwrap();
     fs::create_dir_all(&second).unwrap();
-    fs::write(first.join("shared.circom"), "pragma circom 2.2.3;\n").unwrap();
-    fs::write(second.join("shared.circom"), "pragma circom 2.2.3;\n").unwrap();
+    fs::write(first.join("shared.circom"), "template Pick(){}\n").unwrap();
+    fs::write(second.join("shared.circom"), "template Other(){}\n").unwrap();
     let entry = root.join("entry.circom");
     fs::write(
         &entry,
-        "pragma circom 2.2.3; include \"pkg/circuits/shared.circom\"; template Entry() {}",
+        "pragma circom 2.2.3; include \"pkg/circuits/shared.circom\"; \
+         template Entry(){component p=Pick();} component main=Entry();",
     )
     .unwrap();
     let output = run(&[
         entry.to_str().unwrap(),
         "-L",
-        first.to_str().unwrap(),
+        root.join("first").to_str().unwrap(),
         "-L",
-        second.to_str().unwrap(),
+        root.join("second").to_str().unwrap(),
         "--level",
         "error",
     ]);
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(!output.status.success(), "{stdout}");
-    assert!(stdout.contains("ambiguous included file"), "{stdout}");
+    assert!(output.status.success(), "{stdout}");
+    assert!(!stdout.contains("included file"), "{stdout}");
 }
 
 #[test]
@@ -330,15 +332,14 @@ fn locationless_errors_are_written_to_sarif() {
 }
 
 #[test]
-fn unresolved_function_and_template_calls_are_reported() {
+fn unresolved_calls_in_mainless_library_have_incomplete_coverage() {
     let path = fixture("unresolved_library.circom");
-    let output = run(&[path.to_str().expect("fixture path is not UTF-8"), "--level", "error"]);
+    let output = run(&[path.to_str().expect("fixture path is not UTF-8"), "--level", "info"]);
     let stdout = String::from_utf8(output.stdout).expect("CLI output is not UTF-8");
 
     assert!(!output.status.success(), "{stdout}");
-    assert!(stdout.contains("MissingFunction"), "{stdout}");
-    assert!(stdout.contains("MissingInner"), "{stdout}");
-    assert!(stdout.contains("MissingTemplate"), "{stdout}");
+    assert!(stdout.contains("Some checks need additional context"), "{stdout}");
+    assert!(!stdout.contains("error:"), "{stdout}");
 }
 
 #[test]
@@ -450,13 +451,13 @@ fn calls_to_loaded_library_definitions_are_resolved() {
 }
 
 #[test]
-fn calls_resolve_against_explicit_library_files() {
+fn calls_resolve_against_explicit_library_directory() {
     let source = fixture("consumer/library_consumer.circom");
     let library = fixture("resolved_library.circom");
     let output = run(&[
         source.to_str().expect("fixture path is not UTF-8"),
         "--library",
-        library.to_str().expect("fixture path is not UTF-8"),
+        library.parent().unwrap().to_str().expect("fixture path is not UTF-8"),
         "--level",
         "error",
     ]);
@@ -467,7 +468,7 @@ fn calls_resolve_against_explicit_library_files() {
 }
 
 #[test]
-fn syntax_errors_and_unresolved_calls_both_surface_in_partial_libraries() {
+fn syntax_errors_remain_visible_when_other_library_calls_need_context() {
     let source = fixture("unresolved_library.circom");
     let broken = fixture("broken_library.circom");
     let output = run(&[
@@ -481,8 +482,8 @@ fn syntax_errors_and_unresolved_calls_both_surface_in_partial_libraries() {
     assert!(!output.status.success(), "{stdout}");
     assert!(stdout.contains("error:"), "{stdout}");
     assert!(stdout.contains("broken_library.circom"), "{stdout}");
-    assert!(stdout.contains("MissingFunction"), "{stdout}");
-    assert!(stdout.contains("MissingTemplate"), "{stdout}");
+    assert!(!stdout.contains("error: unresolved Function"), "{stdout}");
+    assert!(!stdout.contains("error: unresolved Template"), "{stdout}");
 }
 
 #[test]
@@ -492,7 +493,7 @@ fn unversioned_included_library_does_not_add_a_warning_to_input() {
     let output = run(&[
         source.to_str().expect("fixture path is not UTF-8"),
         "--library",
-        library.to_str().expect("fixture path is not UTF-8"),
+        library.parent().unwrap().to_str().expect("fixture path is not UTF-8"),
     ]);
     let stdout = String::from_utf8(output.stdout).expect("CLI output is not UTF-8");
 

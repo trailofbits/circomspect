@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
-use parser::hir::LiftedProject;
+use parser::hir::{LiftedProject, SemanticCode};
 use parser::frontend::{DiagnosticKind, Item, LoadedProject, Span};
 use program_structure::report::Report;
 use program_structure::report_code::ReportCode;
@@ -25,7 +25,6 @@ fn syntax_comment(kind: DiagnosticKind) -> &'static str {
         DiagnosticKind::InvalidNumber => "This numeric literal is invalid.",
         DiagnosticKind::Syntax => "This syntax is invalid.",
         DiagnosticKind::MissingInclude => "This include cannot be resolved.",
-        DiagnosticKind::CyclicInclude => "This include creates a cycle.",
         DiagnosticKind::FileRead => "This file could not be read.",
     }
 }
@@ -53,6 +52,7 @@ impl<'a, 'b> Diagnostics<'a, 'b> {
         &mut self,
         loaded: &LoadedProject,
         lifted: &LiftedProject,
+        open_namespace: bool,
     ) -> Result<(), RenderError> {
         for diagnostic in &lifted.syntax_diagnostics {
             let code = match diagnostic.kind {
@@ -65,7 +65,6 @@ impl<'a, 'b> Diagnostics<'a, 'b> {
                 | DiagnosticKind::InvalidNumber
                 | DiagnosticKind::Syntax
                 | DiagnosticKind::MissingInclude
-                | DiagnosticKind::CyclicInclude
                 | DiagnosticKind::FileRead => ReportCode::ParseFail,
             };
             let mut report = Report::error(diagnostic.message.clone(), code);
@@ -76,6 +75,16 @@ impl<'a, 'b> Diagnostics<'a, 'b> {
         }
         self.main_diagnostics(lifted)?;
         for diagnostic in &lifted.diagnostics {
+            if open_namespace && unresolved_global(diagnostic.code) {
+                self.source_incomplete(CoverageExplanation {
+                    kind: CoverageKind::MissingContext,
+                    span: diagnostic.span,
+                    message: "This library's enclosing program is unknown.".into(),
+                    help: "Analyze a main that includes this library to resolve global calls."
+                        .into(),
+                });
+                continue;
+            }
             self.reports.insert_source(self.sources.semantic_report(diagnostic)?);
         }
         for source in &loaded.files {
@@ -234,6 +243,10 @@ impl<'a, 'b> Diagnostics<'a, 'b> {
         reports.append(&mut self.timeouts);
         Ok(reports)
     }
+}
+
+fn unresolved_global(code: SemanticCode) -> bool {
+    matches!(code, SemanticCode::MissingCall | SemanticCode::MissingBusType)
 }
 
 fn coverage_report(kind: CoverageKind) -> Report {

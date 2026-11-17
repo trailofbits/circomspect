@@ -26,7 +26,6 @@ struct Loader<'a> {
     policy: VersionPolicy,
     project: LoadedProject,
     visited: HashSet<PathBuf>,
-    active: HashSet<PathBuf>,
 }
 
 impl Loader<'_> {
@@ -43,54 +42,11 @@ impl Loader<'_> {
         }
     }
 
-    fn resolve_include(&self, path: &Path, name: &str) -> Result<Option<PathBuf>, Vec<PathBuf>> {
+    fn resolve_include(&self, path: &Path, name: &str) -> Option<PathBuf> {
         let local = path.parent().unwrap_or_else(|| Path::new(".")).join(name);
-        if local.is_file() {
-            return Ok(Some(local));
-        }
-        let mut candidates = Vec::new();
-        for directory in self.include_dirs {
-            if directory.is_file() {
-                if directory.file_name() == Path::new(name).file_name() {
-                    candidates.push((
-                        Path::new(name).components().count().saturating_sub(1),
-                        directory.clone(),
-                    ));
-                }
-                continue;
-            }
-            let mut suffix = Path::new(name);
-            let mut removed = 0;
-            loop {
-                let candidate = directory.join(suffix);
-                if candidate.is_file() {
-                    candidates.push((removed, candidate));
-                }
-                let mut components = suffix.components();
-                components.next();
-                let remainder = components.as_path();
-                if remainder.as_os_str().is_empty() {
-                    break;
-                }
-                suffix = remainder;
-                removed += 1;
-            }
-        }
-        let Some(best) = candidates.iter().map(|(removed, _)| *removed).min() else {
-            return Ok(None);
-        };
-        let mut matches: Vec<_> = candidates
-            .into_iter()
-            .filter(|(removed, _)| *removed == best)
-            .filter_map(|(_, path)| path.canonicalize().ok())
-            .collect();
-        matches.sort();
-        matches.dedup();
-        if matches.len() > 1 {
-            Err(matches)
-        } else {
-            Ok(matches.pop())
-        }
+        std::iter::once(local)
+            .chain(self.include_dirs.iter().map(|directory| directory.join(name)))
+            .find_map(|candidate| candidate.canonicalize().ok().filter(|path| path.is_file()))
     }
 
     fn visit(&mut self, path: &Path, origin: Option<Span>) {
@@ -106,15 +62,6 @@ impl Loader<'_> {
                 return;
             }
         };
-        if self.active.contains(&canonical) {
-            self.project.diagnostics.push(Self::path_diagnostic(
-                DiagnosticKind::CyclicInclude,
-                &canonical,
-                origin,
-                format!("cyclic include of {}", canonical.display()),
-            ));
-            return;
-        }
         if self.visited.contains(&canonical) {
             return;
         }
@@ -146,35 +93,22 @@ impl Loader<'_> {
             })
             .collect();
         self.project.files.push(SourceFile { id, path: canonical.clone(), text, outcome });
-        self.active.insert(canonical.clone());
         self.visited.insert(canonical.clone());
         for (name, span) in includes {
             match self.resolve_include(&canonical, &name) {
-                Ok(Some(include)) => self.visit(&include, Some(span)),
-                Ok(None) => self.project.diagnostics.push(SyntaxDiagnostic::new(
+                Some(include) => self.visit(&include, Some(span)),
+                None => self.project.diagnostics.push(SyntaxDiagnostic::new(
                     DiagnosticKind::MissingInclude,
                     span,
                     format!("cannot find included file {name}"),
                 )),
-                Err(matches) => self.project.diagnostics.push(SyntaxDiagnostic::new(
-                    DiagnosticKind::MissingInclude,
-                    span,
-                    format!(
-                        "ambiguous included file {name}; matches {}",
-                        matches
-                            .iter()
-                            .map(|path| path.display().to_string())
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    ),
-                )),
             }
         }
-        self.active.remove(&canonical);
     }
 }
 
-/// Loads entry files and their includes in deterministic depth-first order.
+/// Loads one compilation unit and its includes in deterministic depth-first order.
+/// Independent entrypoints must be loaded in separate calls.
 #[must_use]
 pub fn load_sources(
     paths: &[PathBuf],
@@ -186,7 +120,6 @@ pub fn load_sources(
         policy,
         project: LoadedProject { policy, files: Vec::new(), diagnostics: Vec::new() },
         visited: HashSet::new(),
-        active: HashSet::new(),
     };
     for path in paths {
         loader.visit(path, None);

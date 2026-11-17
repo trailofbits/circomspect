@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 use std::cmp::Ordering;
+use std::path::PathBuf;
+use std::sync::Arc;
 
 use parser::hir::{SemanticCode, SemanticDiagnostic, Severity};
 use parser::frontend::{LoadedProject, SourceId, Span};
@@ -13,7 +15,7 @@ use crate::rules::RuleKind;
 
 /// Source files and their renderer IDs, created in parser source order.
 pub struct SourceMap<'a> {
-    files: FileLibrary,
+    files: Arc<FileLibrary>,
     sources: BTreeMap<SourceId, (FileID, &'a str)>,
 }
 
@@ -38,6 +40,32 @@ impl<'a> SourceMap<'a> {
                 roots.contains(&source.id),
             );
             sources.insert(source.id, (file, source.text.as_str()));
+        }
+        for root in roots {
+            if !sources.contains_key(root) {
+                return Err(RenderError::UnknownRoot(*root));
+            }
+        }
+        Ok(Self { files: Arc::new(files), sources })
+    }
+
+    pub(crate) fn from_shared_files(
+        project: &'a LoadedProject,
+        roots: &[SourceId],
+        files: Arc<FileLibrary>,
+        file_ids: &BTreeMap<PathBuf, FileID>,
+    ) -> Result<Self, RenderError> {
+        let mut sources = BTreeMap::new();
+        for source in &project.files {
+            let file = *file_ids.get(&source.path).ok_or(RenderError::UnknownSource(source.id))?;
+            let recorded =
+                files.to_storage().get(file).map_err(|_| RenderError::UnknownSource(source.id))?;
+            if recorded.source() != &source.text {
+                return Err(RenderError::ChangedSource(source.id));
+            }
+            if sources.insert(source.id, (file, source.text.as_str())).is_some() {
+                return Err(RenderError::DuplicateSource(source.id));
+            }
         }
         for root in roots {
             if !sources.contains_key(root) {
@@ -287,6 +315,8 @@ pub enum RenderError {
     UnknownSource(SourceId),
     #[error("source {0:?} occurs more than once in the loaded Circom project")]
     DuplicateSource(SourceId),
+    #[error("source {0:?} changed between cataloging and analysis")]
+    ChangedSource(SourceId),
     #[error("source span {0:?} is outside the loaded source text or a UTF-8 boundary")]
     InvalidSpan(Span),
 }
@@ -391,5 +421,36 @@ mod tests {
         let second = result.findings()[1].to_report(&sources).unwrap();
         assert_eq!(first.secondary()[0].message, "a");
         assert_eq!(second.secondary()[0].message, "z");
+    }
+
+    #[test]
+    fn shared_catalog_rejects_changed_or_missing_sources() {
+        let (loaded, _) = fixture();
+        let mut files = program_structure::file_definition::FileLibrary::new();
+        let mut ids = std::collections::BTreeMap::new();
+        for source in &loaded.files {
+            let id = files.add_file(
+                source.path.to_string_lossy().into_owned(),
+                source.text.clone(),
+                true,
+            );
+            ids.insert(source.path.clone(), id);
+        }
+        let files = std::sync::Arc::new(files);
+        let roots = [loaded.files[0].id];
+        assert!(SourceMap::from_shared_files(&loaded, &roots, files.clone(), &ids).is_ok());
+
+        let mut changed = loaded.clone();
+        changed.files[0].text.push('x');
+        assert_eq!(
+            SourceMap::from_shared_files(&changed, &roots, files.clone(), &ids).err(),
+            Some(RenderError::ChangedSource(roots[0]))
+        );
+
+        ids.remove(&loaded.files[0].path);
+        assert_eq!(
+            SourceMap::from_shared_files(&loaded, &roots, files, &ids).err(),
+            Some(RenderError::UnknownSource(roots[0]))
+        );
     }
 }

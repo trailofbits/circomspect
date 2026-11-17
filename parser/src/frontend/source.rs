@@ -93,7 +93,6 @@ pub enum DiagnosticKind {
     UnsupportedVersion,
     FeatureVersion,
     MissingInclude,
-    CyclicInclude,
     FileRead,
 }
 
