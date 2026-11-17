@@ -7,7 +7,7 @@ use program_structure::report::Report;
 use program_structure::report_code::ReportCode;
 
 use crate::application::coverage::{CoverageExplanation, CoverageKind};
-use crate::application::grouping::{ContextDisplay, ReportGroups};
+use crate::application::grouping::{ContextDisplay, ReportGroups, ReportIdentity};
 use crate::application::{AnalysisObserver, ApplicationError};
 use crate::interprocedural::ContextEvidence;
 use crate::rules::{RenderError, SourceMap};
@@ -53,6 +53,7 @@ impl<'a, 'b> Diagnostics<'a, 'b> {
         loaded: &LoadedProject,
         lifted: &LiftedProject,
         open_namespace: bool,
+        seen_setup: &mut BTreeSet<ReportIdentity>,
     ) -> Result<(), RenderError> {
         let incomplete_dependency = lifted.syntax_diagnostics.iter().any(|diagnostic| {
             matches!(diagnostic.kind, DiagnosticKind::MissingInclude | DiagnosticKind::FileRead)
@@ -74,12 +75,19 @@ impl<'a, 'b> Diagnostics<'a, 'b> {
             let mut report = Report::error(diagnostic.message.clone(), code);
             if let Some(span) = diagnostic.span() {
                 self.locate(&mut report, span, syntax_comment(diagnostic.kind).into())?;
-                if diagnostic.kind == DiagnosticKind::MissingInclude {
+            }
+            if (diagnostic.kind == DiagnosticKind::MissingInclude
+                || diagnostic.kind == DiagnosticKind::FileRead)
+                && !seen_setup.insert(ReportIdentity::from(&report))
+            {
+                continue;
+            }
+            if diagnostic.kind == DiagnosticKind::MissingInclude {
+                if let Some(span) = diagnostic.span() {
                     self.source_incomplete(CoverageExplanation {
                         kind: CoverageKind::MissingContext,
                         span,
-                        message: "This include is unavailable; semantic checks were skipped."
-                            .into(),
+                        message: "Some semantic checks need this unavailable include.".into(),
                         help: "Provide the include path or dependency and rerun the analysis."
                             .into(),
                     });

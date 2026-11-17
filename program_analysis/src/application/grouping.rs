@@ -29,7 +29,7 @@ enum Publication {
 }
 
 #[derive(Eq, Ord, PartialEq, PartialOrd)]
-struct ReportIdentity {
+pub(super) struct ReportIdentity {
     id: String,
     name: String,
     category: MessageCategory,

@@ -8,12 +8,12 @@ mod observer;
 mod scopes;
 mod units;
 
+use std::collections::BTreeSet;
 use std::io;
 use std::path::PathBuf;
 use abstract_interpretation::timeout::Timeout;
 
 use parser::hir::{lift_project, DefinitionRef};
-use parser::frontend::DiagnosticKind;
 use program_structure::constants::Curve;
 use program_structure::file_definition::FileLibrary;
 use program_structure::report::Report;
@@ -23,6 +23,7 @@ pub use crate::application::observer::AnalysisObserver;
 pub use abstract_interpretation::timeout::Timeout as AnalysisTimeout;
 
 use crate::application::diagnostics::Diagnostics;
+use crate::application::grouping::ReportIdentity;
 use crate::application::scopes::ScopeRunner;
 use crate::interprocedural::ProjectAnalysis;
 use crate::rules::{RenderError, SourceMap};
@@ -40,9 +41,10 @@ pub struct AnalyzedScope {
     pub reports: Vec<Report>,
 }
 
-struct AnalysisSettings {
+struct AnalysisSession {
     curve: Curve,
     timeout: AnalysisTimeout,
+    seen_setup: BTreeSet<ReportIdentity>,
 }
 
 /// Work about to begin. Definition events include each distinct call context.
@@ -104,7 +106,7 @@ pub fn analyze_files_with_observer(
     let (paths, input_reports) = inputs::expand(paths);
     let paths = units::distinct_paths(paths);
     let (files, file_ids) = units::catalog(&paths, libraries)?;
-    let settings = AnalysisSettings { curve, timeout };
+    let mut session = AnalysisSession { curve, timeout, seen_setup: BTreeSet::new() };
     let mut pre_reports = input_reports;
     for path in libraries {
         if !path.exists() {
@@ -122,8 +124,13 @@ pub fn analyze_files_with_observer(
         let unit = units::load(root, libraries);
         let roots = unit.roots();
         let sources = SourceMap::from_shared_files(&unit.loaded, &roots, files.clone(), &file_ids)?;
-        let (diagnostics, scopes) =
-            analyze_unit(&unit, &sources, std::mem::take(&mut pre_reports), &settings, observer)?;
+        let (diagnostics, scopes) = analyze_unit(
+            &unit,
+            &sources,
+            std::mem::take(&mut pre_reports),
+            &mut session,
+            observer,
+        )?;
         all_diagnostics.extend(diagnostics);
         all_scopes.extend(scopes);
     }
@@ -138,7 +145,7 @@ fn analyze_unit(
     unit: &units::Unit,
     sources: &SourceMap<'_>,
     pre_reports: Vec<Report>,
-    settings: &AnalysisSettings,
+    session: &mut AnalysisSession,
     observer: &mut dyn AnalysisObserver,
 ) -> Result<(Vec<Report>, Vec<AnalyzedScope>), ApplicationError> {
     observer.progress(AnalysisProgress::LiftingSources)?;
@@ -149,17 +156,12 @@ fn analyze_unit(
     for report in pre_reports {
         diagnostics.push(report);
     }
-    diagnostics.frontend(loaded, &lifted, unit.open_namespace())?;
+    diagnostics.frontend(loaded, &lifted, unit.open_namespace(), &mut session.seen_setup)?;
     diagnostics.emit_new(observer)?;
-    if loaded.diagnostics.iter().any(|diagnostic| {
-        matches!(diagnostic.kind, DiagnosticKind::MissingInclude | DiagnosticKind::FileRead)
-    }) {
-        return Ok((diagnostics.finish(observer)?, Vec::new()));
-    }
     observer.progress(AnalysisProgress::IndexingProject)?;
-    let summaries = ProjectAnalysis::build(&lifted, settings.curve.clone())
+    let summaries = ProjectAnalysis::build(&lifted, session.curve.clone())
         .map_err(|error| ApplicationError::Invariant(format!("invalid call graph: {error:?}")))?;
-    let mut runner = ScopeRunner::new(&summaries, sources, &mut diagnostics, settings.timeout);
+    let mut runner = ScopeRunner::new(&summaries, sources, &mut diagnostics, session.timeout);
     runner.analyze(observer)?;
     let reports = runner.finish(observer)?;
     let mut scopes = Vec::new();
