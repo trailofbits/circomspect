@@ -887,6 +887,39 @@ fn component_array_keeps_one_template_with_distinct_parameters() {
 }
 
 #[test]
+fn unresolved_component_calls_do_not_imply_different_templates() {
+    let source = concat!(
+        "template Check(){component c[2]; c[0]=Missing(); c[1]=Missing();}",
+        "component main=Check();"
+    );
+    let result = lift(&[("unresolved.circom", source)], Version::new(2, 2, 3));
+    assert_eq!(
+        result.diagnostics.iter().filter(|item| item.code == SemanticCode::MissingCall).count(),
+        2
+    );
+    assert!(
+        result.diagnostics.iter().all(|item| item.code != SemanticCode::InvalidAssignment),
+        "an unresolved target cannot prove a component-template conflict: {:?}",
+        result.diagnostics
+    );
+}
+
+#[test]
+fn ambiguous_component_calls_do_not_imply_different_templates() {
+    let source = concat!(
+        "template Child(){} template Child(){} ",
+        "template Check(){component c[2]; c[0]=Child(); c[1]=Child();}"
+    );
+    let result = lift(&[("ambiguous.circom", source)], Version::new(2, 2, 3));
+    assert!(result.diagnostics.iter().any(|item| item.code == SemanticCode::DuplicateTemplate));
+    assert!(
+        result.diagnostics.iter().all(|item| item.code != SemanticCode::InvalidAssignment),
+        "an ambiguous target cannot prove a component-template conflict: {:?}",
+        result.diagnostics
+    );
+}
+
+#[test]
 fn component_branches_reject_different_template_targets() {
     let source = concat!(
         "template A(){signal output out;} template B(){signal output out;} ",

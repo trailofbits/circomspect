@@ -975,9 +975,17 @@ impl Lifter<'_> {
                 Some(CallTarget::Opaque { reason: IncompleteReason::InvalidAssignment }) => true,
                 Some(_) | None => false,
             };
+            let conflicting_templates =
+                if let (Some(CallTarget::Template(previous)), CallTarget::Template(current)) =
+                    (previous, &target)
+                {
+                    previous != current
+                } else {
+                    false
+                };
             if already_invalid {
                 target = CallTarget::Opaque { reason: IncompleteReason::InvalidAssignment };
-            } else if previous.is_some_and(|old| old != &target) {
+            } else if conflicting_templates {
                 self.diagnostic(
                     SemanticCode::InvalidAssignment,
                     Severity::Error,

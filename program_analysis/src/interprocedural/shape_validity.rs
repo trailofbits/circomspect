@@ -173,7 +173,26 @@ impl ShapeValidator<'_, '_> {
             Err(error) => return Some(Self::failure(target, error)),
             Ok(rank) => rank?,
         };
-        if operator != AssignmentOperator::Assign && target_rank > 0 {
+        let arithmetic_update = match operator {
+            AssignmentOperator::Assign
+            | AssignmentOperator::Witness
+            | AssignmentOperator::Constraint
+            | AssignmentOperator::ReverseWitness
+            | AssignmentOperator::ReverseConstraint => false,
+            AssignmentOperator::Add
+            | AssignmentOperator::Subtract
+            | AssignmentOperator::Multiply
+            | AssignmentOperator::Divide
+            | AssignmentOperator::IntegerDivide
+            | AssignmentOperator::Modulo
+            | AssignmentOperator::Power
+            | AssignmentOperator::ShiftLeft
+            | AssignmentOperator::ShiftRight
+            | AssignmentOperator::BitAnd
+            | AssignmentOperator::BitOr
+            | AssignmentOperator::BitXor => true,
+        };
+        if arithmetic_update && target_rank > 0 {
             return Some(Self::failure(target, ShapeError::AggregateUpdate));
         }
         let value_rank = self.expression_rank(value, 0)?;
