@@ -1,0 +1,18 @@
+circomspect: loading input files
+circomspect: resolving source definitions
+error: invalid Circom token
+  ┌─ <fixture>:4:17
+  │
+4 │     var value = @;
+  │                 ^ This token is invalid.
+
+error: unexpected token in Circom source
+  ┌─ <fixture>:4:17
+  │
+4 │     var value = @;
+  │                 ^ This syntax is invalid.
+
+circomspect: preparing analysis
+circomspect: analyzing template 'AfterInvalidToken'
+circomspect: Result written to `<sarif>`.
+circomspect: 2 source errors reported.

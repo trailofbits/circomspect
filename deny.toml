@@ -1,0 +1,47 @@
+[advisories]
+yanked = "deny"
+unmaintained = "all"
+unsound = "all"
+
+[licenses]
+include-dev = true
+# SPDX identifiers used by the current workspace and its build/test dependencies.
+allow = [
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "CC0-1.0",
+    "LGPL-3.0-only",
+    "MIT",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+]
+
+[bans]
+multiple-versions = "deny"
+multiple-versions-include-dev = true
+wildcards = "deny"
+skip = [
+    # Criterion 0.5 supports the MSRV but needs an older itertools than LALRPOP.
+    { crate = "itertools@0.10.5", reason = "Criterion 0.5 requires itertools 0.10" },
+    { crate = "itertools@0.11.0", reason = "LALRPOP 0.20 requires itertools 0.11" },
+    # LALRPOP 0.20 and proptest 1.8 require incompatible bit-set/bit-vec APIs.
+    { crate = "bit-set@0.5.3", reason = "LALRPOP 0.20 requires bit-set 0.5" },
+    { crate = "bit-vec@0.6.3", reason = "bit-set 0.5 requires bit-vec 0.6" },
+    # num-bigint-dig 0.8 uses rand 0.8; proptest 1.8 uses rand 0.9.
+    { crate = "getrandom@0.2.15", reason = "rand_core 0.6 requires getrandom 0.2" },
+    { crate = "rand@0.8.6", reason = "num-bigint-dig 0.8 requires rand 0.8" },
+    { crate = "rand_chacha@0.3.1", reason = "rand 0.8 requires rand_chacha 0.3" },
+    { crate = "rand_core@0.6.4", reason = "rand 0.8 requires rand_core 0.6" },
+    # serde-sarif 0.4's derive stack predates the versions used by Clap and ICU.
+    { crate = "heck@0.4.1", reason = "serde-sarif's strum_macros requires heck 0.4" },
+    { crate = "strsim@0.10.0", reason = "serde-sarif's darling_core requires strsim 0.10" },
+    { crate = "syn@1.0.109", reason = "serde-sarif's derive/schema generators require syn 1" },
+    { crate = "syn@2.0.67", reason = "Clap, thiserror and ICU 1.5 macros require syn 2" },
+    # ICU 1.5 supports the MSRV and uses yoke's older derive implementation.
+    { crate = "synstructure@0.13.2", reason = "yoke-derive 0.7 requires synstructure 0.13" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

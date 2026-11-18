@@ -1,53 +1,52 @@
-use analysis_context::AnalysisContext;
-
-use program_structure::cfg::Cfg;
-use program_structure::report::ReportCollection;
+// Tests intentionally fail by panicking; fixture assembly favors readable assertions.
+// Rust 1.74 requires `allow` here because `expect` lint attributes are not yet stable.
+#![cfg_attr(
+    test,
+    allow(
+        clippy::allow_attributes,
+        clippy::assert_is_empty,
+        clippy::expect_used,
+        clippy::format_push_string,
+        clippy::panic,
+        clippy::panic_in_result_fn,
+        clippy::unwrap_used
+    )
+)]
+//! Certified analysis over typed Circom HIR.
+//!
+//! Start with [`application::analyze_files`] for the complete source-to-report path. It loads
+//! sources with [`parser::frontend::load_sources`], lifts them with [`parser::hir::lift_project`],
+//! and preserves independent definitions when a library has syntax errors or missing callees.
+//! A library does not need `main` to be analyzed.
+//!
+//! [`hir_cfg::build_cfg`] gives one definition a checked control-flow graph.
+//! [`hir_facts::AnalysisFacts`] runs local abstract interpretations and exposes certified values
+//! or explicit blockers. [`interprocedural::ProjectAnalysis`] supplies the shared project,
+//! selected field, call graph, context evidence, and completed summary caches.
+//!
+//! [`rules::RuleContext::new`] checks that facts and context evidence belong together;
+//! [`rules::run_registered`] then emits findings and typed abstentions in registry order.
+//! A certified empty result differs from an unavailable result. Callers must also inspect a
+//! certificate's specific coverage: an exact conditional return does not prove termination.
+//!
+//! The `reading_local`, `reading_component`, and `reading_incomplete_library` examples follow
+//! these APIs through a positive case and a nearby refusal or absence case. Run them with
+//! `cargo run -p circomspect-program-analysis --example reading_local` (or the other names).
+//! `cargo test -p circomspect-program-analysis --examples` checks their assertions.
+//!
+//! Domain implementations state their order, bottom, and join beside the relevant types.
+//! Rust enforces evidence ownership and access to constructors; lattice laws and monotone
+//! transfers remain semantic obligations checked by law tests and review.
 
 extern crate num_bigint_dig as num_bigint;
 
-pub mod constraint_analysis;
-pub mod taint_analysis;
-pub mod analysis_context;
-pub mod analysis_runner;
+pub mod application;
 pub mod config;
+pub mod hir_cfg;
+pub mod hir_facts;
+pub mod interprocedural;
+pub mod rules;
+mod scalar_evidence;
 
-// Intra-process analysis passes.
-mod bitwise_complement;
-mod bn254_specific_circuit;
-mod constant_conditional;
-mod definition_complexity;
-mod field_arithmetic;
-mod field_comparisons;
-mod nonstrict_binary_conversion;
-mod under_constrained_signals;
-mod unconstrained_less_than;
-mod unconstrained_division;
-mod side_effect_analysis;
-mod signal_assignments;
-
-// Inter-process analysis passes.
-mod unused_output_signal;
-
-/// An analysis pass is a function which takes an analysis context and a CFG and
-/// returns a set of reports.
-type AnalysisPass = dyn Fn(&mut dyn AnalysisContext, &Cfg) -> ReportCollection;
-
-pub fn get_analysis_passes() -> Vec<Box<AnalysisPass>> {
-    vec![
-        // Intra-process analysis passes.
-        Box::new(|_, cfg| bitwise_complement::find_bitwise_complement(cfg)),
-        Box::new(|_, cfg| signal_assignments::find_signal_assignments(cfg)),
-        Box::new(|_, cfg| definition_complexity::run_complexity_analysis(cfg)),
-        Box::new(|_, cfg| side_effect_analysis::run_side_effect_analysis(cfg)),
-        Box::new(|_, cfg| field_arithmetic::find_field_element_arithmetic(cfg)),
-        Box::new(|_, cfg| field_comparisons::find_field_element_comparisons(cfg)),
-        Box::new(|_, cfg| unconstrained_division::find_unconstrained_division(cfg)),
-        Box::new(|_, cfg| bn254_specific_circuit::find_bn254_specific_circuits(cfg)),
-        Box::new(|_, cfg| unconstrained_less_than::find_unconstrained_less_than(cfg)),
-        Box::new(|_, cfg| constant_conditional::find_constant_conditional_statement(cfg)),
-        Box::new(|_, cfg| under_constrained_signals::find_under_constrained_signals(cfg)),
-        Box::new(|_, cfg| nonstrict_binary_conversion::find_nonstrict_binary_conversion(cfg)),
-        // Inter-process analysis passes.
-        Box::new(unused_output_signal::find_unused_output_signals),
-    ]
-}
+#[cfg(test)]
+mod test_fixtures;

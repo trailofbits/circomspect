@@ -1,0 +1,53 @@
+{
+  "runs": [
+    {
+      "columnKind": "unicodeCodePoints",
+      "results": [
+        {
+          "level": "error",
+          "locations": [
+            {
+              "id": 0,
+              "message": {
+                "text": "This syntax is invalid."
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixtures/expression_recovery.circom"
+                },
+                "region": {
+                  "endColumn": 7,
+                  "endLine": 3,
+                  "startColumn": 5,
+                  "startLine": 3
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "only an anonymous component call may be used as an expression statement"
+          },
+          "relatedLocations": [],
+          "rule": {
+            "id": "P1000"
+          },
+          "ruleId": "P1000"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "downloadUri": "https://github.com/trailofbits/circomspect",
+          "name": "Circomspect",
+          "organization": "Trail of Bits",
+          "rules": [
+            {
+              "id": "P1000",
+              "name": "parse-fail"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

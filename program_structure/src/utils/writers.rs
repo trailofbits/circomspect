@@ -1,18 +1,21 @@
-use anyhow;
-use anyhow::Context;
-use log::{info, warn};
 use std::fmt::Display;
 use std::fs::File;
-use std::io::Write;
+use std::io::{self, IsTerminal, Write};
+use thiserror::Error;
 use std::path::{PathBuf, Path};
 use codespan_reporting::term;
+use codespan_reporting::diagnostic::Diagnostic;
 use termcolor::{StandardStream, ColorChoice, WriteColor, ColorSpec, Color};
 
-use crate::sarif_conversion::ToSarif;
+use crate::sarif_conversion::{SarifError, ToSarif};
 use crate::{
-    program_library::report::{Report, ReportCollection},
-    file_definition::FileLibrary,
+    program_library::report::{Report, ReportCollection, ReportLabel},
+    file_definition::{FileID, FileLibrary},
 };
+
+mod policy;
+
+pub use crate::utils::writers::policy::OutputPolicy;
 
 pub trait ReportFilter {
     /// Returns true if the report should be included.
@@ -25,14 +28,41 @@ impl<F: Fn(&Report) -> bool> ReportFilter for F {
     }
 }
 
+fn select_reports(filters: &[Box<dyn ReportFilter>], reports: &[Report]) -> ReportCollection {
+    let mut selected = ReportCollection::new();
+    for report in reports {
+        if filters.iter().all(|filter| filter.filter(report)) {
+            selected.push(report.clone());
+        }
+    }
+    selected
+}
+
+/// A failure while rendering diagnostics or writing their output.
+#[derive(Debug, Error)]
+pub enum ReportWriteError {
+    #[error("cannot write diagnostics to stdout: {0}")]
+    Terminal(#[from] codespan_reporting::files::Error),
+    #[error("cannot write status to stdout: {0}")]
+    Status(#[from] io::Error),
+    #[error("cannot serialize SARIF diagnostics: {0}")]
+    Sarif(#[from] SarifError),
+    #[error("cannot encode SARIF JSON: {0}")]
+    Json(#[from] serde_json::Error),
+    #[error("cannot write SARIF file {path}: {source}")]
+    File { path: PathBuf, source: io::Error },
+}
+
 pub trait ReportWriter {
     /// Filter and write the given reports. Returns the number of reports written.
-    fn write_reports(&mut self, reports: &[Report], file_library: &FileLibrary) -> usize;
-
-    /// Filter and write a single report. Returns the number of reports written (0 or 1).
-    fn write_report(&mut self, report: Report, file_library: &FileLibrary) -> usize {
-        self.write_reports(&[report], file_library)
-    }
+    ///
+    /// # Errors
+    /// Returns a rendering, serialization, or output error without discarding it.
+    fn write_reports(
+        &mut self,
+        reports: &[Report],
+        file_library: &FileLibrary,
+    ) -> Result<usize, ReportWriteError>;
 
     /// Returns the number of reports written.
     #[must_use]
@@ -40,10 +70,18 @@ pub trait ReportWriter {
 }
 
 pub trait LogWriter {
-    fn write_messages<D: Display>(&mut self, messages: &[D]);
+    /// Writes status messages in order.
+    ///
+    /// # Errors
+    /// Returns the first failure writing to stdout.
+    fn write_messages<D: Display>(&mut self, messages: &[D]) -> io::Result<()>;
 
-    fn write_message<D: Display>(&mut self, message: D) {
-        self.write_messages(&[message]);
+    /// Writes one status message.
+    ///
+    /// # Errors
+    /// Returns the output error if stdout cannot accept the message.
+    fn write_message<D: Display>(&mut self, message: D) -> io::Result<()> {
+        self.write_messages(&[message])
     }
 }
 
@@ -55,8 +93,9 @@ pub struct StdoutWriter {
 }
 
 impl StdoutWriter {
+    #[must_use]
     pub fn new(verbose: bool) -> StdoutWriter {
-        let writer = if atty::is(atty::Stream::Stdout) {
+        let writer = if std::io::stdout().is_terminal() {
             StandardStream::stdout(ColorChoice::Always)
         } else {
             StandardStream::stdout(ColorChoice::Never)
@@ -64,22 +103,53 @@ impl StdoutWriter {
         StdoutWriter { verbose, written: 0, writer, filters: Vec::new() }
     }
 
+    #[must_use]
     pub fn add_filter(mut self, filter: impl ReportFilter + 'static) -> StdoutWriter {
         self.filters.push(Box::new(filter));
         self
     }
 
-    fn filter(&self, reports: &[Report]) -> ReportCollection {
-        reports
-            .iter()
-            .filter(|report| self.filters.iter().all(|f| f.filter(report)))
-            .cloned()
-            .collect()
+    /// Show final call paths for an earlier diagnostic without counting it again.
+    ///
+    /// Filtering uses the original report, including its severity and primary source.
+    ///
+    /// # Errors
+    /// Returns a rendering or output failure without discarding it.
+    pub fn write_additional_call_paths(
+        &mut self,
+        report: &Report,
+        locations: &[ReportLabel],
+        files: &FileLibrary,
+    ) -> Result<(), ReportWriteError> {
+        if locations.is_empty() || !self.filters.iter().all(|filter| filter.filter(report)) {
+            return Ok(());
+        }
+        let mut labels = report.primary().clone();
+        labels.extend_from_slice(locations);
+        let diagnostic = Diagnostic::note()
+            .with_message(format!("Additional call paths for {}", report.id()))
+            .with_labels(labels);
+        self.write_diagnostic(&diagnostic, files)
+    }
+
+    fn write_diagnostic(
+        &mut self,
+        diagnostic: &Diagnostic<FileID>,
+        files: &FileLibrary,
+    ) -> Result<(), ReportWriteError> {
+        let mut config = term::Config::default();
+        config.styles.header_help.set_intense(false);
+        config.styles.header_error.set_intense(false);
+        config.styles.header_warning.set_intense(false);
+        let mut writer = self.writer.lock();
+        term::emit(&mut writer, &config, files.to_storage(), diagnostic)?;
+        writer.flush().map_err(codespan_reporting::files::Error::Io)?;
+        Ok(())
     }
 }
 
 impl LogWriter for StdoutWriter {
-    fn write_messages<D: Display>(&mut self, messages: &[D]) {
+    fn write_messages<D: Display>(&mut self, messages: &[D]) -> io::Result<()> {
         let mut spec = ColorSpec::new();
         spec.set_fg(Some(Color::Green));
 
@@ -88,34 +158,30 @@ impl LogWriter for StdoutWriter {
             writer.set_color(&spec)?;
             write!(&mut writer, "circomspect")?;
             writer.reset()?;
-            writeln!(&mut writer, ": {message}")
+            writeln!(&mut writer, ": {message}")?;
+            writer.flush()
         };
         for message in messages {
-            write_impl(message).expect("failed to write log messages")
+            write_impl(message)?;
         }
+        Ok(())
     }
 }
 
 impl ReportWriter for StdoutWriter {
-    fn write_reports(&mut self, reports: &[Report], file_library: &FileLibrary) -> usize {
-        let reports = self.filter(reports);
+    fn write_reports(
+        &mut self,
+        reports: &[Report],
+        file_library: &FileLibrary,
+    ) -> Result<usize, ReportWriteError> {
+        let reports = select_reports(&self.filters, reports);
 
-        let mut config = term::Config::default();
-        let mut diagnostics = Vec::new();
-        let files = file_library.to_storage();
-        for report in reports.iter() {
-            diagnostics.push(report.to_diagnostic(self.verbose));
-        }
-        config.styles.header_help.set_intense(false);
-        config.styles.header_error.set_intense(false);
-        config.styles.header_warning.set_intense(false);
-        for diagnostic in diagnostics.iter() {
-            term::emit(&mut self.writer.lock(), &config, files, diagnostic)
-                .expect("failed to write reports");
+        for report in &reports {
+            self.write_diagnostic(&report.to_diagnostic(self.verbose), file_library)?;
+            self.written += 1;
         }
 
-        self.written += reports.len();
-        reports.len()
+        Ok(reports.len())
     }
 
     /// Returns the number of reports written.
@@ -131,14 +197,17 @@ pub struct CachedStdoutWriter {
 }
 
 impl CachedStdoutWriter {
+    #[must_use]
     pub fn new(verbose: bool) -> CachedStdoutWriter {
         CachedStdoutWriter { writer: StdoutWriter::new(verbose), reports: ReportCollection::new() }
     }
 
+    #[must_use]
     pub fn reports(&self) -> &ReportCollection {
         &self.reports
     }
 
+    #[must_use]
     pub fn add_filter(mut self, filter: impl ReportFilter + 'static) -> CachedStdoutWriter {
         self.writer.filters.push(Box::new(filter));
         self
@@ -146,13 +215,17 @@ impl CachedStdoutWriter {
 }
 
 impl LogWriter for CachedStdoutWriter {
-    fn write_messages<D: Display>(&mut self, messages: &[D]) {
+    fn write_messages<D: Display>(&mut self, messages: &[D]) -> io::Result<()> {
         self.writer.write_messages(messages)
     }
 }
 
 impl ReportWriter for CachedStdoutWriter {
-    fn write_reports(&mut self, reports: &[Report], file_library: &FileLibrary) -> usize {
+    fn write_reports(
+        &mut self,
+        reports: &[Report],
+        file_library: &FileLibrary,
+    ) -> Result<usize, ReportWriteError> {
         self.reports.extend(reports.iter().cloned());
         self.writer.write_reports(reports, file_library)
     }
@@ -170,52 +243,41 @@ pub struct SarifWriter {
 }
 
 impl SarifWriter {
+    #[must_use]
     pub fn new(sarif_file: &Path) -> SarifWriter {
         SarifWriter { sarif_file: sarif_file.to_owned(), ..Default::default() }
     }
 
+    #[must_use]
     pub fn add_filter(mut self, filter: impl ReportFilter + 'static) -> SarifWriter {
         self.filters.push(Box::new(filter));
         self
-    }
-
-    fn filter(&self, reports: &[Report]) -> ReportCollection {
-        reports
-            .iter()
-            .filter(|report| self.filters.iter().all(|f| f.filter(report)))
-            .cloned()
-            .collect()
     }
 
     fn serialize_reports(
         &self,
         reports: &ReportCollection,
         file_library: &FileLibrary,
-    ) -> anyhow::Result<()> {
-        let sarif =
-            reports.to_sarif(file_library).context("failed to convert reports to Sarif format")?;
+    ) -> Result<(), ReportWriteError> {
+        let sarif = reports.to_sarif(file_library)?;
         let json = serde_json::to_string_pretty(&sarif)?;
-        let mut sarif_file = File::create(&self.sarif_file)?;
-        writeln!(sarif_file, "{}", &json)
-            .with_context(|| format!("could not write to {}", self.sarif_file.display()))?;
+        let file_error = |source| ReportWriteError::File { path: self.sarif_file.clone(), source };
+        let mut sarif_file = File::create(&self.sarif_file).map_err(file_error)?;
+        writeln!(sarif_file, "{json}").map_err(file_error)?;
         Ok(())
     }
 }
 
 impl ReportWriter for SarifWriter {
-    fn write_reports(&mut self, reports: &[Report], file_library: &FileLibrary) -> usize {
-        let reports = self.filter(reports);
-        match self.serialize_reports(&reports, file_library) {
-            Ok(()) => {
-                info!("reports written to `{}`", self.sarif_file.display());
-                self.written += reports.len();
-                reports.len()
-            }
-            Err(_) => {
-                warn!("failed to write reports to `{}`", self.sarif_file.display());
-                0
-            }
-        }
+    fn write_reports(
+        &mut self,
+        reports: &[Report],
+        file_library: &FileLibrary,
+    ) -> Result<usize, ReportWriteError> {
+        let reports = select_reports(&self.filters, reports);
+        self.serialize_reports(&reports, file_library)?;
+        self.written += reports.len();
+        Ok(reports.len())
     }
 
     fn reports_written(&self) -> usize {

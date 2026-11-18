@@ -1,16 +1,27 @@
-use std::collections::HashSet;
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::num::NonZeroU64;
+use std::time::Duration;
 use clap::{CommandFactory, Parser};
 
 use program_analysis::config;
-use program_analysis::analysis_runner::AnalysisRunner;
+use program_analysis::application::{analyze_files_with_observer, AnalysisTimeout, ApplicationError};
+use program_structure::file_definition::FileLibrary;
+use program_structure::report_code::ReportCode;
 
 use program_structure::constants::Curve;
-use program_structure::file_definition::FileID;
 use program_structure::report::Report;
 use program_structure::report::MessageCategory;
-use program_structure::writers::{LogWriter, ReportWriter, SarifWriter, CachedStdoutWriter};
+use program_structure::writers::{
+    LogWriter, OutputPolicy, ReportWriter, ReportWriteError, SarifWriter, StdoutWriter,
+};
+
+mod live_output;
+mod progress;
+mod summary;
+
+#[cfg(test)]
+mod tests;
 
 #[derive(Parser, Debug)]
 #[command(styles=cli_styles())]
@@ -20,7 +31,7 @@ struct Cli {
     #[clap(name = "INPUT")]
     input_files: Vec<PathBuf>,
 
-    /// Library file paths
+    /// Ordered include search directories
     #[clap(short = 'L', long = "library", name = "LIBRARIES")]
     libraries: Vec<PathBuf>,
 
@@ -40,14 +51,19 @@ struct Cli {
     #[clap(short = 'v', long = "verbose")]
     verbose: bool,
 
-    /// Set curve (BN254, BLS12_381, or GOLDILOCKS)
-    #[clap(short = 'c', long = "curve", name = "NAME", default_value = config::DEFAULT_CURVE)]
+    /// Set the curve used for field arithmetic.
+    #[clap(short = 'c', long = "curve", name = "NAME", default_value = config::DEFAULT_CURVE,
+        help = "Set curve (BN254, BLS12_381, or GOLDILOCKS)")]
     curve: Curve,
+
+    /// Maximum analysis time per template/function context in seconds; omitted means unlimited.
+    #[clap(long = "timeout", value_name = "SECONDS")]
+    timeout: Option<NonZeroU64>,
 }
 
 /// Styles the help output for the [`Cli`].
 fn cli_styles() -> clap::builder::Styles {
-    use clap::builder::styling::*;
+    use clap::builder::styling::{AnsiColor, Styles};
 
     Styles::styled()
         .header(AnsiColor::Yellow.on_default())
@@ -56,78 +72,84 @@ fn cli_styles() -> clap::builder::Styles {
         .placeholder(AnsiColor::Green.on_default())
 }
 
-/// Returns true if a primary location of the report corresponds to a file
-/// specified on the command line by the user.
-fn filter_by_file(report: &Report, user_inputs: &HashSet<FileID>) -> bool {
-    report.primary_file_ids().iter().any(|file_id| user_inputs.contains(file_id))
-}
-
-/// Returns true if the report level is greater than or equal to the given
-/// level.
-fn filter_by_level(report: &Report, output_level: &MessageCategory) -> bool {
-    report.category() >= output_level
-}
-
-/// Returns true if the report ID is not in the given list.
-fn filter_by_id(report: &Report, allow_list: &[String]) -> bool {
-    !allow_list.contains(&report.id())
-}
-
-fn main() -> ExitCode {
-    // Initialize logger and options.
+fn main() -> Result<ExitCode, String> {
     pretty_env_logger::init();
     let options = Cli::parse();
     if options.input_files.is_empty() {
-        match Cli::command().print_help() {
-            Ok(()) => return ExitCode::SUCCESS,
-            Err(_) => return ExitCode::FAILURE,
-        }
+        Cli::command()
+            .print_help()
+            .map_err(|error| format!("Cannot write help to stdout: {error}"))?;
+        return Ok(ExitCode::SUCCESS);
     }
 
-    // Set up analysis runner.
-    let (mut runner, reports) = AnalysisRunner::new(options.curve)
-        .with_libraries(&options.libraries)
-        .with_files(&options.input_files);
+    run(options).map_err(|error| error.to_string())
+}
 
-    // Set up writer and write reports to `stdout`.
-    let allow_list = options.allow_list.clone();
-    let user_inputs = runner.file_library().user_inputs().clone();
-    let mut stdout_writer = CachedStdoutWriter::new(options.verbose)
-        .add_filter(move |report: &Report| filter_by_level(report, &options.output_level))
-        .add_filter(move |report: &Report| filter_by_file(report, &user_inputs))
-        .add_filter(move |report: &Report| filter_by_id(report, &allow_list));
-    stdout_writer.write_reports(&reports, runner.file_library());
+fn analysis_timeout(seconds: Option<NonZeroU64>) -> AnalysisTimeout {
+    match seconds {
+        Some(seconds) => AnalysisTimeout::Bounded(Duration::from_secs(seconds.get())),
+        None => AnalysisTimeout::Unlimited,
+    }
+}
 
-    // Analyze functions and templates in user provided input files.
-    runner.analyze_functions(&mut stdout_writer, true);
-    runner.analyze_templates(&mut stdout_writer, true);
+fn run(options: Cli) -> Result<ExitCode, ReportWriteError> {
+    let timeout = analysis_timeout(options.timeout);
+    let ignored = options.allow_list.into_iter().collect();
+    let mut stdout_writer = StdoutWriter::new(options.verbose);
+    let output = match progress::report(options.verbose, |reporter| {
+        let mut observer = live_output::LiveOutput::new(
+            reporter,
+            &mut stdout_writer,
+            options.output_level,
+            &ignored,
+        );
+        analyze_files_with_observer(
+            &options.input_files,
+            &options.libraries,
+            options.curve,
+            timeout,
+            &mut observer,
+        )
+    }) {
+        Ok(output) => output,
+        Err(ApplicationError::Progress(error)) => return Err(ReportWriteError::Status(error)),
+        Err(ApplicationError::Output(error)) => return Err(error),
+        Err(error) => {
+            let report =
+                Report::error(format!("Analysis failed: {error}"), ReportCode::RuntimeError);
+            stdout_writer.write_reports(&[report], &FileLibrary::new())?;
+            return Ok(ExitCode::FAILURE);
+        }
+    };
 
-    // If a Sarif file is passed to the program we write the reports to it.
+    let policy =
+        OutputPolicy::new(options.output_level, output.files.user_inputs().clone(), ignored);
+    let mut reports = output.diagnostics;
+    for scope in output.scopes {
+        reports.extend(scope.reports);
+    }
+
     if let Some(sarif_file) = options.sarif_file {
-        let allow_list = options.allow_list.clone();
-        let user_inputs = runner.file_library().user_inputs().clone();
-        let mut sarif_writer = SarifWriter::new(&sarif_file)
-            .add_filter(move |report: &Report| filter_by_level(report, &options.output_level))
-            .add_filter(move |report: &Report| filter_by_file(report, &user_inputs))
-            .add_filter(move |report: &Report| filter_by_id(report, &allow_list));
-        if sarif_writer.write_reports(stdout_writer.reports(), runner.file_library()) > 0 {
-            stdout_writer.write_message(&format!("Result written to `{}`.", sarif_file.display()));
+        let mut sarif_writer = SarifWriter::new(&sarif_file).add_filter(policy.clone());
+        match sarif_writer.write_reports(&reports, &output.files) {
+            Ok(count) if count > 0 => stdout_writer
+                .write_message(format!("Result written to `{}`.", sarif_file.display()))?,
+            Ok(_) => {}
+            Err(error) => {
+                let report = Report::error(
+                    format!("Cannot write SARIF to {}: {error:#}", sarif_file.display()),
+                    ReportCode::RuntimeError,
+                );
+                stdout_writer.write_reports(&[report], &output.files)?;
+                return Ok(ExitCode::FAILURE);
+            }
         }
     }
 
-    // Use the exit code to indicate if any issues were found.
-    match stdout_writer.reports_written() {
-        0 => {
-            stdout_writer.write_message("No issues found.");
-            ExitCode::SUCCESS
-        }
-        1 => {
-            stdout_writer.write_message("1 issue found.");
-            ExitCode::FAILURE
-        }
-        n => {
-            stdout_writer.write_message(&format!("{n} issues found."));
-            ExitCode::FAILURE
-        }
-    }
+    stdout_writer.write_message(summary::describe(&reports, &policy))?;
+    Ok(if stdout_writer.reports_written() == 0 && summary::timeout_count(&reports) == 0 {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    })
 }

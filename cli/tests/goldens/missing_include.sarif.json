@@ -1,0 +1,53 @@
+{
+  "runs": [
+    {
+      "columnKind": "unicodeCodePoints",
+      "results": [
+        {
+          "level": "error",
+          "locations": [
+            {
+              "id": 0,
+              "message": {
+                "text": "This include cannot be resolved."
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixtures/missing_include.circom"
+                },
+                "region": {
+                  "endColumn": 28,
+                  "endLine": 2,
+                  "startColumn": 1,
+                  "startLine": 2
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "cannot find included file not_found.circom"
+          },
+          "relatedLocations": [],
+          "rule": {
+            "id": "P1099"
+          },
+          "ruleId": "P1099"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "downloadUri": "https://github.com/trailofbits/circomspect",
+          "name": "Circomspect",
+          "organization": "Trail of Bits",
+          "rules": [
+            {
+              "id": "P1099",
+              "name": "project-setup"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

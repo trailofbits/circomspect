@@ -1,0 +1,113 @@
+{
+  "runs": [
+    {
+      "columnKind": "unicodeCodePoints",
+      "results": [
+        {
+          "level": "error",
+          "locations": [
+            {
+              "id": 0,
+              "message": {
+                "text": "This call cannot be resolved."
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixtures/unresolved_library.circom"
+                },
+                "region": {
+                  "endColumn": 27,
+                  "endLine": 4,
+                  "startColumn": 12,
+                  "startLine": 4
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "unresolved Function call `MissingFunction`"
+          },
+          "relatedLocations": [],
+          "rule": {
+            "id": "CS0019"
+          },
+          "ruleId": "CS0019"
+        },
+        {
+          "level": "error",
+          "locations": [
+            {
+              "id": 0,
+              "message": {
+                "text": "This call cannot be resolved."
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixtures/unresolved_library.circom"
+                },
+                "region": {
+                  "endColumn": 40,
+                  "endLine": 4,
+                  "startColumn": 28,
+                  "startLine": 4
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "unresolved Function call `MissingInner`"
+          },
+          "relatedLocations": [],
+          "rule": {
+            "id": "CS0019"
+          },
+          "ruleId": "CS0019"
+        },
+        {
+          "level": "error",
+          "locations": [
+            {
+              "id": 0,
+              "message": {
+                "text": "This call cannot be resolved."
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixtures/unresolved_library.circom"
+                },
+                "region": {
+                  "endColumn": 38,
+                  "endLine": 8,
+                  "startColumn": 23,
+                  "startLine": 8
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "unresolved Template call `MissingTemplate`"
+          },
+          "relatedLocations": [],
+          "rule": {
+            "id": "CS0019"
+          },
+          "ruleId": "CS0019"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "downloadUri": "https://github.com/trailofbits/circomspect",
+          "name": "Circomspect",
+          "organization": "Trail of Bits",
+          "rules": [
+            {
+              "id": "CS0019",
+              "name": "unresolved-call"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

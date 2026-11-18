@@ -1,0 +1,192 @@
+(
+    [
+        SemanticDiagnostic {
+            code: MissingCall,
+            severity: Error,
+            span: Span {
+                source: SourceId(
+                    0,
+                ),
+                start: 496,
+                end: 503,
+            },
+            message: "unresolved Function call `Missing`",
+            expected_kind: None,
+            actual_kind: None,
+        },
+        SemanticDiagnostic {
+            code: InvalidAssignment,
+            severity: Error,
+            span: Span {
+                source: SourceId(
+                    0,
+                ),
+                start: 644,
+                end: 651,
+            },
+            message: "all instances of a component must use the same template",
+            expected_kind: None,
+            actual_kind: None,
+        },
+    ],
+    [
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 281,
+                    end: 300,
+                },
+            ),
+            reason: UnknownType,
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 310,
+                    end: 349,
+                },
+            ),
+            reason: UnknownType,
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 377,
+                    end: 431,
+                },
+            ),
+            reason: NonCompileTime,
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 395,
+                    end: 416,
+                },
+            ),
+            reason: UnknownType,
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 436,
+                    end: 477,
+                },
+            ),
+            reason: NonCompileTime,
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 454,
+                    end: 474,
+                },
+            ),
+            reason: UnknownType,
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 486,
+                    end: 506,
+                },
+            ),
+            reason: UnknownType,
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 496,
+                    end: 503,
+                },
+            ),
+            reason: MissingReference(
+                "Missing",
+            ),
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 516,
+                    end: 552,
+                },
+            ),
+            reason: UnknownType,
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 633,
+                    end: 651,
+                },
+            ),
+            reason: UnknownType,
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 644,
+                    end: 651,
+                },
+            ),
+            reason: InvalidAssignment,
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 657,
+                    end: 671,
+                },
+            ),
+            reason: UnknownType,
+        },
+        IncompleteRegion {
+            location: Source(
+                Span {
+                    source: SourceId(
+                        0,
+                    ),
+                    start: 664,
+                    end: 669,
+                },
+            ),
+            reason: InvalidAssignment,
+        },
+    ],
+)

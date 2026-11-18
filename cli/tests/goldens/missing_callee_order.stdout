@@ -1,0 +1,25 @@
+circomspect: loading input files
+circomspect: resolving source definitions
+error: unresolved Function call `MissingFunction`
+  ┌─ <fixtures>/unresolved_library.circom:4:12
+  │
+4 │     return MissingFunction(MissingInner(x));
+  │            ^^^^^^^^^^^^^^^ This call cannot be resolved.
+
+error: unresolved Function call `MissingInner`
+  ┌─ <fixtures>/unresolved_library.circom:4:28
+  │
+4 │     return MissingFunction(MissingInner(x));
+  │                            ^^^^^^^^^^^^ This call cannot be resolved.
+
+error: unresolved Template call `MissingTemplate`
+  ┌─ <fixtures>/unresolved_library.circom:8:23
+  │
+8 │     component child = MissingTemplate();
+  │                       ^^^^^^^^^^^^^^^ This call cannot be resolved.
+
+circomspect: preparing analysis
+circomspect: analyzing template 'UsesMissingTemplate'
+circomspect: analyzing function 'UsesMissingFunction'
+circomspect: Result written to `<sarif>`.
+circomspect: 3 source errors reported.

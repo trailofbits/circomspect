@@ -2,7 +2,7 @@
 name = "circomspect-parser"
 version = "2.2.0"
 edition = "2021"
-rust-version = "1.65"
+rust-version = "1.74"
 build = "build.rs"
 license = "LGPL-3.0-only"
 description = "Support crate for the Circomspect static analyzer"
@@ -13,22 +13,14 @@ authors = [
 ]
 
 [build-dependencies]
-rustc-hex = "2.0"
 lalrpop = { version = "0.20", features = ["lexer"] }
-num-bigint-dig = "0.8"
-num-traits = "0.2"
 
 [dependencies]
-program_structure = { package = "circomspect-program-structure", version = "2.1.4", path = "../program_structure" }
-lalrpop = { version = "0.20", features = ["lexer"] }
 lalrpop-util = "0.20"
-log = "0.4"
-regex = "1.7"
-rustc-hex = "2.1"
-num-bigint-dig = "0.8"
-num-traits = "0.2"
-serde = "1.0"
-serde_derive = "1.0"
 
 [dev-dependencies]
-program_structure = { package = "circomspect-program-structure", version = "2.1.4", path = "../program_structure" }
+proptest = "=1.8.0"
+serde_json = "=1.0.151"
+
+[lints]
+workspace = true

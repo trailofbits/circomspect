@@ -1,0 +1,35 @@
+{
+  "runs": [
+    {
+      "columnKind": "unicodeCodePoints",
+      "results": [
+        {
+          "level": "error",
+          "locations": [],
+          "message": {
+            "text": "cannot read /fixtures/absent_input.circom: No such file or directory (os error 2)"
+          },
+          "relatedLocations": [],
+          "rule": {
+            "id": "P1099"
+          },
+          "ruleId": "P1099"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "downloadUri": "https://github.com/trailofbits/circomspect",
+          "name": "Circomspect",
+          "organization": "Trail of Bits",
+          "rules": [
+            {
+              "id": "P1099",
+              "name": "project-setup"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

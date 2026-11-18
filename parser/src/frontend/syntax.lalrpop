@@ -1,0 +1,571 @@
+use crate::frontend::source::Version;
+use crate::frontend::lexer::TokenKind;
+use crate::frontend::parsed::{
+    AnonymousParts, BusHeaderParts, DeclarationParts, DefinitionParts, ForParts, HeaderDirection,
+    ParseContext, Parsed, ParsedItem, Recovery, SourceForm, TemplateModifier, unpack,
+};
+use crate::frontend::ast::{
+    Access, AnonymousInput, AssignmentOperator, BinaryOperator, Block, Declaration, DeclarationKind,
+    DeclaredSymbol, DefinitionKind, Expression, Identifier, InputAssignmentOperator, Item,
+    LogArgument, PortDirection, PostfixOperator, Pragma, SpannedDirection, Statement, SymbolSyntax,
+    UnaryOperator,
+};
+
+grammar(context: &mut ParseContext);
+
+pub Item: ParsedItem = {
+    <s:@L> "pragma" "circom" <a:Num> "." <b:Num> "." <c:Num> ";" <e:@R>
+        => context.version_item(context.span(s,e), [a,b,c]),
+    <s:@L> "pragma" "custom_templates" ";" <e:@R> => {
+        let span = context.span(s,e);
+        ParsedItem::Ready(context.annotate(
+            Item::Pragma { pragma: Pragma::CustomTemplates, span },
+            span, vec![], SourceForm::CustomTemplates))
+    },
+    <s:@L> "include" <path:Str> ";" <e:@R> => {
+        let span = context.span(s,e);
+        ParsedItem::Ready(context.plain(Item::Include { path, span }, span, vec![]))
+    },
+    <s:@L> "function" <name:Name> <parameters:Parameters> <body:Block> <e:@R>
+        => context.definition(DefinitionKind::Function, context.span(s,e),
+            DefinitionParts { name, parameters: Some(parameters), body }, vec![]),
+    <s:@L> "template" <modifiers:TemplateModifiers> <name:Name>
+    <parameters:Parameters?> <body:Block> <e:@R>
+        => context.template(context.span(s,e), modifiers,
+            DefinitionParts { name, parameters, body }),
+    <s:@L> "bus" <name:Name> <parameters:Parameters?> <body:Block> <e:@R>
+        => context.definition(DefinitionKind::Bus, context.span(s,e),
+            DefinitionParts { name, parameters, body }, vec![]),
+    <s:@L> "component" "main" <public:PublicList?> "=" <instance:Expr> ";" <e:@R>
+        => context.main_item(context.span(s,e), public, instance),
+};
+TemplateModifiers: Vec<Parsed<TemplateModifier>> = {
+    <custom:CustomModifier?> <external:ExternalModifier?> <parallel:ParallelModifier?> => {
+        let mut modifiers = Vec::new();
+        modifiers.extend(custom);
+        modifiers.extend(external);
+        modifiers.extend(parallel);
+        modifiers
+    },
+};
+CustomModifier: Parsed<TemplateModifier> = {
+    <s:@L> "custom" <e:@R> => context.annotate(TemplateModifier::Custom,
+        context.span(s,e), vec![], SourceForm::CustomTemplates),
+};
+ExternalModifier: Parsed<TemplateModifier> = {
+    <s:@L> "extern_c" <e:@R> => context.annotate(TemplateModifier::External,
+        context.span(s,e), vec![], SourceForm::Feature(Version::new(2,2,3))),
+};
+ParallelModifier: Parsed<TemplateModifier> = {
+    <s:@L> "parallel" <e:@R>
+        => context.plain(TemplateModifier::Parallel, context.span(s,e), vec![]),
+};
+PublicList: Parsed<Vec<Identifier>> = {
+    <s:@L> "{" "public" "[" <names:NameList> "]" "}" <e:@R>
+        => context.list(context.span(s,e), names),
+};
+Parameters: Parsed<Vec<Identifier>> = {
+    <s:@L> "(" <names:NameList?> ")" <e:@R>
+        => context.list(context.span(s,e), names.unwrap_or_default()),
+};
+NameList: Vec<Parsed<Identifier>> = {
+    <mut names:(<Name> ",")*> <last:Name> => { names.push(last); names },
+};
+Name: Parsed<Identifier> = {
+    <s:@L> <name:Id> <e:@R> => {
+        let span = context.span(s,e);
+        context.plain(Identifier { name, span }, span, vec![])
+    },
+};
+Block: Parsed<Block> = {
+    <s:@L> "{" <statements:BlockStatement*> "}" <e:@R> => {
+        let span = context.span(s,e);
+        context.list(span, statements).map(|statements| Block { statements, span })
+    },
+    <s:@L> "{" <mut statements:BlockStatement*>
+    <error_start:@L> ! <error_end:@R> "}" <e:@R> => {
+        let error_span = context.span(error_start,error_end);
+        statements.push(context.annotate(Statement::Error { span: error_span },
+            error_span, vec![], SourceForm::Recovery(Recovery::StatementBoundary)));
+        let span = context.span(s,e);
+        context.list(span, statements).map(|statements| Block { statements, span })
+    },
+};
+BlockStatement: Parsed<Statement> = {
+    <declaration:Declaration> ";" => declaration.map(Statement::Declaration),
+    Statement,
+    <s:@L> ! ";" <e:@R> => {
+        let span = context.span(s,e);
+        context.annotate(Statement::Error { span }, span, vec![],
+            SourceForm::Recovery(Recovery::StatementBoundary))
+    },
+};
+Declaration: Parsed<Declaration> = {
+    <s:@L> <header:LocalHeader> <symbols:SymbolList> <e:@R>
+        => context.declaration(context.span(s,e), DeclarationParts {
+            header, syntax: SymbolSyntax::List, symbols, initialization: None }),
+    <s:@L> <header:SignalHeader> <symbols:SignalSymbolList> <e:@R>
+        => context.declaration(context.span(s,e), DeclarationParts {
+            header, syntax: SymbolSyntax::List, symbols, initialization: None }),
+    <s:@L> <header:BusHeader> <symbols:SignalSymbolList> <e:@R>
+        => context.declaration(context.span(s,e), DeclarationParts {
+            header, syntax: SymbolSyntax::List, symbols, initialization: None }),
+    <s:@L> <header:LocalHeader> "(" <symbols:SimpleSymbolList> ")"
+    <initialization:TupleInit?> <e:@R>
+        => context.declaration(context.span(s,e), DeclarationParts {
+            header, syntax: SymbolSyntax::Tuple, symbols, initialization }),
+    <s:@L> <header:SignalHeader> "(" <symbols:SimpleSymbolList> ")"
+    <initialization:TupleInit?> <e:@R>
+        => context.declaration(context.span(s,e), DeclarationParts {
+            header, syntax: SymbolSyntax::Tuple, symbols, initialization }),
+};
+LocalHeader: Parsed<DeclarationKind> = {
+    <s:@L> "var" <e:@R> => context.plain(DeclarationKind::Variable, context.span(s,e), vec![]),
+    <s:@L> "component" <e:@R>
+        => context.plain(DeclarationKind::Component, context.span(s,e), vec![]),
+};
+SymbolList: Vec<Parsed<DeclaredSymbol>> = {
+    <mut xs:(<Symbol> ",")*> <x:Symbol> => { xs.push(x); xs },
+};
+SimpleSymbolList: Vec<Parsed<DeclaredSymbol>> = {
+    <mut xs:(<SimpleSymbol> ",")*> <x:SimpleSymbol> => { xs.push(x); xs },
+};
+SignalSymbolList: Vec<Parsed<DeclaredSymbol>> = {
+    <mut xs:(<SignalSymbol> ",")*> <x:SignalSymbol> => { xs.push(x); xs },
+};
+SimpleSymbol: Parsed<DeclaredSymbol> = {
+    <s:@L> <name:Name> <dimensions:Index*> <e:@R>
+        => context.symbol(context.span(s,e), name, dimensions),
+};
+Symbol: Parsed<DeclaredSymbol> = {
+    SimpleSymbol,
+    <s:@L> <symbol:SimpleSymbol> "=" <value:Expr> <e:@R>
+        => context.initialized_symbol(context.span(s,e), symbol, AssignmentOperator::Assign, value),
+};
+SignalSymbol: Parsed<DeclaredSymbol> = {
+    SimpleSymbol,
+    <s:@L> <symbol:SimpleSymbol> <operator:SignalAssignOp> <value:Expr> <e:@R>
+        => context.initialized_symbol(context.span(s,e), symbol, operator, value),
+};
+TupleInit: Parsed<(AssignmentOperator, Expression)> = {
+    <s:@L> <operator:AssignOp> <expression:Expr> <e:@R>
+        => context.plain((operator, expression.value), context.span(s,e),
+            vec![expression.annotation]),
+};
+SignalHeader: Parsed<DeclarationKind> = {
+    <s:@L> "signal" <direction:Direction?> <tags:Tags?> <e:@R>
+        => context.signal_header(context.span(s,e), HeaderDirection::After(direction), tags),
+    <s:@L> <direction:Direction> "signal" <tags:Tags?> <e:@R>
+        => context.signal_header(context.span(s,e), HeaderDirection::Before(direction), tags),
+};
+BusHeader: Parsed<DeclarationKind> = {
+    <s:@L> <name:Name> <arguments:Arguments?> <direction:Direction?> <tags:Tags?> <e:@R>
+        => context.bus_header(context.span(s,e), BusHeaderParts {
+            name, arguments, direction: HeaderDirection::After(direction), tags }),
+    <s:@L> <direction:Direction> <name:Name> <arguments:Arguments?> <tags:Tags?> <e:@R>
+        => context.bus_header(context.span(s,e), BusHeaderParts {
+            name, arguments, direction: HeaderDirection::Before(direction), tags }),
+};
+Tags: Parsed<Vec<Identifier>> = {
+    <s:@L> "{" <names:NameList> "}" <e:@R> => {
+        let (names, children) = unpack(names);
+        context.annotate(names, context.span(s,e), children,
+            SourceForm::Feature(Version::new(2,1,0)))
+    },
+};
+Direction: Parsed<SpannedDirection> = {
+    <s:@L> <direction:PortDirection> <e:@R> => {
+        let span = context.span(s,e);
+        context.plain(SpannedDirection { direction, span }, span, vec![])
+    },
+};
+PortDirection: PortDirection = {
+    "input" => PortDirection::Input,
+    "output" => PortDirection::Output,
+};
+
+pub Statement: Parsed<Statement> = { Statement0 };
+Statement0: Parsed<Statement> = { IfNoElse, Statement1 };
+IfNoElse: Parsed<Statement> = {
+    <s:@L> "if" "(" <condition:Expr> ")" <then_branch:IfNoElse> <e:@R>
+        => context.conditional(context.span(s,e), condition, then_branch, None),
+    <s:@L> "if" "(" <condition:Expr> ")" <then_branch:Statement1> <e:@R>
+        => context.conditional(context.span(s,e), condition, then_branch, None),
+    <s:@L> "if" "(" <condition:Expr> ")" <then_branch:Statement1>
+    "else" <else_branch:IfNoElse> <e:@R>
+        => context.conditional(context.span(s,e), condition, then_branch, Some(else_branch)),
+};
+Statement1: Parsed<Statement> = {
+    <s:@L> "if" "(" <condition:Expr> ")" <then_branch:Statement1>
+    "else" <else_branch:Statement1> <e:@R>
+        => context.conditional(context.span(s,e), condition, then_branch, Some(else_branch)),
+    Statement2,
+};
+Statement2: Parsed<Statement> = {
+    <s:@L> "for" "(" <initializer:ForInitializer> ";" <condition:Expr> ";"
+    <step:Substitution> ")" <body:Statement2> <e:@R>
+        => context.for_statement(context.span(s,e),
+            ForParts { initializer, condition, step, body }),
+    <s:@L> "while" "(" <condition:Expr> ")" <body:Statement2> <e:@R> => {
+        let children = vec![condition.annotation, body.annotation];
+        let span = context.span(s,e);
+        context.plain(Statement::While {
+            condition: condition.value, body: Box::new(body.value), span }, span, children)
+    },
+    <s:@L> "return" <value:Expr> ";" <e:@R> => {
+        let span = context.span(s,e);
+        context.plain(Statement::Return { value: value.value, span }, span, vec![value.annotation])
+    },
+    <substitution:Substitution> ";" => substitution,
+    <s:@L> <left:Expr> "===" <right:Expr> ";" <e:@R> => {
+        let children = vec![left.annotation, right.annotation];
+        let span = context.span(s,e);
+        context.plain(Statement::Constraint {
+            left: left.value, right: right.value, span }, span, children)
+    },
+    <s:@L> "log" "(" <arguments:LogArguments?> ")" ";" <e:@R> => {
+        let (arguments, children) = unpack(arguments.unwrap_or_default());
+        let span = context.span(s,e);
+        context.annotate(Statement::Log { arguments, span }, span, children,
+            SourceForm::Feature(Version::new(2,0,7)))
+    },
+    <s:@L> "assert" "(" <condition:Expr> ")" ";" <e:@R> => {
+        let span = context.span(s,e);
+        context.plain(Statement::Assert { condition: condition.value, span }, span,
+            vec![condition.annotation])
+    },
+    <s:@L> <expression:Expr> ";" <e:@R>
+        => context.expression_statement(context.span(s,e), expression),
+    <block:Block> => block.map(Statement::Block),
+};
+ForInitializer: Parsed<Statement> = {
+    <declaration:Declaration> => declaration.map(Statement::Declaration),
+    Substitution,
+};
+LogArguments: Vec<Parsed<LogArgument>> = {
+    <mut xs:(<LogArgument> ",")*> <x:LogArgument> => { xs.push(x); xs },
+};
+LogArgument: Parsed<LogArgument> = {
+    <s:@L> <value:Str> <e:@R> => {
+        let span = context.span(s,e);
+        context.plain(LogArgument::String { value, span }, span, vec![])
+    },
+    <expression:Expr> => expression.map(LogArgument::Expression),
+};
+Substitution: Parsed<Statement> = {
+    <s:@L> <left:Expr> <operator:AssignOp> <right:Expr> <e:@R>
+        => context.assignment(context.span(s,e), left, operator, right),
+    <s:@L> <left:Expr> <operator:ReverseAssignOp> <right:Expr> <e:@R>
+        => context.assignment(context.span(s,e), left, operator, right),
+    <s:@L> <left:Variable> <operator:CompoundAssignOp> <right:Expr> <e:@R>
+        => context.assignment(context.span(s,e), left, operator, right),
+    <s:@L> <target:Variable> <operator:PostfixOp> <e:@R> => {
+        let span = context.span(s,e);
+        context.plain(Statement::PostfixUpdate { target: target.value, operator, span }, span,
+            vec![target.annotation])
+    },
+};
+Index: Parsed<Expression> = {
+    <s:@L> "[" <expression:Expr> "]" <e:@R>
+        => context.plain(expression.value, context.span(s,e), vec![expression.annotation]),
+};
+Arguments: Parsed<Vec<Expression>> = {
+    <s:@L> "(" <arguments:ExpressionList?> ")" <e:@R>
+        => context.list(context.span(s,e), arguments.unwrap_or_default()),
+};
+AssignOp: AssignmentOperator = {
+    "=" => AssignmentOperator::Assign,
+    "<--" => AssignmentOperator::Witness,
+    "<==" => AssignmentOperator::Constraint,
+};
+InputAssignOp: InputAssignmentOperator = {
+    "=" => InputAssignmentOperator::Assign,
+    "<--" => InputAssignmentOperator::Witness,
+    "<==" => InputAssignmentOperator::Constraint,
+};
+SignalAssignOp: AssignmentOperator = {
+    "<--" => AssignmentOperator::Witness,
+    "<==" => AssignmentOperator::Constraint,
+};
+ReverseAssignOp: AssignmentOperator = {
+    "-->" => AssignmentOperator::ReverseWitness,
+    "==>" => AssignmentOperator::ReverseConstraint,
+};
+CompoundAssignOp: AssignmentOperator = {
+    "+=" => AssignmentOperator::Add,
+    "-=" => AssignmentOperator::Subtract,
+    "*=" => AssignmentOperator::Multiply,
+    "/=" => AssignmentOperator::Divide,
+    "\\=" => AssignmentOperator::IntegerDivide,
+    "%=" => AssignmentOperator::Modulo,
+    "**=" => AssignmentOperator::Power,
+    "<<=" => AssignmentOperator::ShiftLeft,
+    ">>=" => AssignmentOperator::ShiftRight,
+    "&=" => AssignmentOperator::BitAnd,
+    "|=" => AssignmentOperator::BitOr,
+    "^=" => AssignmentOperator::BitXor,
+};
+PostfixOp: PostfixOperator = {
+    "++" => PostfixOperator::Increment,
+    "--" => PostfixOperator::Decrement,
+};
+
+Variable: Parsed<Expression> = {
+    <s:@L> <name:Name> <access:Access*> <e:@R>
+        => context.variable(context.span(s,e), name, access),
+};
+Access: Parsed<Access> = {
+    <s:@L> <expression:Index> <e:@R> => expression.map(|expression| Access::Index {
+        expression: Box::new(expression), span: context.span(s,e) }),
+    <s:@L> "." <field:Name> <e:@R> => {
+        let span = context.span(s,e);
+        context.plain(Access::Field { field: field.value, span }, span, vec![field.annotation])
+    },
+};
+ExpressionList: Vec<Parsed<Expression>> = {
+    <mut xs:(<Expr> ",")*> <x:Expr> => { xs.push(x); xs },
+};
+NamedInputs: Vec<Parsed<AnonymousInput>> = {
+    <mut xs:(<NamedInput> ",")*> <x:NamedInput> => { xs.push(x); xs },
+};
+NamedInput: Parsed<AnonymousInput> = {
+    <s:@L> <name:Name> <operator:InputAssignOp> <value:Expr> <e:@R> => {
+        let children = vec![name.annotation, value.annotation];
+        let span = context.span(s,e);
+        context.annotate(AnonymousInput::Named { name: name.value, operator,
+            value: value.value, span }, span, children, SourceForm::Feature(Version::new(2,1,1)))
+    },
+};
+AnonymousInputs: Vec<Parsed<AnonymousInput>> = {
+    <expressions:ExpressionList> => {
+        let mut inputs = Vec::with_capacity(expressions.len());
+        for expression in expressions { inputs.push(expression.map(AnonymousInput::Positional)); }
+        inputs
+    },
+    NamedInputs,
+};
+
+Expr: Parsed<Expression> = { Expression14, Expression13, Expression12 };
+Expression14: Parsed<Expression> = {
+    <s:@L> "parallel" <operand:ParallelOperand> <e:@R> => {
+        let span = context.span(s,e);
+        context.annotate(Expression::Parallel { operand: Box::new(operand.value), span }, span,
+            vec![operand.annotation], SourceForm::Feature(Version::new(2,0,8)))
+    },
+};
+ParallelOperand: Parsed<Expression> = { Expression13, Expression12 };
+Expression13: Parsed<Expression> = {
+    <s:@L> <condition:Expression12> "?" <yes:Expression12> ":" <no:Expression12> <e:@R> => {
+        let children = vec![condition.annotation, yes.annotation, no.annotation];
+        let span = context.span(s,e);
+        context.annotate(Expression::Ternary { condition: Box::new(condition.value),
+            yes: Box::new(yes.value), no: Box::new(no.value), span },
+            span, children, SourceForm::PotentialBus)
+    },
+};
+Infix<Op, Next>: Parsed<Expression> = {
+    <s:@L> <left:Infix<Op, Next>> <operator:Op> <right:Next> <e:@R> => {
+        let children = vec![left.annotation, right.annotation];
+        let span = context.span(s,e);
+        context.plain(Expression::Binary { operator, left: Box::new(left.value),
+            right: Box::new(right.value), span }, span, children)
+    },
+    Next,
+};
+Prefix<Op, Next>: Parsed<Expression> = {
+    <s:@L> <operator:Op> <operand:Next> <e:@R> => {
+        let span = context.span(s,e);
+        context.plain(Expression::Unary { operator, operand: Box::new(operand.value), span },
+            span, vec![operand.annotation])
+    },
+    Next,
+};
+Expression12 = Infix<BoolOrOp, Expression11>;
+Expression11 = Infix<BoolAndOp, Expression10>;
+Expression10 = Infix<CompareOp, Expression9>;
+Expression9 = Infix<BitOrOp, Expression8>;
+Expression8 = Infix<BitXorOp, Expression7>;
+Expression7 = Infix<BitAndOp, Expression6>;
+Expression6 = Infix<ShiftOp, Expression5>;
+Expression5 = Infix<AddOp, Expression4>;
+Expression4 = Infix<MulOp, Expression3>;
+Expression3 = Infix<PowOp, Expression2>;
+Expression2 = Prefix<UnaryOp, Expression1>;
+Expression1: Parsed<Expression> = {
+    <s:@L> <name:Name> <ps:@L> "(" <parameters:ExpressionList?> ")" <pe:@R>
+    <is:@L> "(" <inputs:AnonymousInputs?> ")" <ie:@R> <e:@R> => {
+        let parameters = context.list(context.span(ps,pe), parameters.unwrap_or_default());
+        let inputs = context.list(context.span(is,ie), inputs.unwrap_or_default());
+        context.anonymous_call(context.span(s,e), AnonymousParts { name, parameters, inputs })
+    },
+    <s:@L> <name:Name> "(" <arguments:ExpressionList?> ")" <e:@R>
+        => context.call(context.span(s,e), name, arguments.unwrap_or_default()),
+    <s:@L> "[" <elements:ExpressionList> "]" <e:@R> => {
+        let (elements, children) = unpack(elements);
+        let span = context.span(s,e);
+        context.annotate(Expression::Array { elements, span }, span, children, SourceForm::Array)
+    },
+    <s:@L> "(" <first:Expr> "," <second:Expr> <rest:("," <Expr>)*> ")" <e:@R> => {
+        let mut elements = vec![first,second];
+        elements.extend(rest);
+        let (elements, children) = unpack(elements);
+        let span = context.span(s,e);
+        context.annotate(Expression::Tuple { elements, span }, span, children, SourceForm::Tuple)
+    },
+    Primary,
+};
+Primary: Parsed<Expression> = {
+    Variable,
+    <s:@L> "_" <e:@R> => {
+        let span = context.span(s,e);
+        let identifier = Identifier { name: "_".into(), span };
+        context.annotate(Expression::Name { identifier, access: vec![], span }, span, vec![],
+            SourceForm::Feature(Version::new(2,1,0)))
+    },
+    <s:@L> <text:Num> <e:@R> => {
+        let span = context.span(s,e);
+        context.plain(Expression::Number { text, span }, span, vec![])
+    },
+    <s:@L> "(" <expression:Expr> ")" <e:@R> => {
+        let span = context.span(s,e);
+        context.annotate(Expression::Group { expression: Box::new(expression.value), span }, span,
+            vec![expression.annotation], SourceForm::PotentialBus)
+    },
+};
+
+UnaryOp: UnaryOperator = {
+    "!" => UnaryOperator::BooleanNot,
+    "~" => UnaryOperator::Complement,
+    "-" => UnaryOperator::Negate,
+};
+BoolOrOp: BinaryOperator = {
+    "||" => BinaryOperator::BooleanOr,
+};
+BoolAndOp: BinaryOperator = {
+    "&&" => BinaryOperator::BooleanAnd,
+};
+CompareOp: BinaryOperator = {
+    "==" => BinaryOperator::Equal,
+    "!=" => BinaryOperator::NotEqual,
+    "<" => BinaryOperator::Less,
+    ">" => BinaryOperator::Greater,
+    "<=" => BinaryOperator::LessEqual,
+    ">=" => BinaryOperator::GreaterEqual,
+};
+BitOrOp: BinaryOperator = {
+    "|" => BinaryOperator::BitOr,
+};
+BitXorOp: BinaryOperator = {
+    "^" => BinaryOperator::BitXor,
+};
+BitAndOp: BinaryOperator = {
+    "&" => BinaryOperator::BitAnd,
+};
+ShiftOp: BinaryOperator = {
+    "<<" => BinaryOperator::ShiftLeft,
+    ">>" => BinaryOperator::ShiftRight,
+};
+AddOp: BinaryOperator = {
+    "+" => BinaryOperator::Add,
+    "-" => BinaryOperator::Subtract,
+};
+MulOp: BinaryOperator = {
+    "*" => BinaryOperator::Multiply,
+    "/" => BinaryOperator::Divide,
+    "\\" => BinaryOperator::IntegerDivide,
+    "%" => BinaryOperator::Modulo,
+};
+PowOp: BinaryOperator = {
+    "**" => BinaryOperator::Power,
+};
+Id: String = { "ident" => <> };
+Num: String = { "number" => <> };
+Str: String = { "string" => <> };
+
+extern {
+    type Location = usize;
+    type Error = ();
+    enum TokenKind {
+        "ident" => TokenKind::Ident(<String>),
+        "number" => TokenKind::Number(<String>),
+        "string" => TokenKind::String(<String>),
+        "pragma" => TokenKind::Pragma,
+        "circom" => TokenKind::Circom,
+        "custom_templates" => TokenKind::CustomTemplates,
+        "include" => TokenKind::Include,
+        "function" => TokenKind::Function,
+        "template" => TokenKind::Template,
+        "bus" => TokenKind::Bus,
+        "custom" => TokenKind::Custom,
+        "extern_c" => TokenKind::ExternC,
+        "parallel" => TokenKind::Parallel,
+        "component" => TokenKind::Component,
+        "main" => TokenKind::Main,
+        "public" => TokenKind::Public,
+        "signal" => TokenKind::Signal,
+        "input" => TokenKind::Input,
+        "output" => TokenKind::Output,
+        "var" => TokenKind::Var,
+        "if" => TokenKind::If,
+        "else" => TokenKind::Else,
+        "for" => TokenKind::For,
+        "while" => TokenKind::While,
+        "return" => TokenKind::Return,
+        "assert" => TokenKind::Assert,
+        "log" => TokenKind::Log,
+        "{" => TokenKind::LBrace,
+        "}" => TokenKind::RBrace,
+        "(" => TokenKind::LParen,
+        ")" => TokenKind::RParen,
+        "[" => TokenKind::LBracket,
+        "]" => TokenKind::RBracket,
+        ";" => TokenKind::Semicolon,
+        "," => TokenKind::Comma,
+        "." => TokenKind::Dot,
+        "?" => TokenKind::Question,
+        ":" => TokenKind::Colon,
+        "=" => TokenKind::Assign,
+        "<--" => TokenKind::LeftSignal,
+        "<==" => TokenKind::LeftConstraint,
+        "-->" => TokenKind::RightSignal,
+        "==>" => TokenKind::RightConstraint,
+        "===" => TokenKind::EqConstraint,
+        "+=" => TokenKind::AddAssign,
+        "-=" => TokenKind::SubAssign,
+        "*=" => TokenKind::MulAssign,
+        "/=" => TokenKind::DivAssign,
+        "\\=" => TokenKind::IntDivAssign,
+        "%=" => TokenKind::ModAssign,
+        "**=" => TokenKind::PowAssign,
+        "<<=" => TokenKind::ShlAssign,
+        ">>=" => TokenKind::ShrAssign,
+        "&=" => TokenKind::AndAssign,
+        "|=" => TokenKind::OrAssign,
+        "^=" => TokenKind::XorAssign,
+        "++" => TokenKind::Increment,
+        "--" => TokenKind::Decrement,
+        "||" => TokenKind::BoolOr,
+        "&&" => TokenKind::BoolAnd,
+        "==" => TokenKind::Eq,
+        "!=" => TokenKind::Ne,
+        "<" => TokenKind::Lt,
+        ">" => TokenKind::Gt,
+        "<=" => TokenKind::Le,
+        ">=" => TokenKind::Ge,
+        "|" => TokenKind::BitOr,
+        "^" => TokenKind::BitXor,
+        "&" => TokenKind::BitAnd,
+        "<<" => TokenKind::Shl,
+        ">>" => TokenKind::Shr,
+        "+" => TokenKind::Plus,
+        "-" => TokenKind::Minus,
+        "*" => TokenKind::Star,
+        "/" => TokenKind::Slash,
+        "\\" => TokenKind::Backslash,
+        "%" => TokenKind::Percent,
+        "**" => TokenKind::Pow,
+        "!" => TokenKind::Not,
+        "~" => TokenKind::Complement,
+        "_" => TokenKind::Underscore,
+    }
+}

@@ -8,68 +8,66 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
-  check:
-    name: Check
+  quality:
+    name: Rust 1.99.0 quality gates
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v2
-
-      - name: Install stable toolchain
-        uses: actions-rs/toolchain@v1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          profile: minimal
-          toolchain: stable
-          override: true
+          persist-credentials: false
+      - name: Install Rust 1.99.0
+        run: rustup toolchain install 1.99.0 --profile minimal --component clippy,rustfmt
+      - name: Install dependency checker
+        run: cargo install cargo-deny --version 0.20.2 --locked
+      - name: Check dependency advisories, licenses, bans, and sources
+        run: cargo deny --workspace --all-features --locked check --deny warnings
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Run Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Run tests
+        run: cargo test --workspace --locked
+      - name: Test reading examples
+        run: cargo test -p circomspect-program-analysis --examples --locked
 
-      - name: Run cargo check
-        uses: actions-rs/cargo@v1
-        with:
-          command: check
-
-  test:
-    name: Test Suite
+  msrv:
+    name: Rust 1.74 compatibility
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v2
-
-      - name: Install stable toolchain
-        uses: actions-rs/toolchain@v1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          profile: minimal
-          toolchain: stable
-          override: true
+          persist-credentials: false
+      - name: Install Rust 1.74
+        run: rustup toolchain install 1.74.0 --profile minimal
+      - name: Build and test at MSRV
+        run: cargo +1.74.0 test --workspace --locked
+      - name: Test reading examples at MSRV
+        run: cargo +1.74.0 test -p circomspect-program-analysis --examples --locked
 
-      - name: Run cargo test
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-
-  lints:
-    name: Lints
+  compiler-conformance:
+    name: Circom 2.2.3 grammar corpus
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v2
-
-      - name: Install stable toolchain
-        uses: actions-rs/toolchain@v1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          profile: minimal
-          toolchain: stable
-          override: true
-          components: rustfmt, clippy
-
-      - name: Run cargo fmt
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
-
-      - name: Run cargo clippy
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: -- -D warnings
+          persist-credentials: false
+      - name: Install Rust 1.99.0
+        run: rustup toolchain install 1.99.0 --profile minimal
+      - name: Build pinned Circom compiler
+        run: bash tests/conformance/prepare_compiler.sh "$RUNNER_TEMP/circom-oracle"
+      - name: Compare grammar corpus
+        run: |
+          CIRCOM_COMPILER="$RUNNER_TEMP/circom-oracle/circom-v2.2.3/target/release/circom" \
+            cargo test -p circomspect --test conformance -- --ignored
+      - name: Check warning fixture validity
+        run: |
+          CIRCOM_COMPILER="$RUNNER_TEMP/circom-oracle/circom-v2.2.3/target/release/circom" \
+            cargo test -p circomspect --test warning_corpus --locked \
+              warning_cases_have_recorded_compiler_classes -- --exact --ignored

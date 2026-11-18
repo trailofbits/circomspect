@@ -1,81 +1,47 @@
 const DOC_URL: &str = "https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md";
+const INCOMPLETE_ANALYSIS: &str = "incomplete-analysis";
 
-#[derive(Copy, Clone)]
+/// Diagnostic codes emitted by the current frontend, semantic checks, and analysis rules.
+#[derive(Copy, Clone, Eq, PartialEq)]
 pub enum ReportCode {
-    AssertWrongType,
     ParseFail,
+    ProjectSetup,
     CompilerVersionError,
     WrongTypesInAssignOperation,
-    WrongNumberOfArguments(usize, usize),
+    WrongArityUnspecified,
     UndefinedFunction,
     UndefinedTemplate,
-    UninitializedSymbolInExpression,
-    UnableToTypeFunction,
-    UnreachableConstraints,
-    UnknownIndex,
-    UnknownDimension,
     SameFunctionDeclaredTwice,
     SameTemplateDeclaredTwice,
     SameSymbolDeclaredTwice,
-    StaticInfoWasOverwritten,
-    SignalInLineInitialization,
-    SignalOutsideOriginalScope,
-    FunctionWrongNumberOfArguments,
-    FunctionInconsistentTyping,
-    FunctionPathWithoutReturn,
-    FunctionReturnError,
     ForbiddenDeclarationInFunction,
-    NonHomogeneousArray,
-    NonBooleanCondition,
-    NonCompatibleBranchTypes,
-    NonEqualTypesInExpression,
     NonExistentSymbol,
-    NoMainFoundInProject,
     NoCompilerVersionWarning,
     MultipleMainInComponent,
-    TemplateCallAsArgument,
-    TemplateWrongNumberOfArguments,
     TemplateWithReturnStatement,
-    TypeCantBeUseAsCondition,
-    EmptyArrayInlineDeclaration,
-    PrefixOperatorWithWrongTypes,
-    InfixOperatorWithWrongTypes,
     InvalidArgumentInCall,
-    InconsistentReturnTypesInBlock,
-    InconsistentStaticInformation,
     InvalidArrayAccess,
     InvalidSignalAccess,
+    InvalidTag,
+    InputTagAccess,
+    InvalidTagAfterArray,
     InvalidArraySize,
-    InvalidArrayType,
-    ForStatementIllConstructed,
-    BadArrayAccess,
-    AssigningAComponentTwice,
-    AssigningASignalTwice,
-    NotAllowedOperation,
+    InvalidArrayIndexBus,
     ConstraintGeneratorInFunction,
-    WrongSignalTags,
-    InvalidPartialArray,
-    MustBeSingleArithmetic,
-    ExpectedDimDiffGotDim(usize, usize),
     RuntimeError,
-    UnknownTemplate,
-    NonQuadratic,
+    AnalysisTimeout,
     NonConstantArrayLength,
     NonComputableExpression,
+    WrongBusAssignment,
+    WrongAssignmentExpression,
+    WrongAssignmentRank,
     AnonymousComponentError,
-    TupleError,
-    // Constraint analysis codes
     UnconstrainedSignal,
-    OneConstraintIntermediate,
-    NoOutputInInstance,
-    ErrorWat2Wasm,
-    // Circomspect specific codes
     ShadowingVariable,
     ParameterNameCollision,
     FieldElementComparison,
     FieldElementArithmetic,
     SignalAssignmentStatement,
-    UnnecessarySignalAssignment,
     UnusedVariableValue,
     UnusedParameterValue,
     VariableWithoutSideEffect,
@@ -86,218 +52,150 @@ pub enum ReportCode {
     UnconstrainedLessThan,
     UnconstrainedDivision,
     Bn254SpecificCircuit,
-    UnderConstrainedSignal,
     UnusedOutputSignal,
+    UnresolvedCall,
+    IncompleteCoverage,
+    RedundantWitnessAssignment,
+    MissingBusType,
+    SignalDependentAssert,
+    UnassignedOutput,
+    ComparatorPrecondition,
+    UnusedPublicInput,
+    AlternateWitnessValue,
+    NonInjectiveBitPacking,
+    FeasibleZeroDivisor,
+    UnprovedBinaryTag,
+}
+
+struct DiagnosticDescriptor {
+    id: &'static str,
+    name: &'static str,
+    anchor: Option<&'static str>,
+}
+
+fn anchored(
+    id: &'static str,
+    name: &'static str,
+) -> (&'static str, &'static str, Option<&'static str>) {
+    (id, name, Some(name))
 }
 
 impl ReportCode {
+    fn descriptor(self) -> DiagnosticDescriptor {
+        let (id, name, anchor) = match self {
+            Self::ParseFail => ("P1000", "parse-fail", None),
+            Self::ProjectSetup => ("P1099", "project-setup", None),
+            Self::CompilerVersionError => ("P1003", "compiler-version-error", None),
+            Self::WrongTypesInAssignOperation => ("T2000", "wrong-types-in-assign-operation", None),
+            Self::WrongArityUnspecified => ("T20465", "wrong-number-of-arguments", None),
+            Self::UndefinedFunction => ("T2001", "undefined-function", None),
+            Self::UndefinedTemplate => ("T2002", "undefined-template", None),
+            Self::SameFunctionDeclaredTwice => ("T2006", "same-function-declared-twice", None),
+            Self::SameTemplateDeclaredTwice => ("T2007", "same-template-declared-twice", None),
+            Self::SameSymbolDeclaredTwice => ("T2008", "same-symbol-declared-twice", None),
+            Self::ForbiddenDeclarationInFunction => {
+                ("T2016", "forbidden-declaration-in-function", None)
+            }
+            Self::NonExistentSymbol => ("T2021", "non-existent-symbol", None),
+            Self::NoCompilerVersionWarning => ("P1004", "no-compiler-version-warning", None),
+            Self::MultipleMainInComponent => ("P1002", "multiple-main-in-component", None),
+            Self::TemplateWithReturnStatement => ("T2024", "template-with-return-statement", None),
+            Self::InvalidArgumentInCall => ("T2029", "invalid-argument-in-call", None),
+            Self::InvalidArrayAccess => ("T2032", "invalid-array-access", None),
+            Self::InvalidSignalAccess => ("T2046", "invalid-signal-access", None),
+            Self::InvalidTag => ("T2048", "invalid-tag", None),
+            Self::InputTagAccess => ("T2048-C", "input-tag-access", None),
+            Self::InvalidTagAfterArray => ("T2049", "invalid-tag-after-array", None),
+            Self::InvalidArraySize => ("T2033", "invalid-array-size", None),
+            Self::InvalidArrayIndexBus => ("T2053", "invalid-array-index-bus", None),
+            Self::ConstraintGeneratorInFunction => {
+                ("T2039", "constraint-generator-in-function", None)
+            }
+            Self::RuntimeError => ("T3001", "runtime-error", None),
+            Self::AnalysisTimeout => ("T3002", "analysis-timeout", None),
+            Self::NonConstantArrayLength => ("T20463", "non-constant-array-length", None),
+            Self::NonComputableExpression => ("T20464", "non-computable-expression", None),
+            Self::WrongBusAssignment => ("T2059", "wrong-bus-assignment", None),
+            Self::WrongAssignmentExpression => ("T2060", "wrong-assignment-expression", None),
+            Self::WrongAssignmentRank => ("T2061", "wrong-assignment-rank", None),
+            Self::AnonymousComponentError => ("TAC01", "anonymous-component-error", None),
+            Self::UnconstrainedSignal => {
+                ("CA01", "unconstrained-signal", Some("unconstrained-signal"))
+            }
+            Self::ShadowingVariable => ("CS0001", "shadowing-variable", Some("shadowing-variable")),
+            Self::ParameterNameCollision => ("CS0002", "parameter-name-collision", None),
+            Self::FieldElementComparison => {
+                ("CS0003", "field-element-comparison", Some("field-element-comparison"))
+            }
+            Self::FieldElementArithmetic => {
+                ("CS0004", "field-element-arithmetic", Some("field-element-arithmetic"))
+            }
+            Self::SignalAssignmentStatement => {
+                ("CS0005", "signal-assignment-statement", Some("signal-assignment"))
+            }
+            Self::UnusedVariableValue => {
+                ("CS0006", "unused-variable-value", Some("unused-variable-or-parameter"))
+            }
+            Self::UnusedParameterValue => {
+                ("CS0007", "unused-parameter-value", Some("unused-variable-or-parameter"))
+            }
+            Self::VariableWithoutSideEffect => {
+                ("CS0008", "variable-without-side-effect", Some("side-effect-free-assignment"))
+            }
+            Self::ConstantBranchCondition => {
+                ("CS0009", "constant-branch-condition", Some("constant-branch-condition"))
+            }
+            Self::NonStrictBinaryConversion => {
+                ("CS0010", "non-strict-binary-conversion", Some("non-strict-binary-conversion"))
+            }
+            Self::CyclomaticComplexity => {
+                ("CS0011", "cyclomatic-complexity", Some("overly-complex-function-or-template"))
+            }
+            Self::TooManyArguments => {
+                ("CS0012", "too-many-arguments", Some("overly-complex-function-or-template"))
+            }
+            Self::UnconstrainedLessThan => {
+                ("CS0014", "unconstrained-less-than", Some("unconstrained-less-than"))
+            }
+            Self::UnconstrainedDivision => {
+                ("CS0015", "unconstrained-division", Some("unconstrained-division"))
+            }
+            Self::Bn254SpecificCircuit => {
+                ("CS0016", "bn254-specific-circuit", Some("bn254-specific-circuit"))
+            }
+            Self::UnusedOutputSignal => {
+                ("CS0018", "unused-output-signal", Some("unused-output-signal"))
+            }
+            Self::UnresolvedCall => ("CS0019", "unresolved-call", None),
+            Self::IncompleteCoverage => ("CS0020", INCOMPLETE_ANALYSIS, Some(INCOMPLETE_ANALYSIS)),
+            Self::RedundantWitnessAssignment => {
+                ("CS0021", "redundant-witness-assignment", Some("redundant-witness-assignment"))
+            }
+            Self::MissingBusType => ("CS0022", "missing-bus-type", None),
+            Self::SignalDependentAssert => anchored("CS0023", "signal-dependent-assert"),
+            Self::UnassignedOutput => ("CS0024", "unassigned-output", Some("unassigned-output")),
+            Self::ComparatorPrecondition => anchored("CS0025", "comparator-precondition"),
+            Self::UnusedPublicInput => anchored("CS0026", "unused-public-input"),
+            Self::AlternateWitnessValue => anchored("CS0027", "alternate-witness-value"),
+            Self::NonInjectiveBitPacking => anchored("CS0028", "non-injective-bit-packing"),
+            Self::FeasibleZeroDivisor => anchored("CS0029", "feasible-zero-divisor"),
+            Self::UnprovedBinaryTag => anchored("CS0030", "unproved-binary-tag"),
+        };
+        DiagnosticDescriptor { id, name, anchor }
+    }
+
+    #[must_use]
     pub fn id(&self) -> String {
-        use self::ReportCode::*;
-        match self {
-            ParseFail => "P1000",
-            NoMainFoundInProject => "P1001",
-            MultipleMainInComponent => "P1002",
-            CompilerVersionError => "P1003",
-            NoCompilerVersionWarning => "P1004",
-            WrongTypesInAssignOperation => "T2000",
-            UndefinedFunction => "T2001",
-            UndefinedTemplate => "T2002",
-            UninitializedSymbolInExpression => "T2003",
-            UnableToTypeFunction => "T2004",
-            UnreachableConstraints => "T2005",
-            SameFunctionDeclaredTwice => "T2006",
-            SameTemplateDeclaredTwice => "T2007",
-            SameSymbolDeclaredTwice => "T2008",
-            StaticInfoWasOverwritten => "T2009",
-            SignalInLineInitialization => "T2010",
-            SignalOutsideOriginalScope => "T2011",
-            FunctionWrongNumberOfArguments => "T2012",
-            FunctionInconsistentTyping => "T2013",
-            FunctionPathWithoutReturn => "T2014",
-            FunctionReturnError => "T2015",
-            ForbiddenDeclarationInFunction => "T2016",
-            NonHomogeneousArray => "T2017",
-            NonBooleanCondition => "T2018",
-            NonCompatibleBranchTypes => "T2019",
-            NonEqualTypesInExpression => "T2020",
-            NonExistentSymbol => "T2021",
-            TemplateCallAsArgument => "T2022",
-            TemplateWrongNumberOfArguments => "T2023",
-            TemplateWithReturnStatement => "T2024",
-            TypeCantBeUseAsCondition => "T2025",
-            EmptyArrayInlineDeclaration => "T2026",
-            PrefixOperatorWithWrongTypes => "T2027",
-            InfixOperatorWithWrongTypes => "T2028",
-            InvalidArgumentInCall => "T2029",
-            InconsistentReturnTypesInBlock => "T2030",
-            InconsistentStaticInformation => "T2031",
-            InvalidArrayAccess => "T2032",
-            InvalidSignalAccess => "T2046",
-            InvalidArraySize => "T2033",
-            InvalidArrayType => "T2034",
-            ForStatementIllConstructed => "T2035",
-            BadArrayAccess => "T2035",
-            AssigningAComponentTwice => "T2036",
-            AssigningASignalTwice => "T2037",
-            NotAllowedOperation => "T2038",
-            ConstraintGeneratorInFunction => "T2039",
-            WrongSignalTags => "T2040",
-            AssertWrongType => "T2041",
-            UnknownIndex => "T2042",
-            InvalidPartialArray => "T2043",
-            MustBeSingleArithmetic => "T2044",
-            ExpectedDimDiffGotDim(..) => "T2045",
-            RuntimeError => "T3001",
-            UnknownDimension => "T20460",
-            UnknownTemplate => "T20461",
-            NonQuadratic => "T20462",
-            NonConstantArrayLength => "T20463",
-            NonComputableExpression => "T20464",
-            WrongNumberOfArguments(..) => "T20465",
-            AnonymousComponentError => "TAC01",
-            TupleError => "TAC02",
-            // Constraint analysis codes
-            UnconstrainedSignal => "CA01",
-            OneConstraintIntermediate => "CA02",
-            NoOutputInInstance => "CA03",
-            ErrorWat2Wasm => "W01",
-            // Circomspect specific codes
-            ShadowingVariable => "CS0001",
-            ParameterNameCollision => "CS0002",
-            FieldElementComparison => "CS0003",
-            FieldElementArithmetic => "CS0004",
-            SignalAssignmentStatement => "CS0005",
-            UnusedVariableValue => "CS0006",
-            UnusedParameterValue => "CS0007",
-            VariableWithoutSideEffect => "CS0008",
-            ConstantBranchCondition => "CS0009",
-            NonStrictBinaryConversion => "CS0010",
-            CyclomaticComplexity => "CS0011",
-            TooManyArguments => "CS0012",
-            UnnecessarySignalAssignment => "CS0013",
-            UnconstrainedLessThan => "CS0014",
-            UnconstrainedDivision => "CS0015",
-            Bn254SpecificCircuit => "CS0016",
-            UnderConstrainedSignal => "CS0017",
-            UnusedOutputSignal => "CS0018",
-        }
-        .to_string()
+        self.descriptor().id.to_owned()
     }
 
+    #[must_use]
     pub fn name(&self) -> String {
-        use self::ReportCode::*;
-        match self {
-            AssertWrongType => "assert-wrong-type",
-            ParseFail => "parse-fail",
-            CompilerVersionError => "compiler-version-error",
-            WrongTypesInAssignOperation => "wrong-types-in-assign-operation",
-            WrongNumberOfArguments(..) => "wrong-number-of-arguments",
-            AnonymousComponentError => "anonymous-component-error",
-            TupleError => "tuple-error",
-            UndefinedFunction => "undefined-function",
-            UndefinedTemplate => "undefined-template",
-            UninitializedSymbolInExpression => "uninitialized-symbol-in-expression",
-            UnableToTypeFunction => "unable-to-type-function",
-            UnreachableConstraints => "unreachable-constraints",
-            UnknownIndex => "unknown-index",
-            UnknownDimension => "unknown-dimension",
-            SameFunctionDeclaredTwice => "same-function-declared-twice",
-            SameTemplateDeclaredTwice => "same-template-declared-twice",
-            SameSymbolDeclaredTwice => "same-symbol-declared-twice",
-            StaticInfoWasOverwritten => "static-info-was-overwritten",
-            SignalInLineInitialization => "signal-in-line-initialization",
-            SignalOutsideOriginalScope => "signal-outside-original-scope",
-            FunctionWrongNumberOfArguments => "function-wrong-number-of-arguments",
-            FunctionInconsistentTyping => "function-inconsistent-typing",
-            FunctionPathWithoutReturn => "function-path-without-return",
-            FunctionReturnError => "function-return-error",
-            ForbiddenDeclarationInFunction => "forbidden-declaration-in-function",
-            NonHomogeneousArray => "non-homogeneous-array",
-            NonBooleanCondition => "non-boolean-condition",
-            NonCompatibleBranchTypes => "non-compatible-branch-types",
-            NonEqualTypesInExpression => "non-equal-types-in-expression",
-            NonExistentSymbol => "non-existent-symbol",
-            NoMainFoundInProject => "no-main-found-in-project",
-            NoCompilerVersionWarning => "no-compiler-version-warning",
-            MultipleMainInComponent => "multiple-main-in-component",
-            TemplateCallAsArgument => "template-call-as-argument",
-            TemplateWrongNumberOfArguments => "template-wrong-number-of-arguments",
-            TemplateWithReturnStatement => "template-with-return-statement",
-            TypeCantBeUseAsCondition => "type-cant-be-use-as-condition",
-            EmptyArrayInlineDeclaration => "empty-array-inline-declaration",
-            PrefixOperatorWithWrongTypes => "prefix-operator-with-wrong-types",
-            InfixOperatorWithWrongTypes => "infix-operator-with-wrong-types",
-            InvalidArgumentInCall => "invalid-argument-in-call",
-            InconsistentReturnTypesInBlock => "inconsistent-return-types-in-block",
-            InconsistentStaticInformation => "inconsistent-static-information",
-            InvalidArrayAccess => "invalid-array-access",
-            InvalidSignalAccess => "invalid-signal-access",
-            InvalidArraySize => "invalid-array-size",
-            InvalidArrayType => "invalid-array-type",
-            ForStatementIllConstructed => "for-statement-ill-constructed",
-            BadArrayAccess => "bad-array-access",
-            AssigningAComponentTwice => "assigning-a-component-twice",
-            AssigningASignalTwice => "assigning-a-signal-twice",
-            NotAllowedOperation => "not-allowed-operation",
-            ConstraintGeneratorInFunction => "constraint-generator-in-function",
-            WrongSignalTags => "wrong-signal-tags",
-            InvalidPartialArray => "invalid-partial-array",
-            MustBeSingleArithmetic => "must-be-single-arithmetic",
-            ExpectedDimDiffGotDim(..) => "expected-dim-diff-got-dim",
-            RuntimeError => "runtime-error",
-            UnknownTemplate => "unknown-template",
-            NonQuadratic => "non-quadratic",
-            NonConstantArrayLength => "non-constant-array-length",
-            NonComputableExpression => "non-computable-expression",
-            UnconstrainedSignal => "unconstrained-signal",
-            OneConstraintIntermediate => "one-constraint-intermediate",
-            NoOutputInInstance => "no-output-in-instance",
-            ErrorWat2Wasm => "error-wat2-wasm",
-            ShadowingVariable => "shadowing-variable",
-            ParameterNameCollision => "parameter-name-collision",
-            FieldElementComparison => "field-element-comparison",
-            FieldElementArithmetic => "field-element-arithmetic",
-            SignalAssignmentStatement => "signal-assignment-statement",
-            UnnecessarySignalAssignment => "unnecessary-signal-assignment",
-            UnusedVariableValue => "unused-variable-value",
-            UnusedParameterValue => "unused-parameter-value",
-            VariableWithoutSideEffect => "variable-without-side-effect",
-            ConstantBranchCondition => "constant-branch-condition",
-            NonStrictBinaryConversion => "non-strict-binary-conversion",
-            CyclomaticComplexity => "cyclomatic-complexity",
-            TooManyArguments => "too-many-arguments",
-            UnconstrainedLessThan => "unconstrained-less-than",
-            UnconstrainedDivision => "unconstrained-division",
-            Bn254SpecificCircuit => "bn254-specific-circuit",
-            UnderConstrainedSignal => "under-constrained-signal",
-            UnusedOutputSignal => "unused-output-signal",
-        }
-        .to_string()
+        self.descriptor().name.to_owned()
     }
 
+    #[must_use]
     pub fn url(&self) -> Option<String> {
-        use ReportCode::*;
-        match self {
-            ShadowingVariable => Some("shadowing-variable"),
-            FieldElementComparison => Some("field-element-comparison"),
-            FieldElementArithmetic => Some("field-element-arithmetic"),
-            SignalAssignmentStatement => Some("signal-assignment"),
-            UnusedVariableValue => Some("unused-variable-or-parameter"),
-            UnusedParameterValue => Some("unused-variable-or-parameter"),
-            VariableWithoutSideEffect => Some("side-effect-free-assignment"),
-            ConstantBranchCondition => Some("constant-branch-condition"),
-            NonStrictBinaryConversion => Some("non-strict-binary-conversion"),
-            CyclomaticComplexity => Some("overly-complex-function-or-template"),
-            TooManyArguments => Some("overly-complex-function-or-template"),
-            UnnecessarySignalAssignment => Some("unnecessary-signal-assignment"),
-            UnconstrainedLessThan => Some("unconstrained-less-than"),
-            UnconstrainedDivision => Some("unconstrained-division"),
-            Bn254SpecificCircuit => Some("bn254-specific-circuit"),
-            UnderConstrainedSignal => Some("under-constrained-signal"),
-            UnusedOutputSignal => Some("unused-output-signal"),
-            // We only provide a URL for Circomspect specific issues.
-            _ => None,
-        }
-        .map(|section| format!("{DOC_URL}#{section}"))
+        self.descriptor().anchor.map(|section| format!("{DOC_URL}#{section}"))
     }
 }

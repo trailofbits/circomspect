@@ -1,11 +1,12 @@
 use codespan_reporting::files::Files;
 use log::{debug, trace};
 use serde_sarif::sarif;
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 use std::fmt;
 use std::ops::Range;
 use std::path::PathBuf;
 use thiserror::Error;
+use url::Url;
 
 use crate::report::{Report, ReportCollection, ReportLabel};
 use crate::file_definition::{FileID, FileLibrary};
@@ -22,6 +23,10 @@ pub trait ToSarif {
     type Error;
 
     /// Converts the object to the corresponding Sarif artifact.
+    ///
+    /// # Errors
+    /// Returns an error for an unknown file, invalid source span, non-absolute
+    /// source path, or invalid SARIF object.
     fn to_sarif(&self, files: &FileLibrary) -> Result<Self::Sarif, Self::Error>;
 }
 
@@ -31,20 +36,17 @@ impl ToSarif for ReportCollection {
 
     fn to_sarif(&self, files: &FileLibrary) -> Result<Self::Sarif, Self::Error> {
         debug!("converting report collection to Sarif-format");
-        // Build reporting descriptors.
         trace!("building reporting descriptors");
         let rules = self
             .iter()
             .map(|report| (report.name(), report.id()))
-            .collect::<HashSet<_>>()
+            .collect::<BTreeSet<_>>()
             .iter()
             .map(|(name, id)| {
                 sarif::ReportingDescriptorBuilder::default().name(name).id(id).build()
             })
             .collect::<Result<Vec<_>, _>>()
             .map_err(SarifError::from)?;
-        // Build tool.
-        //
         // TODO: Should include primary package version.
         trace!("building tool");
         let driver = sarif::ToolComponentBuilder::default()
@@ -54,12 +56,14 @@ impl ToSarif for ReportCollection {
             .rules(rules)
             .build()?;
         let tool = sarif::ToolBuilder::default().driver(driver).build()?;
-        // Build run.
         trace!("building run");
         let results =
             self.iter().map(|report| report.to_sarif(files)).collect::<SarifResult<Vec<_>>>()?;
-        let run = sarif::RunBuilder::default().tool(tool).results(results).build()?;
-        // Build main object.
+        let run = sarif::RunBuilder::default()
+            .tool(tool)
+            .results(results)
+            .column_kind(serde_json::Value::String("unicodeCodePoints".into()))
+            .build()?;
         trace!("building main Sarif object");
         let sarif = sarif::SarifBuilder::default().runs(vec![run]).version(SARIF_VERSION).build();
         sarif.map_err(SarifError::from)
@@ -73,27 +77,31 @@ impl ToSarif for Report {
     fn to_sarif(&self, files: &FileLibrary) -> SarifResult<sarif::Result> {
         let level = self.category().to_level();
         let rule_id = self.id();
-        // Build message.
         trace!("building message");
-        let message = sarif::MessageBuilder::default().text(self.message()).build()?;
-        // Build primary and secondary locations.
+        let mut text = self.message().clone();
+        for note in self.notes() {
+            text.push('\n');
+            text.push_str(note);
+        }
+        let message = sarif::MessageBuilder::default().text(text).build()?;
         trace!("building locations");
-        let locations = self
+        let mut locations = self
             .primary()
             .iter()
             .map(|label| label.to_sarif(files))
             .collect::<SarifResult<Vec<_>>>()?;
-        let related_locations = self
+        let mut related_locations = self
             .secondary()
             .iter()
             .map(|label| label.to_sarif(files))
             .collect::<SarifResult<Vec<_>>>()?;
-        // Build reporting descriptor reference.
+        for (id, location) in (0_i64..).zip(locations.iter_mut().chain(&mut related_locations)) {
+            location.id = Some(id);
+        }
         let rule = sarif::ReportingDescriptorReferenceBuilder::default()
             .id(&rule_id)
             .build()
             .map_err(SarifError::from)?;
-        // Build result.
         trace!("building result");
         sarif::ResultBuilder::default()
             .level(level)
@@ -112,13 +120,13 @@ impl ToSarif for ReportLabel {
     type Error = SarifError;
 
     fn to_sarif(&self, files: &FileLibrary) -> SarifResult<sarif::Location> {
-        // Build artifact location.
         trace!("building artifact location");
         let file_uri = self.file_id.to_uri(files)?;
         let artifact_location = sarif::ArtifactLocationBuilder::default().uri(file_uri).build()?;
-        // Build region.
         trace!("building region");
-        assert!(self.range.start <= self.range.end);
+        if self.range.start > self.range.end {
+            return Err(SarifError::UnknownLocation(self.file_id, self.range.clone()));
+        }
         let start = files
             .to_storage()
             .location(self.file_id, self.range.start)
@@ -128,25 +136,33 @@ impl ToSarif for ReportLabel {
             .location(self.file_id, self.range.end)
             .map_err(|_| SarifError::UnknownLocation(self.file_id, self.range.clone()))?;
         let region = sarif::RegionBuilder::default()
-            .start_line(start.line_number as i64)
-            .start_column(start.column_number as i64)
-            .end_line(end.line_number as i64)
-            .end_column(end.column_number as i64)
+            .start_line(
+                i64::try_from(start.line_number)
+                    .map_err(|_| SarifError::UnknownLocation(self.file_id, self.range.clone()))?,
+            )
+            .start_column(
+                i64::try_from(start.column_number)
+                    .map_err(|_| SarifError::UnknownLocation(self.file_id, self.range.clone()))?,
+            )
+            .end_line(
+                i64::try_from(end.line_number)
+                    .map_err(|_| SarifError::UnknownLocation(self.file_id, self.range.clone()))?,
+            )
+            .end_column(
+                i64::try_from(end.column_number)
+                    .map_err(|_| SarifError::UnknownLocation(self.file_id, self.range.clone()))?,
+            )
             .build()?;
-        // Build physical location.
         trace!("building physical location");
         let physical_location = sarif::PhysicalLocationBuilder::default()
             .artifact_location(artifact_location)
             .region(region)
             .build()?;
-        // Build message.
         trace!("building message");
         let message = sarif::MessageBuilder::default().text(self.message.clone()).build()?;
-        // Build location.
         trace!("building location");
         sarif::LocationBuilder::default()
             .physical_location(physical_location)
-            .id(0)
             .message(message)
             .build()
             .map_err(SarifError::from)
@@ -167,10 +183,8 @@ impl ToUri for FileID {
             .get(*self)
             .map_err(|_| SarifError::UnknownFile(*self))?
             .name()
-            .replace('"', "")
             .into();
-        // This path already comes from an UTF-8 string so it is ok to unwrap here.
-        Ok(format!("file://{}", path.to_str().unwrap()))
+        Url::from_file_path(&path).map(String::from).map_err(|()| SarifError::InvalidFilePath(path))
     }
 }
 
@@ -188,15 +202,25 @@ pub enum SarifError {
     InvalidRun(#[from] sarif::RunBuilderError),
     InvalidSarif(#[from] sarif::SarifBuilderError),
     InvalidTool(#[from] sarif::ToolBuilderError),
-    InvalidFix(#[from] sarif::FixBuilderError),
     UnknownLocation(FileID, Range<usize>),
     UnknownFile(FileID),
+    InvalidFilePath(PathBuf),
 }
 
 type SarifResult<T> = Result<T, SarifError>;
 
 impl fmt::Display for SarifError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if let Self::InvalidFilePath(path) = self {
+            return write!(
+                f,
+                "cannot encode source path {} as an absolute file URI",
+                path.display()
+            );
+        }
+        if let Self::UnknownLocation(file, range) = self {
+            return write!(f, "invalid source range {range:?} in file {file}");
+        }
         write!(f, "failed to convert analysis results to Sarif format")
     }
 }

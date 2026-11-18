@@ -1,0 +1,22 @@
+circomspect: loading input files
+circomspect: resolving source definitions
+error: invalid statement; parsing continued at the next statement or block boundary
+   ┌─ <fixture>:10:5
+   │
+10 │     var value = ;
+   │     ^^^^^^^^^^^^^ This syntax is invalid.
+
+error: invalid statement; parsing continued at the next statement or block boundary
+   ┌─ <fixture>:20:5
+   │
+20 │     var value = ;
+   │     ^^^^^^^^^^^^^ This syntax is invalid.
+
+circomspect: preparing analysis
+circomspect: analyzing template 'BeforeError'
+circomspect: analyzing template 'BrokenFirst'
+circomspect: analyzing template 'BetweenErrors'
+circomspect: analyzing template 'BrokenSecond'
+circomspect: analyzing template 'AfterError'
+circomspect: Result written to `<sarif>`.
+circomspect: 2 source errors reported.

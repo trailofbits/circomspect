@@ -1,0 +1,83 @@
+{
+  "runs": [
+    {
+      "columnKind": "unicodeCodePoints",
+      "results": [
+        {
+          "level": "error",
+          "locations": [
+            {
+              "id": 0,
+              "message": {
+                "text": "This syntax is invalid."
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixtures/recoverable_library.circom"
+                },
+                "region": {
+                  "endColumn": 18,
+                  "endLine": 10,
+                  "startColumn": 5,
+                  "startLine": 10
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "invalid statement; parsing continued at the next statement or block boundary"
+          },
+          "relatedLocations": [],
+          "rule": {
+            "id": "P1000"
+          },
+          "ruleId": "P1000"
+        },
+        {
+          "level": "error",
+          "locations": [
+            {
+              "id": 0,
+              "message": {
+                "text": "This syntax is invalid."
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixtures/recoverable_library.circom"
+                },
+                "region": {
+                  "endColumn": 18,
+                  "endLine": 20,
+                  "startColumn": 5,
+                  "startLine": 20
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "invalid statement; parsing continued at the next statement or block boundary"
+          },
+          "relatedLocations": [],
+          "rule": {
+            "id": "P1000"
+          },
+          "ruleId": "P1000"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "downloadUri": "https://github.com/trailofbits/circomspect",
+          "name": "Circomspect",
+          "organization": "Trail of Bits",
+          "rules": [
+            {
+              "id": "P1000",
+              "name": "parse-fail"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

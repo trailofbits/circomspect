@@ -1,0 +1,955 @@
+{
+  "schema": 1,
+  "cases": [
+    {
+      "id": "bitwise_complement_emit",
+      "rule": "bitwise_complement",
+      "rule_id": "CS0004",
+      "source": "cases/bitwise_complement_emit.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "emit",
+      "truth": "confirmed_property",
+      "compiler_class": "success",
+      "reason": "~ is reachable; logical negation is a distinct operator",
+      "legacy_rule_id": "CS0004",
+      "legacy_observed_count": 0,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
+    },
+    {
+      "id": "bitwise_complement_no_finding",
+      "rule": "bitwise_complement",
+      "rule_id": "CS0004",
+      "source": "cases/bitwise_complement_no_finding.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "no_finding",
+      "truth": "property_absent",
+      "compiler_class": "success",
+      "reason": "~ is reachable; logical negation is a distinct operator",
+      "legacy_rule_id": "CS0004",
+      "legacy_observed_count": 0,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
+    },
+    {
+      "id": "bitwise_complement_abstain",
+      "rule": "bitwise_complement",
+      "rule_id": "CS0004",
+      "source": "cases/bitwise_complement_abstain.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "abstain",
+      "truth": "undetermined",
+      "compiler_class": "semantic_error",
+      "reason": "~ is reachable; logical negation is a distinct operator",
+      "legacy_rule_id": "CS0004",
+      "legacy_observed_count": 0,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
+    },
+    {
+      "id": "bn254_specific_emit",
+      "rule": "bn254_specific",
+      "rule_id": "CS0016",
+      "source": "cases/bn254_specific_emit.circom",
+      "scope": "Main",
+      "curve": "bls12381",
+      "expected": "no_finding",
+      "truth": "property_absent",
+      "compiler_class": "success",
+      "reason": "Adjudicated 2026-10-05: this literal is not the BN254 field prime; preserve the original source as a negative case.",
+      "legacy_rule_id": "CS0016",
+      "legacy_observed_count": 0,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": [],
+      "adjudication": {
+        "date": "2026-10-05",
+        "previous_expected": "emit",
+        "previous_truth": "confirmed_property",
+        "replacement_positive": "bn254_specific_boundary_emit"
+      }
+    },
+    {
+      "id": "bn254_specific_no_finding",
+      "rule": "bn254_specific",
+      "rule_id": "CS0016",
+      "source": "cases/bn254_specific_no_finding.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "no_finding",
+      "truth": "property_absent",
+      "compiler_class": "success",
+      "reason": "the same literal is curve-specific only on another field",
+      "legacy_rule_id": "CS0016",
+      "legacy_observed_count": 0,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
+    },
+    {
+      "id": "bn254_specific_abstain",
+      "rule": "bn254_specific",
+      "rule_id": "CS0016",
+      "source": "cases/bn254_specific_abstain.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "abstain",
+      "truth": "undetermined",
+      "compiler_class": "semantic_error",
+      "reason": "the same literal is curve-specific only on another field",
+      "legacy_rule_id": "CS0016",
+      "legacy_observed_count": 0,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
+    },
+    {
+      "id": "constant_conditional_emit",
+      "rule": "constant_conditional",
+      "rule_id": "CS0009",
+      "source": "cases/constant_conditional_emit.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "emit",
+      "truth": "confirmed_property",
+      "compiler_class": "success",
+      "reason": "definite condition versus input-dependent or unresolved condition",
+      "legacy_rule_id": "CS0009",
+      "legacy_observed_count": 0,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
+    },
+    {
+      "id": "constant_conditional_no_finding",
+      "rule": "constant_conditional",
+      "rule_id": "CS0009",
+      "source": "cases/constant_conditional_no_finding.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "no_finding",
+      "truth": "property_absent",
+      "compiler_class": "success",
+      "reason": "definite condition versus input-dependent or unresolved condition",
+      "legacy_rule_id": "CS0009",
+      "legacy_observed_count": 0,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
+    },
+    {
+      "id": "constant_conditional_abstain",
+      "rule": "constant_conditional",
+      "rule_id": "CS0009",
+      "source": "cases/constant_conditional_abstain.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "abstain",
+      "truth": "undetermined",
+      "compiler_class": "semantic_error",
+      "reason": "definite condition versus input-dependent or unresolved condition",
+      "legacy_rule_id": "CS0009",
+      "legacy_observed_count": 0,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
+    },
+    {
+      "id": "field_arithmetic_emit",
+      "rule": "field_arithmetic",
+      "rule_id": "CS0004",
+      "source": "cases/field_arithmetic_emit.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "no_finding",
+      "truth": "property_absent",
+      "compiler_class": "success",
+      "reason": "Adjudicated 2026-10-05: the literal reduces to 147946756881789318990833708069417712965, so adding 2 does not wrap.",
+      "legacy_rule_id": "CS0004",
+      "legacy_observed_count": 0,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": [],
+      "adjudication": {
+        "date": "2026-10-05",
+        "previous_expected": "emit",
+        "previous_truth": "confirmed_property",
+        "replacement_positive": "field_arithmetic_boundary_emit"
+      }
+    },
+    {
+      "id": "field_arithmetic_no_finding",
+      "rule": "field_arithmetic",
+      "rule_id": "CS0004",
+      "source": "cases/field_arithmetic_no_finding.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "no_finding",
+      "truth": "property_absent",
+      "compiler_class": "success",
+      "reason": "proven modular wrap versus in-range or unknown arithmetic",
+      "legacy_rule_id": "CS0004",
+      "legacy_observed_count": 0,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
+    },
+    {
+      "id": "field_arithmetic_abstain",
+      "rule": "field_arithmetic",
+      "rule_id": "CS0004",
+      "source": "cases/field_arithmetic_abstain.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "abstain",
+      "truth": "undetermined",
+      "compiler_class": "success",
+      "reason": "proven modular wrap versus in-range or unknown arithmetic",
+      "legacy_rule_id": "CS0004",
+      "legacy_observed_count": 0,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
+    },
+    {
+      "id": "field_comparison_emit",
+      "rule": "field_comparison",
+      "rule_id": "CS0003",
+      "source": "cases/field_comparison_emit.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "no_finding",
+      "truth": "property_absent",
+      "compiler_class": "success",
+      "reason": "Adjudicated 2026-10-05: the literal reduces below half the BN254 field, so signed and unsigned comparison with 1 agree.",
+      "legacy_rule_id": "CS0003",
+      "legacy_observed_count": 0,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": [],
+      "adjudication": {
+        "date": "2026-10-05",
+        "previous_expected": "emit",
+        "previous_truth": "confirmed_property",
+        "replacement_positive": "field_comparison_boundary_emit"
+      }
+    },
+    {
+      "id": "field_comparison_no_finding",
+      "rule": "field_comparison",
+      "rule_id": "CS0003",
+      "source": "cases/field_comparison_no_finding.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "no_finding",
+      "truth": "property_absent",
+      "compiler_class": "success",
+      "reason": "signed and unsigned order diverge only in the first case",
+      "legacy_rule_id": "CS0003",
+      "legacy_observed_count": 0,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
+    },
+    {
+      "id": "field_comparison_abstain",
+      "rule": "field_comparison",
+      "rule_id": "CS0003",
+      "source": "cases/field_comparison_abstain.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "abstain",
+      "truth": "undetermined",
+      "compiler_class": "success",
+      "reason": "signed and unsigned order diverge only in the first case",
+      "legacy_rule_id": "CS0003",
+      "legacy_observed_count": 0,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
+    },
+    {
+      "id": "nonstrict_conversion_emit",
+      "rule": "nonstrict_conversion",
+      "rule_id": "CS0010",
+      "source": "cases/nonstrict_conversion_emit.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "emit",
+      "truth": "confirmed_property",
+      "compiler_class": "success",
+      "reason": "254-bit representation admits 0 and p; 253-bit does not",
+      "legacy_rule_id": "CS0010",
+      "legacy_observed_count": 1,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": [
+        {
+          "message": "Using `Num2Bits` to convert field elements to bits may lead to aliasing issues.",
+          "span": {
+            "startLine": 18,
+            "startColumn": 22,
+            "endLine": 18,
+            "endColumn": 35
+          }
+        }
+      ]
+    },
+    {
+      "id": "nonstrict_conversion_no_finding",
+      "rule": "nonstrict_conversion",
+      "rule_id": "CS0010",
+      "source": "cases/nonstrict_conversion_no_finding.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "no_finding",
+      "truth": "property_absent",
+      "compiler_class": "success",
+      "reason": "254-bit representation admits 0 and p; 253-bit does not",
+      "legacy_rule_id": "CS0010",
+      "legacy_observed_count": 0,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
+    },
+    {
+      "id": "nonstrict_conversion_abstain",
+      "rule": "nonstrict_conversion",
+      "rule_id": "CS0010",
+      "source": "cases/nonstrict_conversion_abstain.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "abstain",
+      "truth": "undetermined",
+      "compiler_class": "semantic_error",
+      "reason": "254-bit representation admits 0 and p; 253-bit does not",
+      "legacy_rule_id": "CS0010",
+      "legacy_observed_count": 1,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": [
+        {
+          "message": "Using `Num2Bits` to convert field elements to bits may lead to aliasing issues.",
+          "span": {
+            "startLine": 5,
+            "startColumn": 22,
+            "endLine": 5,
+            "endColumn": 35
+          }
+        }
+      ]
+    },
+    {
+      "id": "unconstrained_division_emit",
+      "rule": "unconstrained_division",
+      "rule_id": "CS0015",
+      "source": "cases/unconstrained_division_emit.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "emit",
+      "truth": "confirmed_property",
+      "compiler_class": "success",
+      "reason": "zero-incidence denominator versus explicit inverse constraint",
+      "legacy_rule_id": "CS0015",
+      "legacy_observed_count": 1,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": [
+        {
+          "message": "In signal assignments containing division, the divisor needs to be constrained to be non-zero",
+          "span": {
+            "startLine": 5,
+            "startColumn": 17,
+            "endLine": 5,
+            "endColumn": 19
+          }
+        }
+      ]
+    },
+    {
+      "id": "unconstrained_division_no_finding",
+      "rule": "unconstrained_division",
+      "rule_id": "CS0015",
+      "source": "cases/unconstrained_division_no_finding.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "no_finding",
+      "truth": "property_absent",
+      "compiler_class": "success",
+      "reason": "zero-incidence denominator versus explicit inverse constraint",
+      "legacy_rule_id": "CS0015",
+      "legacy_observed_count": 2,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": [
+        {
+          "message": "In signal assignments containing division, the divisor needs to be constrained to be non-zero",
+          "span": {
+            "startLine": 6,
+            "startColumn": 17,
+            "endLine": 6,
+            "endColumn": 19
+          }
+        },
+        {
+          "message": "In signal assignments containing division, the divisor needs to be constrained to be non-zero",
+          "span": {
+            "startLine": 8,
+            "startColumn": 17,
+            "endLine": 8,
+            "endColumn": 19
+          }
+        }
+      ]
+    },
+    {
+      "id": "unconstrained_division_abstain",
+      "rule": "unconstrained_division",
+      "rule_id": "CS0015",
+      "source": "cases/unconstrained_division_abstain.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "abstain",
+      "truth": "undetermined",
+      "compiler_class": "semantic_error",
+      "reason": "zero-incidence denominator versus explicit inverse constraint",
+      "legacy_rule_id": "CS0015",
+      "legacy_observed_count": 1,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": [
+        {
+          "message": "In signal assignments containing division, the divisor needs to be constrained to be non-zero",
+          "span": {
+            "startLine": 5,
+            "startColumn": 17,
+            "endLine": 5,
+            "endColumn": 28
+          }
+        }
+      ]
+    },
+    {
+      "id": "signal_assignment_emit",
+      "rule": "signal_assignment",
+      "rule_id": "CS0005",
+      "source": "cases/signal_assignment_emit.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "emit",
+      "truth": "confirmed_property",
+      "compiler_class": "success",
+      "reason": "witness-only assignment versus generated equality constraint",
+      "legacy_rule_id": "CS0005",
+      "legacy_observed_count": 0,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
+    },
+    {
+      "id": "signal_assignment_no_finding",
+      "rule": "signal_assignment",
+      "rule_id": "CS0005",
+      "source": "cases/signal_assignment_no_finding.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "no_finding",
+      "truth": "property_absent",
+      "compiler_class": "success",
+      "reason": "witness-only assignment versus generated equality constraint",
+      "legacy_rule_id": "CS0005",
+      "legacy_observed_count": 0,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
+    },
+    {
+      "id": "signal_assignment_abstain",
+      "rule": "signal_assignment",
+      "rule_id": "CS0005",
+      "source": "cases/signal_assignment_abstain.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "abstain",
+      "truth": "undetermined",
+      "compiler_class": "semantic_error",
+      "reason": "witness-only assignment versus generated equality constraint",
+      "legacy_rule_id": "CS0005",
+      "legacy_observed_count": 1,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": [
+        {
+          "message": "Using the signal assignment operator `<--` does not constrain the assigned signal.",
+          "span": {
+            "startLine": 5,
+            "startColumn": 5,
+            "endLine": 5,
+            "endColumn": 24
+          }
+        }
+      ]
+    },
+    {
+      "id": "redundant_witness_emit",
+      "rule": "redundant_witness",
+      "rule_id": "CS0021",
+      "source": "cases/redundant_witness_emit.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "emit",
+      "truth": "confirmed_property",
+      "compiler_class": "success",
+      "reason": "only an identical normalized equation makes the witness assignment redundant",
+      "legacy_rule_id": "CS0013",
+      "legacy_observed_count": 1,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": [
+        {
+          "message": "Using the signal assignment operator `<--` is not necessary here.",
+          "span": {
+            "startLine": 5,
+            "startColumn": 5,
+            "endLine": 5,
+            "endColumn": 20
+          }
+        }
+      ]
+    },
+    {
+      "id": "redundant_witness_no_finding",
+      "rule": "redundant_witness",
+      "rule_id": "CS0021",
+      "source": "cases/redundant_witness_no_finding.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "no_finding",
+      "truth": "property_absent",
+      "compiler_class": "success",
+      "reason": "only an identical normalized equation makes the witness assignment redundant",
+      "legacy_rule_id": "CS0013",
+      "legacy_observed_count": 1,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": [
+        {
+          "message": "Using the signal assignment operator `<--` is not necessary here.",
+          "span": {
+            "startLine": 5,
+            "startColumn": 5,
+            "endLine": 5,
+            "endColumn": 20
+          }
+        }
+      ]
+    },
+    {
+      "id": "redundant_witness_abstain",
+      "rule": "redundant_witness",
+      "rule_id": "CS0021",
+      "source": "cases/redundant_witness_abstain.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "abstain",
+      "truth": "undetermined",
+      "compiler_class": "semantic_error",
+      "reason": "only an identical normalized equation makes the witness assignment redundant",
+      "legacy_rule_id": "CS0013",
+      "legacy_observed_count": 1,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": [
+        {
+          "message": "Using the signal assignment operator `<--` is not necessary here.",
+          "span": {
+            "startLine": 5,
+            "startColumn": 5,
+            "endLine": 5,
+            "endColumn": 20
+          }
+        }
+      ]
+    },
+    {
+      "id": "underconstrained_signal_emit",
+      "rule": "underconstrained_signal",
+      "rule_id": "CA01",
+      "source": "cases/underconstrained_signal_emit.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "emit",
+      "truth": "confirmed_property",
+      "compiler_class": "success",
+      "reason": "exact intermediate has zero versus nonzero constraint incidence",
+      "legacy_rule_id": "CS0017",
+      "legacy_observed_count": 1,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": [
+        {
+          "message": "Intermediate signals should typically occur in at least two separate constraints.",
+          "span": {
+            "startLine": 4,
+            "startColumn": 5,
+            "endLine": 4,
+            "endColumn": 13
+          }
+        }
+      ]
+    },
+    {
+      "id": "underconstrained_signal_no_finding",
+      "rule": "underconstrained_signal",
+      "rule_id": "CA01",
+      "source": "cases/underconstrained_signal_no_finding.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "no_finding",
+      "truth": "property_absent",
+      "compiler_class": "success",
+      "reason": "exact intermediate has zero versus nonzero constraint incidence",
+      "legacy_rule_id": "CS0017",
+      "legacy_observed_count": 0,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
+    },
+    {
+      "id": "underconstrained_signal_abstain",
+      "rule": "underconstrained_signal",
+      "rule_id": "CA01",
+      "source": "cases/underconstrained_signal_abstain.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "abstain",
+      "truth": "undetermined",
+      "compiler_class": "semantic_error",
+      "reason": "exact intermediate has zero versus nonzero constraint incidence",
+      "legacy_rule_id": "CS0017",
+      "legacy_observed_count": 1,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": [
+        {
+          "message": "Intermediate signals should typically occur in at least two separate constraints.",
+          "span": {
+            "startLine": 4,
+            "startColumn": 5,
+            "endLine": 4,
+            "endColumn": 13
+          }
+        }
+      ]
+    },
+    {
+      "id": "unconstrained_less_than_emit",
+      "rule": "unconstrained_less_than",
+      "rule_id": "CS0014",
+      "source": "cases/unconstrained_less_than_emit.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "emit",
+      "truth": "confirmed_property",
+      "compiler_class": "success",
+      "reason": "BN254 p-254 is fixed by generated equality and is outside [0,256); its nine-bit reconstruction is 1. Circom 2.2.3 accepts the canonical fixture. The historical noncanonical literal reduces to 147946756881789318990833708069417712712 and required an impossible nine-bit reconstruction; legacy observations are retained without recapture.",
+      "legacy_rule_id": "CS0014",
+      "legacy_observed_count": 1,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": [
+        {
+          "message": "Inputs to `LessThan` need to be constrained to ensure that they are non-negative",
+          "span": {
+            "startLine": 25,
+            "startColumn": 19,
+            "endLine": 25,
+            "endColumn": 96
+          }
+        }
+      ]
+    },
+    {
+      "id": "unconstrained_less_than_no_finding",
+      "rule": "unconstrained_less_than",
+      "rule_id": "CS0014",
+      "source": "cases/unconstrained_less_than_no_finding.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "no_finding",
+      "truth": "property_absent",
+      "compiler_class": "success",
+      "reason": "constraint-fixed out-of-range input versus witness-only constant",
+      "legacy_rule_id": "CS0014",
+      "legacy_observed_count": 0,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
+    },
+    {
+      "id": "unconstrained_less_than_abstain",
+      "rule": "unconstrained_less_than",
+      "rule_id": "CS0014",
+      "source": "cases/unconstrained_less_than_abstain.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "abstain",
+      "truth": "undetermined",
+      "compiler_class": "semantic_error",
+      "reason": "constraint-fixed out-of-range input versus witness-only constant",
+      "legacy_rule_id": "CS0014",
+      "legacy_observed_count": 0,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
+    },
+    {
+      "id": "side_effect_free_assignment_emit",
+      "rule": "side_effect_free_assignment",
+      "rule_id": "CS0008",
+      "source": "cases/side_effect_free_assignment_emit.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "emit",
+      "truth": "confirmed_property",
+      "compiler_class": "success",
+      "reason": "complete liveness proves unused value only in first case",
+      "legacy_rule_id": "CS0008",
+      "legacy_observed_count": 0,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
+    },
+    {
+      "id": "side_effect_free_assignment_no_finding",
+      "rule": "side_effect_free_assignment",
+      "rule_id": "CS0008",
+      "source": "cases/side_effect_free_assignment_no_finding.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "no_finding",
+      "truth": "property_absent",
+      "compiler_class": "success",
+      "reason": "complete liveness proves unused value only in first case",
+      "legacy_rule_id": "CS0008",
+      "legacy_observed_count": 0,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
+    },
+    {
+      "id": "side_effect_free_assignment_abstain",
+      "rule": "side_effect_free_assignment",
+      "rule_id": "CS0008",
+      "source": "cases/side_effect_free_assignment_abstain.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "abstain",
+      "truth": "undetermined",
+      "compiler_class": "semantic_error",
+      "reason": "complete liveness proves unused value only in first case",
+      "legacy_rule_id": "CS0008",
+      "legacy_observed_count": 0,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
+    },
+    {
+      "id": "unused_output_emit",
+      "rule": "unused_output",
+      "rule_id": "CS0018",
+      "source": "cases/unused_output_emit.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "emit",
+      "truth": "confirmed_property",
+      "compiler_class": "success",
+      "reason": "closed main leaves b unread; exported library may have unknown consumers",
+      "legacy_rule_id": "CS0018",
+      "legacy_observed_count": 1,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": [
+        {
+          "message": "The output signal `b` defined by the template `Child` is not constrained in `Main`.",
+          "span": {
+            "startLine": 10,
+            "startColumn": 19,
+            "endLine": 10,
+            "endColumn": 26
+          }
+        }
+      ]
+    },
+    {
+      "id": "unused_output_no_finding",
+      "rule": "unused_output",
+      "rule_id": "CS0018",
+      "source": "cases/unused_output_no_finding.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "no_finding",
+      "truth": "property_absent",
+      "compiler_class": "success",
+      "reason": "closed main leaves b unread; exported library may have unknown consumers",
+      "legacy_rule_id": "CS0018",
+      "legacy_observed_count": 0,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
+    },
+    {
+      "id": "unused_output_abstain",
+      "rule": "unused_output",
+      "rule_id": "CS0018",
+      "source": "cases/unused_output_abstain.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "abstain",
+      "truth": "undetermined",
+      "compiler_class": "no_main",
+      "reason": "Uninstantiated Main contains Child; external callers leave output use unknown",
+      "legacy_rule_id": "CS0018",
+      "legacy_observed_count": 1,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": [
+        {
+          "message": "The output signal `b` defined by the template `Child` is not constrained in `Main`.",
+          "span": {
+            "endColumn": 26,
+            "endLine": 10,
+            "startColumn": 19,
+            "startLine": 10
+          }
+        }
+      ]
+    },
+    {
+      "id": "complexity_emit",
+      "rule": "complexity",
+      "rule_id": "CS0011",
+      "source": "cases/complexity_emit.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "emit",
+      "truth": "confirmed_property",
+      "compiler_class": "success",
+      "reason": "reachable CFG complexity is above threshold only in first case",
+      "legacy_rule_id": "CS0011",
+      "legacy_observed_count": 1,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": [
+        {
+          "message": "The template `Main` is too complex and would benefit from being refactored into smaller components.",
+          "span": null
+        }
+      ]
+    },
+    {
+      "id": "complexity_no_finding",
+      "rule": "complexity",
+      "rule_id": "CS0011",
+      "source": "cases/complexity_no_finding.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "no_finding",
+      "truth": "property_absent",
+      "compiler_class": "success",
+      "reason": "reachable CFG complexity is above threshold only in first case",
+      "legacy_rule_id": "CS0011",
+      "legacy_observed_count": 0,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
+    },
+    {
+      "id": "complexity_abstain",
+      "rule": "complexity",
+      "rule_id": "CS0011",
+      "source": "cases/complexity_abstain.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "abstain",
+      "truth": "undetermined",
+      "compiler_class": "syntax_error",
+      "reason": "reachable CFG complexity is above threshold only in first case",
+      "legacy_rule_id": "CS0011",
+      "legacy_observed_count": 0,
+      "legacy_analyzed": false,
+      "legacy_observed_evidence": []
+    },
+    {
+      "id": "too_many_arguments_emit",
+      "rule": "too_many_arguments",
+      "rule_id": "CS0012",
+      "source": "cases/too_many_arguments_emit.circom",
+      "scope": "Many",
+      "curve": "bn128",
+      "expected": "emit",
+      "truth": "confirmed_property",
+      "compiler_class": "success",
+      "reason": "validated parameter count is eight versus seven or malformed",
+      "legacy_rule_id": "CS0012",
+      "legacy_observed_count": 1,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": [
+        {
+          "message": "`Many` takes too many parameters. This increases coupling and decreases readability.",
+          "span": {
+            "startLine": 2,
+            "startColumn": 15,
+            "endLine": 2,
+            "endColumn": 37
+          }
+        }
+      ]
+    },
+    {
+      "id": "too_many_arguments_no_finding",
+      "rule": "too_many_arguments",
+      "rule_id": "CS0012",
+      "source": "cases/too_many_arguments_no_finding.circom",
+      "scope": "Many",
+      "curve": "bn128",
+      "expected": "no_finding",
+      "truth": "property_absent",
+      "compiler_class": "success",
+      "reason": "validated parameter count is eight versus seven or malformed",
+      "legacy_rule_id": "CS0012",
+      "legacy_observed_count": 0,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
+    },
+    {
+      "id": "too_many_arguments_abstain",
+      "rule": "too_many_arguments",
+      "rule_id": "CS0012",
+      "source": "cases/too_many_arguments_abstain.circom",
+      "scope": "Many",
+      "curve": "bn128",
+      "expected": "abstain",
+      "truth": "undetermined",
+      "compiler_class": "syntax_error",
+      "reason": "validated parameter count is eight versus seven or malformed",
+      "legacy_rule_id": "CS0012",
+      "legacy_observed_count": 0,
+      "legacy_analyzed": false,
+      "legacy_observed_evidence": []
+    },
+    {
+      "id": "bn254_specific_boundary_emit",
+      "rule": "bn254_specific",
+      "rule_id": "CS0016",
+      "source": "cases/bn254_specific_boundary_emit.circom",
+      "scope": "Main",
+      "curve": "bls12381",
+      "expected": "emit",
+      "truth": "confirmed_property",
+      "compiler_class": "success",
+      "reason": "The exact BN254 field prime is a reachable literal under BLS12-381.",
+      "legacy_rule_id": "CS0016",
+      "legacy_observed_count": 0,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
+    },
+    {
+      "id": "field_arithmetic_boundary_emit",
+      "rule": "field_arithmetic",
+      "rule_id": "CS0004",
+      "source": "cases/field_arithmetic_boundary_emit.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "emit",
+      "truth": "confirmed_property",
+      "compiler_class": "success",
+      "reason": "The exact BN254 field prime minus 1, plus 2, wraps to 1.",
+      "legacy_rule_id": "CS0004",
+      "legacy_observed_count": 0,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
+    },
+    {
+      "id": "field_comparison_boundary_emit",
+      "rule": "field_comparison",
+      "rule_id": "CS0003",
+      "source": "cases/field_comparison_boundary_emit.circom",
+      "scope": "Main",
+      "curve": "bn128",
+      "expected": "emit",
+      "truth": "confirmed_property",
+      "compiler_class": "success",
+      "reason": "The exact BN254 field prime minus 1 is signed -1; its comparison with 1 differs from unsigned ordering.",
+      "legacy_rule_id": "CS0003",
+      "legacy_observed_count": 0,
+      "legacy_analyzed": true,
+      "legacy_observed_evidence": []
+    }
+  ]
+}

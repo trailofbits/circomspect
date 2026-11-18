@@ -1,4 +1,4 @@
-use codespan_reporting::files::{Files, SimpleFiles};
+use codespan_reporting::files::SimpleFiles;
 use std::{ops::Range, collections::HashSet};
 
 pub type FileSource = String;
@@ -20,6 +20,7 @@ impl Default for FileLibrary {
 }
 
 impl FileLibrary {
+    #[must_use]
     pub fn new() -> FileLibrary {
         FileLibrary::default()
     }
@@ -29,38 +30,20 @@ impl FileLibrary {
         file_source: FileSource,
         is_user_input: bool,
     ) -> FileID {
-        let file_id = self.get_mut_files().add(file_name, file_source);
+        let file_id = self.files.add(file_name, file_source);
         if is_user_input {
             self.user_inputs.insert(file_id);
         }
         file_id
     }
 
-    pub fn get_line(&self, start: usize, file_id: FileID) -> Option<usize> {
-        self.files.line_index(file_id, start).map(|lines| lines + 1).ok()
-    }
-
+    #[must_use]
     pub fn to_storage(&self) -> &FileStorage {
-        self.get_files()
-    }
-
-    pub fn user_inputs(&self) -> &HashSet<FileID> {
-        &self.user_inputs
-    }
-
-    pub fn is_user_input(&self, file_id: FileID) -> bool {
-        self.user_inputs.contains(&file_id)
-    }
-
-    fn get_files(&self) -> &FileStorage {
         &self.files
     }
 
-    fn get_mut_files(&mut self) -> &mut FileStorage {
-        &mut self.files
+    #[must_use]
+    pub fn user_inputs(&self) -> &HashSet<FileID> {
+        &self.user_inputs
     }
-}
-
-pub fn generate_file_location(start: usize, end: usize) -> FileLocation {
-    start..end
 }

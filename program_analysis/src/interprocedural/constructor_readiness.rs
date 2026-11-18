@@ -1,0 +1,484 @@
+//! Checked constructor coverage for local signal-read validation.
+
+use std::collections::BTreeSet;
+
+use abstract_interpretation::graph::{FlowGraph, NodeId};
+use parser::hir::{AccessPath, DefinitionRef, ExprId, ExprKind};
+use parser::frontend::PortDirection;
+
+use crate::hir_cfg::{build_cfg, CfgNodeKind};
+use crate::hir_facts::{AnalysisFacts, InstanceRelation};
+use crate::interprocedural::ValidatedComponentPorts;
+use crate::interprocedural::input_relation::{
+    ready_enumerated_instance, ready_model_instance, ReadyInstanceAtUse, ReadyWitnessInputs,
+    ReadyGeneratedInputs,
+};
+use crate::interprocedural::{
+    AppliedComponentPort, CallOwner, CallReachability, CallSiteId, ContextEvidence,
+    ExecutionQueries, SummaryBlocker,
+};
+use crate::interprocedural::output_enumeration::EnumeratedComponentInstance;
+use crate::interprocedural::summary::certified;
+
+/// Constructors whose checked children passed source, read, and generated-form checks.
+/// Child completions may carry coverage for separately checked constructors.
+/// This is local readiness coverage, not a successful-termination certificate.
+///
+/// The readiness issuer binds constructor expressions and exact site/path/port tuples to
+/// context evidence. Consumers recheck coverage against each current output-read occurrence;
+/// matching a child definition alone is insufficient.
+pub(crate) struct ValidatedConstructorReads {
+    evidence: ContextEvidence,
+    calls: BTreeSet<ExprId>,
+    outputs: Vec<ValidatedComponentOutputRead>,
+}
+
+#[derive(Clone)]
+struct ValidatedComponentOutputRead {
+    site: NodeId,
+    path: AccessPath,
+    applied: AppliedComponentPort,
+}
+
+impl ValidatedComponentOutputRead {
+    fn matches(&self, facts: &AnalysisFacts<'_>, path: &AccessPath, site: NodeId) -> bool {
+        let Some(CfgNodeKind::Evaluate(expression)) =
+            facts.cfg().node(self.site).map(|node| &node.kind)
+        else {
+            return false;
+        };
+        let Some(ExprKind::Access(source)) =
+            facts.hir().expression(*expression).map(|expression| &expression.kind)
+        else {
+            return false;
+        };
+        self.path == *path
+            && source == path
+            && facts.reachable_node(self.site).certified() == Some(&true)
+            && facts.handle_relation_at(self.applied.handle(), path, site)
+                == InstanceRelation::Exact
+    }
+}
+
+///
+/// The readiness issuer records required source, read, and generated-form checks for one exact
+/// context and its checked definitions. This is scope-specific readiness, not universal
+/// successful termination; child and current read-site checks remain separate.
+pub(super) struct CompletedTemplate {
+    evidence: ContextEvidence,
+    checked_definitions: BTreeSet<DefinitionRef>,
+}
+
+impl CompletedTemplate {
+    pub(super) fn matches(&self, facts: &AnalysisFacts<'_>) -> bool {
+        facts.matches_evidence(&self.evidence)
+    }
+
+    pub(super) fn contains_checked_definition(&self, definition: DefinitionRef) -> bool {
+        self.checked_definitions.contains(&definition)
+    }
+}
+
+enum ChildCompletion {
+    ProjectOutput(CompletedTemplate),
+    CompleteModels(CompletedTemplate),
+}
+
+///
+/// The readiness issuer binds a checked child to the caller evidence, call site, instance
+/// indices, and current output reads. Consumers must match the exact current occurrence;
+/// a certificate for the same child definition at another instance is insufficient.
+pub(super) struct CompletedChild {
+    caller: ContextEvidence,
+    site: CallSiteId,
+    indices: Vec<usize>,
+    completed: CompletedTemplate,
+    outputs: Vec<ValidatedComponentOutputRead>,
+}
+
+impl ValidatedConstructorReads {
+    pub(crate) fn evidence(&self) -> &ContextEvidence {
+        &self.evidence
+    }
+
+    pub(crate) fn contains(&self, expression: ExprId) -> bool {
+        self.calls.contains(&expression)
+    }
+
+    /// Check the current read's indices against a completed child output.
+    /// The same source path may denote different cells after loop expansion;
+    /// enclosing-expression revisits must therefore use their own site values.
+    pub(crate) fn allows_output(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        path: &AccessPath,
+        site: NodeId,
+    ) -> bool {
+        self.outputs.iter().any(|read| read.matches(facts, path, site))
+    }
+}
+
+impl ExecutionQueries<'_, '_> {
+    pub(super) fn completed_project_child(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        caller: &ContextEvidence,
+        instance: &EnumeratedComponentInstance,
+        completed: CompletedTemplate,
+    ) -> Result<CompletedChild, SummaryBlocker> {
+        self.complete_child(facts, caller, instance, ChildCompletion::ProjectOutput(completed))
+            .map(|(child, _)| child)
+    }
+
+    pub(super) fn completed_model_child(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        caller: &ContextEvidence,
+        instance: &EnumeratedComponentInstance,
+        completed: CompletedTemplate,
+    ) -> Result<(CompletedChild, ReadyInstanceAtUse), SummaryBlocker> {
+        self.complete_child(facts, caller, instance, ChildCompletion::CompleteModels(completed))
+    }
+
+    fn complete_child(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        caller: &ContextEvidence,
+        instance: &EnumeratedComponentInstance,
+        completion: ChildCompletion,
+    ) -> Result<(CompletedChild, ReadyInstanceAtUse), SummaryBlocker> {
+        self.analysis.contexts().check_facts_for_evidence(facts, caller)?;
+        let (completed, ready) = match completion {
+            ChildCompletion::ProjectOutput(completed) => {
+                (completed, ready_enumerated_instance(facts, instance)?)
+            }
+            ChildCompletion::CompleteModels(completed) => {
+                (completed, ready_model_instance(facts, instance)?)
+            }
+        };
+        let child = self.checked_completed_child(facts, caller, instance, completed)?;
+        Ok((child, ready))
+    }
+
+    pub(super) fn completed_witness_child(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        instance: &EnumeratedComponentInstance,
+        completed: CompletedTemplate,
+        ready: &ReadyWitnessInputs,
+    ) -> Result<CompletedChild, SummaryBlocker> {
+        if !ready.matches(facts, instance) {
+            return Err(SummaryBlocker::WrongContext);
+        }
+        self.checked_completed_child(facts, ready.caller(), instance, completed)
+    }
+
+    pub(super) fn completed_generated_child(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        instance: &EnumeratedComponentInstance,
+        completed: CompletedTemplate,
+        ready: &ReadyGeneratedInputs,
+    ) -> Result<CompletedChild, SummaryBlocker> {
+        if !ready.matches(facts, instance) {
+            return Err(SummaryBlocker::WrongContext);
+        }
+        self.checked_completed_child(facts, ready.caller(), instance, completed)
+    }
+
+    fn checked_completed_child(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        caller: &ContextEvidence,
+        instance: &EnumeratedComponentInstance,
+        completed: CompletedTemplate,
+    ) -> Result<CompletedChild, SummaryBlocker> {
+        self.analysis.contexts().check_facts_for_evidence(facts, caller)?;
+        if completed.evidence != instance.callee {
+            return Err(SummaryBlocker::WrongContext);
+        }
+        let site = self.analysis.graph().site(instance.site).ok_or(SummaryBlocker::ForeignCall)?;
+        if site.owner != CallOwner::Definition(facts.definition()) {
+            return Err(SummaryBlocker::ForeignCall);
+        }
+        let CallReachability::Reachable(call) =
+            self.analysis.graph().reachable_call(instance.site, facts)
+        else {
+            return Err(SummaryBlocker::ForeignCall);
+        };
+        if self.analysis.contexts().call_evidence(&call, facts, caller)? != completed.evidence {
+            return Err(SummaryBlocker::WrongContext);
+        }
+        let DefinitionRef::Template(_) = completed.evidence.context().definition() else {
+            return Err(SummaryBlocker::WrongContext);
+        };
+        let mut outputs = Vec::new();
+        for output in &instance.outputs {
+            outputs.extend(self.checked_output_read_sites(facts, output.applied_port())?);
+        }
+        Ok(CompletedChild {
+            caller: caller.clone(),
+            site: instance.site,
+            indices: instance.indices.clone(),
+            completed,
+            outputs,
+        })
+    }
+
+    fn checked_output_read_sites(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        applied: &AppliedComponentPort,
+    ) -> Result<Vec<ValidatedComponentOutputRead>, SummaryBlocker> {
+        let mut reads = Vec::new();
+        for id in facts.cfg().nodes() {
+            let Some(CfgNodeKind::Evaluate(expression)) = facts.cfg().node(*id).map(|n| &n.kind)
+            else {
+                continue;
+            };
+            let Some(ExprKind::Access(path)) =
+                self.analysis.hir().expression(*expression).map(|expr| &expr.kind)
+            else {
+                continue;
+            };
+            if facts.handle_relation_at(applied.handle(), path, *id) != InstanceRelation::Exact {
+                continue;
+            }
+            match facts.reachable_node(*id).certified() {
+                Some(true) => reads.push(ValidatedComponentOutputRead {
+                    site: *id,
+                    path: path.clone(),
+                    applied: applied.clone(),
+                }),
+                Some(false) => {}
+                None => return Err(SummaryBlocker::ExternalSummary),
+            }
+        }
+        Ok(reads)
+    }
+
+    pub(super) fn completed_project_template(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        evidence: &ContextEvidence,
+        children: &[CompletedChild],
+    ) -> Result<CompletedTemplate, SummaryBlocker> {
+        self.completed_template(facts, evidence, children, None)
+    }
+
+    pub(super) fn completed_generated_template(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        children: &[CompletedChild],
+        ready: &ReadyGeneratedInputs,
+    ) -> Result<CompletedTemplate, SummaryBlocker> {
+        self.completed_template(facts, ready.caller(), children, Some(ready.ports()))
+    }
+
+    fn completed_template(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        evidence: &ContextEvidence,
+        children: &[CompletedChild],
+        ports: Option<&ValidatedComponentPorts>,
+    ) -> Result<CompletedTemplate, SummaryBlocker> {
+        self.analysis.contexts().check_facts_for_evidence(facts, evidence)?;
+        self.analysis.sources().validated_definition(facts)?;
+        self.check_warning_execution_scope(facts, evidence)?;
+        if certified(&facts.reachable_node(facts.cfg().exit()))? != &true {
+            return Err(SummaryBlocker::UnsupportedContext);
+        }
+        let constructors = self.completed_constructor_reads(facts, evidence, children)?;
+        certified(&facts.body_signal_reads_ready_with(&constructors))?;
+        let validity = match ports {
+            Some(ports) => facts.generated_constraints_valid_with(ports),
+            None => facts.generated_constraints_valid(),
+        };
+        certified(&validity)?;
+        let writes = match ports {
+            Some(ports) => facts.no_possible_repeated_body_writes_with(ports),
+            None => facts.no_possible_repeated_body_writes(),
+        };
+        certified(&writes)?;
+        let mut checked_definitions = BTreeSet::from([facts.definition()]);
+        for child in children {
+            checked_definitions.extend(&child.completed.checked_definitions);
+        }
+        Ok(CompletedTemplate { evidence: evidence.clone(), checked_definitions })
+    }
+
+    pub(super) fn completed_constructor_reads(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        evidence: &ContextEvidence,
+        children: &[CompletedChild],
+    ) -> Result<ValidatedConstructorReads, SummaryBlocker> {
+        let mut calls = BTreeSet::new();
+        let mut instances = BTreeSet::new();
+        let mut outputs = Vec::new();
+        for child in children {
+            if &child.caller != evidence || !instances.insert((child.site, child.indices.clone())) {
+                return Err(SummaryBlocker::WrongContext);
+            }
+            let site = self.analysis.graph().site(child.site).ok_or(SummaryBlocker::ForeignCall)?;
+            if child.completed.evidence.context().definition()
+                != site.resolved().ok_or(SummaryBlocker::ForeignCall)?
+            {
+                return Err(SummaryBlocker::WrongContext);
+            }
+            calls.insert(site.expression.ok_or(SummaryBlocker::ForeignCall)?);
+            outputs.extend(child.outputs.iter().cloned());
+        }
+        self.check_completed_calls(facts, &calls)?;
+        Ok(ValidatedConstructorReads { evidence: evidence.clone(), calls, outputs })
+    }
+
+    fn check_completed_calls(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        calls: &BTreeSet<ExprId>,
+    ) -> Result<(), SummaryBlocker> {
+        for site in self.analysis.graph().calls_from(CallOwner::Definition(facts.definition())) {
+            let Some(DefinitionRef::Template(_)) = site.resolved() else { continue };
+            match self.analysis.graph().reachable_call(site.id(), facts) {
+                CallReachability::Reachable(_) => {
+                    let expression = site.expression.ok_or(SummaryBlocker::ForeignCall)?;
+                    if !calls.contains(&expression) {
+                        return Err(SummaryBlocker::ExternalSummary);
+                    }
+                }
+                CallReachability::Unreachable => {}
+                CallReachability::Unavailable(_) => return Err(SummaryBlocker::ExternalSummary),
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn check_template_incidence_scope(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        evidence: &ContextEvidence,
+    ) -> Result<(), SummaryBlocker> {
+        self.analysis.templates().check_template_constraint_scope(facts, evidence)?;
+        let constructors = self.validated_constructor_reads(facts, evidence)?;
+        certified(&facts.body_signal_reads_ready_with(&constructors))?;
+        certified(&facts.generated_constraints_valid())?;
+        Ok(())
+    }
+
+    fn validated_constructor_reads(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        evidence: &ContextEvidence,
+    ) -> Result<ValidatedConstructorReads, SummaryBlocker> {
+        const MAX_CONSTRUCTORS: usize = 64;
+        let mut calls = BTreeSet::new();
+        for site in self.analysis.graph().calls_from(CallOwner::Definition(facts.definition())) {
+            let Some(DefinitionRef::Template(_)) = site.resolved() else { continue };
+            let call = match self.analysis.graph().reachable_call(site.id(), facts) {
+                CallReachability::Reachable(call) => call,
+                CallReachability::Unreachable => continue,
+                CallReachability::Unavailable(_) => return Err(SummaryBlocker::UnsupportedContext),
+            };
+            if calls.len() >= MAX_CONSTRUCTORS {
+                return Err(SummaryBlocker::ContextBudget);
+            }
+            let child = self.analysis.contexts().call_evidence(&call, facts, evidence)?;
+            self.check_leaf_constructor(&child)?;
+            calls.insert(site.expression.ok_or(SummaryBlocker::ForeignCall)?);
+        }
+        Ok(ValidatedConstructorReads { evidence: evidence.clone(), calls, outputs: Vec::new() })
+    }
+
+    fn check_leaf_constructor(&self, evidence: &ContextEvidence) -> Result<(), SummaryBlocker> {
+        let DefinitionRef::Template(id) = evidence.context().definition() else {
+            return Err(SummaryBlocker::WrongContext);
+        };
+        let template = self.analysis.hir().template(id).ok_or(SummaryBlocker::ForeignDefinition)?;
+        for port in &template.ports {
+            let port = self.analysis.hir().port(*port).ok_or(SummaryBlocker::ForeignDefinition)?;
+            if port.direction == Some(PortDirection::Input) {
+                return Err(SummaryBlocker::MissingInputBinding);
+            }
+        }
+        let cfg =
+            build_cfg(self.analysis.hir(), evidence.context().definition()).map_err(|error| {
+                SummaryBlocker::LocalAnalysis(format!("leaf constructor analysis: {error:?}"))
+            })?;
+        let facts = self.analysis.contexts().analyze_for_evidence(&cfg, evidence, None).map_err(
+            |error| SummaryBlocker::LocalAnalysis(format!("leaf constructor analysis: {error:?}")),
+        )?;
+        self.check_warning_execution_scope(&facts, evidence)?;
+        self.analysis.sources().validated_definition(&facts)?;
+        if certified(&facts.reachable_node(facts.cfg().exit()))? != &true {
+            return Err(SummaryBlocker::UnsupportedContext);
+        }
+        certified(&facts.body_signal_reads_ready())?;
+        certified(&facts.generated_constraints_valid())?;
+        certified(&facts.no_possible_repeated_body_writes())?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use parser::frontend::{parse_source, LoadedProject, SourceFile, SourceId, Version, VersionPolicy};
+    use parser::hir::lift_project;
+    use program_structure::utils::constants::Curve;
+
+    use crate::hir_cfg::build_cfg;
+    use crate::interprocedural::{CallOwner, CallReachability, ProjectAnalysis};
+
+    #[test]
+    fn temporary_execution_views_retain_owned_completion_evidence() {
+        let source = concat!(
+            "template Child(){signal output out;out<==1;}",
+            "template Parent(){component c=Child();signal output y;y<==c.out;}"
+        );
+        let policy = VersionPolicy::new(Version::new(2, 2, 3));
+        let id = SourceId::new(0);
+        let project = lift_project(&LoadedProject {
+            policy,
+            files: vec![SourceFile {
+                id,
+                path: "completion-views.circom".into(),
+                text: source.into(),
+                outcome: parse_source(id, source, policy),
+            }],
+            diagnostics: Vec::new(),
+        });
+        assert!(project.syntax_diagnostics.is_empty());
+        let analysis = ProjectAnalysis::build(&project, Curve::Bn254).unwrap();
+        let definition = project.hir.definition("Parent").unwrap();
+        let evidence = analysis.contexts().symbolic_root(definition).unwrap();
+        let cfg = build_cfg(&project.hir, definition).unwrap();
+        let facts = analysis.contexts().analyze_for_evidence(&cfg, &evidence, None).unwrap();
+        let site = analysis.graph().calls_from(CallOwner::Definition(definition))[0];
+        let CallReachability::Reachable(call) = analysis.graph().reachable_call(site.id(), &facts)
+        else {
+            panic!("child call")
+        };
+        let instance = analysis.components().enumerate_call(&facts, &evidence, &call, 4).unwrap();
+        let completed = analysis
+            .components()
+            .with_component_port_facts(&instance.callee, |child| {
+                analysis.execution().completed_project_template(child, &instance.callee, &[])
+            })
+            .unwrap();
+        assert_eq!(completed.evidence, instance.callee);
+        assert!(completed.contains_checked_definition(instance.callee.context().definition()));
+        let child = {
+            let queries = analysis.execution();
+            queries.completed_project_child(&facts, &evidence, &instance, completed).unwrap()
+        };
+        assert_eq!(child.caller, evidence);
+        assert_eq!(child.site, instance.site);
+        assert_eq!(child.indices, instance.indices);
+        assert_eq!(child.outputs.len(), 1);
+        let completed =
+            analysis.execution().completed_project_template(&facts, &evidence, &[child]).unwrap();
+        assert!(completed.matches(&facts));
+        assert!(completed.contains_checked_definition(definition));
+        assert!(completed.contains_checked_definition(instance.callee.context().definition()));
+    }
+}
