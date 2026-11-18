@@ -247,7 +247,9 @@ impl AnalysisFacts<'_> {
     /// Require every reachable signal read to have a prior exact body write
     /// or an input-port initialization; input-port writes are invalid.
     pub(crate) fn body_signal_reads_ready(&self) -> Fact<()> {
-        self.body_signal_reads_ready_by(&|_| false, &|_, _| false)
+        self.body_readiness
+            .get_or_init(|| self.body_signal_reads_ready_by(&|_| false, &|_, _| false))
+            .clone()
     }
 
     /// Permit only provider-validated constructors bound to these exact source facts.

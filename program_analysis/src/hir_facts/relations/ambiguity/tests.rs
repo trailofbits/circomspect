@@ -7,6 +7,7 @@ use parser::frontend::{load_sources, Version, VersionPolicy};
 use program_structure::utils::constants::Curve;
 
 use crate::hir_cfg::build_cfg;
+use crate::hir_cfg::CfgNodeKind;
 use crate::hir_facts::relations::ambiguity::{
     generated_models_satisfy, validate_models, CandidateModel,
 };
@@ -99,6 +100,28 @@ fn model_budget_covers_collection_control_seeds_and_both_complete_checks() {
             &mut ProofBudget::limited(4096, 262_144, 4096, sufficient - 1),
         );
         assert!(repeated.unavailable().is_some(), "{repeated:?}");
+    });
+}
+
+#[test]
+fn witness_alternative_refuses_exhausted_model_budget() {
+    with_facts(|facts, _, _| {
+        let witness = facts
+            .cfg()
+            .nodes()
+            .iter()
+            .find_map(|id| {
+                let node = facts.cfg().node(*id)?;
+                if let CfgNodeKind::Witness { .. } = &node.kind {
+                    Some(*id)
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        let result =
+            facts.local_witness_alternative(witness, &mut ProofBudget::limited(0, 0, 0, 0));
+        assert!(result.unavailable().is_some());
     });
 }
 

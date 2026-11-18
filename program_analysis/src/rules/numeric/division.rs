@@ -25,7 +25,10 @@ fn witness_values(context: &RuleContext<'_, '_, '_>) -> (Vec<ExprId>, Vec<Span>)
     (values, opaque)
 }
 
-fn declared_input(context: &RuleContext<'_, '_, '_>, path: &AccessPath) -> Option<PortId> {
+pub(super) fn declared_input(
+    context: &RuleContext<'_, '_, '_>,
+    path: &AccessPath,
+) -> Option<PortId> {
     let DefinitionRef::Template(id) = context.call_context().definition() else { return None };
     if path.root != path.terminal {
         return None;

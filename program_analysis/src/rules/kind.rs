@@ -25,6 +25,11 @@ pub enum RuleKind {
     SignalDependentAssert,
     UnassignedOutput,
     ComparatorPrecondition,
+    UnusedPublicInput,
+    AlternateWitnessValue,
+    NonInjectiveBitPacking,
+    FeasibleZeroDivisor,
+    UnprovedBinaryTag,
 }
 
 impl RuleKind {
@@ -38,7 +43,8 @@ impl RuleKind {
             RedundantWitnessAssignment, UnconstrainedSignal, UnconstrainedLessThan,
             UnusedVariableValue, UnusedParameterValue, SideEffectFreeAssignment,
             UnusedOutputSignal, Complexity, TooManyArguments, IncompleteCoverage,
-            SignalDependentAssert, UnassignedOutput, ComparatorPrecondition,
+            SignalDependentAssert, UnassignedOutput, ComparatorPrecondition, UnusedPublicInput,
+            AlternateWitnessValue, NonInjectiveBitPacking, FeasibleZeroDivisor, UnprovedBinaryTag,
         };
         match self {
             BitwiseComplement | FieldArithmetic => ReportCode::FieldElementArithmetic,
@@ -61,6 +67,11 @@ impl RuleKind {
             SignalDependentAssert => ReportCode::SignalDependentAssert,
             UnassignedOutput => ReportCode::UnassignedOutput,
             ComparatorPrecondition => ReportCode::ComparatorPrecondition,
+            UnusedPublicInput => ReportCode::UnusedPublicInput,
+            AlternateWitnessValue => ReportCode::AlternateWitnessValue,
+            NonInjectiveBitPacking => ReportCode::NonInjectiveBitPacking,
+            FeasibleZeroDivisor => ReportCode::FeasibleZeroDivisor,
+            UnprovedBinaryTag => ReportCode::UnprovedBinaryTag,
         }
     }
 
@@ -73,6 +84,8 @@ impl RuleKind {
             UnconstrainedLessThan, UnusedVariableValue, UnusedParameterValue,
             SideEffectFreeAssignment, UnusedOutputSignal, Complexity, TooManyArguments,
             IncompleteCoverage, SignalDependentAssert, UnassignedOutput, ComparatorPrecondition,
+            UnusedPublicInput, AlternateWitnessValue, NonInjectiveBitPacking, FeasibleZeroDivisor,
+            UnprovedBinaryTag,
         };
         match self {
             BitwiseComplement | FieldArithmetic | FieldComparison => MessageCategory::Info,
@@ -90,10 +103,15 @@ impl RuleKind {
             | UnusedOutputSignal
             | Complexity
             | TooManyArguments
-            | IncompleteCoverage => MessageCategory::Warning,
-            SignalDependentAssert | UnassignedOutput | ComparatorPrecondition => {
-                MessageCategory::Warning
-            }
+            | IncompleteCoverage
+            | SignalDependentAssert
+            | UnassignedOutput
+            | ComparatorPrecondition
+            | UnusedPublicInput
+            | AlternateWitnessValue
+            | NonInjectiveBitPacking
+            | FeasibleZeroDivisor
+            | UnprovedBinaryTag => MessageCategory::Warning,
         }
     }
 }

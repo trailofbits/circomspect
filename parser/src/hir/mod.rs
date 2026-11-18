@@ -7,8 +7,8 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::frontend::{
-    AssignmentOperator, BinaryOperator, DiagnosticLocation, InputAssignmentOperator, PortDirection,
-    PostfixOperator, Span, SyntaxDiagnostic, UnaryOperator, Version,
+    AssignmentOperator, BinaryOperator, DiagnosticLocation, Identifier, InputAssignmentOperator,
+    PortDirection, PostfixOperator, Span, SyntaxDiagnostic, UnaryOperator, Version,
 };
 
 pub use lift::lift_project;
@@ -449,6 +449,7 @@ impl Block {
 pub struct Main {
     pub target: CallTarget,
     pub arguments: Vec<ExprId>,
+    pub public: Vec<Identifier>,
     pub parallel: bool,
     pub span: Span,
 }

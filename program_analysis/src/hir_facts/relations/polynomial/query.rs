@@ -48,6 +48,10 @@ impl NormalizedEquation {
         self.0.terms.len()
     }
 
+    pub(crate) fn contains_linear_access(&self, key: &AccessKey) -> bool {
+        self.0.terms.contains_key(&Monomial::Linear(key.clone()))
+    }
+
     /// Enumerate the exact signal keys used by the polynomial in stable order.
     ///
     /// Cancelled terms contribute no keys. Source-access validity must be checked
@@ -145,6 +149,42 @@ impl NormalizedEquation {
         let values = ZeroTargetValues { assignment, target, zero: field.canonical(0.into()) };
         let remainder = self.evaluate_values(field, &values)?;
         Ok(Some(field.multiply(&field.negate(&remainder), &inverse)))
+    }
+
+    /// Derive the second root of a quadratic after fixing all other signals.
+    ///
+    /// The caller must check that `known_root` satisfies the equation and that
+    /// both complete assignments satisfy every generated constraint.
+    pub(crate) fn alternate_quadratic_root(
+        &self,
+        field: &FieldContext,
+        assignment: &BTreeMap<AccessKey, FieldValue>,
+        target: &AccessKey,
+        known_root: &FieldValue,
+    ) -> Result<Option<FieldValue>, EquationEvaluationError> {
+        self.check_field(field)?;
+        let mut quadratic = field.canonical(0.into());
+        let mut linear = field.canonical(0.into());
+        for (monomial, coefficient) in &self.0.terms {
+            match monomial {
+                Monomial::Linear(key) if key == target => {
+                    linear = field.add(&linear, coefficient);
+                }
+                Monomial::Quadratic(left, right) if left == target && right == target => {
+                    quadratic = field.add(&quadratic, coefficient);
+                }
+                Monomial::Quadratic(left, right) if left == target || right == target => {
+                    let other = if left == target { right } else { left };
+                    let value = assigned_value(field, assignment, other)?;
+                    linear = field.add(&linear, &field.multiply(coefficient, value));
+                }
+                Monomial::Constant | Monomial::Linear(_) | Monomial::Quadratic(_, _) => {}
+            }
+        }
+        let Some(inverse) = field.inverse(&quadratic) else { return Ok(None) };
+        let roots_sum = field.multiply(&field.negate(&linear), &inverse);
+        let alternate = field.subtract(&roots_sum, known_root);
+        Ok((alternate != *known_root).then_some(alternate))
     }
 
     /// Solve an equation containing exactly one linear signal and a constant.

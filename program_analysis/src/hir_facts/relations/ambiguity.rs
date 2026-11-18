@@ -14,8 +14,14 @@ use crate::hir_facts::relations::complete::{
 };
 use crate::hir_facts::{
     AccessHandle, AccessKey, AccessKeyStep, AnalysisFacts, BitDecomposition, Fact, FactBlocker,
-    FieldContext, FieldValue,
+    FieldContext, FieldValue, GeneratedAssignments,
 };
+
+#[derive(Clone, Copy)]
+enum BitModelRole {
+    ScalarInput,
+    BitInputs,
+}
 
 /// Outcome of the bounded search for two satisfying bit representations.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -69,10 +75,11 @@ impl BitRepresentation {
 
 /// Two models of every generated equation in one provider-validated leaf scope.
 ///
-/// The same external inputs admit distinct bit vectors. Unmentioned local field
-/// signals can be extended with zero because no generated equation uses them.
-/// This says neither that the honest witness generator produces these models
-/// nor that another caller's constraints permit them.
+/// The two bit vectors encode the same field value. For decomposition, the
+/// external scalar input is fixed; for packing, the bit inputs differ.
+/// Unmentioned local field signals can be extended with zero because no
+/// generated equation uses them. This does not certify witness generation or
+/// another caller's constraints.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BitAmbiguity {
     decomposition: BitDecomposition,
@@ -120,7 +127,11 @@ impl AnalysisFacts<'_> {
         bits: &[AccessPath],
         budget: &mut ProofBudget,
     ) -> Fact<BitAmbiguityOutcome> {
-        self.local_bit_ambiguity_from_relation(&self.bit_decomposition(input, bits), budget)
+        self.local_bit_ambiguity_from_relation(
+            &self.bit_decomposition(input, bits),
+            BitModelRole::ScalarInput,
+            budget,
+        )
     }
 
     pub(crate) fn local_bit_ambiguity_handles(
@@ -129,15 +140,30 @@ impl AnalysisFacts<'_> {
         bits: &[AccessHandle],
         budget: &mut ProofBudget,
     ) -> Fact<BitAmbiguityOutcome> {
-        self.local_bit_ambiguity_from_relation(&self.bit_decomposition_handles(input, bits), budget)
+        self.local_bit_ambiguity_from_relation(
+            &self.bit_decomposition_handles(input, bits),
+            BitModelRole::ScalarInput,
+            budget,
+        )
+    }
+
+    pub(crate) fn local_bit_packing_collision_handles(
+        &self,
+        packed: &AccessHandle,
+        bits: &[AccessHandle],
+        budget: &mut ProofBudget,
+    ) -> Fact<BitAmbiguityOutcome> {
+        let relation = self.bit_decomposition_handles(packed, bits);
+        self.local_bit_ambiguity_from_relation(&relation, BitModelRole::BitInputs, budget)
     }
 
     fn local_bit_ambiguity_from_relation(
         &self,
         relation: &Fact<Option<BitDecomposition>>,
+        role: BitModelRole,
         budget: &mut ProofBudget,
     ) -> Fact<BitAmbiguityOutcome> {
-        match self.bit_ambiguity_result(relation, budget) {
+        match self.bit_ambiguity_result(relation, role, budget) {
             Ok(result) => Fact::known(result),
             Err(blockers) => Fact::blocked(blockers),
         }
@@ -146,14 +172,22 @@ impl AnalysisFacts<'_> {
     fn bit_ambiguity_result(
         &self,
         relation: &Fact<Option<BitDecomposition>>,
+        role: BitModelRole,
         budget: &mut ProofBudget,
     ) -> Result<BitAmbiguityOutcome, BTreeSet<FactBlocker>> {
-        let path = self.unique_generation_path(budget)?;
         let relation = relation.as_result().map_err(Clone::clone)?;
         let Some(relation) = relation else {
             return Ok(no_certificate(NoBitAmbiguityCertificate::NoMatchingDecomposition));
         };
-        self.check_requested_model_keys(relation)?;
+        let path = self.unique_generation_path(budget)?;
+        match role {
+            BitModelRole::ScalarInput => self.check_requested_model_keys(relation)?,
+            BitModelRole::BitInputs => {
+                let mut keys = BTreeSet::from([relation.input().clone()]);
+                keys.extend(relation.bits().iter().cloned());
+                self.check_model_keys(&keys)?;
+            }
+        }
         let generated = self.generated_equation_sites(budget);
         let generated = generated.as_result().map_err(Clone::clone)?;
         if generated.evidence() != relation.context() {
@@ -165,7 +199,11 @@ impl AnalysisFacts<'_> {
                 return Err(BTreeSet::from([FactBlocker::UnsupportedRelation(site.site())]));
             }
         }
-        prove_candidates(self.field, relation, generated, budget)
+        let completion = match role {
+            BitModelRole::ScalarInput => None,
+            BitModelRole::BitInputs => Some(self.generated_assignments(generated, budget)?),
+        };
+        prove_candidates(self.field, relation, generated, completion.as_ref(), budget)
     }
 
     pub(crate) fn check_model_keys(
@@ -221,6 +259,7 @@ fn prove_candidates(
     field: &FieldContext,
     relation: &BitDecomposition,
     generated: &GeneratedEquationSites<'_>,
+    completion: Option<&GeneratedAssignments<'_>>,
     budget: &mut ProofBudget,
 ) -> Result<BitAmbiguityOutcome, BTreeSet<FactBlocker>> {
     let modulus =
@@ -244,7 +283,14 @@ fn prove_candidates(
         return Ok(no_certificate(NoBitAmbiguityCertificate::CandidatesRejected));
     };
     let representations = [first, second];
-    let models = candidate_models(field, relation, generated, &seeds, &representations);
+    let mut models = candidate_models(field, relation, generated, &seeds, &representations);
+    if let Some(completion) = completion {
+        for model in &mut models {
+            if !completion.complete(field, &mut model.0, budget)? {
+                return Ok(no_certificate(NoBitAmbiguityCertificate::CandidatesRejected));
+            }
+        }
+    }
     let Some(ValidatedModelPair([first, second])) =
         validate_models(field, generated, models, budget)?
     else {

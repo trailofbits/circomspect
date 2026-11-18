@@ -60,12 +60,24 @@ pub enum ReportCode {
     SignalDependentAssert,
     UnassignedOutput,
     ComparatorPrecondition,
+    UnusedPublicInput,
+    AlternateWitnessValue,
+    NonInjectiveBitPacking,
+    FeasibleZeroDivisor,
+    UnprovedBinaryTag,
 }
 
 struct DiagnosticDescriptor {
     id: &'static str,
     name: &'static str,
     anchor: Option<&'static str>,
+}
+
+fn anchored(
+    id: &'static str,
+    name: &'static str,
+) -> (&'static str, &'static str, Option<&'static str>) {
+    (id, name, Some(name))
 }
 
 impl ReportCode {
@@ -160,13 +172,14 @@ impl ReportCode {
                 ("CS0021", "redundant-witness-assignment", Some("redundant-witness-assignment"))
             }
             Self::MissingBusType => ("CS0022", "missing-bus-type", None),
-            Self::SignalDependentAssert => {
-                ("CS0023", "signal-dependent-assert", Some("signal-dependent-assert"))
-            }
+            Self::SignalDependentAssert => anchored("CS0023", "signal-dependent-assert"),
             Self::UnassignedOutput => ("CS0024", "unassigned-output", Some("unassigned-output")),
-            Self::ComparatorPrecondition => {
-                ("CS0025", "comparator-precondition", Some("comparator-precondition"))
-            }
+            Self::ComparatorPrecondition => anchored("CS0025", "comparator-precondition"),
+            Self::UnusedPublicInput => anchored("CS0026", "unused-public-input"),
+            Self::AlternateWitnessValue => anchored("CS0027", "alternate-witness-value"),
+            Self::NonInjectiveBitPacking => anchored("CS0028", "non-injective-bit-packing"),
+            Self::FeasibleZeroDivisor => anchored("CS0029", "feasible-zero-divisor"),
+            Self::UnprovedBinaryTag => anchored("CS0030", "unproved-binary-tag"),
         };
         DiagnosticDescriptor { id, name, anchor }
     }

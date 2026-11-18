@@ -202,6 +202,9 @@ impl AnalysisFacts<'_> {
         if state.variables().is_none() {
             return Err(BTreeSet::from([FactBlocker::MissingExit]));
         }
+        let Some(origins) = self.match_local_equations(state.must_equations(), input, bits)? else {
+            return Ok(None);
+        };
         let readiness = self.body_signal_reads_ready();
         if let Some(blockers) = readiness.unavailable() {
             return Err(blockers.clone());
@@ -214,7 +217,7 @@ impl AnalysisFacts<'_> {
         if let Some(blockers) = writes.unavailable() {
             return Err(blockers.clone());
         }
-        self.match_local_equations(state.must_equations(), input, bits)
+        Ok(Some(origins))
     }
 
     fn match_local_equations(
@@ -223,6 +226,9 @@ impl AnalysisFacts<'_> {
         input: &AccessKey,
         bits: &[AccessKey],
     ) -> Result<Option<EquationOrigins>, BTreeSet<FactBlocker>> {
+        if !must.may_reconstruct(input, bits.len()) {
+            return Ok(None);
+        }
         let mut boolean_origins = Vec::with_capacity(bits.len());
         for bit in bits {
             let expected = boolean_equation(self.field, bit);

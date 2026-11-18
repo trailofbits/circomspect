@@ -7,6 +7,8 @@ mod signal_assignment;
 mod signal_assert;
 mod output_completeness;
 mod comparator_precondition;
+mod public_input;
+mod witness_alternative;
 
 use parser::hir::Effect;
 use parser::frontend::AssignmentOperator;
@@ -25,6 +27,8 @@ pub const KINDS: &[RuleKind] = &[
     RuleKind::SignalDependentAssert,
     RuleKind::UnassignedOutput,
     RuleKind::ComparatorPrecondition,
+    RuleKind::UnusedPublicInput,
+    RuleKind::AlternateWitnessValue,
 ];
 
 /// Constraint rules enter the registry in this family's declared order.
@@ -38,6 +42,8 @@ pub fn rules() -> &'static [&'static dyn Rule] {
         &signal_assert::SignalAssert,
         &output_completeness::OutputCompleteness,
         &comparator_precondition::ComparatorPrecondition,
+        &public_input::UnusedPublicInput,
+        &witness_alternative::AlternateWitnessValue,
     ]
 }
 

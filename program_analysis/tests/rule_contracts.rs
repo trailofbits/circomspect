@@ -459,6 +459,11 @@ fn every_rule_kind_has_a_frozen_id_and_level() {
         (SignalDependentAssert, "CS0023", MessageCategory::Warning),
         (UnassignedOutput, "CS0024", MessageCategory::Warning),
         (ComparatorPrecondition, "CS0025", MessageCategory::Warning),
+        (UnusedPublicInput, "CS0026", MessageCategory::Warning),
+        (AlternateWitnessValue, "CS0027", MessageCategory::Warning),
+        (NonInjectiveBitPacking, "CS0028", MessageCategory::Warning),
+        (FeasibleZeroDivisor, "CS0029", MessageCategory::Warning),
+        (UnprovedBinaryTag, "CS0030", MessageCategory::Warning),
     ];
     for (kind, id, level) in expected {
         assert_eq!(kind.code().id(), id, "{kind:?}");
@@ -475,7 +480,7 @@ fn rule_families_partition_the_planned_rules() {
             assert!(kinds.insert(*kind), "duplicate rule kind: {kind:?}");
         }
     }
-    assert_eq!(kinds.len(), 20);
+    assert_eq!(kinds.len(), 25);
     assert!(!kinds.contains(&RuleKind::IncompleteCoverage));
     assert!(kinds.contains(&RuleKind::UnconstrainedSignal));
     assert!(kinds.contains(&RuleKind::UnusedVariableValue));

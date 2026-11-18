@@ -643,6 +643,107 @@ fn assertion_repeated_by_a_mandatory_constraint_is_not_reported() {
 }
 
 #[test]
+fn unused_public_input_is_rendered_and_can_be_suppressed() {
+    let input = fixture(
+        "unused-public-input",
+        "pragma circom 2.2.3; template Check() { \
+         signal input x; signal output out; out <== 1; } \
+         component main {public [x]} = Check();",
+    );
+    let result = run(&input.path(), &[], "unused-public-input");
+    assert!(result.stdout.contains("Public input `x` has no generated constraint."));
+    let matches: Vec<_> = result.sarif["runs"][0]["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|entry| entry["ruleId"] == "CS0026")
+        .collect();
+    assert_eq!(matches.len(), 1);
+    assert_eq!(matches[0]["message"]["text"], "Public input `x` has no generated constraint.");
+    let suppressed = run(&input.path(), &["--allow", "CS0026"], "unused-public-suppressed");
+    assert!(!ids(&suppressed.sarif).contains("CS0026"));
+}
+
+#[test]
+fn alternate_witness_value_is_rendered_in_sarif_and_terminal() {
+    let input = fixture(
+        "alternate-witness-value",
+        "pragma circom 2.2.3; template Check() { \
+         signal input x; signal output y; x === 1; y <-- x; y * (y - x) === 0; } \
+         component main {public [x]} = Check();",
+    );
+    let result = run(&input.path(), &[], "alternate-witness-value");
+    assert!(result.stdout.contains("Witness assignment to `y` computes 1"));
+    let matches: Vec<_> = result.sarif["runs"][0]["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|entry| entry["ruleId"] == "CS0027")
+        .collect();
+    assert_eq!(matches.len(), 1);
+    assert!(matches[0]["message"]["text"].as_str().unwrap().contains("0 also satisfies"));
+    assert_eq!(matches[0]["locations"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn noninjective_bit_packing_is_rendered_in_sarif_and_terminal() {
+    let source = "pragma circom 2.2.3; template Pack() {\
+        signal input bits[64]; signal output packed; var sum=0;\
+        for(var i=0;i<64;i++){bits[i]*(bits[i]-1)===0;sum+=bits[i]*(2**i);}\
+        packed<==sum;} component main=Pack();";
+    let input = fixture("noninjective-bit-packing", source);
+    let result = run(&input.path(), &["--curve", "GOLDILOCKS"], "noninjective-bit-packing");
+    assert!(result.stdout.contains("Distinct Boolean bit vectors encoding"));
+    let matches: Vec<_> = result.sarif["runs"][0]["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|entry| entry["ruleId"] == "CS0028")
+        .collect();
+    assert_eq!(matches.len(), 1);
+    assert!(matches[0]["message"]["text"].as_str().unwrap().contains("`packed` = 0"));
+}
+
+#[test]
+fn feasible_zero_divisor_is_rendered_in_sarif_and_terminal() {
+    let input = fixture(
+        "feasible-zero-divisor",
+        "pragma circom 2.2.3; template Check() { \
+         signal input x; signal output y; y <-- 1 / x; x*(x-1)===0; y*x===x; } \
+         component main = Check();",
+    );
+    let result = run(&input.path(), &[], "feasible-zero-divisor");
+    assert!(result.stdout.contains("A model with `x` = 0 satisfies all"));
+    let matches: Vec<_> = result.sarif["runs"][0]["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|entry| entry["ruleId"] == "CS0029")
+        .collect();
+    assert_eq!(matches.len(), 1);
+    assert!(matches[0]["message"]["text"].as_str().unwrap().contains("witness division"));
+}
+
+#[test]
+fn unproved_binary_tag_is_rendered_in_sarif_and_terminal() {
+    let input = fixture(
+        "unproved-binary-tag",
+        "pragma circom 2.2.3; template Check() { \
+         signal input x; signal output {binary} y; y <== x; } component main = Check();",
+    );
+    let result = run(&input.path(), &[], "unproved-binary-tag");
+    assert!(result.stdout.contains("`y` has a `binary` tag"));
+    let matches: Vec<_> = result.sarif["runs"][0]["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|entry| entry["ruleId"] == "CS0030")
+        .collect();
+    assert_eq!(matches.len(), 1);
+    assert!(matches[0]["message"]["text"].as_str().unwrap().contains("value 2"));
+}
+
+#[test]
 fn comparator_precondition_distinguishes_symbolic_and_exact_operands() {
     let input = fixture(
         "comparator-precondition",

@@ -13,8 +13,8 @@ use crate::interprocedural::{
 impl TemplateQueries<'_, '_> {
     /// Prove two complete models of a validated leaf template's generated equations.
     ///
-    /// The bounded candidates share every external input. Unknown control, called
-    /// scopes and symbolic template parameters withhold this existential proof.
+    /// The bounded decomposition candidates share every external input. Unknown
+    /// control, called scopes and symbolic template parameters withhold this proof.
     pub fn template_bit_ambiguity(
         &self,
         facts: &AnalysisFacts<'_>,
@@ -42,6 +42,25 @@ impl TemplateQueries<'_, '_> {
     ) -> SummaryFact<BitAmbiguityOutcome> {
         let result = self.check_bit_ambiguity_scope(facts, evidence).and_then(|()| {
             let fact = facts.local_bit_ambiguity_handles(input, bits, &mut ProofBudget::default());
+            certified(&fact).cloned()
+        });
+        SummaryFact::from_result(result)
+    }
+
+    /// Prove two distinct Boolean input vectors with the same packed field output.
+    pub(crate) fn template_bit_packing_collision_handles(
+        &self,
+        facts: &AnalysisFacts<'_>,
+        evidence: &ContextEvidence,
+        packed: &AccessHandle,
+        bits: &[AccessHandle],
+    ) -> SummaryFact<BitAmbiguityOutcome> {
+        let result = self.check_bit_ambiguity_scope(facts, evidence).and_then(|()| {
+            let fact = facts.local_bit_packing_collision_handles(
+                packed,
+                bits,
+                &mut ProofBudget::default(),
+            );
             certified(&fact).cloned()
         });
         SummaryFact::from_result(result)

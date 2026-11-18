@@ -1,8 +1,11 @@
 //! Numeric and expression warning family over certified HIR facts.
 
 mod control;
+mod binary_tag;
+mod bit_packing;
 mod conversion;
 mod division;
+mod zero_divisor;
 mod expression;
 
 use std::collections::BTreeSet;
@@ -22,6 +25,9 @@ pub const KINDS: &[RuleKind] = &[
     RuleKind::FieldComparison,
     RuleKind::NonstrictBinaryConversion,
     RuleKind::UnconstrainedDivision,
+    RuleKind::NonInjectiveBitPacking,
+    RuleKind::FeasibleZeroDivisor,
+    RuleKind::UnprovedBinaryTag,
 ];
 
 enum NumericRule {
@@ -32,6 +38,9 @@ enum NumericRule {
     FieldComparison,
     NonstrictBinaryConversion,
     UnconstrainedDivision,
+    NonInjectiveBitPacking,
+    FeasibleZeroDivisor,
+    UnprovedBinaryTag,
 }
 
 impl Rule for NumericRule {
@@ -44,6 +53,9 @@ impl Rule for NumericRule {
             Self::FieldComparison => RuleKind::FieldComparison,
             Self::NonstrictBinaryConversion => RuleKind::NonstrictBinaryConversion,
             Self::UnconstrainedDivision => RuleKind::UnconstrainedDivision,
+            Self::NonInjectiveBitPacking => RuleKind::NonInjectiveBitPacking,
+            Self::FeasibleZeroDivisor => RuleKind::FeasibleZeroDivisor,
+            Self::UnprovedBinaryTag => RuleKind::UnprovedBinaryTag,
         }
     }
 
@@ -67,6 +79,9 @@ impl Rule for NumericRule {
             Self::FieldComparison => expression::field_comparison(context),
             Self::UnconstrainedDivision => division::unconstrained_division(context),
             Self::NonstrictBinaryConversion => conversion::nonstrict_binary_conversion(context),
+            Self::NonInjectiveBitPacking => bit_packing::noninjective_bit_packing(context),
+            Self::FeasibleZeroDivisor => zero_divisor::feasible_zero_divisor(context),
+            Self::UnprovedBinaryTag => binary_tag::unproved_binary_tag(context),
         }
     }
 }
@@ -78,8 +93,21 @@ static ARITHMETIC: NumericRule = NumericRule::FieldArithmetic;
 static COMPARISON: NumericRule = NumericRule::FieldComparison;
 static CONVERSION: NumericRule = NumericRule::NonstrictBinaryConversion;
 static DIVISION: NumericRule = NumericRule::UnconstrainedDivision;
-static RULES: [&dyn Rule; 7] =
-    [&COMPLEMENT, &BN254, &CONDITIONAL, &ARITHMETIC, &COMPARISON, &CONVERSION, &DIVISION];
+static BIT_PACKING: NumericRule = NumericRule::NonInjectiveBitPacking;
+static ZERO_DIVISOR: NumericRule = NumericRule::FeasibleZeroDivisor;
+static BINARY_TAG: NumericRule = NumericRule::UnprovedBinaryTag;
+static RULES: [&dyn Rule; 10] = [
+    &COMPLEMENT,
+    &BN254,
+    &CONDITIONAL,
+    &ARITHMETIC,
+    &COMPARISON,
+    &CONVERSION,
+    &DIVISION,
+    &BIT_PACKING,
+    &ZERO_DIVISOR,
+    &BINARY_TAG,
+];
 
 /// Numeric rules enter the registry in this family's declared order.
 #[must_use]

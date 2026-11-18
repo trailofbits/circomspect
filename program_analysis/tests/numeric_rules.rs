@@ -32,6 +32,42 @@ const BN254_MODULUS: &str =
 const BN254_LAST: &str =
     "21888242871839275222246405745257275088548364400416034343698204186575808495616";
 
+#[test]
+fn binary_tag_bus_and_custom_template_abstain() {
+    let bus = "pragma circom 2.2.3;bus B(){signal x;}\
+               template T(){B output {binary} b;}component main=T();";
+    let (_, result) = inspect(bus, Curve::Bn254, "T");
+    assert!(
+        result.abstentions().iter().any(|item| {
+            item.kind == RuleKind::UnprovedBinaryTag
+                && item.reason == AbstentionReason::UnsupportedConstruct
+        }),
+        "{:?}",
+        result.abstentions()
+    );
+
+    let custom = "pragma circom 2.2.3;pragma custom_templates;\
+                  template custom T(){signal input x;signal output {binary} y;y<==x;}\
+                  component main=T();";
+    let (_, result) = inspect(custom, Curve::Bn254, "T");
+    assert!(result.abstentions().iter().any(|item| {
+        item.kind == RuleKind::UnprovedBinaryTag
+            && item.reason
+                == AbstentionReason::Summary(BTreeSet::from([SummaryBlocker::ExternalSummary]))
+    }));
+}
+
+#[test]
+fn binary_tag_bus_field_abstains() {
+    let source = "pragma circom 2.2.3;bus B(){signal {binary} x;}";
+    let (_, result) = inspect(source, Curve::Bn254, "B");
+    assert!(result.abstentions().iter().any(|item| {
+        item.kind == RuleKind::UnprovedBinaryTag
+            && item.reason
+                == AbstentionReason::Summary(BTreeSet::from([SummaryBlocker::UnsupportedContext]))
+    }));
+}
+
 fn inspect(source: &str, curve: Curve, definition: &str) -> (LoadedProject, RuleResult) {
     let directory = std::env::temp_dir().join(format!(
         "circomspect-numeric-{}-{:?}",

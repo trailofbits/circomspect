@@ -1,12 +1,15 @@
 //! Must-equation evidence bound to provider-issued analysis contexts.
 
 mod ambiguity;
+mod binary_tag;
 mod assignment;
 pub(crate) use crate::hir_facts::relations::assignment::GeneratedInputEquation;
 mod complete;
 mod completion;
 mod decomposition;
 mod polynomial;
+mod witness_alternative;
+mod zero_divisor;
 
 use std::collections::BTreeSet;
 use rpds::RedBlackTreeMapSync as OrdMap;
@@ -29,6 +32,9 @@ pub use crate::hir_facts::relations::decomposition::BitDecomposition;
 pub(crate) use crate::hir_facts::relations::completion::GeneratedAssignments;
 pub(crate) use crate::hir_facts::relations::complete::{GeneratedEquationSites, ProofBudget};
 pub(crate) use crate::hir_facts::relations::ambiguity::{generated_models_satisfy, generated_seeds};
+pub(crate) use crate::hir_facts::relations::binary_tag::BinaryTagCounterexample;
+pub(crate) use crate::hir_facts::relations::witness_alternative::WitnessAlternative;
+pub(crate) use crate::hir_facts::relations::zero_divisor::FeasibleZeroDivisor;
 pub use crate::hir_facts::relations::polynomial::{NormalizedEquation, QuadraticPolynomial};
 pub(crate) use crate::hir_facts::relations::polynomial::{
     constraint_equation, variable_polynomial, ExpressionPolynomial, MustSymbolicVariables,
@@ -61,6 +67,17 @@ impl MustEquations {
     pub(crate) fn origins(&self, equation: &NormalizedEquation) -> Option<&BTreeSet<NodeId>> {
         let Self::Reached { equations, .. } = self else { return None };
         equations.get(equation)
+    }
+
+    pub(crate) fn may_reconstruct(
+        &self,
+        packed: &crate::hir_facts::AccessKey,
+        bits: usize,
+    ) -> bool {
+        let Self::Reached { equations, .. } = self else { return false };
+        equations.iter().any(|(equation, _)| {
+            equation.term_count() == bits + 1 && equation.contains_linear_access(packed)
+        })
     }
 
     fn equation_at_origin(&self, site: NodeId) -> Option<&NormalizedEquation> {

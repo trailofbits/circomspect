@@ -78,6 +78,53 @@ exists. Symbolic aliases and incomplete component effects cause abstention.
 
 The former `CS0017` occurrence-count heuristic has been removed.
 
+## Unused public input
+
+`CS0026` reports an explicit public input of `main` whose exact signal element has zero
+generated-constraint incidence in the validated main context. Witness-only reads do not bind the
+public value to the proof. Private inputs and libraries without a `main` are outside this rule.
+Unknown dimensions, incomplete source, and uncertain constraint incidence cause abstention.
+This rule establishes independence from generated constraints, not an application-level exploit.
+
+## Alternate witness value
+
+`CS0027` reports a witness-only assignment in a concrete, closed `main` scope when two checked
+assignments use the same input values but give the witness target different values. The analyzer
+derives the second root of a generated quadratic equation, completes generated assignments, and
+checks every generated equation for both candidates. It samples simple input values and may miss
+other counterexamples. Unsupported control flow, component closure, or source expressions cause
+abstention; absence of this warning does not establish uniqueness.
+
+## Non-injective bit packing
+
+`CS0028` reports a checked collision when a main template constrains an input bit array to
+Boolean values and reconstructs a scalar output as their ordered powers-of-two sum. The analyzer
+constructs two different bit vectors whose integer values differ by the field modulus, completes
+generated assignments, and verifies all generated equations for both vectors. It reports a
+constraint-level collision, not a claim that the application accepts both encodings. Unknown
+bit widths, additional constraints rejecting a candidate, and incomplete component closure
+withhold the warning.
+
+## Feasible zero divisor
+
+`CS0029` reports a witness-only division in a closed `main` template when an exact scalar input
+can be zero in a model of every generated constraint and the division site lies on the checked
+generation path. The analyzer completes generated assignments and checks other witness-only
+assignments before reporting. The division itself would fail at zero, so its witness assignment
+is excluded from the candidate model. This rule currently handles direct division expressions
+with an input signal denominator; unknown control, source, or component closure withholds the
+warning. The existing unconstrained-division warning remains a separate zero-incidence check.
+
+## Unproved binary tag
+
+`CS0030` reports a scalar intermediate or output signal declared with `{binary}` when a checked
+model gives it a value other than 0 or 1. The analyzer validates the model against every generated
+constraint and witness-only assignment in a closed `main` template. It recognizes a direct Boolean
+equation as a sufficient proof and checks inherited constraints through model validation. Input
+tags are caller preconditions. Bus fields, arrays, custom templates, and unresolved component
+closure are outside this check. The finite candidate search can miss counterexamples, so absence
+of a warning does not prove that a tag is valid.
+
 ## Unused output signal
 
 `CS0018` reports an exact component output that has no read or constraint use

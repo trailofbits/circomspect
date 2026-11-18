@@ -54,3 +54,8 @@ MissingBusType	CS0022	missing-bus-type	<none>
 SignalDependentAssert	CS0023	signal-dependent-assert	https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md#signal-dependent-assert
 UnassignedOutput	CS0024	unassigned-output	https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md#unassigned-output
 ComparatorPrecondition	CS0025	comparator-precondition	https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md#comparator-precondition
+UnusedPublicInput	CS0026	unused-public-input	https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md#unused-public-input
+AlternateWitnessValue	CS0027	alternate-witness-value	https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md#alternate-witness-value
+NonInjectiveBitPacking	CS0028	non-injective-bit-packing	https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md#non-injective-bit-packing
+FeasibleZeroDivisor	CS0029	feasible-zero-divisor	https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md#feasible-zero-divisor
+UnprovedBinaryTag	CS0030	unproved-binary-tag	https://github.com/trailofbits/circomspect/blob/main/doc/analysis_passes.md#unproved-binary-tag

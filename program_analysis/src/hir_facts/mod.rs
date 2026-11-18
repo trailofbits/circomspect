@@ -73,7 +73,7 @@ pub use crate::hir_facts::write_validity::{BodyWriteStatus, NoRepeatedBodyWrite,
 pub(crate) use handles::InstanceRelation;
 pub(crate) use crate::hir_facts::relations::{
     generated_models_satisfy, generated_seeds, GeneratedAssignments, GeneratedEquationSites,
-    ProofBudget,
+    BinaryTagCounterexample, FeasibleZeroDivisor, ProofBudget, WitnessAlternative,
 };
 
 pub(crate) fn exact_compile_time(
@@ -253,6 +253,7 @@ pub struct AnalysisFacts<'a> {
     ranges: Mutex<BTreeMap<ExprId, Fact<FieldRange>>>,
     potential_touches: OnceLock<PotentialTouches>,
     body_writes: OnceLock<write_validity::BodyWriteResult>,
+    body_readiness: OnceLock<Fact<()>>,
     deferred_branches: OnceLock<Vec<DeferredBranch>>,
 }
 
@@ -391,6 +392,7 @@ fn analyze_seeded<'a>(
         ranges: Mutex::new(BTreeMap::new()),
         potential_touches: OnceLock::new(),
         body_writes: OnceLock::new(),
+        body_readiness: OnceLock::new(),
         deferred_branches: OnceLock::new(),
     })
 }

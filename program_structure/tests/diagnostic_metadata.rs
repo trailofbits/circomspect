@@ -61,6 +61,11 @@ const CODES: &[(&str, ReportCode)] = &[
     ("SignalDependentAssert", ReportCode::SignalDependentAssert),
     ("UnassignedOutput", ReportCode::UnassignedOutput),
     ("ComparatorPrecondition", ReportCode::ComparatorPrecondition),
+    ("UnusedPublicInput", ReportCode::UnusedPublicInput),
+    ("AlternateWitnessValue", ReportCode::AlternateWitnessValue),
+    ("NonInjectiveBitPacking", ReportCode::NonInjectiveBitPacking),
+    ("FeasibleZeroDivisor", ReportCode::FeasibleZeroDivisor),
+    ("UnprovedBinaryTag", ReportCode::UnprovedBinaryTag),
 ];
 
 #[test]

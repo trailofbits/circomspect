@@ -16,7 +16,7 @@ use serde_json::{json, Value};
 mod support;
 
 const SAMPLES: usize = 3;
-const MAX_INCREASE_PERCENT: u64 = 20;
+const MAX_INCREASE_PERCENT: u64 = 5;
 
 enum Mode {
     Measure,

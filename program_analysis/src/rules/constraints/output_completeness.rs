@@ -105,7 +105,7 @@ fn inspect_port(context: &RuleContext<'_, '_, '_>, port_id: PortId, result: &mut
     if no_witness && called {
         return;
     }
-    let Some(indices) = output_indices(context, port.symbol) else {
+    let Some(indices) = port_indices(context, port.symbol) else {
         if no_witness {
             report(context, result, port_id, &symbol.name, None, OutputProblem::NoWitness);
         }
@@ -252,8 +252,11 @@ fn collect_writes(context: &RuleContext<'_, '_, '_>, output: SymbolId) -> Writes
     writes
 }
 
-fn output_indices(context: &RuleContext<'_, '_, '_>, output: SymbolId) -> Option<Vec<Vec<usize>>> {
-    let symbol = context.hir().symbol(output)?;
+pub(super) fn port_indices(
+    context: &RuleContext<'_, '_, '_>,
+    symbol: SymbolId,
+) -> Option<Vec<Vec<usize>>> {
+    let symbol = context.hir().symbol(symbol)?;
     let mut indices = vec![Vec::new()];
     for dimension in &symbol.dimensions {
         let Range::Exact(size) = context.facts().range(*dimension).certified()?.clone() else {

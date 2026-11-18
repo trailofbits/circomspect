@@ -2,7 +2,12 @@
 
 use abstract_interpretation::graph::NodeId;
 
-use crate::hir_facts::{AnalysisFacts, GeneratedEquation};
+use parser::hir::{AccessPath, SymbolId};
+
+use crate::hir_facts::{
+    AnalysisFacts, BinaryTagCounterexample, FeasibleZeroDivisor, GeneratedEquation, ProofBudget,
+    WitnessAlternative,
+};
 use crate::interprocedural::{ContextEvidence, TemplateQueries, SummaryBlocker, SummaryFact};
 use crate::interprocedural::summary::certified;
 
@@ -28,6 +33,46 @@ impl GeneratedEquationQueries<'_, '_> {
             .scope
             .clone()
             .and_then(|()| Ok(certified(&self.facts.must_equation_for_witness(witness))?.clone()));
+        SummaryFact::from_result(result)
+    }
+
+    /// Search two complete models for a witness-only assignment in this root scope.
+    pub(crate) fn witness_alternative(
+        &self,
+        witness: NodeId,
+    ) -> SummaryFact<Option<WitnessAlternative>> {
+        let result = self.scope.clone().and_then(|()| {
+            let fact = self.facts.local_witness_alternative(witness, &mut ProofBudget::default());
+            certified(&fact).cloned()
+        });
+        SummaryFact::from_result(result)
+    }
+
+    pub(crate) fn feasible_zero_divisor(
+        &self,
+        witness: NodeId,
+        divisor: &AccessPath,
+    ) -> SummaryFact<Option<FeasibleZeroDivisor>> {
+        let result = self.scope.clone().and_then(|()| {
+            let fact = self.facts.local_feasible_zero_divisor(
+                witness,
+                divisor,
+                &mut ProofBudget::default(),
+            );
+            certified(&fact).cloned()
+        });
+        SummaryFact::from_result(result)
+    }
+
+    pub(crate) fn binary_tag_counterexamples(
+        &self,
+        symbols: &[SymbolId],
+    ) -> SummaryFact<Vec<BinaryTagCounterexample>> {
+        let result = self.scope.clone().and_then(|()| {
+            let fact =
+                self.facts.local_binary_tag_counterexamples(symbols, &mut ProofBudget::default());
+            certified(&fact).cloned()
+        });
         SummaryFact::from_result(result)
     }
 }

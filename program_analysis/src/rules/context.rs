@@ -3,7 +3,7 @@ use std::sync::OnceLock;
 #[cfg(test)]
 mod cache_tests;
 
-use parser::hir::{AccessPath, DefinitionRef, FunctionId, HirProject, PortId};
+use parser::hir::{AccessPath, DefinitionRef, FunctionId, HirProject, Main, PortId};
 use parser::frontend::Span;
 
 use crate::hir_facts::{
@@ -149,6 +149,13 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
     #[must_use]
     pub fn origin(&self) -> crate::interprocedural::ContextOrigin {
         self.evidence.origin()
+    }
+
+    pub(crate) fn main(&self) -> Option<&Main> {
+        let crate::interprocedural::ContextOrigin::Main(id) = self.origin() else { return None };
+        let site = self.summaries.graph().site(id)?;
+        let CallOwner::Main(index) = site.owner else { return None };
+        self.hir().mains().get(index)
     }
 
     /// Provider-issued source calls from a main or symbolic root to this scope.
@@ -305,6 +312,20 @@ impl<'a, 'facts, 'project> RuleContext<'a, 'facts, 'project> {
             self.facts,
             self.evidence,
             input,
+            bits,
+        )
+    }
+
+    /// Prove a collision between exact Boolean input bits and a packed output.
+    pub(crate) fn template_bit_packing_collision_handles(
+        &self,
+        packed: &AccessHandle,
+        bits: &[AccessHandle],
+    ) -> SummaryFact<BitAmbiguityOutcome> {
+        self.summaries.templates().template_bit_packing_collision_handles(
+            self.facts,
+            self.evidence,
+            packed,
             bits,
         )
     }

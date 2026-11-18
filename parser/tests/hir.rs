@@ -42,6 +42,18 @@ fn effect_for<'a>(result: &'a circomspect_parser::hir::LiftedProject, name: &str
 }
 
 #[test]
+fn main_public_inputs_retain_names_and_source_spans() {
+    let source = "template T(){signal input x;signal output y;y<==x;}\
+                  component main {public [x]}=T();";
+    let result = lift(&[("public.circom", source)], Version::new(2, 2, 3));
+    let main = &result.hir.mains()[0];
+    assert_eq!(main.public.len(), 1);
+    assert_eq!(main.public[0].name, "x");
+    let span = main.public[0].span;
+    assert_eq!(&source[span.start()..span.end()], "x");
+}
+
+#[test]
 fn parameter_assertion_retains_typed_condition_and_source() {
     let source = "function F(n){assert(n);return 7;}";
     let result = lift(&[("case.circom", source)], Version::new(2, 2, 3));

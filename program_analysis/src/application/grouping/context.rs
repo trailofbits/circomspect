@@ -53,7 +53,12 @@ impl ContextDisplay {
             | RuleKind::IncompleteCoverage
             | RuleKind::SignalDependentAssert
             | RuleKind::UnassignedOutput
-            | RuleKind::ComparatorPrecondition => {}
+            | RuleKind::ComparatorPrecondition
+            | RuleKind::UnusedPublicInput
+            | RuleKind::AlternateWitnessValue
+            | RuleKind::NonInjectiveBitPacking
+            | RuleKind::FeasibleZeroDivisor
+            | RuleKind::UnprovedBinaryTag => {}
         }
         Self::for_evidence(hir, evidence)
     }

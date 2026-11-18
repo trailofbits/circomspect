@@ -6,13 +6,42 @@ use std::fmt::Write;
 use std::fs;
 use std::path::PathBuf;
 
-pub(crate) fn fixture_paths() -> [(&'static str, PathBuf); 4] {
+pub(crate) fn fixture_paths() -> [(&'static str, PathBuf); 6] {
     [
         ("array_writes", fixture("array_writes", &table_source(2_048))),
         ("array_writes_large", fixture("array_writes_large", &table_source(16_384))),
         ("equations", fixture("equations", &constraints_source(256))),
         ("output_elements", fixture("output_elements", &outputs_source(128))),
+        ("new_rules", fixture("new_rules", &new_rules_source())),
+        ("alternate_witness", fixture("alternate_witness", witness_alternative_source())),
     ]
+}
+
+fn witness_alternative_source() -> &'static str {
+    "pragma circom 2.2.3;\n\
+     template WitnessAlternative() {\n\
+     signal input x; signal output y;\n\
+     x === 1; y <-- x; y * (y - x) === 0;\n\
+     }\ncomponent main {public [x]} = WitnessAlternative();\n"
+}
+
+fn new_rules_source() -> String {
+    let mut source = String::from(
+        "pragma circom 2.2.3;\ntemplate NewRules() {\n\
+         signal input ignored;\nsignal input x;\nsignal input bits[254];\n\
+         signal output y;\nsignal output packed;\nsignal output inverse;\n\
+         signal output {binary} tagged;\n\
+         y <-- x;\ny * (y - x) === 0;\n\
+         inverse <-- 1 / x;\nx * (x - 1) === 0;\ninverse * x === x;\n\
+         tagged <== x + bits[0];\nvar accumulator = 0;\n",
+    );
+    source.push_str(
+        "for (var i = 0; i < 254; i++) {\n\
+         bits[i] * (bits[i] - 1) === 0;\naccumulator += bits[i] * (2 ** i);\n}\n\
+         packed <== accumulator;\n}\n\
+         component main {public [ignored, x]} = NewRules();\n",
+    );
+    source
 }
 
 fn fixture(name: &str, source: &str) -> PathBuf {

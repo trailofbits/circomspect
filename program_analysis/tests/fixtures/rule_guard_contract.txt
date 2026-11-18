@@ -16,6 +16,9 @@ A Complexity 9..14 Summary({IncompleteDefinition})
 A SignalDependentAssert 9..14 Summary({IncompleteDefinition})
 A UnassignedOutput 9..14 Summary({IncompleteDefinition})
 A ComparatorPrecondition 9..14 Summary({IncompleteDefinition})
+A NonInjectiveBitPacking 0..53 Summary({IncompleteDefinition})
+A FeasibleZeroDivisor 0..53 Summary({IncompleteDefinition})
+A UnprovedBinaryTag 0..53 Summary({IncompleteDefinition})
 CASE failed-function
 F TooManyArguments "`Check` declares 8 parameters (limit 7)." [Label { style: Primary, file_id: 0, range: 9..14, message: "This declaration has 8 parameters." }] []
 A BitwiseComplement 0..52 Summary({UnsupportedContext})
@@ -29,6 +32,9 @@ A UnconstrainedLessThan 9..14 Summary({UnsupportedContext})
 A UnusedVariableValue 9..14 Summary({UnsupportedContext})
 A UnusedParameterValue 9..14 Summary({UnsupportedContext})
 A SideEffectFreeAssignment 9..14 Summary({UnsupportedContext})
+A NonInjectiveBitPacking 0..52 Summary({UnsupportedContext})
+A FeasibleZeroDivisor 0..52 Summary({UnsupportedContext})
+A UnprovedBinaryTag 0..52 Summary({UnsupportedContext})
 CASE bus
 A BitwiseComplement 0..22 Summary({UnsupportedContext})
 A Bn254SpecificCircuit 0..22 Summary({UnsupportedContext})
@@ -40,6 +46,9 @@ A UnconstrainedDivision 0..22 Summary({UnsupportedContext})
 A UnusedVariableValue 4..9 Summary({UnsupportedContext})
 A UnusedParameterValue 4..9 Summary({UnsupportedContext})
 A SideEffectFreeAssignment 4..9 Summary({UnsupportedContext})
+A NonInjectiveBitPacking 0..22 Summary({UnsupportedContext})
+A FeasibleZeroDivisor 0..22 Summary({UnsupportedContext})
+A UnprovedBinaryTag 0..22 Summary({UnsupportedContext})
 CASE witness
 F SignalAssignment "This witness assignment does not constrain the signal. No generated constraint depends on this exact output path." [Label { style: Primary, file_id: 0, range: 33..38, message: "This output assignment adds no constraint." }] []
 F UnassignedOutput "Output `y` has no generated constraint." [Label { style: Primary, file_id: 0, range: 31..32, message: "The signal `y` is never constrained." }] []

@@ -893,7 +893,7 @@ impl Lifter<'_> {
     pub(super) fn lift_mains(&mut self) {
         for file in &self.source.files {
             for item in &file.outcome.ast.items {
-                let Item::Main { instance, span, .. } = item else { continue };
+                let Item::Main { public, instance, span } = item else { continue };
                 if let Some(invocation) = TemplateInvocation::from_expression(instance) {
                     self.scopes.enter();
                     let arguments: Vec<_> = invocation
@@ -905,7 +905,13 @@ impl Lifter<'_> {
                     let target = self.resolve_call(invocation.name, DefinitionKind::Template);
                     let target = self.check_template_invocation(target, &arguments, *span);
                     let parallel = invocation.parallel_span.is_some();
-                    self.hir.mains.push(Main { target, arguments, parallel, span: *span });
+                    self.hir.mains.push(Main {
+                        target,
+                        arguments,
+                        public: public.clone(),
+                        parallel,
+                        span: *span,
+                    });
                 } else {
                     self.diagnostic(
                         SemanticCode::WrongTemplate,
