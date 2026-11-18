@@ -149,7 +149,7 @@ impl CoverageContext<'_, '_> {
         let names: Vec<_> = parameters.iter().map(|(_, name)| format!("`{name}`")).collect();
         let names = names.join(", ");
         let plural = if parameters.len() == 1 { "parameter" } else { "parameters" };
-        let message = format!("This check depends on unknown {plural} {names}.");
+        let message = format!("This check depends on the unknown {plural} {names}.");
         let span = self.hir.expression(expression).map_or(self.span, |item| item.span);
         Some(explanation(
             CoverageKind::MissingContext,
