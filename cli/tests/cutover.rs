@@ -872,7 +872,7 @@ fn library_roots_are_independent_of_declaration_order() {
             let related = result["relatedLocations"].as_array().unwrap();
             let messages: Vec<_> =
                 related.iter().map(|label| label["message"]["text"].as_str().unwrap()).collect();
-            messages.iter().any(|message| message.contains("CS0009"))
+            messages.iter().any(|message| message.contains("unknown parameter `n`"))
                 && messages.iter().all(|message| !message.contains("Reached through this call"))
         });
         assert!(symbolic_child, "independent symbolic Child root missing: {stdout}");

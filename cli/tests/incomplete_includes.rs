@@ -34,7 +34,7 @@ fn missing_include_preserves_independent_warning_without_false_source_error() {
 
     assert!(!output.status.success(), "{stdout}");
     assert!(stdout.contains("cannot find included file absent.circom"), "{stdout}");
-    assert!(stdout.contains("This assertion checks witness-dependent"), "{stdout}");
+    assert!(stdout.contains("This assertion checks witness dependent"), "{stdout}");
     assert!(!stdout.contains("unresolved Template call"), "{stdout}");
     assert!(!stdout.contains("Undefined template"), "{stdout}");
     assert_eq!(stdout.matches("error:").count(), 1, "{stdout}");
@@ -168,7 +168,7 @@ fn included_root_warning_is_streamed_once() {
         .unwrap();
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert_eq!(
-        stdout.matches("warning: This assertion checks witness-dependent").count(),
+        stdout.matches("warning: This assertion checks witness dependent").count(),
         1,
         "{stdout}"
     );

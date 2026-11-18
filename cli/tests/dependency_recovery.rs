@@ -129,6 +129,6 @@ fn direct_library_directory_restores_warning_analysis() {
         .output()
         .expect("run Circomspect");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("witness-dependent"), "{stdout}");
+    assert!(stdout.contains("witness dependent values"), "{stdout}");
     assert!(!stdout.contains("cannot find included file"), "{stdout}");
 }
